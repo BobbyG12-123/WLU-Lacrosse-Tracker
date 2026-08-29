@@ -102,9 +102,16 @@
 </head>
 <body>
 
+<div id="authGate" style="min-height:100vh;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:16px;font-family:'Helvetica Neue',Arial,sans-serif;">
+  <div style="font-size:20px;font-weight:700;color:var(--navy);">WLU Lacrosse &middot; Shot Tracker</div>
+  <div id="authGateMsg" style="color:var(--muted);max-width:360px;text-align:center;">Sign in with your coaching staff Google account to continue.</div>
+  <button id="authGateBtn" class="sans" style="padding:10px 20px;font-size:14px;font-weight:600;border:1px solid var(--navy);border-radius:6px;background:var(--navy);color:#fff;cursor:pointer;">Sign in with Google</button>
+</div>
+
+<div id="appRoot" style="display:none;">
 <header>
   <div class="eyebrow">WLU Lacrosse &middot; Live Shot Tracker</div>
-  <h1>Shot Tracking &amp; Heat Maps <span class="badge-shared">Shared data &middot; anyone with this link can view &amp; edit</span></h1>
+  <h1>Shot Tracking &amp; Heat Maps <span class="badge-shared">Shared data &middot; WLU coaching staff only</span></h1>
   <p>Log shots as they happen, and heat maps recompute instantly from the live data. This replaces the Excel workbook &mdash; the historical season (2,285 shots) is already loaded in.</p>
 </header>
 
@@ -429,10 +436,12 @@
 
 </main>
 
-<footer>Live data &mdash; anyone with this link can view and add shots. No login system; treat the link like a shared document.</footer>
+<footer>Live data, restricted to signed-in WLU coaching staff.</footer>
+</div>
 
 <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-auth-compat.js"></script>
 <script>
 firebase.initializeApp({
   apiKey: "AIzaSyAqsYhOypQznZK0N7JzWmpGjJv7eBNKqMc",
@@ -441,6 +450,37 @@ firebase.initializeApp({
   storageBucket: "wlu-lacrosse-tracker.firebasestorage.app",
   messagingSenderId: "896246870043",
   appId: "1:896246870043:web:ccf40f407b6963b4d548be"
+});
+
+const ALLOWED_COACHES = ['bgriffith@wlu.edu', 'rdglax22@icloud.com', 'wgarrett@wlu.edu', 'mccabee@wlu.edu'];
+
+document.getElementById('authGateBtn').addEventListener('click', () => {
+  document.getElementById('authGateMsg').textContent = 'Signing in…';
+  firebase.auth().signInWithPopup(new firebase.auth.GoogleAuthProvider())
+    .catch(e => { document.getElementById('authGateMsg').textContent = 'Sign-in failed: ' + e.message; });
+});
+
+firebase.auth().onAuthStateChanged(user => {
+  const gate = document.getElementById('authGate');
+  const app = document.getElementById('appRoot');
+  const msg = document.getElementById('authGateMsg');
+  const btn = document.getElementById('authGateBtn');
+  if (!user) {
+    gate.style.display = 'flex'; app.style.display = 'none';
+    msg.textContent = 'Sign in with your coaching staff Google account to continue.';
+    btn.style.display = '';
+    return;
+  }
+  const email = (user.email || '').toLowerCase();
+  if (!ALLOWED_COACHES.includes(email)) {
+    gate.style.display = 'flex'; app.style.display = 'none';
+    msg.textContent = `${user.email} isn’t on the coaching staff list for this tracker. Sign in with an authorized account, or ask the tracker owner to add you.`;
+    btn.style.display = '';
+    firebase.auth().signOut();
+    return;
+  }
+  gate.style.display = 'none'; app.style.display = '';
+  if (!window.__appInited) { window.__appInited = true; init(); }
 });
 </script>
 <script>
@@ -1830,7 +1870,6 @@ async function init() {
   renderGoalieTrends();
   renderTable();
 }
-init();
 </script>
 </body>
 </html>
