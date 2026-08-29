@@ -238,6 +238,9 @@
     <div class="panel">
       <p class="panel-title">Player Deep Dive</p>
       <p class="panel-sub">Full per-player breakdown &mdash; each % is shot % (goals &divide; shots) within that slice. Players with 5+ total shots; italic gray = fewer than 5 shots in that specific column (real number, small sample). Scroll right for more columns.</p>
+      <p class="panel-sub sans" style="font-weight:700; text-transform:uppercase; font-size:11px; letter-spacing:.04em; color:var(--muted); margin-top:14px;">Compare colors against:</p>
+      <div class="grade-pills" id="ddComparePills"></div>
+      <p class="panel-sub" id="ddCompareHint" style="margin-top:6px;"></p>
       <div class="table-wrap" id="playerDeepDiveWrap"></div>
     </div>
     <div class="panel">
@@ -609,6 +612,23 @@ function colorForPct(pct, vmin, vmax) {
   t = Math.max(0, Math.min(1, t));
   if (t < 0.5) return hexInterp('#F8696B', '#FFEB84', t / 0.5);
   return hexInterp('#FFEB84', '#63BE7B', (t - 0.5) / 0.5);
+}
+function median(nums) {
+  if (!nums.length) return 0;
+  const s = nums.slice().sort((a, b) => a - b);
+  const mid = Math.floor(s.length / 2);
+  return s.length % 2 ? s[mid] : (s[mid - 1] + s[mid]) / 2;
+}
+// Matches the Excel workbook's per-column 3-color scale: red at the column min,
+// yellow at the column median (not the midpoint), green at the column max.
+function excelColorScale(pct, vmin, vmed, vmax) {
+  if (pct === null || pct === undefined) return null;
+  if (pct <= vmed) {
+    const t = vmed > vmin ? (pct - vmin) / (vmed - vmin) : 0.5;
+    return hexInterp('#F8696B', '#FFEB84', Math.max(0, Math.min(1, t)));
+  }
+  const t = vmax > vmed ? (pct - vmed) / (vmax - vmed) : 0.5;
+  return hexInterp('#FFEB84', '#63BE7B', Math.max(0, Math.min(1, t)));
 }
 
 const DIST_BANDS_PLAYER = [[0,5],[5,10],[10,15],[15,20]];
@@ -1090,17 +1110,37 @@ function computeGoalieSummary(shots) {
   }).sort((a, b) => b.faced - a.faced);
 }
 
+let deepDiveCompareMode = 'teammates';
 function renderPlayerDeepDive() {
   const wrap = document.getElementById('playerDeepDiveWrap');
   if (!wrap) return;
   const rows = computePlayerDeepDive(SHOTS);
   if (!rows.length) { wrap.innerHTML = '<p class="sans" style="color:var(--muted); font-size:13px;">No players with 5+ shots yet.</p>'; return; }
+  const allPlayerShots = SHOTS.filter(s => s.shooterJersey);
+  const hint = document.getElementById('ddCompareHint');
+  if (hint) hint.textContent = deepDiveCompareMode === 'teamavg'
+    ? 'Yellow = at the team average for that column; green = above it, red = below it.'
+    : 'Yellow = the median among these players for that column; green = ranks toward the top, red = toward the bottom.';
+  const colScales = DEEP_DIVE_SLICES.map((slice, i) => {
+    const vals = rows.map(r => r.cols[i]).filter(c => c.n > 0).map(c => c.pct);
+    if (!vals.length) return null;
+    const vmin = Math.min(...vals), vmax = Math.max(...vals);
+    if (deepDiveCompareMode === 'teamavg') {
+      const teamPct = shotPctFor(allPlayerShots.filter(slice.filter)).pct;
+      if (teamPct === null) return { vmin, vmed: median(vals), vmax };
+      return { vmin: Math.min(vmin, teamPct), vmed: teamPct, vmax: Math.max(vmax, teamPct) };
+    }
+    return { vmin, vmed: median(vals), vmax };
+  });
   let html = '<table class="shotlog"><thead><tr><th>Jersey</th><th>Name</th><th>Shots</th>' + DEEP_DIVE_SLICES.map(s => `<th>${s.label}</th>`).join('') + '</tr></thead><tbody>';
   rows.forEach(r => {
     html += `<tr><td>${r.jersey}</td><td>${r.name}</td><td>${r.shots}</td>` +
-      r.cols.map(c => {
+      r.cols.map((c, i) => {
         const small = c.n > 0 && c.n < 5;
-        return `<td${small ? ' style="color:var(--muted); font-style:italic;"' : ''}>${pct(c.pct)}</td>`;
+        const scale = colScales[i];
+        const bg = c.n > 0 && scale ? excelColorScale(c.pct, scale.vmin, scale.vmed, scale.vmax) : null;
+        const styles = [bg ? `background:${bg}` : '', small ? 'color:var(--muted); font-style:italic;' : ''].filter(Boolean).join(' ');
+        return `<td${styles ? ` style="${styles}"` : ''}>${pct(c.pct)}</td>`;
       }).join('') + '</tr>';
   });
   html += '</tbody></table>';
@@ -1168,6 +1208,21 @@ function renderHeatPanel(containerId, items) {
 
 document.getElementById('playerSelect').addEventListener('change', renderPlayerHeat);
 setupGradePills('playerGradePills', (g) => { playerGrade = g; renderPlayerHeat(); });
+(function setupCompareModePills() {
+  const el = document.getElementById('ddComparePills');
+  [{ key: 'teammates', label: 'Teammates' }, { key: 'teamavg', label: 'Team Avg' }].forEach(opt => {
+    const btn = document.createElement('button');
+    btn.className = 'pill' + (opt.key === deepDiveCompareMode ? ' active' : '');
+    btn.textContent = opt.label;
+    btn.addEventListener('click', () => {
+      el.querySelectorAll('.pill').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      deepDiveCompareMode = opt.key;
+      renderPlayerDeepDive();
+    });
+    el.appendChild(btn);
+  });
+})();
 ['pf_context','pf_defscheme','pf_transitiontype','pf_handedness','pf_offdodge','pf_contest'].forEach(id => document.getElementById(id).addEventListener('change', renderPlayerHeat));
 ['pf_assist','pf_opponent'].forEach(id => document.getElementById(id).addEventListener('input', renderPlayerHeat));
 document.getElementById('pf_clear').addEventListener('click', () => { clearFilterState('pf_'); renderPlayerHeat(); });
