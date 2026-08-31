@@ -168,6 +168,19 @@
           <input type="text" id="f_assist" placeholder="e.g. Jack Booth">
         </div>
         <div>
+          <label for="f_passtype">Pass Type</label>
+          <select id="f_passtype">
+            <option value="">Select&hellip;</option>
+            <option value="Feed">Feed (crease/inside)</option>
+            <option value="Skip Pass">Skip Pass</option>
+            <option value="Touch Pass">Touch Pass</option>
+            <option value="Behind-the-Back">Behind-the-Back</option>
+            <option value="Outlet/Clear">Outlet/Clear</option>
+            <option value="Dodge-and-Dish">Dodge-and-Dish</option>
+            <option value="No Pass">No Pass (self-created)</option>
+          </select>
+        </div>
+        <div>
           <label for="f_quality">Shot Quality</label>
           <select id="f_quality"><option value="">Select&hellip;</option><option value="1-Gold">Gold</option><option value="2-Silver">Silver</option><option value="3-Bronze">Bronze</option></select>
         </div>
@@ -246,6 +259,10 @@
     <div class="panel">
       <div class="controls-row">
         <div class="control-group">
+          <label>Season</label>
+          <div class="grade-pills" id="playerSeasonPills"></div>
+        </div>
+        <div class="control-group">
           <label for="playerSelect">Player</label>
           <select id="playerSelect"></select>
         </div>
@@ -254,6 +271,7 @@
           <div class="grade-pills" id="playerGradePills"></div>
         </div>
       </div>
+      <div style="border:1px solid var(--line); border-radius:8px; padding:14px; background:#FBFAF6; margin-bottom:18px;" id="rosterManagerWrap"></div>
       <div class="filter-row" id="playerFilterRow">
         <select id="pf_context"><option value="">Any context</option><option value="Practice">Practice</option><option value="Game">Game</option></select>
         <select id="pf_defscheme"><option value="">Any defense</option><option value="Man">Man</option><option value="Zone">Zone</option></select>
@@ -261,6 +279,7 @@
         <select id="pf_handedness"><option value="">Any handedness</option><option value="Right">Right</option><option value="Left">Left</option></select>
         <select id="pf_offdodge"><option value="">Off dodge: any</option><option value="Yes">Off dodge: yes</option><option value="No">Off dodge: no</option></select>
         <select id="pf_contest"><option value="">Any contest level</option><option value="Open">Open</option><option value="Light">Light</option><option value="Heavy">Heavy</option></select>
+        <select id="pf_passtype"><option value="">Any pass type</option><option value="Feed">Feed</option><option value="Skip Pass">Skip Pass</option><option value="Touch Pass">Touch Pass</option><option value="Behind-the-Back">Behind-the-Back</option><option value="Outlet/Clear">Outlet/Clear</option><option value="Dodge-and-Dish">Dodge-and-Dish</option><option value="No Pass">No Pass</option></select>
         <input type="text" id="pf_assist" placeholder="Passed by\u2026">
         <input type="text" id="pf_opponent" placeholder="Opponent contains\u2026">
         <button class="btn secondary" id="pf_clear">Clear filters</button>
@@ -301,6 +320,7 @@
         <select id="gf_handedness"><option value="">Any handedness</option><option value="Right">Right</option><option value="Left">Left</option></select>
         <select id="gf_offdodge"><option value="">Off dodge: any</option><option value="Yes">Off dodge: yes</option><option value="No">Off dodge: no</option></select>
         <select id="gf_contest"><option value="">Any contest level</option><option value="Open">Open</option><option value="Light">Light</option><option value="Heavy">Heavy</option></select>
+        <select id="gf_passtype"><option value="">Any pass type</option><option value="Feed">Feed</option><option value="Skip Pass">Skip Pass</option><option value="Touch Pass">Touch Pass</option><option value="Behind-the-Back">Behind-the-Back</option><option value="Outlet/Clear">Outlet/Clear</option><option value="Dodge-and-Dish">Dodge-and-Dish</option><option value="No Pass">No Pass</option></select>
         <input type="text" id="gf_assist" placeholder="Passed by\u2026">
         <input type="text" id="gf_opponent" placeholder="Opponent contains\u2026">
         <button class="btn secondary" id="gf_clear">Clear filters</button>
@@ -324,7 +344,7 @@
         <table class="shotlog">
           <thead><tr>
             <th>ID</th><th>Date</th><th>Ctx</th><th>Shooter</th><th>Goalie</th><th>Grade</th>
-            <th>Goal</th><th>On Keeper</th><th>Contest</th><th>Assist</th><th>Tags</th><th></th>
+            <th>Goal</th><th>On Keeper</th><th>Contest</th><th>Assist</th><th>Pass</th><th>Tags</th><th></th>
           </tr></thead>
           <tbody id="shotTableBody"></tbody>
         </table>
@@ -487,13 +507,17 @@ firebase.auth().onAuthStateChanged(user => {
 });
 </script>
 <script>
-const COLS =["id","date","practiceId","context","shooterJersey","goalieJersey","onGoal","onKeeper","goal","blocked","defScheme","transition","offDodge","rightHanded","shotQuality","cleanSave","fieldX","fieldY","distanceYds","lateralYds","goalX","goalY","customTags","contestLevel","assistJersey","opponent"];
+const COLS =["id","date","practiceId","context","shooterJersey","goalieJersey","onGoal","onKeeper","goal","blocked","defScheme","transition","offDodge","rightHanded","shotQuality","cleanSave","fieldX","fieldY","distanceYds","lateralYds","goalX","goalY","customTags","contestLevel","assistJersey","opponent","passType"];
+// Season roster docs: app/roster_2026, app/roster_2027, ... To add a future
+// season, append its year here — it will auto-seed as a copy of the prior
+// season's roster the first time the app loads with the new year present.
+const SEASONS = ["2026","2027"];
 let SEED_ROSTER = [];
 let SEED_SHOTS_TUPLES = [];
 
 let DB = null;
 let DOWNLOADS = null;
-let ROSTER = [];
+let ROSTERS = {}; // { "2026": [...roster entries...], "2027": [...] }
 let SHOTS = [];
 let LIVE_SHOTS_TUPLES = [];
 let PLAYERS = [];
@@ -540,7 +564,7 @@ async function loadAll() {
     } catch (e) { console.error(e); }
   }
 
-  ROSTER = SEED_ROSTER;
+  SEASONS.forEach(s => { ROSTERS[s] = SEED_ROSTER; });
   LIVE_SHOTS_TUPLES = [];
   rebuildShots();
   PLAYERS = [];
@@ -548,18 +572,40 @@ async function loadAll() {
 
   if (!DB) return;
 
-  const rosterRef = DB.doc('app/roster');
-  try {
-    const snap = await rosterRef.get();
-    if (snap.exists && Array.isArray(snap.data().list)) ROSTER = snap.data().list;
-    else await rosterRef.set({ list: SEED_ROSTER });
-  } catch (e) { console.error('roster load failed', e); }
-  rosterRef.onSnapshot(snap => {
-    if (!snap.exists || !Array.isArray(snap.data().list)) return;
-    ROSTER = snap.data().list;
-    refreshFormRosterOptions();
-    populatePlayerGoalieDropdowns();
-  }, e => console.error('roster sync error', e));
+  // Each season gets its own roster doc (app/roster_2026, app/roster_2027, ...)
+  // so editing next year's roster never touches a prior season's history.
+  // The first season (SEASONS[0]) migrates forward from the legacy app/roster
+  // doc if present; any later season with no doc yet is seeded as a copy of
+  // the season before it, so it starts from the most recent roster.
+  for (const season of SEASONS) {
+    const ref = DB.doc('app/roster_' + season);
+    let list = null;
+    try {
+      const snap = await ref.get();
+      if (snap.exists && Array.isArray(snap.data().list)) list = snap.data().list;
+    } catch (e) { console.error('roster load failed', season, e); }
+    if (list === null) {
+      if (season === SEASONS[0]) {
+        try {
+          const legacy = await DB.doc('app/roster').get();
+          list = (legacy.exists && Array.isArray(legacy.data().list)) ? legacy.data().list : SEED_ROSTER;
+        } catch (e) { list = SEED_ROSTER; }
+      } else {
+        const prevSeason = SEASONS[SEASONS.indexOf(season) - 1];
+        list = (ROSTERS[prevSeason] || []).map(r => Object.assign({}, r, { roles: r.roles.slice() }));
+      }
+      try { await ref.set({ list }); } catch (e) { console.error('roster seed failed', season, e); }
+    }
+    ROSTERS[season] = list;
+    ref.onSnapshot(snap => {
+      if (!snap.exists || !Array.isArray(snap.data().list)) return;
+      ROSTERS[season] = snap.data().list;
+      refreshFormRosterOptions();
+      populatePlayerGoalieDropdowns();
+      populatePlayerSelectForSeason(heatSeason);
+      renderRosterManager();
+    }, e => console.error('roster sync error', season, e));
+  }
 
   const shotsRef = DB.doc('app/shots_live');
   try {
@@ -578,6 +624,7 @@ async function loadAll() {
     renderShootingTrends();
     renderGoalieTrends();
     populatePlayerGoalieDropdowns();
+    populatePlayerSelectForSeason(heatSeason);
   }, e => console.error('shots sync error', e));
 
   DB.collection('evalPlayers').onSnapshot(snap => {
@@ -597,9 +644,9 @@ async function loadAll() {
   }, e => console.error('ratings sync error', e));
 }
 
-async function persistRoster() {
+async function persistRoster(season) {
   if (!DB) return false;
-  try { await DB.doc('app/roster').set({ list: ROSTER }); } catch (e) { console.error(e); return false; }
+  try { await DB.doc('app/roster_' + season).set({ list: ROSTERS[season] || [] }); } catch (e) { console.error(e); return false; }
   return true;
 }
 async function persistShots() {
@@ -746,9 +793,66 @@ function goalSVG(cells, opts) {
 }
 
 // ---------------- Roster helpers ----------------
-function rosterPlayers() { return ROSTER.filter(r => r.roles.includes('player')).sort((a,b)=>a.name.localeCompare(b.name)); }
-function rosterGoalies() { return ROSTER.filter(r => r.roles.includes('goalie')).sort((a,b)=>a.name.localeCompare(b.name)); }
-function nameFor(jersey) { const p = ROSTER.find(r=>r.jersey===jersey); return p ? p.name : jersey; }
+// Season boundary follows the standard college-lacrosse convention: fall
+// practice (Aug-Dec) counts toward the FOLLOWING spring's season number, so
+// e.g. shots dated Sep 2026 belong to the "2027" season.
+function seasonForDate(dateStr) {
+  if (!dateStr) return SEASONS[SEASONS.length - 1];
+  const [y, m] = dateStr.split('-').map(Number);
+  const year = (m >= 8) ? y + 1 : y;
+  const yearStr = String(year);
+  if (ROSTERS[yearStr]) return yearStr;
+  return year < Number(SEASONS[0]) ? SEASONS[0] : SEASONS[SEASONS.length - 1];
+}
+function rosterPlayers(season) { return (ROSTERS[season] || []).filter(r => r.roles.includes('player')).sort((a,b)=>a.name.localeCompare(b.name)); }
+function rosterGoalies(season) { return (ROSTERS[season] || []).filter(r => r.roles.includes('goalie')).sort((a,b)=>a.name.localeCompare(b.name)); }
+// Union of a role across every season, deduped by name (case-insensitive) —
+// used where a single dropdown has to span all years (Goalie tab, Shot Log
+// filter, "All Seasons" player picker). `jersey` on the result is whichever
+// season's number was seen last (most recent), for display only.
+function combinedRoster(role) {
+  const byKey = new Map();
+  SEASONS.forEach(season => {
+    (ROSTERS[season] || []).filter(r => r.roles.includes(role)).forEach(r => {
+      const key = r.name.trim().toLowerCase();
+      const entry = byKey.get(key) || { name: r.name, jersey: r.jersey, seasons: {} };
+      entry.jersey = r.jersey;
+      entry.seasons[season] = r.jersey;
+      byKey.set(key, entry);
+    });
+  });
+  return Array.from(byKey.values()).sort((a,b)=>a.name.localeCompare(b.name));
+}
+// `season` pins the lookup to one season's roster (correct for a shot dated
+// in that season, even if its jersey number belongs to someone else in
+// another year). Omit it to fall back to the most recent season a jersey
+// appears in — used by call sites that predate season-scoped rosters.
+function nameFor(jersey, season) {
+  if (season && ROSTERS[season]) {
+    const p = ROSTERS[season].find(r=>r.jersey===jersey);
+    if (p) return p.name;
+  }
+  for (let i = SEASONS.length - 1; i >= 0; i--) {
+    const p = (ROSTERS[SEASONS[i]] || []).find(r=>r.jersey===jersey);
+    if (p) return p.name;
+  }
+  return jersey;
+}
+async function addPlayerToRoster(season, name, jersey, role) {
+  const list = ROSTERS[season] || (ROSTERS[season] = []);
+  const existing = list.find(r => r.jersey === jersey);
+  if (existing) { if (!existing.roles.includes(role)) existing.roles.push(role); }
+  else list.push({ jersey, name, roles: [role] });
+  return persistRoster(season);
+}
+async function removePlayerFromRoster(season, jersey, role) {
+  const list = ROSTERS[season] || [];
+  const idx = list.findIndex(r => r.jersey === jersey);
+  if (idx === -1) return true;
+  list[idx].roles = list[idx].roles.filter(r => r !== role);
+  if (list[idx].roles.length === 0) list.splice(idx, 1);
+  return persistRoster(season);
+}
 
 function populateSelect(sel, items, placeholderText, includeEmptyNet) {
   sel.innerHTML = '';
@@ -836,9 +940,15 @@ function buildGoalClickWidget() {
   });
 }
 
+// The Log Shot form's shooter/goalie roster always matches the season the
+// entered date falls in, so a newly-added player lands on the right season's
+// roster automatically without a separate season picker on this tab.
+function currentLogSeason() { return seasonForDate(document.getElementById('f_date').value); }
+
 function refreshFormRosterOptions() {
-  populateSelect(document.getElementById('f_shooter'), rosterPlayers(), 'Select shooter\u2026', false);
-  populateSelect(document.getElementById('f_goalie'), rosterGoalies(), 'Select goalie\u2026', true);
+  const season = currentLogSeason();
+  populateSelect(document.getElementById('f_shooter'), rosterPlayers(season), 'Select shooter\u2026', false);
+  populateSelect(document.getElementById('f_goalie'), rosterGoalies(season), 'Select goalie\u2026', true);
 }
 
 function toggleOpponentField() {
@@ -847,6 +957,7 @@ function toggleOpponentField() {
   if (!isGame) document.getElementById('f_opponent').value = '';
 }
 document.getElementById('f_context').addEventListener('change', toggleOpponentField);
+document.getElementById('f_date').addEventListener('change', refreshFormRosterOptions);
 
 let pendingNewPlayer = null; // { selectEl, role }
 
@@ -870,15 +981,11 @@ document.getElementById('np_add').addEventListener('click', async () => {
   const jersey = document.getElementById('np_jersey').value.trim();
   if (!name || !jersey) { showMsg('Enter both a name and a jersey number.', false); return; }
   const { selectEl, role } = pendingNewPlayer;
-  let existing = ROSTER.find(r => r.jersey === jersey);
-  if (existing) {
-    if (!existing.roles.includes(role)) existing.roles.push(role);
-  } else {
-    ROSTER.push({ jersey, name, roles: [role] });
-  }
-  await persistRoster();
+  await addPlayerToRoster(currentLogSeason(), name, jersey, role);
   refreshFormRosterOptions();
   populatePlayerGoalieDropdowns();
+  populatePlayerSelectForSeason(heatSeason);
+  renderRosterManager();
   selectEl.value = jersey;
   pendingNewPlayer = null;
   document.getElementById('addPlayerPanel').style.display = 'none';
@@ -929,13 +1036,14 @@ document.getElementById('submitShotBtn').addEventListener('click', async () => {
     contestLevel: contest,
     assistJersey: document.getElementById('f_assist').value.trim() || null,
     opponent: document.getElementById('f_opponent').value || null,
+    passType: document.getElementById('f_passtype').value || null,
   };
 
   SHOTS.push(shot);
   const okSave = await persistShots();
   if (!okSave) { SHOTS.pop(); showMsg('Save failed \u2014 please try again.', false); return; }
 
-  showMsg(`Saved shot #${shot.id} for #${shooter} ${nameFor(shooter)}.`, true);
+  showMsg(`Saved shot #${shot.id} for #${shooter} ${nameFor(shooter, currentLogSeason())}.`, true);
   document.getElementById('f_goal').checked = false;
   document.getElementById('f_blocked').checked = false;
   document.getElementById('f_offdodge').checked = false;
@@ -947,6 +1055,7 @@ document.getElementById('submitShotBtn').addEventListener('click', async () => {
   document.getElementById('f_transitiontype').value = '';
   document.getElementById('f_assist').value = '';
   document.getElementById('f_tags').value = '';
+  document.getElementById('f_passtype').value = '';
   pendingField = { distanceYds: null, lateralYds: null };
   pendingGoal = { goalX: null, goalY: null };
   buildFieldClickWidget();
@@ -982,12 +1091,13 @@ function readFilterState(prefix) {
     handedness: document.getElementById(prefix+'handedness').value,
     offDodge: document.getElementById(prefix+'offdodge').value,
     contestLevel: document.getElementById(prefix+'contest').value,
+    passType: document.getElementById(prefix+'passtype').value,
     assist: document.getElementById(prefix+'assist').value.trim().toLowerCase(),
     opponent: document.getElementById(prefix+'opponent').value.trim().toLowerCase(),
   };
 }
 function clearFilterState(prefix) {
-  ['context','defscheme','transitiontype','handedness','offdodge','contest'].forEach(k => document.getElementById(prefix+k).value = '');
+  ['context','defscheme','transitiontype','handedness','offdodge','contest','passtype'].forEach(k => document.getElementById(prefix+k).value = '');
   ['assist','opponent'].forEach(k => document.getElementById(prefix+k).value = '');
 }
 function applyExtraFilters(subset, f) {
@@ -997,6 +1107,7 @@ function applyExtraFilters(subset, f) {
   if (f.handedness) subset = subset.filter(s => getHandedness(s) === f.handedness);
   if (f.offDodge) subset = subset.filter(s => (f.offDodge === 'Yes' ? s.offDodge === 1 : s.offDodge !== 1));
   if (f.contestLevel) subset = subset.filter(s => s.contestLevel === f.contestLevel);
+  if (f.passType) subset = subset.filter(s => s.passType === f.passType);
   if (f.assist) subset = subset.filter(s => (s.assistJersey||'').toLowerCase().includes(f.assist));
   if (f.opponent) subset = subset.filter(s => (s.opponent||'').toLowerCase().includes(f.opponent));
   return subset;
@@ -1009,6 +1120,7 @@ function filterSummary(f) {
   if (f.handedness) parts.push(f.handedness+'-handed');
   if (f.offDodge) parts.push('off dodge: '+f.offDodge.toLowerCase());
   if (f.contestLevel) parts.push(f.contestLevel+' contest');
+  if (f.passType) parts.push(f.passType);
   if (f.assist) parts.push(`passed by "${f.assist}"`);
   if (f.opponent) parts.push(`vs "${f.opponent}"`);
   return parts.length ? ` \u2014 ${parts.join(', ')}` : '';
@@ -1030,30 +1142,53 @@ function setupGradePills(containerId, onChange) {
   });
 }
 
+// Goalie tab and the Shot Log filter aren't season-toggled, so they span all
+// years via the combined (name-deduped) roster \u2014 same as before season
+// scoping existed, just no longer dependent on a single global roster.
 function populatePlayerGoalieDropdowns() {
-  const playerSel = document.getElementById('playerSelect');
-  const counts = {};
-  SHOTS.forEach(s => { if (s.shooterJersey) counts[s.shooterJersey] = (counts[s.shooterJersey]||0)+1; });
-  playerSel.innerHTML = '';
-  const teamOpt = document.createElement('option'); teamOpt.value = '__TEAM__'; teamOpt.textContent = `Team \u2014 All Players (${SHOTS.length})`;
-  playerSel.appendChild(teamOpt);
-  rosterPlayers().forEach(p => {
-    const n = counts[p.jersey] || 0;
-    const opt = document.createElement('option'); opt.value = p.jersey; opt.textContent = `#${p.jersey} ${p.name} (${n})`;
-    playerSel.appendChild(opt);
-  });
-
   const goalieSel = document.getElementById('goalieSelect');
+  const prevGoalie = goalieSel.value;
   goalieSel.innerHTML = '';
-  rosterGoalies().forEach(g => {
-    const faced = SHOTS.filter(s=>s.onKeeper===1 && s.goalieJersey===g.jersey).length;
+  combinedRoster('goalie').forEach(g => {
+    const faced = SHOTS.filter(s => s.onKeeper===1 && g.seasons[seasonForDate(s.date)] === s.goalieJersey).length;
     const opt = document.createElement('option'); opt.value = g.jersey; opt.textContent = `${g.name} (#${g.jersey}) \u2014 ${faced} faced`;
     goalieSel.appendChild(opt);
   });
+  if ([...goalieSel.options].some(o => o.value === prevGoalie)) goalieSel.value = prevGoalie;
 
   const tfPlayer = document.getElementById('tf_player');
+  const prevTf = tfPlayer.value;
   tfPlayer.innerHTML = '<option value="">All shooters</option>';
-  rosterPlayers().forEach(p => { const opt = document.createElement('option'); opt.value = p.jersey; opt.textContent = `#${p.jersey} ${p.name}`; tfPlayer.appendChild(opt); });
+  combinedRoster('player').forEach(p => { const opt = document.createElement('option'); opt.value = p.jersey; opt.textContent = `#${p.jersey} ${p.name}`; tfPlayer.appendChild(opt); });
+  if ([...tfPlayer.options].some(o => o.value === prevTf)) tfPlayer.value = prevTf;
+}
+
+// ---------------- Player Heat Maps: season-scoped player dropdown ----------------
+function populatePlayerSelectForSeason(season) {
+  const playerSel = document.getElementById('playerSelect');
+  const prevVal = playerSel.value;
+  playerSel.innerHTML = '';
+  const teamOpt = document.createElement('option'); teamOpt.value = '__TEAM__';
+  const teamShots = season === 'All Seasons' ? SHOTS : SHOTS.filter(s => seasonForDate(s.date) === season);
+  teamOpt.textContent = `Team \u2014 All Players (${teamShots.length})`;
+  playerSel.appendChild(teamOpt);
+
+  if (season === 'All Seasons') {
+    combinedRoster('player').forEach(p => {
+      const n = SHOTS.filter(s => p.seasons[seasonForDate(s.date)] === s.shooterJersey).length;
+      const opt = document.createElement('option');
+      opt.value = 'NAME:' + p.name.trim().toLowerCase();
+      opt.textContent = `${p.name} (${n})`;
+      playerSel.appendChild(opt);
+    });
+  } else {
+    rosterPlayers(season).forEach(p => {
+      const n = SHOTS.filter(s => seasonForDate(s.date) === season && s.shooterJersey === p.jersey).length;
+      const opt = document.createElement('option'); opt.value = p.jersey; opt.textContent = `#${p.jersey} ${p.name} (${n})`;
+      playerSel.appendChild(opt);
+    });
+  }
+  if ([...playerSel.options].some(o => o.value === prevVal)) playerSel.value = prevVal;
 }
 
 // ---------------- Shooting / goalie summary tables ----------------
@@ -1170,29 +1305,114 @@ function renderGoalieSummary() {
   wrap.innerHTML = html;
 }
 
+let heatSeason = SEASONS[0];
 function renderPlayerHeat() {
   const sel = document.getElementById('playerSelect').value;
   const grade = playerGrade;
   const gradeVal = GRADE_MAP[grade];
   const filters = readFilterState('pf_');
+  const season = heatSeason;
+  const seasonLabel = season === 'All Seasons' ? 'All Seasons' : season;
+  const seasonShots = season === 'All Seasons' ? SHOTS : SHOTS.filter(s => seasonForDate(s.date) === season);
+
   let subset, title, n;
   if (sel === '__TEAM__' || !sel) {
-    subset = gradeVal ? SHOTS.filter(s=>s.shotQuality===gradeVal) : SHOTS;
+    subset = gradeVal ? seasonShots.filter(s=>s.shotQuality===gradeVal) : seasonShots;
     subset = applyExtraFilters(subset, filters);
-    title = `Team \u2014 ${grade}`;
+    title = `Team \u2014 ${grade} \u2014 ${seasonLabel}`;
     const zones = buildZones(subset, DIST_BANDS_TEAM, LAT_BANDS_TEAM);
     n = subset.length;
     const small = n > 0 && n < 5;
     renderHeatPanel('playerHeatWrap', [{svg: fieldSVG(zones, {metric:'score'}), caption: title, sub: `${n} shot(s)` + (small ? ' \u2014 small sample' : '') + filterSummary(filters)}]);
-  } else {
-    subset = SHOTS.filter(s => s.shooterJersey === sel && (!gradeVal || s.shotQuality === gradeVal));
+  } else if (sel.startsWith('NAME:')) {
+    const key = sel.slice(5);
+    subset = seasonShots.filter(s => {
+      const roster = ROSTERS[seasonForDate(s.date)] || [];
+      const p = roster.find(r => r.roles.includes('player') && r.name.trim().toLowerCase() === key);
+      return p && p.jersey === s.shooterJersey;
+    }).filter(s => !gradeVal || s.shotQuality === gradeVal);
     subset = applyExtraFilters(subset, filters);
     n = subset.length;
-    title = `#${sel} ${nameFor(sel)} \u2014 ${grade}`;
+    const combined = combinedRoster('player').find(p => p.name.trim().toLowerCase() === key);
+    const displayName = combined ? combined.name : key;
+    title = `${displayName} \u2014 ${grade} \u2014 ${seasonLabel}`;
+    const zones = buildZones(subset, DIST_BANDS_PLAYER, LAT_BANDS_PLAYER);
+    const small = n > 0 && n < 5;
+    renderHeatPanel('playerHeatWrap', [{svg: fieldSVG(zones, {metric:'score'}), caption: title, sub: `${n} shot(s)` + (small ? ' \u2014 small sample' : '') + filterSummary(filters)}]);
+  } else {
+    subset = seasonShots.filter(s => s.shooterJersey === sel && (!gradeVal || s.shotQuality === gradeVal));
+    subset = applyExtraFilters(subset, filters);
+    n = subset.length;
+    title = `#${sel} ${nameFor(sel, season === 'All Seasons' ? undefined : season)} \u2014 ${grade} \u2014 ${seasonLabel}`;
     const zones = buildZones(subset, DIST_BANDS_PLAYER, LAT_BANDS_PLAYER);
     const small = n > 0 && n < 5;
     renderHeatPanel('playerHeatWrap', [{svg: fieldSVG(zones, {metric:'score'}), caption: title, sub: `${n} shot(s)` + (small ? ' \u2014 small sample' : '') + filterSummary(filters)}]);
   }
+}
+
+// ---------------- Season Roster manager (Player Heat Maps tab) ----------------
+function renderRosterManager() {
+  const wrap = document.getElementById('rosterManagerWrap');
+  if (!wrap) return;
+  if (heatSeason === 'All Seasons') {
+    wrap.innerHTML = '<p class="sans" style="color:var(--muted); font-size:12px; margin:0;">Pick a specific season above to view or edit its roster.</p>';
+    return;
+  }
+  const season = heatSeason;
+  const list = (ROSTERS[season] || []).slice().sort((a,b)=>a.name.localeCompare(b.name));
+  let html = `<p class="sans" style="color:var(--muted); font-size:12px; margin:0 0 8px;">${rosterPlayers(season).length} players, ${rosterGoalies(season).length} goalies on the ${season} roster. Removing someone here only affects the ${season} roster and dropdowns \u2014 their logged shots stay in the data.</p>`;
+  html += '<div style="display:flex; flex-wrap:wrap; gap:6px; margin-bottom:12px;">';
+  list.forEach(r => {
+    r.roles.forEach(role => {
+      html += `<span class="pill sans" style="cursor:default; padding:6px 10px; display:inline-flex; align-items:center; gap:6px;">#${r.jersey} ${r.name} <span style="font-size:10px; opacity:.7; text-transform:uppercase;">${role}</span> <button type="button" class="rm-remove" data-jersey="${r.jersey}" data-role="${role}" title="Remove from ${season} roster" style="border:none; background:none; cursor:pointer; color:var(--muted); font-weight:700; font-size:13px; line-height:1; padding:0;">&times;</button></span>`;
+    });
+  });
+  html += '</div>';
+  html += `
+    <div class="field-grid" style="grid-template-columns: 1fr 1fr 1fr auto; align-items:flex-end; margin-bottom:0;">
+      <div><label for="rm_name">Add to ${season} Roster \u2014 Name</label><input type="text" id="rm_name" placeholder="Full name"></div>
+      <div><label for="rm_jersey">Jersey Number</label><input type="text" id="rm_jersey" placeholder="e.g. 23"></div>
+      <div><label for="rm_role">Role</label><select id="rm_role"><option value="player">Player</option><option value="goalie">Goalie</option></select></div>
+      <div><button class="btn secondary" id="rm_add" type="button">Add</button></div>
+    </div>`;
+  wrap.innerHTML = html;
+  wrap.querySelectorAll('.rm-remove').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      await removePlayerFromRoster(season, btn.dataset.jersey, btn.dataset.role);
+      refreshFormRosterOptions();
+      populatePlayerGoalieDropdowns();
+      populatePlayerSelectForSeason(heatSeason);
+      renderPlayerHeat();
+      renderRosterManager();
+    });
+  });
+  document.getElementById('rm_add').addEventListener('click', async () => {
+    const name = document.getElementById('rm_name').value.trim();
+    const jersey = document.getElementById('rm_jersey').value.trim();
+    const role = document.getElementById('rm_role').value;
+    if (!name || !jersey) return;
+    await addPlayerToRoster(season, name, jersey, role);
+    refreshFormRosterOptions();
+    populatePlayerGoalieDropdowns();
+    populatePlayerSelectForSeason(heatSeason);
+    renderPlayerHeat();
+    renderRosterManager();
+  });
+}
+function setupSeasonPills(containerId, onChange, initial) {
+  const el = document.getElementById(containerId);
+  el.innerHTML = '';
+  [...SEASONS, 'All Seasons'].forEach(s => {
+    const btn = document.createElement('button');
+    btn.className = 'pill' + (s === initial ? ' active' : '');
+    btn.textContent = s;
+    btn.addEventListener('click', () => {
+      el.querySelectorAll('.pill').forEach(b=>b.classList.remove('active'));
+      btn.classList.add('active');
+      onChange(s);
+    });
+    el.appendChild(btn);
+  });
 }
 
 function renderHeatPanel(containerId, items) {
@@ -1219,6 +1439,7 @@ function renderHeatPanel(containerId, items) {
 
 document.getElementById('playerSelect').addEventListener('change', renderPlayerHeat);
 setupGradePills('playerGradePills', (g) => { playerGrade = g; renderPlayerHeat(); });
+setupSeasonPills('playerSeasonPills', (s) => { heatSeason = s; populatePlayerSelectForSeason(heatSeason); renderPlayerHeat(); renderRosterManager(); }, heatSeason);
 (function setupCompareModePills() {
   const el = document.getElementById('ddComparePills');
   [{ key: 'teammates', label: 'Teammates' }, { key: 'teamavg', label: 'Team Avg' }].forEach(opt => {
@@ -1234,7 +1455,7 @@ setupGradePills('playerGradePills', (g) => { playerGrade = g; renderPlayerHeat()
     el.appendChild(btn);
   });
 })();
-['pf_context','pf_defscheme','pf_transitiontype','pf_handedness','pf_offdodge','pf_contest'].forEach(id => document.getElementById(id).addEventListener('change', renderPlayerHeat));
+['pf_context','pf_defscheme','pf_transitiontype','pf_handedness','pf_offdodge','pf_contest','pf_passtype'].forEach(id => document.getElementById(id).addEventListener('change', renderPlayerHeat));
 ['pf_assist','pf_opponent'].forEach(id => document.getElementById(id).addEventListener('input', renderPlayerHeat));
 document.getElementById('pf_clear').addEventListener('click', () => { clearFilterState('pf_'); renderPlayerHeat(); });
 
@@ -1261,7 +1482,7 @@ function renderGoalieHeat() {
 }
 document.getElementById('goalieSelect').addEventListener('change', renderGoalieHeat);
 setupGradePills('goalieGradePills', (g) => { goalieGrade = g; renderGoalieHeat(); });
-['gf_context','gf_defscheme','gf_transitiontype','gf_handedness','gf_offdodge','gf_contest'].forEach(id => document.getElementById(id).addEventListener('change', renderGoalieHeat));
+['gf_context','gf_defscheme','gf_transitiontype','gf_handedness','gf_offdodge','gf_contest','gf_passtype'].forEach(id => document.getElementById(id).addEventListener('change', renderGoalieHeat));
 ['gf_assist','gf_opponent'].forEach(id => document.getElementById(id).addEventListener('input', renderGoalieHeat));
 document.getElementById('gf_clear').addEventListener('click', () => { clearFilterState('gf_'); renderGoalieHeat(); });
 
@@ -1286,13 +1507,14 @@ function renderTable() {
       <td>${r.id}</td>
       <td>${r.date||''}</td>
       <td>${r.context||''}</td>
-      <td>#${r.shooterJersey||''} ${nameFor(r.shooterJersey)||''}</td>
-      <td>${r.goalieJersey ? '#'+r.goalieJersey+' '+nameFor(r.goalieJersey) : '\u2014'}</td>
+      <td>#${r.shooterJersey||''} ${nameFor(r.shooterJersey, seasonForDate(r.date))||''}</td>
+      <td>${r.goalieJersey ? '#'+r.goalieJersey+' '+nameFor(r.goalieJersey, seasonForDate(r.date)) : '\u2014'}</td>
       <td class="${gradeClass[r.shotQuality]||''}">${(r.shotQuality||'').replace(/^\\d-/,'')}</td>
       <td>${r.goal ? 'Yes':'No'}</td>
       <td>${r.onKeeper ? 'Yes':'No'}</td>
       <td>${r.contestLevel||''}</td>
       <td>${r.assistJersey || ''}</td>
+      <td>${r.passType||''}</td>
       <td>${r.customTags||''}</td>
       <td>${r.seed ? '<span class="sans" style="color:var(--muted); font-size:11px;">Historical</span>' : (deleteShotArmed === r.id
         ? `<button class="btn danger" data-confirm-id="${r.id}">Confirm delete</button> <button class="btn secondary" data-cancel-id="${r.id}">Cancel</button>`
@@ -1878,6 +2100,7 @@ resetDataBtn.addEventListener('click', async () => {
   if (!DB) { location.reload(); return; }
   try {
     await DB.doc('app/roster').delete();
+    await Promise.all(SEASONS.map(s => DB.doc('app/roster_' + s).delete()));
     await DB.doc('app/shots_live').delete();
     const playersSnap = await DB.collection('evalPlayers').get();
     await Promise.all(playersSnap.docs.map(d => DB.collection('evalPlayers').doc(d.id).delete()));
@@ -1929,6 +2152,8 @@ async function init() {
   buildFieldClickWidget();
   buildGoalClickWidget();
   populatePlayerGoalieDropdowns();
+  populatePlayerSelectForSeason(heatSeason);
+  renderRosterManager();
   renderPlayerHeat();
   renderPlayerDeepDive();
   renderGoalieSummary();
