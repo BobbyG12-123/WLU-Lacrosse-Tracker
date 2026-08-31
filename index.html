@@ -280,8 +280,8 @@
         <select id="pf_offdodge"><option value="">Off dodge: any</option><option value="Yes">Off dodge: yes</option><option value="No">Off dodge: no</option></select>
         <select id="pf_contest"><option value="">Any contest level</option><option value="Open">Open</option><option value="Light">Light</option><option value="Heavy">Heavy</option></select>
         <select id="pf_passtype"><option value="">Any pass type</option><option value="Feed">Feed</option><option value="Skip Pass">Skip Pass</option><option value="Touch Pass">Touch Pass</option><option value="Behind-the-Back">Behind-the-Back</option><option value="Outlet/Clear">Outlet/Clear</option><option value="Dodge-and-Dish">Dodge-and-Dish</option><option value="No Pass">No Pass</option></select>
-        <input type="text" id="pf_assist" placeholder="Passed by\u2026">
-        <input type="text" id="pf_opponent" placeholder="Opponent contains\u2026">
+        <input type="text" id="pf_assist" placeholder="Passed by…">
+        <input type="text" id="pf_opponent" placeholder="Opponent contains…">
         <button class="btn secondary" id="pf_clear">Clear filters</button>
       </div>
       <div class="image-row" id="playerHeatWrap"></div>
@@ -321,8 +321,8 @@
         <select id="gf_offdodge"><option value="">Off dodge: any</option><option value="Yes">Off dodge: yes</option><option value="No">Off dodge: no</option></select>
         <select id="gf_contest"><option value="">Any contest level</option><option value="Open">Open</option><option value="Light">Light</option><option value="Heavy">Heavy</option></select>
         <select id="gf_passtype"><option value="">Any pass type</option><option value="Feed">Feed</option><option value="Skip Pass">Skip Pass</option><option value="Touch Pass">Touch Pass</option><option value="Behind-the-Back">Behind-the-Back</option><option value="Outlet/Clear">Outlet/Clear</option><option value="Dodge-and-Dish">Dodge-and-Dish</option><option value="No Pass">No Pass</option></select>
-        <input type="text" id="gf_assist" placeholder="Passed by\u2026">
-        <input type="text" id="gf_opponent" placeholder="Opponent contains\u2026">
+        <input type="text" id="gf_assist" placeholder="Passed by…">
+        <input type="text" id="gf_opponent" placeholder="Opponent contains…">
         <button class="btn secondary" id="gf_clear">Clear filters</button>
       </div>
       <div class="image-row" id="goalieHeatWrap"></div>
@@ -872,7 +872,7 @@ function populateSelect(sel, items, placeholderText, includeEmptyNet) {
   });
   const addOpt = document.createElement('option');
   addOpt.value = '__ADD_NEW__';
-  addOpt.textContent = '+ Add new player\u2026';
+  addOpt.textContent = '+ Add new player…';
   sel.appendChild(addOpt);
 }
 
@@ -947,8 +947,8 @@ function currentLogSeason() { return seasonForDate(document.getElementById('f_da
 
 function refreshFormRosterOptions() {
   const season = currentLogSeason();
-  populateSelect(document.getElementById('f_shooter'), rosterPlayers(season), 'Select shooter\u2026', false);
-  populateSelect(document.getElementById('f_goalie'), rosterGoalies(season), 'Select goalie\u2026', true);
+  populateSelect(document.getElementById('f_shooter'), rosterPlayers(season), 'Select shooter…', false);
+  populateSelect(document.getElementById('f_goalie'), rosterGoalies(season), 'Select goalie…', true);
 }
 
 function toggleOpponentField() {
