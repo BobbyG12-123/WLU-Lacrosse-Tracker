@@ -1,0 +1,28 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cd \"/Users/wgarrett/Documents/W&L_Tracker\" && git pull 2>&1",
+            "statusMessage": "Pulling latest changes from GitHub...",
+            "timeout": 30
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cd \"/Users/wgarrett/Documents/W&L_Tracker\" && git add -A && git diff --cached --quiet || (git commit -m \"Auto-update $(date +%Y-%m-%d\\ %H:%M:%S)\" && git push) 2>&1",
+            "statusMessage": "Pushing changes to GitHub...",
+            "timeout": 30
+          }
+        ]
+      }
+    ]
+  }
+}
