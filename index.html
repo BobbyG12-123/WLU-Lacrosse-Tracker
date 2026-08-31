@@ -509,10 +509,10 @@ function objToTuple(o) {
 }
 
 // ---------------- Storage (live, shared via the db capability) ----------------
-// The 2,285-shot historical season ships baked into this page (SEED_SHOTS_TUPLES,
-// below) rather than in the shared store — it's fixed history that every viewer
-// already gets identically, and it alone is close to a single document's size
-// limit. Only shots logged after go-live are read from / written to the store.
+// The 2,285-shot historical season lives in Firestore (app/seed_shots) and is
+// fetched in loadAll() below rather than baked into the page, so it stays behind
+// the auth gate like everything else. Only shots logged after go-live are read
+// from / written to app/shots_live.
 function rebuildShots() {
   const seed = SEED_SHOTS_TUPLES.map(t => { const o = tupleToObj(t); o.seed = true; return o; });
   SHOTS = seed.concat(LIVE_SHOTS_TUPLES.map(tupleToObj));
