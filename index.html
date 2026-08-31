@@ -529,6 +529,17 @@ async function loadAll() {
     URL.revokeObjectURL(url);
   } };
 
+  if (DB) {
+    try {
+      const sr = await DB.doc('app/seed_roster').get();
+      if (!sr.exists) await DB.doc('app/seed_roster').set({ list: SEED_ROSTER });
+    } catch (e) { console.error(e); }
+    try {
+      const ss = await DB.doc('app/seed_shots').get();
+      if (!ss.exists) await DB.doc('app/seed_shots').set({ json: JSON.stringify(SEED_SHOTS_TUPLES) });
+    } catch (e) { console.error(e); }
+  }
+
   ROSTER = SEED_ROSTER;
   LIVE_SHOTS_TUPLES = [];
   rebuildShots();
