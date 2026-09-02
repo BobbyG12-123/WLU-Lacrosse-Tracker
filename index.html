@@ -77,6 +77,7 @@
   #heatTooltip b { color: #E9DFB8; }
   .zone-drilldown { margin-top: 14px; }
   .zone-drilldown .table-wrap { max-height: 280px; }
+  table.shot-quality-table th { position: static; }
   .goal-label { font-size: 0.3px; font-weight: 700; fill: #1a1a1a; font-family: Arial, sans-serif; }
   table.shotlog { width: 100%; border-collapse: collapse; font-family: 'Helvetica Neue', Arial, sans-serif; font-size: 12.5px; }
   table.shotlog th { text-align: left; padding: 8px 8px; border-bottom: 2px solid var(--navy-3); color: var(--navy-3); position: sticky; top: 0; background: #fff; }
@@ -265,7 +266,7 @@
     </div>
     <div class="panel">
       <p class="panel-title">Shot Quality Share</p>
-      <p class="panel-sub">Two different things per grade: "Mix %" is how a player's own shots break down by grade (their three Mix columns add up to 100%). "Team Share %" is what slice of the team's total Gold/Silver/Bronze shots that player is taking (each grade's Share column adds up to ~100% across the roster) &mdash; i.e. who's actually getting the good looks. Players with 5+ total shots.</p>
+      <p class="panel-sub">Left group: how each player's own shots break down by grade. Right group: what slice of the whole team's Gold/Silver/Bronze shots that player is taking &mdash; i.e. who's actually getting the good looks. Players with 5+ total shots.</p>
       <div class="table-wrap" id="shotQualityShareWrap"></div>
     </div>
     <div class="panel">
@@ -1345,24 +1346,35 @@ function renderShotQualityShare() {
   const allPlayerShots = SHOTS.filter(s => s.shooterJersey);
   const rows = computeShotQualityShare(allPlayerShots);
   if (!rows.length) { wrap.innerHTML = '<p class="sans" style="color:var(--muted); font-size:13px;">No players with 5+ shots yet.</p>'; return; }
-  const cols = [];
-  SHOT_QUALITY_GRADES.forEach(([q, key, label]) => {
-    cols.push({ key: key + 'Mix', label: `${label} Mix %` });
-    cols.push({ key: key + 'Share', label: `Team ${label} Share %` });
-  });
+  // Grouped (not interleaved) so each group reads as one story: the first
+  // three columns are one player's own shot mix (add to 100% across the
+  // row); the next three are that player's slice of the team's shots of
+  // each grade (each column adds to ~100% down the column).
+  const mixCols = SHOT_QUALITY_GRADES.map(([q, key, label]) => ({ key: key + 'Mix', label }));
+  const shareCols = SHOT_QUALITY_GRADES.map(([q, key, label]) => ({ key: key + 'Share', label }));
+  const cols = mixCols.concat(shareCols);
   const colScales = cols.map(c => {
     const vals = rows.map(r => r[c.key]).filter(v => v !== null && v !== undefined);
     if (!vals.length) return null;
     return { vmin: Math.min(...vals), vmed: median(vals), vmax: Math.max(...vals) };
   });
-  let html = '<table class="shotlog"><thead><tr><th>Jersey</th><th>Name</th><th>Shots</th>' + cols.map(c => `<th>${c.label}</th>`).join('') + '</tr></thead><tbody>';
+  let html = '<table class="shotlog shot-quality-table"><thead>';
+  html += '<tr><th rowspan="2">Jersey</th><th rowspan="2">Name</th><th rowspan="2">Shots</th>'
+    + `<th colspan="3" style="text-align:center; border-left:2px solid var(--line);">Their Own Shot Mix<br><span class="sans" style="font-weight:400; text-transform:none; letter-spacing:normal; font-size:10.5px; color:var(--muted);">— adds to 100% across the row</span></th>`
+    + `<th colspan="3" style="text-align:center; border-left:2px solid var(--line);">Share of the Team's Shots<br><span class="sans" style="font-weight:400; text-transform:none; letter-spacing:normal; font-size:10.5px; color:var(--muted);">— adds to ~100% down each column</span></th>`
+    + '</tr>';
+  html += '<tr>' + mixCols.map((c,i) => `<th${i===0 ? ' style="border-left:2px solid var(--line);"' : ''}>${c.label}</th>`).join('')
+    + shareCols.map((c,i) => `<th${i===0 ? ' style="border-left:2px solid var(--line);"' : ''}>${c.label}</th>`).join('') + '</tr>';
+  html += '</thead><tbody>';
   rows.forEach(r => {
     html += `<tr><td>${r.jersey}</td><td>${r.name}</td><td>${r.shots}</td>` +
       cols.map((c, i) => {
         const v = r[c.key];
         const scale = colScales[i];
         const bg = (v !== null && v !== undefined && scale) ? excelColorScale(v, scale.vmin, scale.vmed, scale.vmax) : null;
-        return `<td${bg ? ` style="background:${bg}"` : ''}>${pct(v)}</td>`;
+        const border = i === 0 || i === 3 ? 'border-left:2px solid var(--line);' : '';
+        const styles = (bg ? `background:${bg};` : '') + border;
+        return `<td${styles ? ` style="${styles}"` : ''}>${pct(v)}</td>`;
       }).join('') + '</tr>';
   });
   html += '</tbody></table>';
