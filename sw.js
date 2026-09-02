@@ -3,14 +3,14 @@
 // activate. index.html itself doesn't need a bump to update: the fetch
 // handler below is network-first, so a re-upload of index.html reaches
 // anyone who's online immediately, cache or no cache.
-const CACHE_NAME = 'wlu-tracker-v1';
+const CACHE_NAME = 'wlu-tracker-v2';
 const PRECACHE_URLS = [
   './',
   './index.html',
   './manifest.json',
-  './icons/icon-192.png',
-  './icons/icon-512.png',
-  './icons/apple-touch-icon.png',
+  './icon-192.png',
+  './icon-512.png',
+  './apple-touch-icon.png',
 ];
 
 self.addEventListener('install', (event) => {
