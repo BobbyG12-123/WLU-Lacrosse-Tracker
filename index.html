@@ -249,6 +249,15 @@
 
   <section id="playerView" class="view">
     <div class="panel">
+      <div class="controls-row" style="margin-bottom:0;">
+        <div class="control-group">
+          <label>Season</label>
+          <div class="grade-pills" id="playerSeasonPills"></div>
+        </div>
+      </div>
+      <p class="panel-sub" style="margin:10px 0 0;">Applies to every stat on this tab &mdash; Shooting Trends, Player Deep Dive, Shot Quality Share, and the heat maps below.</p>
+    </div>
+    <div class="panel">
       <p class="panel-title">Shooting Trends</p>
       <p class="panel-sub">Shot % across each quarter of a player's logged shots, in order &mdash; who's heating up, who's cooling off. Players need 12+ shots (3+ per quarter) to show a trend.</p>
       <div class="section-heading up"><span>&#9650;</span> Top 5 Trending Up</div>
@@ -271,10 +280,6 @@
     </div>
     <div class="panel">
       <div class="controls-row">
-        <div class="control-group">
-          <label>Season</label>
-          <div class="grade-pills" id="playerSeasonPills"></div>
-        </div>
         <div class="control-group">
           <label for="playerSelect">Player</label>
           <select id="playerSelect"></select>
@@ -302,6 +307,15 @@
   </section>
 
   <section id="goalieView" class="view">
+    <div class="panel">
+      <div class="controls-row" style="margin-bottom:0;">
+        <div class="control-group">
+          <label>Season</label>
+          <div class="grade-pills" id="goalieSeasonPills"></div>
+        </div>
+      </div>
+      <p class="panel-sub" style="margin:10px 0 0;">Applies to every stat on this tab &mdash; Goalie Trends, Goalie Summary, and the heat maps below.</p>
+    </div>
     <div class="panel">
       <p class="panel-title">Goalie Trends</p>
       <p class="panel-sub">Save % across each quarter of a goalie's faced shots, in order. Goalies need 12+ faced shots (3+ per quarter) to show a trend.</p>
@@ -347,6 +361,7 @@
       <p class="panel-title">Shot Log</p>
       <p class="panel-sub" id="shotCountSub"></p>
       <div class="filter-row">
+        <select id="tf_season"><option value="">All seasons</option></select>
         <select id="tf_player"><option value="">All shooters</option></select>
         <select id="tf_grade"><option value="">All grades</option><option value="1-Gold">Gold</option><option value="2-Silver">Silver</option><option value="3-Bronze">Bronze</option></select>
         <select id="tf_context"><option value="">All contexts</option><option value="Practice">Practice</option><option value="Game">Game</option></select>
@@ -616,6 +631,7 @@ async function loadAll() {
       refreshFormRosterOptions();
       populatePlayerGoalieDropdowns();
       populatePlayerSelectForSeason(heatSeason);
+      populateGoalieSelectForSeason(goalieHeatSeason);
       renderRosterManager();
     }, e => console.error('roster sync error', season, e));
   }
@@ -637,8 +653,10 @@ async function loadAll() {
     renderGoalieSummary();
     renderShootingTrends();
     renderGoalieTrends();
+    renderGoalieHeat();
     populatePlayerGoalieDropdowns();
     populatePlayerSelectForSeason(heatSeason);
+    populateGoalieSelectForSeason(goalieHeatSeason);
   }, e => console.error('shots sync error', e));
 
   DB.collection('evalPlayers').onSnapshot(snap => {
@@ -826,6 +844,12 @@ function seasonForDate(dateStr) {
   if (ROSTERS[yearStr]) return yearStr;
   return year < Number(SEASONS[0]) ? SEASONS[0] : SEASONS[SEASONS.length - 1];
 }
+// The season filter used by every season-toggled tab: "All Seasons" is a
+// no-op (every shot ever logged), a specific year keeps only shots whose
+// date resolves to that season.
+function shotsForSeason(season) {
+  return season === 'All Seasons' ? SHOTS : SHOTS.filter(s => seasonForDate(s.date) === season);
+}
 function rosterPlayers(season) { return (ROSTERS[season] || []).filter(r => r.roles.includes('player')).sort((a,b)=>a.name.localeCompare(b.name)); }
 function rosterGoalies(season) { return (ROSTERS[season] || []).filter(r => r.roles.includes('goalie')).sort((a,b)=>a.name.localeCompare(b.name)); }
 // Union of a role across every season, deduped by name (case-insensitive) —
@@ -1007,6 +1031,7 @@ document.getElementById('np_add').addEventListener('click', async () => {
   refreshFormRosterOptions();
   populatePlayerGoalieDropdowns();
   populatePlayerSelectForSeason(heatSeason);
+  populateGoalieSelectForSeason(goalieHeatSeason);
   renderRosterManager();
   selectEl.value = jersey;
   pendingNewPlayer = null;
@@ -1085,6 +1110,8 @@ document.getElementById('submitShotBtn').addEventListener('click', async () => {
   document.getElementById('fieldReadout').textContent = 'Not set';
   document.getElementById('goalReadout').textContent = 'Not set';
   populatePlayerGoalieDropdowns();
+  populatePlayerSelectForSeason(heatSeason);
+  populateGoalieSelectForSeason(goalieHeatSeason);
 });
 
 // ---------------- Player Heat Maps ----------------
@@ -1167,17 +1194,9 @@ function setupGradePills(containerId, onChange) {
 // Goalie tab and the Shot Log filter aren't season-toggled, so they span all
 // years via the combined (name-deduped) roster \u2014 same as before season
 // scoping existed, just no longer dependent on a single global roster.
+// Shot Log's "All shooters" filter isn't season-toggled, so it spans every
+// year via the combined (name-deduped) roster.
 function populatePlayerGoalieDropdowns() {
-  const goalieSel = document.getElementById('goalieSelect');
-  const prevGoalie = goalieSel.value;
-  goalieSel.innerHTML = '';
-  combinedRoster('goalie').forEach(g => {
-    const faced = SHOTS.filter(s => s.onKeeper===1 && g.seasons[seasonForDate(s.date)] === s.goalieJersey).length;
-    const opt = document.createElement('option'); opt.value = g.jersey; opt.textContent = `${g.name} (#${g.jersey}) \u2014 ${faced} faced`;
-    goalieSel.appendChild(opt);
-  });
-  if ([...goalieSel.options].some(o => o.value === prevGoalie)) goalieSel.value = prevGoalie;
-
   const tfPlayer = document.getElementById('tf_player');
   const prevTf = tfPlayer.value;
   tfPlayer.innerHTML = '<option value="">All shooters</option>';
@@ -1191,7 +1210,7 @@ function populatePlayerSelectForSeason(season) {
   const prevVal = playerSel.value;
   playerSel.innerHTML = '';
   const teamOpt = document.createElement('option'); teamOpt.value = '__TEAM__';
-  const teamShots = season === 'All Seasons' ? SHOTS : SHOTS.filter(s => seasonForDate(s.date) === season);
+  const teamShots = shotsForSeason(season);
   teamOpt.textContent = `Team \u2014 All Players (${teamShots.length})`;
   playerSel.appendChild(teamOpt);
 
@@ -1211,6 +1230,29 @@ function populatePlayerSelectForSeason(season) {
     });
   }
   if ([...playerSel.options].some(o => o.value === prevVal)) playerSel.value = prevVal;
+}
+
+// ---------------- Goalie Heat Maps: season-scoped goalie dropdown ----------------
+function populateGoalieSelectForSeason(season) {
+  const goalieSel = document.getElementById('goalieSelect');
+  const prevVal = goalieSel.value;
+  goalieSel.innerHTML = '';
+  if (season === 'All Seasons') {
+    combinedRoster('goalie').forEach(g => {
+      const faced = SHOTS.filter(s => s.onKeeper===1 && g.seasons[seasonForDate(s.date)] === s.goalieJersey).length;
+      const opt = document.createElement('option');
+      opt.value = 'NAME:' + g.name.trim().toLowerCase();
+      opt.textContent = `${g.name} \u2014 ${faced} faced`;
+      goalieSel.appendChild(opt);
+    });
+  } else {
+    rosterGoalies(season).forEach(g => {
+      const faced = SHOTS.filter(s => s.onKeeper===1 && seasonForDate(s.date) === season && s.goalieJersey === g.jersey).length;
+      const opt = document.createElement('option'); opt.value = g.jersey; opt.textContent = `${g.name} (#${g.jersey}) \u2014 ${faced} faced`;
+      goalieSel.appendChild(opt);
+    });
+  }
+  if ([...goalieSel.options].some(o => o.value === prevVal)) goalieSel.value = prevVal;
 }
 
 // ---------------- Shooting / goalie summary tables ----------------
@@ -1282,9 +1324,10 @@ let deepDiveCompareMode = 'teammates';
 function renderPlayerDeepDive() {
   const wrap = document.getElementById('playerDeepDiveWrap');
   if (!wrap) return;
-  const rows = computePlayerDeepDive(SHOTS);
+  const seasonShots = shotsForSeason(heatSeason);
+  const rows = computePlayerDeepDive(seasonShots);
   if (!rows.length) { wrap.innerHTML = '<p class="sans" style="color:var(--muted); font-size:13px;">No players with 5+ shots yet.</p>'; return; }
-  const allPlayerShots = SHOTS.filter(s => s.shooterJersey);
+  const allPlayerShots = seasonShots.filter(s => s.shooterJersey);
   const hint = document.getElementById('ddCompareHint');
   if (hint) hint.textContent = deepDiveCompareMode === 'teamavg'
     ? 'Yellow = at the team average for that column; green = above it, red = below it.'
@@ -1343,7 +1386,7 @@ function computeShotQualityShare(shots) {
 function renderShotQualityShare() {
   const wrap = document.getElementById('shotQualityShareWrap');
   if (!wrap) return;
-  const allPlayerShots = SHOTS.filter(s => s.shooterJersey);
+  const allPlayerShots = shotsForSeason(heatSeason).filter(s => s.shooterJersey);
   const rows = computeShotQualityShare(allPlayerShots);
   if (!rows.length) { wrap.innerHTML = '<p class="sans" style="color:var(--muted); font-size:13px;">No players with 5+ shots yet.</p>'; return; }
   // Grouped (not interleaved) so each group reads as one story: the first
@@ -1384,7 +1427,7 @@ function renderShotQualityShare() {
 function renderGoalieSummary() {
   const wrap = document.getElementById('goalieSummaryWrap');
   if (!wrap) return;
-  const rows = computeGoalieSummary(SHOTS);
+  const rows = computeGoalieSummary(shotsForSeason(goalieHeatSeason));
   let html = '<table class="shotlog"><thead><tr><th>Jersey</th><th>Name</th><th>Faced</th><th>Saves</th><th>Goals Allowed</th><th>Save %</th></tr></thead><tbody>';
   rows.forEach(r => {
     html += `<tr><td>${r.jersey}</td><td>${r.name}</td><td>${r.faced}</td><td>${r.saves}</td><td>${r.goalsAllowed}</td><td>${pct(r.savePct)}</td></tr>`;
@@ -1470,7 +1513,9 @@ function renderRosterManager() {
       refreshFormRosterOptions();
       populatePlayerGoalieDropdowns();
       populatePlayerSelectForSeason(heatSeason);
+      populateGoalieSelectForSeason(goalieHeatSeason);
       renderPlayerHeat();
+      renderGoalieHeat();
       renderRosterManager();
     });
   });
@@ -1483,7 +1528,9 @@ function renderRosterManager() {
     refreshFormRosterOptions();
     populatePlayerGoalieDropdowns();
     populatePlayerSelectForSeason(heatSeason);
+    populateGoalieSelectForSeason(goalieHeatSeason);
     renderPlayerHeat();
+    renderGoalieHeat();
     renderRosterManager();
   });
 }
@@ -1626,7 +1673,15 @@ function renderHeatPanel(containerId, items) {
 
 document.getElementById('playerSelect').addEventListener('change', renderPlayerHeat);
 setupGradePills('playerGradePills', (g) => { playerGrade = g; renderPlayerHeat(); });
-setupSeasonPills('playerSeasonPills', (s) => { heatSeason = s; populatePlayerSelectForSeason(heatSeason); renderPlayerHeat(); renderRosterManager(); }, heatSeason);
+setupSeasonPills('playerSeasonPills', (s) => {
+  heatSeason = s;
+  populatePlayerSelectForSeason(heatSeason);
+  renderPlayerHeat();
+  renderRosterManager();
+  renderShootingTrends();
+  renderPlayerDeepDive();
+  renderShotQualityShare();
+}, heatSeason);
 (function setupCompareModePills() {
   const el = document.getElementById('ddComparePills');
   [{ key: 'teammates', label: 'Teammates' }, { key: 'teamavg', label: 'Team Avg' }].forEach(opt => {
@@ -1648,11 +1703,30 @@ document.getElementById('pf_clear').addEventListener('click', () => { clearFilte
 
 // ---------------- Goalie Heat Maps ----------------
 let goalieGrade = 'Overall';
+let goalieHeatSeason = SEASONS[0];
 function renderGoalieHeat() {
   const sel = document.getElementById('goalieSelect').value;
   if (!sel) { document.getElementById('goalieHeatWrap').innerHTML = ''; return; }
   const gradeVal = GRADE_MAP[goalieGrade];
-  const facedAll = SHOTS.filter(s => s.onKeeper === 1 && s.goalieJersey === sel);
+  const season = goalieHeatSeason;
+  const seasonLabel = season === 'All Seasons' ? 'All Seasons' : season;
+  const seasonShots = shotsForSeason(season);
+
+  let facedAll, name;
+  if (sel.startsWith('NAME:')) {
+    const key = sel.slice(5);
+    facedAll = seasonShots.filter(s => {
+      if (s.onKeeper !== 1) return false;
+      const roster = ROSTERS[seasonForDate(s.date)] || [];
+      const g = roster.find(r => r.roles.includes('goalie') && r.name.trim().toLowerCase() === key);
+      return g && g.jersey === s.goalieJersey;
+    });
+    const combined = combinedRoster('goalie').find(g => g.name.trim().toLowerCase() === key);
+    name = combined ? combined.name : key;
+  } else {
+    facedAll = seasonShots.filter(s => s.onKeeper === 1 && s.goalieJersey === sel);
+    name = nameFor(sel, season === 'All Seasons' ? undefined : season);
+  }
   let subset = gradeVal ? facedAll.filter(s => s.shotQuality === gradeVal) : facedAll;
   const filters = readFilterState('gf_');
   subset = applyExtraFilters(subset, filters);
@@ -1660,15 +1734,21 @@ function renderGoalieHeat() {
   const small = n > 0 && n < 5;
   const zones = buildZones(subset, DIST_BANDS_TEAM, LAT_BANDS_TEAM);
   const goalCells = buildGoalGrid(subset);
-  const name = nameFor(sel);
   const smallTxt = (small ? ' \u2014 small sample' : '') + filterSummary(filters);
   renderHeatPanel('goalieHeatWrap', [
-    { svg: fieldSVG(zones, {metric:'save'}), caption: `${name} \u2014 ${goalieGrade} (Field Position)`, sub: `${n} faced${smallTxt} \u2014 hover a zone for detail, click for the shot list`, hotspots: zones, metric: 'save', unitLabel: 'faced' },
-    { svg: goalSVG(goalCells, {metric:'save'}), caption: `${name} \u2014 ${goalieGrade} (Goal Placement)`, sub: `${n} faced${smallTxt} \u2014 hover a zone for detail, click for the shot list`, hotspots: goalCells, metric: 'save', unitLabel: 'faced' },
+    { svg: fieldSVG(zones, {metric:'save'}), caption: `${name} \u2014 ${goalieGrade} \u2014 ${seasonLabel} (Field Position)`, sub: `${n} faced${smallTxt} \u2014 hover a zone for detail, click for the shot list`, hotspots: zones, metric: 'save', unitLabel: 'faced' },
+    { svg: goalSVG(goalCells, {metric:'save'}), caption: `${name} \u2014 ${goalieGrade} \u2014 ${seasonLabel} (Goal Placement)`, sub: `${n} faced${smallTxt} \u2014 hover a zone for detail, click for the shot list`, hotspots: goalCells, metric: 'save', unitLabel: 'faced' },
   ]);
 }
 document.getElementById('goalieSelect').addEventListener('change', renderGoalieHeat);
 setupGradePills('goalieGradePills', (g) => { goalieGrade = g; renderGoalieHeat(); });
+setupSeasonPills('goalieSeasonPills', (s) => {
+  goalieHeatSeason = s;
+  populateGoalieSelectForSeason(goalieHeatSeason);
+  renderGoalieHeat();
+  renderGoalieSummary();
+  renderGoalieTrends();
+}, goalieHeatSeason);
 ['gf_context','gf_defscheme','gf_transitiontype','gf_handedness','gf_offdodge','gf_contest','gf_passtype'].forEach(id => document.getElementById(id).addEventListener('change', renderGoalieHeat));
 ['gf_assist','gf_opponent'].forEach(id => document.getElementById(id).addEventListener('input', renderGoalieHeat));
 document.getElementById('gf_clear').addEventListener('click', () => { clearFilterState('gf_'); renderGoalieHeat(); });
@@ -1676,11 +1756,15 @@ document.getElementById('gf_clear').addEventListener('click', () => { clearFilte
 // ---------------- Shot Log table ----------------
 let deleteShotArmed = null;
 function renderTable() {
-  document.getElementById('shotCountSub').textContent = `${SHOTS.length} shots logged`;
+  const sf = document.getElementById('tf_season').value;
+  const seasonShots = sf ? shotsForSeason(sf) : SHOTS;
+  document.getElementById('shotCountSub').textContent = sf
+    ? `${seasonShots.length} shots logged — ${sf} season`
+    : `${seasonShots.length} shots logged`;
   const pf = document.getElementById('tf_player').value;
   const gf = document.getElementById('tf_grade').value;
   const cf = document.getElementById('tf_context').value;
-  let rows = SHOTS.slice().sort((a,b)=> b.id - a.id);
+  let rows = seasonShots.slice().sort((a,b)=> b.id - a.id);
   if (pf) rows = rows.filter(r=>r.shooterJersey===pf);
   if (gf) rows = rows.filter(r=>r.shotQuality===gf);
   if (cf) rows = rows.filter(r=>r.context===cf);
@@ -1726,10 +1810,18 @@ function renderTable() {
       await persistShots();
       renderTable();
       populatePlayerGoalieDropdowns();
+      populatePlayerSelectForSeason(heatSeason);
+      populateGoalieSelectForSeason(goalieHeatSeason);
+      renderPlayerHeat();
+      renderGoalieHeat();
     });
   });
 }
-['tf_player','tf_grade','tf_context'].forEach(id => document.getElementById(id).addEventListener('change', renderTable));
+(function initSeasonFilterSelect() {
+  const sel = document.getElementById('tf_season');
+  SEASONS.forEach(s => { const opt = document.createElement('option'); opt.value = s; opt.textContent = s; sel.appendChild(opt); });
+})();
+['tf_season','tf_player','tf_grade','tf_context'].forEach(id => document.getElementById(id).addEventListener('change', renderTable));
 
 // ---------------- Player Evaluations ----------------
 // Mirrors the coaching staff's scouting workbook: per-position attribute grid,
@@ -1896,10 +1988,10 @@ function quartileSplit(list, n) {
 function chronoKey(s) { return (s.date || '') + '_' + String(s.id).padStart(6, '0'); }
 
 // Shot %, split into 4 chronological quarters, for the current roster's shooters.
-function computeShootingTrends() {
+function computeShootingTrends(shots) {
   const MIN_TOTAL = 12, BUCKETS = 4, MIN_PER_BUCKET = 2;
   const byJersey = {};
-  SHOTS.forEach(s => { if (s.shooterJersey) (byJersey[s.shooterJersey] = byJersey[s.shooterJersey] || []).push(s); });
+  shots.forEach(s => { if (s.shooterJersey) (byJersey[s.shooterJersey] = byJersey[s.shooterJersey] || []).push(s); });
   const results = [];
   Object.keys(byJersey).forEach(j => {
     const list = byJersey[j].slice().sort((a, b) => chronoKey(a).localeCompare(chronoKey(b)));
@@ -1914,10 +2006,10 @@ function computeShootingTrends() {
 }
 
 // Save %, split into 4 chronological quarters, for shots that faced our goalies.
-function computeGoalieTrends() {
+function computeGoalieTrends(shots) {
   const MIN_TOTAL = 12, BUCKETS = 4, MIN_PER_BUCKET = 2;
   const byJersey = {};
-  SHOTS.forEach(s => { if (s.onKeeper === 1 && s.goalieJersey) (byJersey[s.goalieJersey] = byJersey[s.goalieJersey] || []).push(s); });
+  shots.forEach(s => { if (s.onKeeper === 1 && s.goalieJersey) (byJersey[s.goalieJersey] = byJersey[s.goalieJersey] || []).push(s); });
   const results = [];
   Object.keys(byJersey).forEach(j => {
     const list = byJersey[j].slice().sort((a, b) => chronoKey(a).localeCompare(chronoKey(b)));
@@ -1982,7 +2074,7 @@ function renderTrends() {
 
 function renderShootingTrends() {
   if (!document.getElementById('shootingTrendsUpGrid')) return;
-  const trends = computeShootingTrends();
+  const trends = computeShootingTrends(shotsForSeason(heatSeason));
   const up = trends.filter(t => t.delta > 0).sort((a, b) => b.delta - a.delta).slice(0, 5);
   const down = trends.filter(t => t.delta < 0).sort((a, b) => a.delta - b.delta).slice(0, 3);
   renderTrendGroup('shootingTrendsUpGrid', up, 'up', 'players');
@@ -1991,7 +2083,7 @@ function renderShootingTrends() {
 
 function renderGoalieTrends() {
   if (!document.getElementById('goalieTrendsUpGrid')) return;
-  const trends = computeGoalieTrends();
+  const trends = computeGoalieTrends(shotsForSeason(goalieHeatSeason));
   const up = trends.filter(t => t.delta > 0).sort((a, b) => b.delta - a.delta).slice(0, 5);
   const down = trends.filter(t => t.delta < 0).sort((a, b) => a.delta - b.delta).slice(0, 3);
   renderTrendGroup('goalieTrendsUpGrid', up, 'up', 'goalies');
@@ -2340,6 +2432,7 @@ async function init() {
   buildGoalClickWidget();
   populatePlayerGoalieDropdowns();
   populatePlayerSelectForSeason(heatSeason);
+  populateGoalieSelectForSeason(goalieHeatSeason);
   renderRosterManager();
   renderPlayerHeat();
   renderPlayerDeepDive();
@@ -2347,6 +2440,7 @@ async function init() {
   renderGoalieSummary();
   renderShootingTrends();
   renderGoalieTrends();
+  renderGoalieHeat();
   renderTable();
 }
 </script>
