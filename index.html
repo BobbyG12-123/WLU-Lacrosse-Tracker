@@ -264,6 +264,11 @@
       <div class="table-wrap" id="playerDeepDiveWrap"></div>
     </div>
     <div class="panel">
+      <p class="panel-title">Shot Quality Share</p>
+      <p class="panel-sub">Two different things per grade: "Mix %" is how a player's own shots break down by grade (their three Mix columns add up to 100%). "Team Share %" is what slice of the team's total Gold/Silver/Bronze shots that player is taking (each grade's Share column adds up to ~100% across the roster) &mdash; i.e. who's actually getting the good looks. Players with 5+ total shots.</p>
+      <div class="table-wrap" id="shotQualityShareWrap"></div>
+    </div>
+    <div class="panel">
       <div class="controls-row">
         <div class="control-group">
           <label>Season</label>
@@ -627,6 +632,7 @@ async function loadAll() {
     renderTable();
     renderPlayerHeat();
     renderPlayerDeepDive();
+    renderShotQualityShare();
     renderGoalieSummary();
     renderShootingTrends();
     renderGoalieTrends();
@@ -1302,6 +1308,61 @@ function renderPlayerDeepDive() {
         const bg = c.n > 0 && scale ? excelColorScale(c.pct, scale.vmin, scale.vmed, scale.vmax) : null;
         const styles = [bg ? `background:${bg}` : '', small ? 'color:var(--muted); font-style:italic;' : ''].filter(Boolean).join(' ');
         return `<td${styles ? ` style="${styles}"` : ''}>${pct(c.pct)}</td>`;
+      }).join('') + '</tr>';
+  });
+  html += '</tbody></table>';
+  wrap.innerHTML = html;
+}
+
+// "Mix" = how a player's OWN shots break down by grade (their 3 mix columns
+// sum to 100%). "Team Share" = what slice of the TEAM's total shots of that
+// grade this player accounts for (each grade's share column sums to ~100%
+// across the roster) — i.e. who's actually taking the team's Gold looks.
+const SHOT_QUALITY_GRADES = [['1-Gold','gold','Gold'], ['2-Silver','silver','Silver'], ['3-Bronze','bronze','Bronze']];
+function computeShotQualityShare(shots) {
+  const byJersey = {};
+  shots.forEach(s => {
+    if (!s.shooterJersey) return;
+    (byJersey[s.shooterJersey] = byJersey[s.shooterJersey] || []).push(s);
+  });
+  const teamTotals = {};
+  SHOT_QUALITY_GRADES.forEach(([q]) => { teamTotals[q] = shots.filter(s => s.shotQuality === q).length; });
+  return Object.keys(byJersey).map(j => {
+    const list = byJersey[j];
+    const row = { jersey: j, name: nameFor(j), shots: list.length };
+    SHOT_QUALITY_GRADES.forEach(([q, key]) => {
+      const ownCount = list.filter(s => s.shotQuality === q).length;
+      row[key + 'Count'] = ownCount;
+      row[key + 'Mix'] = list.length ? ownCount / list.length : null;
+      row[key + 'Share'] = teamTotals[q] ? ownCount / teamTotals[q] : null;
+    });
+    return row;
+  }).filter(r => r.shots >= 5).sort((a, b) => b.shots - a.shots);
+}
+function renderShotQualityShare() {
+  const wrap = document.getElementById('shotQualityShareWrap');
+  if (!wrap) return;
+  const allPlayerShots = SHOTS.filter(s => s.shooterJersey);
+  const rows = computeShotQualityShare(allPlayerShots);
+  if (!rows.length) { wrap.innerHTML = '<p class="sans" style="color:var(--muted); font-size:13px;">No players with 5+ shots yet.</p>'; return; }
+  const cols = [];
+  SHOT_QUALITY_GRADES.forEach(([q, key, label]) => {
+    cols.push({ key: key + 'Mix', label: `${label} Mix %` });
+    cols.push({ key: key + 'Share', label: `Team ${label} Share %` });
+  });
+  const colScales = cols.map(c => {
+    const vals = rows.map(r => r[c.key]).filter(v => v !== null && v !== undefined);
+    if (!vals.length) return null;
+    return { vmin: Math.min(...vals), vmed: median(vals), vmax: Math.max(...vals) };
+  });
+  let html = '<table class="shotlog"><thead><tr><th>Jersey</th><th>Name</th><th>Shots</th>' + cols.map(c => `<th>${c.label}</th>`).join('') + '</tr></thead><tbody>';
+  rows.forEach(r => {
+    html += `<tr><td>${r.jersey}</td><td>${r.name}</td><td>${r.shots}</td>` +
+      cols.map((c, i) => {
+        const v = r[c.key];
+        const scale = colScales[i];
+        const bg = (v !== null && v !== undefined && scale) ? excelColorScale(v, scale.vmin, scale.vmed, scale.vmax) : null;
+        return `<td${bg ? ` style="background:${bg}"` : ''}>${pct(v)}</td>`;
       }).join('') + '</tr>';
   });
   html += '</tbody></table>';
@@ -2270,6 +2331,7 @@ async function init() {
   renderRosterManager();
   renderPlayerHeat();
   renderPlayerDeepDive();
+  renderShotQualityShare();
   renderGoalieSummary();
   renderShootingTrends();
   renderGoalieTrends();
