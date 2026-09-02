@@ -4,6 +4,13 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>WLU Lacrosse — Shot Tracker</title>
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icons/favicon-32.png" sizes="32x32">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<meta name="theme-color" content="#0F1F3D">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="WLU Lacrosse">
 <style>
   :root {
     --navy: #0F1F3D; --navy-2: #16294D; --navy-3: #1F3864;
@@ -141,6 +148,7 @@
       <p class="panel-title">Log a New Shot</p>
       <p class="panel-sub">Click the field to set shot location, click the goal to set placement. Saves instantly for everyone with this link.</p>
       <div id="logMsg"></div>
+      <div id="editingBanner" class="msg" style="display:none; background:#FBEFC9; color:#8A6D1D; font-weight:700;"></div>
 
       <div class="field-grid">
         <div>
@@ -172,8 +180,8 @@
           <select id="f_transitiontype"><option value="">None</option><option value="FO">FO (Faceoff)</option><option value="OTOD">OTOD (Offense-to-Defense)</option></select>
         </div>
         <div>
-          <label for="f_assist">Assist &mdash; Who Passed (write in)</label>
-          <input type="text" id="f_assist" placeholder="e.g. Jack Booth">
+          <label for="f_assist">Assist &mdash; Who Passed</label>
+          <select id="f_assist"></select>
         </div>
         <div>
           <label for="f_passtype">Pass Type</label>
@@ -244,6 +252,7 @@
       </div>
 
       <button class="btn" id="submitShotBtn">Save Shot</button>
+      <button class="btn secondary" id="cancelEditBtn" style="display:none;" type="button">Cancel Edit</button>
     </div>
   </section>
 
@@ -300,6 +309,7 @@
         <select id="pf_passtype"><option value="">Any pass type</option><option value="Feed">Feed</option><option value="Skip Pass">Skip Pass</option><option value="Touch Pass">Touch Pass</option><option value="Behind-the-Back">Behind-the-Back</option><option value="Outlet/Clear">Outlet/Clear</option><option value="Dodge-and-Dish">Dodge-and-Dish</option><option value="No Pass">No Pass</option></select>
         <input type="text" id="pf_assist" placeholder="Passed by…">
         <input type="text" id="pf_opponent" placeholder="Opponent contains…">
+        <input type="text" id="pf_tags" placeholder="Tags contain…">
         <button class="btn secondary" id="pf_clear">Clear filters</button>
       </div>
       <div class="image-row" id="playerHeatWrap"></div>
@@ -350,6 +360,7 @@
         <select id="gf_passtype"><option value="">Any pass type</option><option value="Feed">Feed</option><option value="Skip Pass">Skip Pass</option><option value="Touch Pass">Touch Pass</option><option value="Behind-the-Back">Behind-the-Back</option><option value="Outlet/Clear">Outlet/Clear</option><option value="Dodge-and-Dish">Dodge-and-Dish</option><option value="No Pass">No Pass</option></select>
         <input type="text" id="gf_assist" placeholder="Passed by…">
         <input type="text" id="gf_opponent" placeholder="Opponent contains…">
+        <input type="text" id="gf_tags" placeholder="Tags contain…">
         <button class="btn secondary" id="gf_clear">Clear filters</button>
       </div>
       <div class="image-row" id="goalieHeatWrap"></div>
@@ -359,6 +370,7 @@
   <section id="tableView" class="view">
     <div class="panel">
       <p class="panel-title">Shot Log</p>
+      <div id="tableMsg"></div>
       <p class="panel-sub" id="shotCountSub"></p>
       <div class="filter-row">
         <select id="tf_season"><option value="">All seasons</option></select>
@@ -366,7 +378,16 @@
         <select id="tf_grade"><option value="">All grades</option><option value="1-Gold">Gold</option><option value="2-Silver">Silver</option><option value="3-Bronze">Bronze</option></select>
         <select id="tf_context"><option value="">All contexts</option><option value="Practice">Practice</option><option value="Game">Game</option></select>
         <button class="btn secondary" id="exportShotsBtn">Export CSV</button>
-        <button class="btn secondary" id="resetDataBtn" title="Erases roster changes, newly logged shots, and all player evaluations for everyone. The historical season (2,285 shots) is untouched.">Reset all data&hellip;</button>
+        <button class="btn secondary" id="resetDataBtn" title="Erases every season's roster, newly logged shots, and all player evaluations for everyone. The historical season (2,285 shots) is untouched.">Reset all data&hellip;</button>
+      </div>
+      <div id="resetConfirmPanel" style="display:none; border:1.5px solid #C0392B; border-radius:8px; padding:14px; margin-bottom:16px; background:#FBE9E7;">
+        <p class="sans" style="font-size:13px; color:#B3261E; font-weight:700; margin:0 0 8px;">This permanently erases every season's roster (2026, 2027, and any others), every live-logged shot, and all player evaluations &mdash; for everyone. The historical season (2,285 shots) is untouched. This can't be undone.</p>
+        <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+          <label class="sans" style="font-size:12px; color:#B3261E; text-transform:none; letter-spacing:normal; margin:0;">Type <strong>DELETE</strong> to confirm:</label>
+          <input type="text" id="resetConfirmInput" style="width:140px;" autocomplete="off">
+          <button class="btn danger" id="resetConfirmBtn" disabled>Confirm Reset</button>
+          <button class="btn secondary" id="resetCancelBtn" type="button">Cancel</button>
+        </div>
       </div>
       <div class="table-wrap">
         <table class="shotlog">
@@ -571,7 +592,15 @@ function rebuildShots() {
 }
 
 async function loadAll() {
-  try { DB = firebase.firestore(); } catch (e) { DB = null; }
+  // Offline persistence: reads come from a local cache and writes (like
+  // logging a shot) queue locally and sync automatically once the
+  // connection comes back — so spotty wifi/cell at a field doesn't lose
+  // data. synchronizeTabs lets multiple open tabs/devices share the same
+  // local cache instead of one tab claiming it exclusively.
+  try {
+    DB = firebase.firestore();
+    await DB.enablePersistence({ synchronizeTabs: true }).catch(e => console.warn('Offline persistence not enabled:', e.code));
+  } catch (e) { DB = null; }
   DOWNLOADS = { save: async ({ filename, data }) => {
     const blob = new Blob([data], { type: 'text/csv' });
     const url = URL.createObjectURL(blob);
@@ -923,18 +952,17 @@ function populateSelect(sel, items, placeholderText, includeEmptyNet) {
 }
 
 // ---------------- Tabs ----------------
+function switchTab(viewId) {
+  document.querySelectorAll('.tab-btn').forEach(b=>b.classList.toggle('active', b.dataset.view === viewId));
+  document.querySelectorAll('.view').forEach(v=>v.classList.toggle('active', v.id === viewId));
+  if (viewId === 'playerView') renderPlayerHeat();
+  if (viewId === 'goalieView') renderGoalieHeat();
+  if (viewId === 'tableView') renderTable();
+  if (viewId === 'recruitsView') { renderRecruits(); renderTrends(); }
+  if (viewId === 'boardView') renderBoard();
+}
 document.querySelectorAll('.tab-btn').forEach(btn => {
-  btn.addEventListener('click', () => {
-    document.querySelectorAll('.tab-btn').forEach(b=>b.classList.remove('active'));
-    document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
-    btn.classList.add('active');
-    document.getElementById(btn.dataset.view).classList.add('active');
-    if (btn.dataset.view === 'playerView') renderPlayerHeat();
-    if (btn.dataset.view === 'goalieView') renderGoalieHeat();
-    if (btn.dataset.view === 'tableView') renderTable();
-    if (btn.dataset.view === 'recruitsView') { renderRecruits(); renderTrends(); }
-    if (btn.dataset.view === 'boardView') renderBoard();
-  });
+  btn.addEventListener('click', () => switchTab(btn.dataset.view));
 });
 
 // ---------------- Log Shot form ----------------
@@ -948,7 +976,7 @@ function svgPoint(svgEl, evt) {
   return pt.matrixTransform(ctm);
 }
 
-function buildFieldClickWidget() {
+function buildFieldClickWidget(initial) {
   const wrap = document.getElementById('fieldClickWrap');
   wrap.innerHTML = fieldSVG(buildZones([], DIST_BANDS_PLAYER, LAT_BANDS_PLAYER), {metric:'score', interactive:false});
   const svgEl = wrap.querySelector('svg');
@@ -965,9 +993,17 @@ function buildFieldClickWidget() {
     marker.style.display = '';
     document.getElementById('fieldReadout').textContent = `${pendingField.distanceYds} yds from goal, ${pendingField.lateralYds} yds lateral`;
   });
+  // Editing an existing shot pre-places the marker at its saved location so
+  // "fixing a mis-tap" just means clicking a new spot, not starting blank.
+  if (initial && initial.distanceYds !== null && initial.distanceYds !== undefined) {
+    pendingField = { distanceYds: initial.distanceYds, lateralYds: initial.lateralYds };
+    marker.setAttribute('cx', initial.lateralYds); marker.setAttribute('cy', initial.distanceYds);
+    marker.style.display = '';
+    document.getElementById('fieldReadout').textContent = `${initial.distanceYds} yds from goal, ${initial.lateralYds} yds lateral`;
+  }
 }
 
-function buildGoalClickWidget() {
+function buildGoalClickWidget(initial) {
   const wrap = document.getElementById('goalClickWrap');
   wrap.innerHTML = goalSVG(buildGoalGrid([]), {metric:'score', interactive:false});
   const svgEl = wrap.querySelector('svg');
@@ -984,6 +1020,12 @@ function buildGoalClickWidget() {
     marker.style.display = '';
     document.getElementById('goalReadout').textContent = `x=${pendingGoal.goalX}, y=${pendingGoal.goalY}`;
   });
+  if (initial && initial.goalX !== null && initial.goalX !== undefined) {
+    pendingGoal = { goalX: initial.goalX, goalY: initial.goalY };
+    marker.setAttribute('cx', 0.5 + initial.goalX*9); marker.setAttribute('cy', 0.5 + (1-initial.goalY)*9);
+    marker.style.display = '';
+    document.getElementById('goalReadout').textContent = `x=${initial.goalX}, y=${initial.goalY}`;
+  }
 }
 
 // The Log Shot form's shooter/goalie roster always matches the season the
@@ -995,6 +1037,7 @@ function refreshFormRosterOptions() {
   const season = currentLogSeason();
   populateSelect(document.getElementById('f_shooter'), rosterPlayers(season), 'Select shooter…', false);
   populateSelect(document.getElementById('f_goalie'), rosterGoalies(season), 'Select goalie…', true);
+  populateSelect(document.getElementById('f_assist'), rosterPlayers(season), 'No assist / unassisted', false);
 }
 
 function toggleOpponentField() {
@@ -1040,12 +1083,104 @@ document.getElementById('np_add').addEventListener('click', async () => {
 
 document.getElementById('f_shooter').addEventListener('change', (e) => { if (e.target.value === '__ADD_NEW__') handleAddNew(e.target, 'player'); });
 document.getElementById('f_goalie').addEventListener('change', (e) => { if (e.target.value === '__ADD_NEW__') handleAddNew(e.target, 'goalie'); });
+document.getElementById('f_assist').addEventListener('change', (e) => { if (e.target.value === '__ADD_NEW__') handleAddNew(e.target, 'player'); });
 
 function showMsg(text, ok) {
   const box = document.getElementById('logMsg');
   box.innerHTML = `<div class="msg ${ok?'ok':'err'}">${text}</div>`;
   if (ok) setTimeout(()=>{ box.innerHTML=''; }, 4000);
 }
+function showTableMsg(text) {
+  const box = document.getElementById('tableMsg');
+  if (!box) return;
+  box.innerHTML = `<div class="msg ok">${text}</div>`;
+  setTimeout(() => { box.innerHTML = ''; }, 4000);
+}
+
+// ---------------- Edit an existing shot ("fix a mis-tap") ----------------
+// Editing reuses the Log Shot form itself rather than a separate UI: it's
+// pre-filled from the shot being fixed, Save Shot updates that shot in place
+// (same id) instead of creating a new one, and the coach lands back on the
+// Shot Log when done. Historical (seed) shots aren't editable.
+let editingShotId = null;
+
+function fullResetLogForm() {
+  document.getElementById('f_date').value = new Date().toISOString().slice(0,10);
+  document.getElementById('f_context').value = 'Practice';
+  toggleOpponentField();
+  refreshFormRosterOptions();
+  document.getElementById('f_shooter').value = '';
+  document.getElementById('f_goalie').value = '';
+  document.getElementById('f_assist').value = '';
+  document.getElementById('f_ongoal').checked = false;
+  document.getElementById('f_onkeeper').checked = false;
+  document.getElementById('f_goal').checked = false;
+  document.getElementById('f_blocked').checked = false;
+  document.getElementById('f_offdodge').checked = false;
+  document.getElementById('f_cleansave').checked = false;
+  document.getElementById('f_quality').value = '';
+  document.getElementById('f_contest').value = '';
+  document.getElementById('f_defscheme').value = '';
+  document.getElementById('f_handedness').value = '';
+  document.getElementById('f_transitiontype').value = '';
+  document.getElementById('f_tags').value = '';
+  document.getElementById('f_passtype').value = '';
+  pendingField = { distanceYds: null, lateralYds: null };
+  pendingGoal = { goalX: null, goalY: null };
+  buildFieldClickWidget();
+  buildGoalClickWidget();
+  document.getElementById('fieldReadout').textContent = 'Not set';
+  document.getElementById('goalReadout').textContent = 'Not set';
+}
+
+function exitEditMode() {
+  editingShotId = null;
+  document.getElementById('submitShotBtn').textContent = 'Save Shot';
+  document.getElementById('cancelEditBtn').style.display = 'none';
+  document.getElementById('editingBanner').style.display = 'none';
+}
+
+function startEditShot(id) {
+  const shot = SHOTS.find(s => s.id === id);
+  if (!shot || shot.seed) return;
+  editingShotId = id;
+  document.getElementById('f_date').value = shot.date || '';
+  document.getElementById('f_context').value = shot.context || 'Practice';
+  toggleOpponentField();
+  document.getElementById('f_opponent').value = shot.opponent || '';
+  refreshFormRosterOptions();
+  document.getElementById('f_shooter').value = shot.shooterJersey || '';
+  document.getElementById('f_goalie').value = shot.goalieJersey || '';
+  document.getElementById('f_assist').value = shot.assistJersey || '';
+  document.getElementById('f_handedness').value = getHandedness(shot) || '';
+  document.getElementById('f_transitiontype').value = (shot.transition === 'FO' || shot.transition === 'OTOD') ? shot.transition : '';
+  document.getElementById('f_passtype').value = shot.passType || '';
+  document.getElementById('f_quality').value = shot.shotQuality || '';
+  document.getElementById('f_contest').value = shot.contestLevel || '';
+  document.getElementById('f_defscheme').value = shot.defScheme || '';
+  document.getElementById('f_tags').value = shot.customTags || '';
+  document.getElementById('f_ongoal').checked = shot.onGoal === 1;
+  document.getElementById('f_onkeeper').checked = shot.onKeeper === 1;
+  document.getElementById('f_goal').checked = shot.goal === 1;
+  document.getElementById('f_blocked').checked = shot.blocked === 1;
+  document.getElementById('f_offdodge').checked = shot.offDodge === 1;
+  document.getElementById('f_cleansave').checked = shot.cleanSave === 1;
+  buildFieldClickWidget({ distanceYds: shot.distanceYds, lateralYds: shot.lateralYds });
+  buildGoalClickWidget({ goalX: shot.goalX, goalY: shot.goalY });
+  document.getElementById('submitShotBtn').textContent = `Update Shot #${id}`;
+  document.getElementById('cancelEditBtn').style.display = '';
+  const banner = document.getElementById('editingBanner');
+  banner.textContent = `Editing shot #${id} \u2014 fix whatever's wrong and hit Update, or Cancel to leave it as-is.`;
+  banner.style.display = '';
+  switchTab('logView');
+  window.scrollTo(0, 0);
+}
+
+document.getElementById('cancelEditBtn').addEventListener('click', () => {
+  exitEditMode();
+  fullResetLogForm();
+  switchTab('tableView');
+});
 
 document.getElementById('submitShotBtn').addEventListener('click', async () => {
   const shooter = document.getElementById('f_shooter').value;
@@ -1057,10 +1192,9 @@ document.getElementById('submitShotBtn').addEventListener('click', async () => {
   if (pendingField.distanceYds === null) { showMsg('Click the field to set shot location.', false); return; }
 
   const goalieVal = document.getElementById('f_goalie').value;
-  const maxId = SHOTS.reduce((m,s)=>Math.max(m, s.id||0), 0);
+  const assistVal = document.getElementById('f_assist').value;
 
-  const shot = {
-    id: maxId + 1,
+  const shotData = {
     date: document.getElementById('f_date').value || new Date().toISOString().slice(0,10),
     practiceId: null,
     context: document.getElementById('f_context').value,
@@ -1081,16 +1215,39 @@ document.getElementById('submitShotBtn').addEventListener('click', async () => {
     goalX: pendingGoal.goalX, goalY: pendingGoal.goalY,
     customTags: document.getElementById('f_tags').value || null,
     contestLevel: contest,
-    assistJersey: document.getElementById('f_assist').value.trim() || null,
+    assistJersey: (assistVal && assistVal !== '__ADD_NEW__') ? assistVal : null,
     opponent: document.getElementById('f_opponent').value || null,
     passType: document.getElementById('f_passtype').value || null,
   };
 
-  SHOTS.push(shot);
-  const okSave = await persistShots();
-  if (!okSave) { SHOTS.pop(); showMsg('Save failed \u2014 please try again.', false); return; }
+  const isEdit = editingShotId !== null;
+  let savedId;
+  if (isEdit) {
+    const idx = SHOTS.findIndex(s => s.id === editingShotId);
+    if (idx === -1) { showMsg('That shot no longer exists.', false); exitEditMode(); return; }
+    const original = SHOTS[idx];
+    savedId = editingShotId;
+    SHOTS[idx] = Object.assign({ id: savedId }, shotData);
+    const okSave = await persistShots();
+    if (!okSave) { SHOTS[idx] = original; showMsg('Save failed \u2014 please try again.', false); return; }
+  } else {
+    const maxId = SHOTS.reduce((m,s)=>Math.max(m, s.id||0), 0);
+    savedId = maxId + 1;
+    const shot = Object.assign({ id: savedId }, shotData);
+    SHOTS.push(shot);
+    const okSave = await persistShots();
+    if (!okSave) { SHOTS.pop(); showMsg('Save failed \u2014 please try again.', false); return; }
+  }
 
-  showMsg(`Saved shot #${shot.id} for #${shooter} ${nameFor(shooter, currentLogSeason())}.`, true);
+  if (isEdit) {
+    exitEditMode();
+    fullResetLogForm();
+    switchTab('tableView');
+    showTableMsg(`Updated shot #${savedId}.`);
+    return;
+  }
+
+  showMsg(`Saved shot #${savedId} for #${shooter} ${nameFor(shooter, currentLogSeason())}.`, true);
   document.getElementById('f_goal').checked = false;
   document.getElementById('f_blocked').checked = false;
   document.getElementById('f_offdodge').checked = false;
@@ -1143,11 +1300,12 @@ function readFilterState(prefix) {
     passType: document.getElementById(prefix+'passtype').value,
     assist: document.getElementById(prefix+'assist').value.trim().toLowerCase(),
     opponent: document.getElementById(prefix+'opponent').value.trim().toLowerCase(),
+    tags: document.getElementById(prefix+'tags').value.trim().toLowerCase(),
   };
 }
 function clearFilterState(prefix) {
   ['context','defscheme','transitiontype','handedness','offdodge','contest','passtype'].forEach(k => document.getElementById(prefix+k).value = '');
-  ['assist','opponent'].forEach(k => document.getElementById(prefix+k).value = '');
+  ['assist','opponent','tags'].forEach(k => document.getElementById(prefix+k).value = '');
 }
 function applyExtraFilters(subset, f) {
   if (f.context) subset = subset.filter(s => s.context === f.context);
@@ -1157,8 +1315,9 @@ function applyExtraFilters(subset, f) {
   if (f.offDodge) subset = subset.filter(s => (f.offDodge === 'Yes' ? s.offDodge === 1 : s.offDodge !== 1));
   if (f.contestLevel) subset = subset.filter(s => s.contestLevel === f.contestLevel);
   if (f.passType) subset = subset.filter(s => s.passType === f.passType);
-  if (f.assist) subset = subset.filter(s => (s.assistJersey||'').toLowerCase().includes(f.assist));
+  if (f.assist) subset = subset.filter(s => assistDisplay(s).toLowerCase().includes(f.assist));
   if (f.opponent) subset = subset.filter(s => (s.opponent||'').toLowerCase().includes(f.opponent));
+  if (f.tags) subset = subset.filter(s => (s.customTags||'').toLowerCase().includes(f.tags));
   return subset;
 }
 function filterSummary(f) {
@@ -1172,6 +1331,7 @@ function filterSummary(f) {
   if (f.passType) parts.push(f.passType);
   if (f.assist) parts.push(`passed by "${f.assist}"`);
   if (f.opponent) parts.push(`vs "${f.opponent}"`);
+  if (f.tags) parts.push(`tagged "${f.tags}"`);
   return parts.length ? ` \u2014 ${parts.join(', ')}` : '';
 }
 
@@ -1491,7 +1651,10 @@ function renderRosterManager() {
   }
   const season = heatSeason;
   const list = (ROSTERS[season] || []).slice().sort((a,b)=>a.name.localeCompare(b.name));
-  let html = `<p class="sans" style="color:var(--muted); font-size:12px; margin:0 0 8px;">${rosterPlayers(season).length} players, ${rosterGoalies(season).length} goalies on the ${season} roster. Removing someone here only affects the ${season} roster and dropdowns \u2014 their logged shots stay in the data.</p>`;
+  let html = `<div style="display:flex; justify-content:space-between; align-items:flex-start; gap:10px; flex-wrap:wrap; margin-bottom:8px;">
+    <p class="sans" style="color:var(--muted); font-size:12px; margin:0;">${rosterPlayers(season).length} players, ${rosterGoalies(season).length} goalies on the ${season} roster. Removing someone here only affects the ${season} roster and dropdowns \u2014 their logged shots stay in the data.</p>
+    <button class="btn secondary" id="rm_export" type="button" style="white-space:nowrap;">Export ${season} Roster CSV</button>
+  </div>`;
   html += '<div style="display:flex; flex-wrap:wrap; gap:6px; margin-bottom:12px;">';
   list.forEach(r => {
     r.roles.forEach(role => {
@@ -1507,6 +1670,10 @@ function renderRosterManager() {
       <div><button class="btn secondary" id="rm_add" type="button">Add</button></div>
     </div>`;
   wrap.innerHTML = html;
+  document.getElementById('rm_export').addEventListener('click', () => {
+    const rows = list.map(r => ({ jersey: r.jersey, name: r.name, roles: r.roles.join(', ') }));
+    exportCsv(`roster-${season}.csv`, rows, ['jersey', 'name', 'roles']);
+  });
   wrap.querySelectorAll('.rm-remove').forEach(btn => {
     btn.addEventListener('click', async () => {
       await removePlayerFromRoster(season, btn.dataset.jersey, btn.dataset.role);
@@ -1607,7 +1774,7 @@ function renderZoneDrilldown(wrap, zone, it) {
   html += '<div class="table-wrap"><table class="shotlog"><thead><tr><th>Date</th><th>Ctx</th><th>Shooter</th><th>Grade</th><th>Goal</th><th>Contest</th><th>Pass</th><th>Assist</th></tr></thead><tbody>';
   shots.forEach(s => {
     const season = seasonForDate(s.date);
-    html += `<tr><td>${s.date||''}</td><td>${s.context||''}</td><td>#${s.shooterJersey||''} ${nameFor(s.shooterJersey, season)||''}</td><td>${(s.shotQuality||'').replace(/^\d-/,'')}</td><td>${s.goal?'Yes':'No'}</td><td>${s.contestLevel||''}</td><td>${s.passType||''}</td><td>${s.assistJersey||''}</td></tr>`;
+    html += `<tr><td>${s.date||''}</td><td>${s.context||''}</td><td>#${s.shooterJersey||''} ${nameFor(s.shooterJersey, season)||''}</td><td>${(s.shotQuality||'').replace(/^\d-/,'')}</td><td>${s.goal?'Yes':'No'}</td><td>${s.contestLevel||''}</td><td>${s.passType||''}</td><td>${assistDisplay(s)}</td></tr>`;
   });
   html += '</tbody></table></div>';
   wrap.innerHTML = html;
@@ -1698,7 +1865,7 @@ setupSeasonPills('playerSeasonPills', (s) => {
   });
 })();
 ['pf_context','pf_defscheme','pf_transitiontype','pf_handedness','pf_offdodge','pf_contest','pf_passtype'].forEach(id => document.getElementById(id).addEventListener('change', renderPlayerHeat));
-['pf_assist','pf_opponent'].forEach(id => document.getElementById(id).addEventListener('input', renderPlayerHeat));
+['pf_assist','pf_opponent','pf_tags'].forEach(id => document.getElementById(id).addEventListener('input', renderPlayerHeat));
 document.getElementById('pf_clear').addEventListener('click', () => { clearFilterState('pf_'); renderPlayerHeat(); });
 
 // ---------------- Goalie Heat Maps ----------------
@@ -1750,11 +1917,21 @@ setupSeasonPills('goalieSeasonPills', (s) => {
   renderGoalieTrends();
 }, goalieHeatSeason);
 ['gf_context','gf_defscheme','gf_transitiontype','gf_handedness','gf_offdodge','gf_contest','gf_passtype'].forEach(id => document.getElementById(id).addEventListener('change', renderGoalieHeat));
-['gf_assist','gf_opponent'].forEach(id => document.getElementById(id).addEventListener('input', renderGoalieHeat));
+['gf_assist','gf_opponent','gf_tags'].forEach(id => document.getElementById(id).addEventListener('input', renderGoalieHeat));
 document.getElementById('gf_clear').addEventListener('click', () => { clearFilterState('gf_'); renderGoalieHeat(); });
 
 // ---------------- Shot Log table ----------------
 let deleteShotArmed = null;
+// Assist used to be free-text; new shots store a roster jersey. nameFor()
+// falls through to the raw value when it can't resolve a jersey, so this
+// renders old free-text assists unchanged and new ones as "#12 Name".
+function assistDisplay(shot) {
+  const val = shot.assistJersey;
+  if (!val) return '';
+  const resolved = nameFor(val, seasonForDate(shot.date));
+  return resolved !== val ? `#${val} ${resolved}` : val;
+}
+
 function renderTable() {
   const sf = document.getElementById('tf_season').value;
   const seasonShots = sf ? shotsForSeason(sf) : SHOTS;
@@ -1784,14 +1961,17 @@ function renderTable() {
       <td>${r.goal ? 'Yes':'No'}</td>
       <td>${r.onKeeper ? 'Yes':'No'}</td>
       <td>${r.contestLevel||''}</td>
-      <td>${r.assistJersey || ''}</td>
+      <td>${assistDisplay(r)}</td>
       <td>${r.passType||''}</td>
       <td>${r.customTags||''}</td>
       <td>${r.seed ? '<span class="sans" style="color:var(--muted); font-size:11px;">Historical</span>' : (deleteShotArmed === r.id
         ? `<button class="btn danger" data-confirm-id="${r.id}">Confirm delete</button> <button class="btn secondary" data-cancel-id="${r.id}">Cancel</button>`
-        : `<button class="btn danger" data-id="${r.id}">Delete</button>`)}</td>
+        : `<button class="btn secondary" data-edit-id="${r.id}">Edit</button> <button class="btn danger" data-id="${r.id}">Delete</button>`)}</td>
     `;
     tbody.appendChild(tr);
+  });
+  tbody.querySelectorAll('button[data-edit-id]').forEach(b => {
+    b.addEventListener('click', () => startEditShot(parseInt(b.dataset.editId, 10)));
   });
   tbody.querySelectorAll('button[data-id]').forEach(b => {
     b.addEventListener('click', () => {
@@ -2359,23 +2539,30 @@ function renderAllRatings() {
 }
 
 const resetDataBtn = document.getElementById('resetDataBtn');
-resetDataBtn.addEventListener('click', async () => {
-  if (resetDataBtn.dataset.armed !== '1') {
-    resetDataBtn.dataset.armed = '1';
-    resetDataBtn.textContent = 'Click again to permanently erase — can’t be undone';
-    resetDataBtn.style.color = '#C0392B';
-    resetDataBtn.style.borderColor = '#C0392B';
-    setTimeout(() => {
-      if (resetDataBtn.dataset.armed === '1') {
-        resetDataBtn.dataset.armed = '0';
-        resetDataBtn.textContent = 'Reset all data…';
-        resetDataBtn.style.color = '';
-        resetDataBtn.style.borderColor = '';
-      }
-    }, 5000);
-    return;
-  }
-  resetDataBtn.dataset.armed = '0';
+const resetConfirmPanel = document.getElementById('resetConfirmPanel');
+const resetConfirmInput = document.getElementById('resetConfirmInput');
+const resetConfirmBtn = document.getElementById('resetConfirmBtn');
+
+function closeResetConfirm() {
+  resetConfirmPanel.style.display = 'none';
+  resetConfirmInput.value = '';
+  resetConfirmBtn.disabled = true;
+}
+
+resetDataBtn.addEventListener('click', () => {
+  resetConfirmPanel.style.display = '';
+  resetConfirmInput.value = '';
+  resetConfirmBtn.disabled = true;
+  resetConfirmInput.focus();
+});
+document.getElementById('resetCancelBtn').addEventListener('click', closeResetConfirm);
+resetConfirmInput.addEventListener('input', () => {
+  resetConfirmBtn.disabled = resetConfirmInput.value.trim().toUpperCase() !== 'DELETE';
+});
+resetConfirmBtn.addEventListener('click', async () => {
+  if (resetConfirmInput.value.trim().toUpperCase() !== 'DELETE') return;
+  resetConfirmBtn.disabled = true;
+  resetConfirmBtn.textContent = 'Deleting…';
   if (!DB) { location.reload(); return; }
   try {
     await DB.doc('app/roster').delete();
@@ -2442,6 +2629,13 @@ async function init() {
   renderGoalieTrends();
   renderGoalieHeat();
   renderTable();
+}
+</script>
+<script>
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('sw.js').catch(e => console.warn('Service worker registration failed', e));
+  });
 }
 </script>
 </body>
