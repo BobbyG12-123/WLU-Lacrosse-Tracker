@@ -68,8 +68,15 @@
   /* NOTE: inside an SVG with a viewBox, CSS px on text = coordinate units, not screen px.
      These sizes are tuned per-diagram to that diagram's own viewBox scale. */
   .field-label { font-size: 1.3px; font-weight: 700; fill: #1a1a1a; font-family: Arial, sans-serif; }
-  .field-axis { font-size: 0.9px; fill: #9A9280; font-family: Arial, sans-serif; }
+  .field-axis { font-size: 1.1px; font-weight: 700; fill: #6B6455; font-family: Arial, sans-serif; }
   .field-yardage { font-size: 0.62px; fill: #8A8370; font-family: Arial, sans-serif; font-style: italic; }
+  .heat-zone { cursor: pointer; }
+  .heat-zone:hover { opacity: 0.7; }
+  .heat-zone-selected { stroke: #1F3864 !important; stroke-width: 0.35 !important; }
+  #heatTooltip { position: fixed; pointer-events: none; z-index: 9999; background: var(--navy); color: #fff; font-family: 'Helvetica Neue', Arial, sans-serif; font-size: 12px; line-height: 1.45; padding: 8px 12px; border-radius: 6px; box-shadow: 0 4px 14px rgba(0,0,0,.28); max-width: 240px; display: none; }
+  #heatTooltip b { color: #E9DFB8; }
+  .zone-drilldown { margin-top: 14px; }
+  .zone-drilldown .table-wrap { max-height: 280px; }
   .goal-label { font-size: 0.3px; font-weight: 700; fill: #1a1a1a; font-family: Arial, sans-serif; }
   table.shotlog { width: 100%; border-collapse: collapse; font-family: 'Helvetica Neue', Arial, sans-serif; font-size: 12.5px; }
   table.shotlog th { text-align: left; padding: 8px 8px; border-bottom: 2px solid var(--navy-3); color: var(--navy-3); position: sticky; top: 0; background: #fff; }
@@ -702,7 +709,7 @@ function buildZones(subset, distBands, latBands) {
         && r.distanceYds >= y0 && r.distanceYds < y1 && r.lateralYds >= x0 && r.lateralYds < x1);
       const n = s.length;
       const goals = s.filter(r => r.goal === 1).length;
-      zones.push({x0,x1,y0,y1,n,goals});
+      zones.push({x0,x1,y0,y1,n,goals,shots:s});
     }
   }
   return zones;
@@ -721,7 +728,7 @@ function buildGoalGrid(subset) {
       const xlo = bands[col], xhi = bands[col+1];
       const s = subset.filter(r => r.goalX !== null && r.goalX !== undefined && r.goalY !== null && r.goalY !== undefined
         && r.goalX >= xlo && r.goalX < xhi && r.goalY >= ylo && r.goalY < yhi);
-      cells.push({ row, col, x0:xlo, x1:xhi, y0:ylo, y1:yhi, label: GOAL_GRID_LABELS[row][col], n: s.length, goals: s.filter(r=>r.goal===1).length });
+      cells.push({ row, col, x0:xlo, x1:xhi, y0:ylo, y1:yhi, label: GOAL_GRID_LABELS[row][col], n: s.length, goals: s.filter(r=>r.goal===1).length, shots: s });
     }
   }
   return cells;
@@ -730,6 +737,7 @@ function buildGoalGrid(subset) {
 // ---------------- SVG generators ----------------
 function fieldSVG(zones, opts) {
   const metric = opts.metric || 'score';
+  const interactive = opts.interactive !== false;
   const maxDist = 20;
   const dispPct = z => z.n === 0 ? null : (metric === 'save' ? (z.n - z.goals)/z.n : z.goals/z.n);
   const pcts = zones.filter(z=>z.n>0).map(dispPct);
@@ -739,22 +747,26 @@ function fieldSVG(zones, opts) {
 
   let s = `<svg viewBox="-20 -4 40 27" xmlns="http://www.w3.org/2000/svg">`;
   s += `<rect x="-18" y="-2" width="36" height="${maxDist+3}" fill="#FBF6EC" stroke="#333" stroke-width="0.25"/>`;
+  // Axis labels sit at x=-19.3, just outside the leftmost zone's edge (zones
+  // start at x=-19), so a colored zone never draws over top of them.
   for (let yd = 0; yd <= maxDist; yd += 5) {
     s += `<line x1="-18" y1="${yd}" x2="18" y2="${yd}" stroke="#CFC9B8" stroke-width="0.1"/>`;
-    if (yd > 0) s += `<text x="-17.3" y="${yd-0.3}" class="field-axis">${yd}</text>`;
+    if (yd > 0) s += `<text x="-19.3" y="${yd-0.3}" class="field-axis">${yd}</text>`;
   }
-  zones.forEach(z => {
+  zones.forEach((z, i) => {
     const pct = dispPct(z);
     const color = z.n > 0 ? colorForPct(pct, vmin, vmax) : '#F2F2F2';
-    s += `<rect x="${z.x0}" y="${z.y0}" width="${z.x1-z.x0}" height="${z.y1-z.y0}" fill="${color}" stroke="#fff" stroke-width="0.15" opacity="0.9"/>`;
+    const cls = interactive ? ' class="heat-zone"' : '';
+    const idxAttr = interactive ? ` data-zidx="${i}"` : '';
+    s += `<rect x="${z.x0}" y="${z.y0}" width="${z.x1-z.x0}" height="${z.y1-z.y0}" fill="${color}" stroke="#fff" stroke-width="0.15" opacity="0.9"${cls}${idxAttr}/>`;
     const cx = (z.x0+z.x1)/2, cy = (z.y0+z.y1)/2;
     let label;
     if (z.n > 0) {
       if (metric === 'save') { const saves = z.n - z.goals; label = [`${saves}/${z.n} saved`, `${Math.round(pct*100)}%`]; }
       else { label = [`${z.goals}/${z.n}`, `${Math.round(pct*100)}%`]; }
     } else label = ['\u2014'];
-    label.forEach((ln,i) => { s += `<text x="${cx}" y="${cy + (i - (label.length-1)/2)*1.6}" text-anchor="middle" class="field-label">${ln}</text>`; });
-    s += `<text x="${z.x0+0.4}" y="${z.y0+1.1}" class="field-yardage">${z.y0} yd</text>`;
+    label.forEach((ln,i2) => { s += `<text x="${cx}" y="${cy + (i2 - (label.length-1)/2)*1.6}" text-anchor="middle" class="field-label" style="pointer-events:none;">${ln}</text>`; });
+    s += `<text x="${z.x0+0.4}" y="${z.y0+1.1}" class="field-yardage" style="pointer-events:none;">${z.y0}\u2013${z.y1} yd</text>`;
   });
   s += `<rect x="-1.2" y="-1.6" width="2.4" height="1.6" fill="#444" stroke="#fff" stroke-width="0.1"/>`;
   s += `<circle cx="0" cy="0" r="3" fill="none" stroke="#999" stroke-width="0.15" stroke-dasharray="0.5,0.4"/>`;
@@ -764,6 +776,7 @@ function fieldSVG(zones, opts) {
 
 function goalSVG(cells, opts) {
   const metric = opts.metric || 'score';
+  const interactive = opts.interactive !== false;
   const dispPct = c => c.n === 0 ? null : (metric === 'save' ? (c.n-c.goals)/c.n : c.goals/c.n);
   const pcts = cells.filter(c=>c.n>0).map(dispPct);
   const vmin = pcts.length ? Math.min(...pcts) : 0;
@@ -775,18 +788,20 @@ function goalSVG(cells, opts) {
   s += `<line x1="6.5" y1="0.5" x2="6.5" y2="9.5" stroke="#333" stroke-width="0.06"/>`;
   s += `<line x1="0.5" y1="3.5" x2="9.5" y2="3.5" stroke="#333" stroke-width="0.06"/>`;
   s += `<line x1="0.5" y1="6.5" x2="9.5" y2="6.5" stroke="#333" stroke-width="0.06"/>`;
-  cells.forEach(cell => {
+  cells.forEach((cell, i) => {
     const x0 = 0.5 + cell.col*3, y0 = 0.5 + cell.row*3, w = 3, h = 3;
     const pct = dispPct(cell);
     const color = cell.n > 0 ? colorForPct(pct, vmin, vmax) : '#F2F2F2';
-    s += `<rect x="${x0}" y="${y0}" width="${w}" height="${h}" fill="${color}" stroke="#fff" stroke-width="0.1" opacity="0.9"/>`;
+    const cls = interactive ? ' class="heat-zone"' : '';
+    const idxAttr = interactive ? ` data-zidx="${i}"` : '';
+    s += `<rect x="${x0}" y="${y0}" width="${w}" height="${h}" fill="${color}" stroke="#fff" stroke-width="0.1" opacity="0.9"${cls}${idxAttr}/>`;
     const cx = x0+w/2, cy = y0+h/2;
     let lines = [cell.label];
     if (cell.n > 0) {
       if (metric === 'save') { const saves = cell.n-cell.goals; lines.push(`${saves}/${cell.n} saved`, `${Math.round(pct*100)}%`); }
       else { lines.push(`${cell.goals}/${cell.n}`, `${Math.round(pct*100)}%`); }
     } else lines.push('\u2014');
-    lines.forEach((ln,i) => { s += `<text x="${cx}" y="${cy + (i-(lines.length-1)/2)*0.5}" text-anchor="middle" class="goal-label">${ln}</text>`; });
+    lines.forEach((ln,i2) => { s += `<text x="${cx}" y="${cy + (i2-(lines.length-1)/2)*0.5}" text-anchor="middle" class="goal-label" style="pointer-events:none;">${ln}</text>`; });
   });
   s += `</svg>`;
   return s;
@@ -904,7 +919,7 @@ function svgPoint(svgEl, evt) {
 
 function buildFieldClickWidget() {
   const wrap = document.getElementById('fieldClickWrap');
-  wrap.innerHTML = fieldSVG(buildZones([], DIST_BANDS_PLAYER, LAT_BANDS_PLAYER), {metric:'score'});
+  wrap.innerHTML = fieldSVG(buildZones([], DIST_BANDS_PLAYER, LAT_BANDS_PLAYER), {metric:'score', interactive:false});
   const svgEl = wrap.querySelector('svg');
   let marker = document.createElementNS('http://www.w3.org/2000/svg','circle');
   marker.setAttribute('r','0.6'); marker.setAttribute('fill','#1F3864'); marker.setAttribute('stroke','#fff'); marker.setAttribute('stroke-width','0.15');
@@ -923,7 +938,7 @@ function buildFieldClickWidget() {
 
 function buildGoalClickWidget() {
   const wrap = document.getElementById('goalClickWrap');
-  wrap.innerHTML = goalSVG(buildGoalGrid([]), {metric:'score'});
+  wrap.innerHTML = goalSVG(buildGoalGrid([]), {metric:'score', interactive:false});
   const svgEl = wrap.querySelector('svg');
   let marker = document.createElementNS('http://www.w3.org/2000/svg','circle');
   marker.setAttribute('r','0.18'); marker.setAttribute('fill','#1F3864'); marker.setAttribute('stroke','#fff'); marker.setAttribute('stroke-width','0.05');
@@ -1323,7 +1338,7 @@ function renderPlayerHeat() {
     const zones = buildZones(subset, DIST_BANDS_TEAM, LAT_BANDS_TEAM);
     n = subset.length;
     const small = n > 0 && n < 5;
-    renderHeatPanel('playerHeatWrap', [{svg: fieldSVG(zones, {metric:'score'}), caption: title, sub: `${n} shot(s)` + (small ? ' \u2014 small sample' : '') + filterSummary(filters)}]);
+    renderHeatPanel('playerHeatWrap', [{svg: fieldSVG(zones, {metric:'score'}), caption: title, sub: `${n} shot(s)` + (small ? ' \u2014 small sample' : '') + filterSummary(filters) + ' \u2014 hover a zone for detail, click for the shot list', hotspots: zones, metric: 'score', unitLabel: 'shot(s)'}]);
   } else if (sel.startsWith('NAME:')) {
     const key = sel.slice(5);
     subset = seasonShots.filter(s => {
@@ -1338,7 +1353,7 @@ function renderPlayerHeat() {
     title = `${displayName} \u2014 ${grade} \u2014 ${seasonLabel}`;
     const zones = buildZones(subset, DIST_BANDS_PLAYER, LAT_BANDS_PLAYER);
     const small = n > 0 && n < 5;
-    renderHeatPanel('playerHeatWrap', [{svg: fieldSVG(zones, {metric:'score'}), caption: title, sub: `${n} shot(s)` + (small ? ' \u2014 small sample' : '') + filterSummary(filters)}]);
+    renderHeatPanel('playerHeatWrap', [{svg: fieldSVG(zones, {metric:'score'}), caption: title, sub: `${n} shot(s)` + (small ? ' \u2014 small sample' : '') + filterSummary(filters) + ' \u2014 hover a zone for detail, click for the shot list', hotspots: zones, metric: 'score', unitLabel: 'shot(s)'}]);
   } else {
     subset = seasonShots.filter(s => s.shooterJersey === sel && (!gradeVal || s.shotQuality === gradeVal));
     subset = applyExtraFilters(subset, filters);
@@ -1346,7 +1361,7 @@ function renderPlayerHeat() {
     title = `#${sel} ${nameFor(sel, season === 'All Seasons' ? undefined : season)} \u2014 ${grade} \u2014 ${seasonLabel}`;
     const zones = buildZones(subset, DIST_BANDS_PLAYER, LAT_BANDS_PLAYER);
     const small = n > 0 && n < 5;
-    renderHeatPanel('playerHeatWrap', [{svg: fieldSVG(zones, {metric:'score'}), caption: title, sub: `${n} shot(s)` + (small ? ' \u2014 small sample' : '') + filterSummary(filters)}]);
+    renderHeatPanel('playerHeatWrap', [{svg: fieldSVG(zones, {metric:'score'}), caption: title, sub: `${n} shot(s)` + (small ? ' \u2014 small sample' : '') + filterSummary(filters) + ' \u2014 hover a zone for detail, click for the shot list', hotspots: zones, metric: 'score', unitLabel: 'shot(s)'}]);
   }
 }
 
@@ -1415,9 +1430,95 @@ function setupSeasonPills(containerId, onChange, initial) {
   });
 }
 
+// ---------------- Heat map interactivity: hover tooltips + click drill-down ----------------
+// Every colored zone in a field or goal-placement map carries the exact list
+// of shots that produced it (attached in buildZones/buildGoalGrid). Hovering
+// shows a tooltip with the zone's numbers; clicking lists those shots below
+// the map, so a coach can go from "cold zone" straight to "which shots."
+let activeDrilldown = { containerId: null, key: null };
+
+function getHeatTooltipEl() {
+  let el = document.getElementById('heatTooltip');
+  if (!el) { el = document.createElement('div'); el.id = 'heatTooltip'; document.body.appendChild(el); }
+  return el;
+}
+function moveHeatTooltip(evt) {
+  const el = document.getElementById('heatTooltip');
+  if (!el) return;
+  const pad = 16;
+  const vw = window.innerWidth, vh = window.innerHeight;
+  let x = evt.clientX + pad, y = evt.clientY + pad;
+  if (x + 240 > vw) x = evt.clientX - 240 - pad;
+  if (y + 90 > vh) y = evt.clientY - 90 - pad;
+  el.style.left = Math.max(4, x) + 'px';
+  el.style.top = Math.max(4, y) + 'px';
+}
+function zoneRangeLabel(zone) {
+  return zone.label ? zone.label : `${zone.y0}–${zone.y1} yd, ${zone.x0} to ${zone.x1} yd lateral`;
+}
+function heatTooltipHtml(zone, it) {
+  const title = zoneRangeLabel(zone);
+  const n = zone.n;
+  if (!n) return `<b>${title}</b><br>No ${it.unitLabel || 'shots'} here yet`;
+  const made = it.metric === 'save' ? (n - zone.goals) : zone.goals;
+  const verb = it.metric === 'save' ? 'saved' : 'scored';
+  const pct = Math.round((made / n) * 100);
+  return `<b>${title}</b><br>${n} ${it.unitLabel || 'shot(s)'} — ${made}/${n} ${verb} (${pct}%)<br><span style="opacity:.75;">Click for the shot list</span>`;
+}
+function showHeatTooltip(evt, zone, it) {
+  const el = getHeatTooltipEl();
+  el.innerHTML = heatTooltipHtml(zone, it);
+  el.style.display = 'block';
+  moveHeatTooltip(evt);
+}
+function hideHeatTooltip() {
+  const el = document.getElementById('heatTooltip');
+  if (el) el.style.display = 'none';
+}
+function renderZoneDrilldown(wrap, zone, it) {
+  const shots = (zone.shots || []).slice().sort((a,b) => (b.date||'').localeCompare(a.date||'')).slice(0, 150);
+  const title = zoneRangeLabel(zone);
+  if (!shots.length) {
+    wrap.innerHTML = `<div class="msg" style="background:#EEF1F6; color:var(--navy-3);">No shots in ${title} with the current filters.</div>`;
+    return;
+  }
+  const capNote = zone.shots.length > 150 ? ` (showing most recent 150 of ${zone.shots.length})` : '';
+  let html = `<p class="sans" style="font-weight:700; color:var(--navy-3); font-size:13px; margin:0 0 8px;">${title} — ${zone.shots.length} shot(s)${capNote}</p>`;
+  html += '<div class="table-wrap"><table class="shotlog"><thead><tr><th>Date</th><th>Ctx</th><th>Shooter</th><th>Grade</th><th>Goal</th><th>Contest</th><th>Pass</th><th>Assist</th></tr></thead><tbody>';
+  shots.forEach(s => {
+    const season = seasonForDate(s.date);
+    html += `<tr><td>${s.date||''}</td><td>${s.context||''}</td><td>#${s.shooterJersey||''} ${nameFor(s.shooterJersey, season)||''}</td><td>${(s.shotQuality||'').replace(/^\d-/,'')}</td><td>${s.goal?'Yes':'No'}</td><td>${s.contestLevel||''}</td><td>${s.passType||''}</td><td>${s.assistJersey||''}</td></tr>`;
+  });
+  html += '</tbody></table></div>';
+  wrap.innerHTML = html;
+}
+function toggleZoneDrilldown(containerId, zone, zoneEl, it) {
+  const drillId = containerId + 'Drilldown';
+  let drillWrap = document.getElementById(drillId);
+  if (!drillWrap) {
+    drillWrap = document.createElement('div');
+    drillWrap.id = drillId;
+    drillWrap.className = 'zone-drilldown';
+    document.getElementById(containerId).insertAdjacentElement('afterend', drillWrap);
+  }
+  const key = zoneRangeLabel(zone) + '|' + it.metric + '|' + (zoneEl.dataset.zidx || '');
+  document.querySelectorAll('.heat-zone-selected').forEach(el => el.classList.remove('heat-zone-selected'));
+  if (activeDrilldown.containerId === containerId && activeDrilldown.key === key) {
+    drillWrap.innerHTML = '';
+    activeDrilldown = { containerId: null, key: null };
+    return;
+  }
+  zoneEl.classList.add('heat-zone-selected');
+  activeDrilldown = { containerId, key };
+  renderZoneDrilldown(drillWrap, zone, it);
+}
+
 function renderHeatPanel(containerId, items) {
   const wrap = document.getElementById(containerId);
   wrap.innerHTML = '';
+  const drillWrap = document.getElementById(containerId + 'Drilldown');
+  if (drillWrap) drillWrap.innerHTML = '';
+  if (activeDrilldown.containerId === containerId) activeDrilldown = { containerId: null, key: null };
   items.forEach(it => {
     const fig = document.createElement('figure');
     fig.style.margin = '0'; fig.style.textAlign = 'center'; fig.style.maxWidth = '520px'; fig.style.flex = '1 1 320px';
@@ -1429,11 +1530,24 @@ function renderHeatPanel(containerId, items) {
     capSub.textContent = it.sub;
     const imgHolder = document.createElement('div');
     imgHolder.innerHTML = it.svg;
-    imgHolder.querySelector('svg').style.width = '100%';
-    imgHolder.querySelector('svg').style.border = '1px solid var(--line)';
-    imgHolder.querySelector('svg').style.borderRadius = '6px';
+    const svgEl = imgHolder.querySelector('svg');
+    svgEl.style.width = '100%';
+    svgEl.style.border = '1px solid var(--line)';
+    svgEl.style.borderRadius = '6px';
     fig.appendChild(capTitle); fig.appendChild(capSub); fig.appendChild(imgHolder);
     wrap.appendChild(fig);
+
+    if (it.hotspots) {
+      svgEl.querySelectorAll('.heat-zone').forEach(zoneEl => {
+        const idx = Number(zoneEl.dataset.zidx);
+        const zone = it.hotspots[idx];
+        if (!zone) return;
+        zoneEl.addEventListener('mouseenter', (evt) => showHeatTooltip(evt, zone, it));
+        zoneEl.addEventListener('mousemove', moveHeatTooltip);
+        zoneEl.addEventListener('mouseleave', hideHeatTooltip);
+        zoneEl.addEventListener('click', () => toggleZoneDrilldown(containerId, zone, zoneEl, it));
+      });
+    }
   });
 }
 
@@ -1476,8 +1590,8 @@ function renderGoalieHeat() {
   const name = nameFor(sel);
   const smallTxt = (small ? ' \u2014 small sample' : '') + filterSummary(filters);
   renderHeatPanel('goalieHeatWrap', [
-    { svg: fieldSVG(zones, {metric:'save'}), caption: `${name} \u2014 ${goalieGrade} (Field Position)`, sub: `${n} faced${smallTxt}` },
-    { svg: goalSVG(goalCells, {metric:'save'}), caption: `${name} \u2014 ${goalieGrade} (Goal Placement)`, sub: `${n} faced${smallTxt}` },
+    { svg: fieldSVG(zones, {metric:'save'}), caption: `${name} \u2014 ${goalieGrade} (Field Position)`, sub: `${n} faced${smallTxt} \u2014 hover a zone for detail, click for the shot list`, hotspots: zones, metric: 'save', unitLabel: 'faced' },
+    { svg: goalSVG(goalCells, {metric:'save'}), caption: `${name} \u2014 ${goalieGrade} (Goal Placement)`, sub: `${n} faced${smallTxt} \u2014 hover a zone for detail, click for the shot list`, hotspots: goalCells, metric: 'save', unitLabel: 'faced' },
   ]);
 }
 document.getElementById('goalieSelect').addEventListener('change', renderGoalieHeat);
