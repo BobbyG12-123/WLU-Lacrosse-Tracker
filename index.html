@@ -113,6 +113,13 @@
   .section-heading:first-child { margin-top: 0; }
   .section-heading.up { color: var(--good); }
   .section-heading.down { color: var(--critical); }
+  @media print {
+    header, nav.tabs, .btn, .filter-row, .controls-row, footer,
+    #editingBanner, #logMsg, #tableMsg, #foMsg, .print-hide { display: none !important; }
+    body { background: #fff; }
+    main { max-width: 100%; padding: 0; }
+    .panel { box-shadow: none; border: 1px solid #ccc; break-inside: avoid; }
+  }
 </style>
 </head>
 <body>
@@ -134,7 +141,10 @@
   <button class="tab-btn active" data-view="logView">Log Shot</button>
   <button class="tab-btn" data-view="playerView">Player Heat Maps</button>
   <button class="tab-btn" data-view="goalieView">Goalie Heat Maps</button>
+  <button class="tab-btn" data-view="faceoffView">Faceoffs</button>
   <button class="tab-btn" data-view="tableView">Shot Log</button>
+  <button class="tab-btn" data-view="compareView">Compare</button>
+  <button class="tab-btn" data-view="opponentView">Opponent</button>
   <button class="tab-btn" data-view="recruitsView">Recruits</button>
   <button class="tab-btn" data-view="boardView">Board</button>
 </nav>
@@ -254,6 +264,38 @@
       <button class="btn" id="submitShotBtn">Save Shot</button>
       <button class="btn secondary" id="cancelEditBtn" style="display:none;" type="button">Cancel Edit</button>
     </div>
+    <div class="panel">
+      <p class="panel-title">Log a Faceoff</p>
+      <p class="panel-sub">A separate event from shots &mdash; a faceoff win doesn't always lead to a shot. Saves instantly, same as shots.</p>
+      <div id="foMsg"></div>
+      <div class="field-grid">
+        <div>
+          <label for="fo_date">Date</label>
+          <input type="date" id="fo_date">
+        </div>
+        <div>
+          <label for="fo_context">Context</label>
+          <select id="fo_context"><option>Practice</option><option>Game</option></select>
+        </div>
+        <div id="foOpponentFieldWrap" style="display:none;">
+          <label for="fo_opponent">Which Game (Opponent)</label>
+          <input type="text" id="fo_opponent" placeholder="e.g. Washington & Lee">
+        </div>
+        <div>
+          <label for="fo_player">Faceoff Taker</label>
+          <select id="fo_player"></select>
+        </div>
+        <div>
+          <label for="fo_won">Result</label>
+          <select id="fo_won"><option value="">Select&hellip;</option><option value="Yes">Won</option><option value="No">Lost</option></select>
+        </div>
+        <div>
+          <label for="fo_notes">Notes (optional)</label>
+          <input type="text" id="fo_notes" placeholder="e.g. clamp and go">
+        </div>
+      </div>
+      <button class="btn" id="submitFaceoffBtn">Save Faceoff</button>
+    </div>
   </section>
 
   <section id="playerView" class="view">
@@ -307,9 +349,14 @@
         <select id="pf_offdodge"><option value="">Off dodge: any</option><option value="Yes">Off dodge: yes</option><option value="No">Off dodge: no</option></select>
         <select id="pf_contest"><option value="">Any contest level</option><option value="Open">Open</option><option value="Light">Light</option><option value="Heavy">Heavy</option></select>
         <select id="pf_passtype"><option value="">Any pass type</option><option value="Feed">Feed</option><option value="Skip Pass">Skip Pass</option><option value="Touch Pass">Touch Pass</option><option value="Behind-the-Back">Behind-the-Back</option><option value="Outlet/Clear">Outlet/Clear</option><option value="Dodge-and-Dish">Dodge-and-Dish</option><option value="No Pass">No Pass</option></select>
+        <select id="pf_ongoal"><option value="">On goal: any</option><option value="Yes">On goal: yes</option><option value="No">On goal: no</option></select>
+        <select id="pf_blocked"><option value="">Blocked: any</option><option value="Yes">Blocked: yes</option><option value="No">Blocked: no</option></select>
+        <select id="pf_cleansave"><option value="">Clean save: any</option><option value="Yes">Clean save: yes</option><option value="No">Clean save: no</option></select>
         <input type="text" id="pf_assist" placeholder="Passed by…">
         <input type="text" id="pf_opponent" placeholder="Opponent contains…">
         <input type="text" id="pf_tags" placeholder="Tags contain…">
+        <label class="sans" style="font-size:12px; color:var(--muted); display:flex; align-items:center; gap:6px;">From <input type="date" id="pf_datefrom"></label>
+        <label class="sans" style="font-size:12px; color:var(--muted); display:flex; align-items:center; gap:6px;">To <input type="date" id="pf_dateto"></label>
         <button class="btn secondary" id="pf_clear">Clear filters</button>
       </div>
       <div class="image-row" id="playerHeatWrap"></div>
@@ -358,12 +405,55 @@
         <select id="gf_offdodge"><option value="">Off dodge: any</option><option value="Yes">Off dodge: yes</option><option value="No">Off dodge: no</option></select>
         <select id="gf_contest"><option value="">Any contest level</option><option value="Open">Open</option><option value="Light">Light</option><option value="Heavy">Heavy</option></select>
         <select id="gf_passtype"><option value="">Any pass type</option><option value="Feed">Feed</option><option value="Skip Pass">Skip Pass</option><option value="Touch Pass">Touch Pass</option><option value="Behind-the-Back">Behind-the-Back</option><option value="Outlet/Clear">Outlet/Clear</option><option value="Dodge-and-Dish">Dodge-and-Dish</option><option value="No Pass">No Pass</option></select>
+        <select id="gf_ongoal"><option value="">On goal: any</option><option value="Yes">On goal: yes</option><option value="No">On goal: no</option></select>
+        <select id="gf_blocked"><option value="">Blocked: any</option><option value="Yes">Blocked: yes</option><option value="No">Blocked: no</option></select>
+        <select id="gf_cleansave"><option value="">Clean save: any</option><option value="Yes">Clean save: yes</option><option value="No">Clean save: no</option></select>
         <input type="text" id="gf_assist" placeholder="Passed by…">
         <input type="text" id="gf_opponent" placeholder="Opponent contains…">
         <input type="text" id="gf_tags" placeholder="Tags contain…">
+        <label class="sans" style="font-size:12px; color:var(--muted); display:flex; align-items:center; gap:6px;">From <input type="date" id="gf_datefrom"></label>
+        <label class="sans" style="font-size:12px; color:var(--muted); display:flex; align-items:center; gap:6px;">To <input type="date" id="gf_dateto"></label>
         <button class="btn secondary" id="gf_clear">Clear filters</button>
       </div>
       <div class="image-row" id="goalieHeatWrap"></div>
+    </div>
+  </section>
+
+  <section id="faceoffView" class="view">
+    <div class="panel">
+      <div class="controls-row" style="margin-bottom:0;">
+        <div class="control-group">
+          <label>Season</label>
+          <div class="grade-pills" id="faceoffSeasonPills"></div>
+        </div>
+      </div>
+      <p class="panel-sub" style="margin:10px 0 0;">Applies to every stat on this tab.</p>
+    </div>
+    <div class="panel">
+      <p class="panel-title">Faceoff Trends</p>
+      <p class="panel-sub">Win % across each quarter of a player's faceoffs, in order. Players need 12+ faceoffs (3+ per quarter) to show a trend.</p>
+      <div class="section-heading up"><span>&#9650;</span> Top 5 Trending Up</div>
+      <div class="trend-grid" id="faceoffTrendsUpGrid"></div>
+      <div class="section-heading down"><span>&#9660;</span> Trending Down</div>
+      <div class="trend-grid" id="faceoffTrendsDownGrid"></div>
+    </div>
+    <div class="panel">
+      <p class="panel-title">Faceoff Summary</p>
+      <div class="table-wrap" id="faceoffSummaryWrap"></div>
+    </div>
+    <div class="panel">
+      <p class="panel-title">Faceoff Log</p>
+      <p class="panel-sub" id="faceoffCountSub"></p>
+      <div class="filter-row">
+        <select id="foTf_player"><option value="">All players</option></select>
+        <select id="foTf_context"><option value="">All contexts</option><option value="Practice">Practice</option><option value="Game">Game</option></select>
+      </div>
+      <div class="table-wrap">
+        <table class="shotlog">
+          <thead><tr><th>ID</th><th>Date</th><th>Ctx</th><th>Opponent</th><th>Player</th><th>Result</th><th>Notes</th><th></th></tr></thead>
+          <tbody id="faceoffTableBody"></tbody>
+        </table>
+      </div>
     </div>
   </section>
 
@@ -399,6 +489,59 @@
         </table>
       </div>
     </div>
+  </section>
+
+  <section id="compareView" class="view">
+    <div class="panel">
+      <p class="panel-title">Compare</p>
+      <div class="grade-pills" id="compareModePills"></div>
+    </div>
+    <div id="comparePlayersPanel" class="panel">
+      <p class="panel-title">Compare Players</p>
+      <p class="panel-sub">Pick up to 3 players to see their shot-quality breakdown side by side &mdash; same columns as Player Deep Dive, just easier to read two or three at a time.</p>
+      <div class="controls-row">
+        <div class="control-group">
+          <label>Season</label>
+          <div class="grade-pills" id="cpSeasonPills"></div>
+        </div>
+      </div>
+      <div class="field-grid" style="grid-template-columns: repeat(3, minmax(160px,1fr));">
+        <div><label for="cp_player1">Player 1</label><select id="cp_player1"></select></div>
+        <div><label for="cp_player2">Player 2</label><select id="cp_player2"></select></div>
+        <div><label for="cp_player3">Player 3 (optional)</label><select id="cp_player3"></select></div>
+      </div>
+      <div class="table-wrap" id="comparePlayersWrap"></div>
+    </div>
+    <div id="compareSeasonsPanel" class="panel" style="display:none;">
+      <p class="panel-title">Compare Seasons</p>
+      <p class="panel-sub">One player (or the whole team) side by side across every season &mdash; useful for "did this returning player actually improve."</p>
+      <div class="field-grid" style="grid-template-columns: minmax(220px,1fr);">
+        <div><label for="cs_player">Player</label><select id="cs_player"></select></div>
+      </div>
+      <div class="table-wrap" id="compareSeasonsWrap"></div>
+    </div>
+  </section>
+
+  <section id="opponentView" class="view">
+    <div class="panel print-hide">
+      <p class="panel-title">Opponent</p>
+      <p class="panel-sub">How the team has actually shot when playing a specific opponent &mdash; not a scouting report on what they do (we only log our own shots), just our history against them. Pick an opponent below, then use Print Report for a clean, shareable page.</p>
+      <div class="controls-row">
+        <div class="control-group">
+          <label>Season</label>
+          <div class="grade-pills" id="oppSeasonPills"></div>
+        </div>
+        <div class="control-group">
+          <label for="opp_select">Opponent</label>
+          <select id="opp_select"></select>
+        </div>
+        <div class="control-group">
+          <label>&nbsp;</label>
+          <button class="btn secondary" id="opp_print" type="button">Print Report</button>
+        </div>
+      </div>
+    </div>
+    <div id="opponentReport"></div>
   </section>
 
   <section id="recruitsView" class="view">
@@ -557,6 +700,10 @@ firebase.auth().onAuthStateChanged(user => {
 </script>
 <script>
 const COLS =["id","date","practiceId","context","shooterJersey","goalieJersey","onGoal","onKeeper","goal","blocked","defScheme","transition","offDodge","rightHanded","shotQuality","cleanSave","fieldX","fieldY","distanceYds","lateralYds","goalX","goalY","customTags","contestLevel","assistJersey","opponent","passType"];
+// Faceoffs are a separate event type from shots (a FO win doesn't always
+// produce a shot), so they get their own small collection rather than being
+// squeezed into the shot schema.
+const FACEOFF_COLS = ["id","date","context","opponent","playerJersey","won","notes"];
 // Season roster docs: app/roster_2026, app/roster_2027, ... To add a future
 // season, append its year here — it will auto-seed as a copy of the prior
 // season's roster the first time the app loads with the new year present.
@@ -569,16 +716,20 @@ let DOWNLOADS = null;
 let ROSTERS = {}; // { "2026": [...roster entries...], "2027": [...] }
 let SHOTS = [];
 let LIVE_SHOTS_TUPLES = [];
+let FACEOFFS = [];
+let LIVE_FACEOFFS_TUPLES = [];
 let PLAYERS = [];
 let RATINGS = [];
 
-function tupleToObj(t) {
+function tupleToObj(t, cols) {
+  const c = cols || COLS;
   const o = {};
-  COLS.forEach((c, i) => o[c] = t[i]);
+  c.forEach((k, i) => o[k] = t[i]);
   return o;
 }
-function objToTuple(o) {
-  return COLS.map(c => (o[c] === undefined ? null : o[c]));
+function objToTuple(o, cols) {
+  const c = cols || COLS;
+  return c.map(k => (o[k] === undefined ? null : o[k]));
 }
 
 // ---------------- Storage (live, shared via the db capability) ----------------
@@ -588,7 +739,10 @@ function objToTuple(o) {
 // from / written to app/shots_live.
 function rebuildShots() {
   const seed = SEED_SHOTS_TUPLES.map(t => { const o = tupleToObj(t); o.seed = true; return o; });
-  SHOTS = seed.concat(LIVE_SHOTS_TUPLES.map(tupleToObj));
+  SHOTS = seed.concat(LIVE_SHOTS_TUPLES.map(t => tupleToObj(t)));
+}
+function rebuildFaceoffs() {
+  FACEOFFS = LIVE_FACEOFFS_TUPLES.map(t => tupleToObj(t, FACEOFF_COLS));
 }
 
 async function loadAll() {
@@ -658,6 +812,7 @@ async function loadAll() {
       if (!snap.exists || !Array.isArray(snap.data().list)) return;
       ROSTERS[season] = snap.data().list;
       refreshFormRosterOptions();
+      refreshFoRosterOptions();
       populatePlayerGoalieDropdowns();
       populatePlayerSelectForSeason(heatSeason);
       populateGoalieSelectForSeason(goalieHeatSeason);
@@ -688,6 +843,19 @@ async function loadAll() {
     populateGoalieSelectForSeason(goalieHeatSeason);
   }, e => console.error('shots sync error', e));
 
+  const faceoffsRef = DB.doc('app/faceoffs_live');
+  try {
+    const fsnap = await faceoffsRef.get();
+    if (fsnap.exists && Array.isArray(fsnap.data().list)) LIVE_FACEOFFS_TUPLES = fsnap.data().list;
+  } catch (e) { console.error('faceoffs load failed', e); }
+  rebuildFaceoffs();
+  faceoffsRef.onSnapshot(snap => {
+    if (!snap.exists || !Array.isArray(snap.data().list)) return;
+    LIVE_FACEOFFS_TUPLES = snap.data().list;
+    rebuildFaceoffs();
+    renderFaceoffs();
+  }, e => console.error('faceoffs sync error', e));
+
   DB.collection('evalPlayers').onSnapshot(snap => {
     PLAYERS = snap.docs.map(d => Object.assign({ id: d.id }, d.data()));
     renderRecruits();
@@ -712,9 +880,16 @@ async function persistRoster(season) {
 }
 async function persistShots() {
   if (!DB) return false;
-  const live = SHOTS.filter(s => !s.seed).map(objToTuple);
+  const live = SHOTS.filter(s => !s.seed).map(s => objToTuple(s));
   try { await DB.doc('app/shots_live').set({ list: live }); } catch (e) { console.error(e); return false; }
   LIVE_SHOTS_TUPLES = live;
+  return true;
+}
+async function persistFaceoffs() {
+  if (!DB) return false;
+  const live = FACEOFFS.map(f => objToTuple(f, FACEOFF_COLS));
+  try { await DB.doc('app/faceoffs_live').set({ list: live }); } catch (e) { console.error(e); return false; }
+  LIVE_FACEOFFS_TUPLES = live;
   return true;
 }
 
@@ -957,7 +1132,10 @@ function switchTab(viewId) {
   document.querySelectorAll('.view').forEach(v=>v.classList.toggle('active', v.id === viewId));
   if (viewId === 'playerView') renderPlayerHeat();
   if (viewId === 'goalieView') renderGoalieHeat();
+  if (viewId === 'faceoffView') renderFaceoffs();
   if (viewId === 'tableView') renderTable();
+  if (viewId === 'compareView') renderCompare();
+  if (viewId === 'opponentView') renderOpponent();
   if (viewId === 'recruitsView') { renderRecruits(); renderTrends(); }
   if (viewId === 'boardView') renderBoard();
 }
@@ -1048,6 +1226,51 @@ function toggleOpponentField() {
 document.getElementById('f_context').addEventListener('change', toggleOpponentField);
 document.getElementById('f_date').addEventListener('change', refreshFormRosterOptions);
 
+// ---------------- Log Faceoff form (mirrors Log Shot's date-driven season) ----------------
+function currentFoSeason() { return seasonForDate(document.getElementById('fo_date').value); }
+function refreshFoRosterOptions() {
+  populateSelect(document.getElementById('fo_player'), rosterPlayers(currentFoSeason()), 'Select faceoff taker…', false);
+}
+function toggleFoOpponentField() {
+  const isGame = document.getElementById('fo_context').value === 'Game';
+  document.getElementById('foOpponentFieldWrap').style.display = isGame ? '' : 'none';
+  if (!isGame) document.getElementById('fo_opponent').value = '';
+}
+document.getElementById('fo_context').addEventListener('change', toggleFoOpponentField);
+document.getElementById('fo_date').addEventListener('change', refreshFoRosterOptions);
+document.getElementById('fo_player').addEventListener('change', (e) => { if (e.target.value === '__ADD_NEW__') handleAddNew(e.target, 'player'); });
+
+function showFoMsg(text, ok) {
+  const box = document.getElementById('foMsg');
+  box.innerHTML = `<div class="msg ${ok?'ok':'err'}">${text}</div>`;
+  if (ok) setTimeout(()=>{ box.innerHTML=''; }, 4000);
+}
+
+document.getElementById('submitFaceoffBtn').addEventListener('click', async () => {
+  const player = document.getElementById('fo_player').value;
+  const won = document.getElementById('fo_won').value;
+  if (!player || player === '__ADD_NEW__') { showFoMsg('Pick who took the faceoff.', false); return; }
+  if (!won) { showFoMsg('Pick the result.', false); return; }
+
+  const maxId = FACEOFFS.reduce((m,f)=>Math.max(m, f.id||0), 0);
+  const faceoff = {
+    id: maxId + 1,
+    date: document.getElementById('fo_date').value || new Date().toISOString().slice(0,10),
+    context: document.getElementById('fo_context').value,
+    opponent: document.getElementById('fo_opponent').value || null,
+    playerJersey: player,
+    won: won === 'Yes' ? 1 : 0,
+    notes: document.getElementById('fo_notes').value || null,
+  };
+  FACEOFFS.push(faceoff);
+  const okSave = await persistFaceoffs();
+  if (!okSave) { FACEOFFS.pop(); showFoMsg('Save failed — please try again.', false); return; }
+
+  showFoMsg(`Saved faceoff #${faceoff.id} for #${player} ${nameFor(player, currentFoSeason())}.`, true);
+  document.getElementById('fo_won').value = '';
+  document.getElementById('fo_notes').value = '';
+});
+
 let pendingNewPlayer = null; // { selectEl, role }
 
 function handleAddNew(selectEl, role) {
@@ -1072,6 +1295,7 @@ document.getElementById('np_add').addEventListener('click', async () => {
   const { selectEl, role } = pendingNewPlayer;
   await addPlayerToRoster(currentLogSeason(), name, jersey, role);
   refreshFormRosterOptions();
+  refreshFoRosterOptions();
   populatePlayerGoalieDropdowns();
   populatePlayerSelectForSeason(heatSeason);
   populateGoalieSelectForSeason(goalieHeatSeason);
@@ -1298,14 +1522,19 @@ function readFilterState(prefix) {
     offDodge: document.getElementById(prefix+'offdodge').value,
     contestLevel: document.getElementById(prefix+'contest').value,
     passType: document.getElementById(prefix+'passtype').value,
+    onGoal: document.getElementById(prefix+'ongoal').value,
+    blocked: document.getElementById(prefix+'blocked').value,
+    cleanSave: document.getElementById(prefix+'cleansave').value,
     assist: document.getElementById(prefix+'assist').value.trim().toLowerCase(),
     opponent: document.getElementById(prefix+'opponent').value.trim().toLowerCase(),
     tags: document.getElementById(prefix+'tags').value.trim().toLowerCase(),
+    dateFrom: document.getElementById(prefix+'datefrom').value,
+    dateTo: document.getElementById(prefix+'dateto').value,
   };
 }
 function clearFilterState(prefix) {
-  ['context','defscheme','transitiontype','handedness','offdodge','contest','passtype'].forEach(k => document.getElementById(prefix+k).value = '');
-  ['assist','opponent','tags'].forEach(k => document.getElementById(prefix+k).value = '');
+  ['context','defscheme','transitiontype','handedness','offdodge','contest','passtype','ongoal','blocked','cleansave'].forEach(k => document.getElementById(prefix+k).value = '');
+  ['assist','opponent','tags','datefrom','dateto'].forEach(k => document.getElementById(prefix+k).value = '');
 }
 function applyExtraFilters(subset, f) {
   if (f.context) subset = subset.filter(s => s.context === f.context);
@@ -1315,9 +1544,14 @@ function applyExtraFilters(subset, f) {
   if (f.offDodge) subset = subset.filter(s => (f.offDodge === 'Yes' ? s.offDodge === 1 : s.offDodge !== 1));
   if (f.contestLevel) subset = subset.filter(s => s.contestLevel === f.contestLevel);
   if (f.passType) subset = subset.filter(s => s.passType === f.passType);
+  if (f.onGoal) subset = subset.filter(s => (f.onGoal === 'Yes' ? s.onGoal === 1 : s.onGoal !== 1));
+  if (f.blocked) subset = subset.filter(s => (f.blocked === 'Yes' ? s.blocked === 1 : s.blocked !== 1));
+  if (f.cleanSave) subset = subset.filter(s => (f.cleanSave === 'Yes' ? s.cleanSave === 1 : s.cleanSave !== 1));
   if (f.assist) subset = subset.filter(s => assistDisplay(s).toLowerCase().includes(f.assist));
   if (f.opponent) subset = subset.filter(s => (s.opponent||'').toLowerCase().includes(f.opponent));
   if (f.tags) subset = subset.filter(s => (s.customTags||'').toLowerCase().includes(f.tags));
+  if (f.dateFrom) subset = subset.filter(s => (s.date||'') >= f.dateFrom);
+  if (f.dateTo) subset = subset.filter(s => (s.date||'') <= f.dateTo);
   return subset;
 }
 function filterSummary(f) {
@@ -1329,9 +1563,14 @@ function filterSummary(f) {
   if (f.offDodge) parts.push('off dodge: '+f.offDodge.toLowerCase());
   if (f.contestLevel) parts.push(f.contestLevel+' contest');
   if (f.passType) parts.push(f.passType);
+  if (f.onGoal) parts.push('on goal: '+f.onGoal.toLowerCase());
+  if (f.blocked) parts.push('blocked: '+f.blocked.toLowerCase());
+  if (f.cleanSave) parts.push('clean save: '+f.cleanSave.toLowerCase());
   if (f.assist) parts.push(`passed by "${f.assist}"`);
   if (f.opponent) parts.push(`vs "${f.opponent}"`);
   if (f.tags) parts.push(`tagged "${f.tags}"`);
+  if (f.dateFrom) parts.push(`from ${f.dateFrom}`);
+  if (f.dateTo) parts.push(`to ${f.dateTo}`);
   return parts.length ? ` \u2014 ${parts.join(', ')}` : '';
 }
 
@@ -1678,6 +1917,7 @@ function renderRosterManager() {
     btn.addEventListener('click', async () => {
       await removePlayerFromRoster(season, btn.dataset.jersey, btn.dataset.role);
       refreshFormRosterOptions();
+      refreshFoRosterOptions();
       populatePlayerGoalieDropdowns();
       populatePlayerSelectForSeason(heatSeason);
       populateGoalieSelectForSeason(goalieHeatSeason);
@@ -1693,6 +1933,7 @@ function renderRosterManager() {
     if (!name || !jersey) return;
     await addPlayerToRoster(season, name, jersey, role);
     refreshFormRosterOptions();
+    refreshFoRosterOptions();
     populatePlayerGoalieDropdowns();
     populatePlayerSelectForSeason(heatSeason);
     populateGoalieSelectForSeason(goalieHeatSeason);
@@ -1864,7 +2105,7 @@ setupSeasonPills('playerSeasonPills', (s) => {
     el.appendChild(btn);
   });
 })();
-['pf_context','pf_defscheme','pf_transitiontype','pf_handedness','pf_offdodge','pf_contest','pf_passtype'].forEach(id => document.getElementById(id).addEventListener('change', renderPlayerHeat));
+['pf_context','pf_defscheme','pf_transitiontype','pf_handedness','pf_offdodge','pf_contest','pf_passtype','pf_ongoal','pf_blocked','pf_cleansave','pf_datefrom','pf_dateto'].forEach(id => document.getElementById(id).addEventListener('change', renderPlayerHeat));
 ['pf_assist','pf_opponent','pf_tags'].forEach(id => document.getElementById(id).addEventListener('input', renderPlayerHeat));
 document.getElementById('pf_clear').addEventListener('click', () => { clearFilterState('pf_'); renderPlayerHeat(); });
 
@@ -1916,7 +2157,7 @@ setupSeasonPills('goalieSeasonPills', (s) => {
   renderGoalieSummary();
   renderGoalieTrends();
 }, goalieHeatSeason);
-['gf_context','gf_defscheme','gf_transitiontype','gf_handedness','gf_offdodge','gf_contest','gf_passtype'].forEach(id => document.getElementById(id).addEventListener('change', renderGoalieHeat));
+['gf_context','gf_defscheme','gf_transitiontype','gf_handedness','gf_offdodge','gf_contest','gf_passtype','gf_ongoal','gf_blocked','gf_cleansave','gf_datefrom','gf_dateto'].forEach(id => document.getElementById(id).addEventListener('change', renderGoalieHeat));
 ['gf_assist','gf_opponent','gf_tags'].forEach(id => document.getElementById(id).addEventListener('input', renderGoalieHeat));
 document.getElementById('gf_clear').addEventListener('click', () => { clearFilterState('gf_'); renderGoalieHeat(); });
 
@@ -2002,6 +2243,354 @@ function renderTable() {
   SEASONS.forEach(s => { const opt = document.createElement('option'); opt.value = s; opt.textContent = s; sel.appendChild(opt); });
 })();
 ['tf_season','tf_player','tf_grade','tf_context'].forEach(id => document.getElementById(id).addEventListener('change', renderTable));
+
+// ---------------- Faceoffs ----------------
+let faceoffSeason = SEASONS[0];
+let deleteFaceoffArmed = null;
+function faceoffsForSeason(season) {
+  return season === 'All Seasons' ? FACEOFFS : FACEOFFS.filter(f => seasonForDate(f.date) === season);
+}
+function computeFaceoffSummary(faceoffs) {
+  const byJersey = {};
+  faceoffs.forEach(f => { if (f.playerJersey) (byJersey[f.playerJersey] = byJersey[f.playerJersey] || []).push(f); });
+  return Object.keys(byJersey).map(j => {
+    const list = byJersey[j];
+    const taken = list.length;
+    const won = list.filter(f => f.won === 1).length;
+    return { jersey: j, name: nameFor(j, faceoffSeason === 'All Seasons' ? undefined : faceoffSeason), taken, won, winPct: taken ? won/taken : null };
+  }).sort((a,b) => b.taken - a.taken);
+}
+function computeFaceoffTrends(faceoffs) {
+  const MIN_TOTAL = 12, BUCKETS = 4, MIN_PER_BUCKET = 2;
+  const byJersey = {};
+  faceoffs.forEach(f => { if (f.playerJersey) (byJersey[f.playerJersey] = byJersey[f.playerJersey] || []).push(f); });
+  const results = [];
+  Object.keys(byJersey).forEach(j => {
+    const list = byJersey[j].slice().sort((a,b) => chronoKey(a).localeCompare(chronoKey(b)));
+    if (list.length < MIN_TOTAL) return;
+    const buckets = quartileSplit(list, BUCKETS);
+    if (buckets.some(b => b.length < MIN_PER_BUCKET)) return;
+    const points = buckets.map((b,i) => ({ date: 'Q'+(i+1), value: b.filter(f=>f.won===1).length / b.length }));
+    const delta = points[points.length-1].value - points[0].value;
+    results.push({ name: `#${j} ${nameFor(j)}`, meta: `${list.length} faceoffs`, points, delta, format: 'pct' });
+  });
+  return results;
+}
+function renderFaceoffSummary() {
+  const wrap = document.getElementById('faceoffSummaryWrap');
+  if (!wrap) return;
+  const rows = computeFaceoffSummary(faceoffsForSeason(faceoffSeason));
+  if (!rows.length) { wrap.innerHTML = '<p class="sans" style="color:var(--muted); font-size:13px;">No faceoffs logged yet.</p>'; return; }
+  let html = '<table class="shotlog"><thead><tr><th>Jersey</th><th>Name</th><th>Taken</th><th>Won</th><th>Win %</th></tr></thead><tbody>';
+  rows.forEach(r => { html += `<tr><td>${r.jersey}</td><td>${r.name}</td><td>${r.taken}</td><td>${r.won}</td><td>${pct(r.winPct)}</td></tr>`; });
+  html += '</tbody></table>';
+  wrap.innerHTML = html;
+}
+function renderFaceoffTrends() {
+  if (!document.getElementById('faceoffTrendsUpGrid')) return;
+  const trends = computeFaceoffTrends(faceoffsForSeason(faceoffSeason));
+  const up = trends.filter(t=>t.delta>0).sort((a,b)=>b.delta-a.delta).slice(0,5);
+  const down = trends.filter(t=>t.delta<0).sort((a,b)=>a.delta-b.delta).slice(0,3);
+  renderTrendGroup('faceoffTrendsUpGrid', up, 'up', 'players');
+  renderTrendGroup('faceoffTrendsDownGrid', down, 'down', 'players');
+}
+function populateFoPlayerFilter() {
+  const sel = document.getElementById('foTf_player');
+  if (!sel) return;
+  const prev = sel.value;
+  sel.innerHTML = '<option value="">All players</option>';
+  combinedRoster('player').forEach(p => { const opt=document.createElement('option'); opt.value=p.jersey; opt.textContent=`#${p.jersey} ${p.name}`; sel.appendChild(opt); });
+  if ([...sel.options].some(o=>o.value===prev)) sel.value = prev;
+}
+function renderFaceoffTable() {
+  const bodyEl = document.getElementById('faceoffTableBody');
+  if (!bodyEl) return;
+  const list = faceoffsForSeason(faceoffSeason);
+  document.getElementById('faceoffCountSub').textContent = `${list.length} faceoffs logged`;
+  const pf = document.getElementById('foTf_player').value;
+  const cf = document.getElementById('foTf_context').value;
+  let rows = list.slice().sort((a,b)=>b.id-a.id);
+  if (pf) rows = rows.filter(r=>r.playerJersey===pf);
+  if (cf) rows = rows.filter(r=>r.context===cf);
+  rows = rows.slice(0,300);
+  bodyEl.innerHTML = '';
+  rows.forEach(r => {
+    const tr = document.createElement('tr');
+    const season = seasonForDate(r.date);
+    tr.innerHTML = `
+      <td>${r.id}</td>
+      <td>${r.date||''}</td>
+      <td>${r.context||''}</td>
+      <td>${r.opponent||''}</td>
+      <td>#${r.playerJersey||''} ${nameFor(r.playerJersey, season)||''}</td>
+      <td>${r.won ? 'Won':'Lost'}</td>
+      <td>${r.notes||''}</td>
+      <td>${deleteFaceoffArmed === r.id
+        ? `<button class="btn danger" data-fo-confirm-id="${r.id}">Confirm delete</button> <button class="btn secondary" data-fo-cancel-id="${r.id}">Cancel</button>`
+        : `<button class="btn danger" data-fo-id="${r.id}">Delete</button>`}</td>
+    `;
+    bodyEl.appendChild(tr);
+  });
+  bodyEl.querySelectorAll('button[data-fo-id]').forEach(b => {
+    b.addEventListener('click', () => { deleteFaceoffArmed = parseInt(b.dataset.foId,10); renderFaceoffTable(); });
+  });
+  bodyEl.querySelectorAll('button[data-fo-cancel-id]').forEach(b => {
+    b.addEventListener('click', () => { deleteFaceoffArmed = null; renderFaceoffTable(); });
+  });
+  bodyEl.querySelectorAll('button[data-fo-confirm-id]').forEach(b => {
+    b.addEventListener('click', async () => {
+      const id = parseInt(b.dataset.foConfirmId, 10);
+      FACEOFFS = FACEOFFS.filter(f => f.id !== id);
+      deleteFaceoffArmed = null;
+      await persistFaceoffs();
+      renderFaceoffs();
+    });
+  });
+}
+function renderFaceoffs() {
+  populateFoPlayerFilter();
+  renderFaceoffSummary();
+  renderFaceoffTrends();
+  renderFaceoffTable();
+}
+setupSeasonPills('faceoffSeasonPills', (s) => { faceoffSeason = s; renderFaceoffs(); }, faceoffSeason);
+['foTf_player','foTf_context'].forEach(id => document.getElementById(id).addEventListener('change', renderFaceoffTable));
+
+// ---------------- Compare (Players / Seasons) ----------------
+let compareMode = 'players';
+let cpSeason = SEASONS[0];
+
+// Same slice math as Player Deep Dive but for one explicit selection, with
+// no 5+ shot minimum — the coach picked this player on purpose, so still
+// show the row even if the sample is tiny (flagged the same way Deep Dive
+// flags small samples).
+function computeDeepDiveRowForSelection(shots, selValue) {
+  if (!selValue) return null;
+  let list, label;
+  if (selValue.startsWith('NAME:')) {
+    const key = selValue.slice(5);
+    list = shots.filter(s => {
+      const roster = ROSTERS[seasonForDate(s.date)] || [];
+      const p = roster.find(r => r.roles.includes('player') && r.name.trim().toLowerCase() === key);
+      return p && p.jersey === s.shooterJersey;
+    });
+    const combined = combinedRoster('player').find(p => p.name.trim().toLowerCase() === key);
+    label = combined ? combined.name : key;
+  } else {
+    list = shots.filter(s => s.shooterJersey === selValue);
+    label = nameFor(selValue);
+  }
+  const cols = DEEP_DIVE_SLICES.map(slice => shotPctFor(list.filter(slice.filter)));
+  return { label, shots: list.length, cols };
+}
+
+function populateComparePlayerSelects() {
+  ['cp_player1','cp_player2','cp_player3'].forEach(id => {
+    const sel = document.getElementById(id);
+    const prev = sel.value;
+    sel.innerHTML = '<option value="">—</option>';
+    if (cpSeason === 'All Seasons') {
+      combinedRoster('player').forEach(p => {
+        const opt = document.createElement('option');
+        opt.value = 'NAME:' + p.name.trim().toLowerCase();
+        opt.textContent = p.name;
+        sel.appendChild(opt);
+      });
+    } else {
+      rosterPlayers(cpSeason).forEach(p => {
+        const opt = document.createElement('option');
+        opt.value = p.jersey;
+        opt.textContent = `#${p.jersey} ${p.name}`;
+        sel.appendChild(opt);
+      });
+    }
+    if ([...sel.options].some(o=>o.value===prev)) sel.value = prev;
+  });
+}
+
+function renderComparePlayers() {
+  const wrap = document.getElementById('comparePlayersWrap');
+  if (!wrap) return;
+  const seasonShots = shotsForSeason(cpSeason);
+  const selections = ['cp_player1','cp_player2','cp_player3'].map(id => document.getElementById(id).value).filter(Boolean);
+  if (!selections.length) { wrap.innerHTML = '<p class="sans" style="color:var(--muted); font-size:13px;">Pick at least one player to compare.</p>'; return; }
+  const rowsData = selections.map(sel => computeDeepDiveRowForSelection(seasonShots, sel));
+  let html = '<table class="shotlog"><thead><tr><th>Stat</th>' + rowsData.map(r => `<th>${r.label}</th>`).join('') + '</tr></thead><tbody>';
+  html += `<tr><td><strong>Shots</strong></td>` + rowsData.map(r => `<td><strong>${r.shots}</strong></td>`).join('') + '</tr>';
+  DEEP_DIVE_SLICES.forEach((slice, i) => {
+    html += `<tr><td>${slice.label}</td>` + rowsData.map(r => {
+      const c = r.cols[i];
+      const small = c.n > 0 && c.n < 5;
+      return `<td${small ? ' style="color:var(--muted); font-style:italic;"' : ''}>${pct(c.pct)}</td>`;
+    }).join('') + '</tr>';
+  });
+  html += '</tbody></table>';
+  wrap.innerHTML = html;
+}
+
+function populateCompareSeasonSelect() {
+  const sel = document.getElementById('cs_player');
+  const prev = sel.value;
+  sel.innerHTML = '<option value="__TEAM__">Team — All Players</option>';
+  combinedRoster('player').forEach(p => {
+    const opt = document.createElement('option');
+    opt.value = 'NAME:' + p.name.trim().toLowerCase();
+    opt.textContent = p.name;
+    sel.appendChild(opt);
+  });
+  if ([...sel.options].some(o=>o.value===prev)) sel.value = prev;
+}
+
+function renderCompareSeasons() {
+  const wrap = document.getElementById('compareSeasonsWrap');
+  if (!wrap) return;
+  const sel = document.getElementById('cs_player').value;
+  const seasonCols = SEASONS.map(season => {
+    const seasonShots = shotsForSeason(season);
+    if (sel === '__TEAM__' || !sel) {
+      const list = seasonShots.filter(s => s.shooterJersey);
+      const cols = DEEP_DIVE_SLICES.map(slice => shotPctFor(list.filter(slice.filter)));
+      return { season, shots: list.length, cols };
+    }
+    const row = computeDeepDiveRowForSelection(seasonShots, sel);
+    return { season, shots: row.shots, cols: row.cols };
+  });
+  const label = (sel === '__TEAM__' || !sel) ? 'Team' : ((combinedRoster('player').find(p => 'NAME:'+p.name.trim().toLowerCase() === sel) || {}).name || sel);
+  let html = `<p class="sans" style="font-weight:700; color:var(--navy-3); font-size:13px; margin:0 0 10px;">${label}</p>`;
+  html += '<table class="shotlog"><thead><tr><th>Stat</th>' + seasonCols.map(c => `<th>${c.season}</th>`).join('');
+  const hasDelta = seasonCols.length >= 2;
+  if (hasDelta) html += `<th>Δ (${seasonCols[0].season}→${seasonCols[seasonCols.length-1].season})</th>`;
+  html += '</tr></thead><tbody>';
+  html += `<tr><td><strong>Shots</strong></td>` + seasonCols.map(c => `<td><strong>${c.shots}</strong></td>`).join('') + (hasDelta ? '<td></td>' : '') + '</tr>';
+  DEEP_DIVE_SLICES.forEach((slice, i) => {
+    html += `<tr><td>${slice.label}</td>` + seasonCols.map(c => {
+      const cell = c.cols[i];
+      const small = cell.n > 0 && cell.n < 5;
+      return `<td${small ? ' style="color:var(--muted); font-style:italic;"' : ''}>${pct(cell.pct)}</td>`;
+    }).join('');
+    if (hasDelta) {
+      const first = seasonCols[0].cols[i].pct, last = seasonCols[seasonCols.length-1].cols[i].pct;
+      if (first !== null && first !== undefined && last !== null && last !== undefined) {
+        const delta = last - first;
+        const color = delta > 0 ? 'var(--good)' : (delta < 0 ? 'var(--critical)' : 'inherit');
+        html += `<td class="sans" style="font-weight:700; color:${color};">${delta>=0?'+':''}${(delta*100).toFixed(1)}pt</td>`;
+      } else {
+        html += '<td>—</td>';
+      }
+    }
+    html += '</tr>';
+  });
+  html += '</tbody></table>';
+  wrap.innerHTML = html;
+}
+
+function renderCompare() {
+  if (!document.getElementById('compareModePills')) return;
+  populateComparePlayerSelects();
+  populateCompareSeasonSelect();
+  renderComparePlayers();
+  renderCompareSeasons();
+}
+
+(function setupCompareModePillsUI() {
+  const el = document.getElementById('compareModePills');
+  [{key:'players',label:'Compare Players'},{key:'seasons',label:'Compare Seasons'}].forEach(opt => {
+    const btn = document.createElement('button');
+    btn.className = 'pill' + (opt.key===compareMode?' active':'');
+    btn.textContent = opt.label;
+    btn.addEventListener('click', () => {
+      el.querySelectorAll('.pill').forEach(b=>b.classList.remove('active'));
+      btn.classList.add('active');
+      compareMode = opt.key;
+      document.getElementById('comparePlayersPanel').style.display = compareMode==='players' ? '' : 'none';
+      document.getElementById('compareSeasonsPanel').style.display = compareMode==='seasons' ? '' : 'none';
+    });
+    el.appendChild(btn);
+  });
+})();
+setupSeasonPills('cpSeasonPills', (s) => { cpSeason = s; populateComparePlayerSelects(); renderComparePlayers(); }, cpSeason);
+['cp_player1','cp_player2','cp_player3'].forEach(id => document.getElementById(id).addEventListener('change', renderComparePlayers));
+document.getElementById('cs_player').addEventListener('change', renderCompareSeasons);
+
+// ---------------- Opponent ----------------
+// Our own shot history against one Game opponent — not a scouting report on
+// what they run, since the app only ever logs our own shots.
+let oppSeason = 'All Seasons';
+
+function populateOpponentSelect() {
+  const sel = document.getElementById('opp_select');
+  if (!sel) return;
+  const prev = sel.value;
+  const opponents = Array.from(new Set(
+    shotsForSeason(oppSeason).filter(s => s.context === 'Game' && s.opponent).map(s => s.opponent)
+  )).sort();
+  sel.innerHTML = opponents.length ? '' : '<option value="">No opponents logged yet</option>';
+  opponents.forEach(o => { const opt = document.createElement('option'); opt.value = o; opt.textContent = o; sel.appendChild(opt); });
+  if (opponents.some(o => o === prev)) sel.value = prev;
+}
+
+function renderOpponentReport() {
+  const wrap = document.getElementById('opponentReport');
+  if (!wrap) return;
+  const opponent = document.getElementById('opp_select').value;
+  if (!opponent) { wrap.innerHTML = '<div class="panel"><p class="sans" style="color:var(--muted); font-size:13px;">Pick an opponent above once you’ve logged a Game shot with that opponent filled in.</p></div>'; return; }
+
+  const shots = shotsForSeason(oppSeason).filter(s => s.context === 'Game' && s.opponent === opponent);
+  const n = shots.length;
+  const goals = shots.filter(s => s.goal === 1).length;
+  const dates = Array.from(new Set(shots.map(s => s.date).filter(Boolean))).sort();
+  const gradeRow = (label, q) => {
+    const list = shots.filter(s => s.shotQuality === q);
+    return `<div class="stat-tile"><div class="name">${label}</div><div class="row"><span class="value">${pct(shotPctFor(list).pct)}</span></div><div class="meta">${list.length} shot(s)</div></div>`;
+  };
+
+  const byJersey = {};
+  shots.forEach(s => { if (s.shooterJersey) (byJersey[s.shooterJersey] = byJersey[s.shooterJersey] || []).push(s); });
+  const playerRows = Object.keys(byJersey).map(j => {
+    const list = byJersey[j];
+    const g = list.filter(s => s.goal === 1).length;
+    return { jersey: j, name: nameFor(j), shots: list.length, goals: g,
+      shotPct: shotPctFor(list).pct,
+      goldPct: shotPctFor(list.filter(s=>s.shotQuality==='1-Gold')).pct,
+      silverPct: shotPctFor(list.filter(s=>s.shotQuality==='2-Silver')).pct,
+      bronzePct: shotPctFor(list.filter(s=>s.shotQuality==='3-Bronze')).pct };
+  }).sort((a,b) => b.shots - a.shots);
+
+  let html = `<div class="panel">
+    <p class="panel-title">vs ${opponent}</p>
+    <p class="panel-sub">${oppSeason === 'All Seasons' ? 'All seasons' : oppSeason + ' season'} &mdash; ${dates.length} date(s) played: ${dates.join(', ') || '—'}</p>
+    <div class="trend-grid">
+      <div class="stat-tile"><div class="name">Total Shots</div><div class="row"><span class="value">${n}</span></div></div>
+      <div class="stat-tile"><div class="name">Shot %</div><div class="row"><span class="value">${pct(shotPctFor(shots).pct)}</span></div><div class="meta">${goals} goal(s)</div></div>
+      ${gradeRow('Gold %', '1-Gold')}
+      ${gradeRow('Silver %', '2-Silver')}
+      ${gradeRow('Bronze %', '3-Bronze')}
+    </div>
+  </div>
+  <div class="panel">
+    <p class="panel-title">Shot Chart vs ${opponent}</p>
+    <div class="image-row" id="opponentHeatWrap"></div>
+  </div>
+  <div class="panel">
+    <p class="panel-title">By Player</p>
+    <div class="table-wrap"><table class="shotlog"><thead><tr><th>Jersey</th><th>Name</th><th>Shots</th><th>Goals</th><th>Shot %</th><th>Gold %</th><th>Silver %</th><th>Bronze %</th></tr></thead><tbody>
+      ${playerRows.map(r => `<tr><td>${r.jersey}</td><td>${r.name}</td><td>${r.shots}</td><td>${r.goals}</td><td>${pct(r.shotPct)}</td><td>${pct(r.goldPct)}</td><td>${pct(r.silverPct)}</td><td>${pct(r.bronzePct)}</td></tr>`).join('')}
+    </tbody></table></div>
+  </div>`;
+  wrap.innerHTML = html;
+
+  const zones = buildZones(shots, DIST_BANDS_TEAM, LAT_BANDS_TEAM);
+  renderHeatPanel('opponentHeatWrap', [{ svg: fieldSVG(zones, {metric:'score'}), caption: `vs ${opponent}`, sub: `${n} shot(s) — hover a zone for detail, click for the shot list`, hotspots: zones, metric: 'score', unitLabel: 'shot(s)' }]);
+}
+
+function renderOpponent() {
+  if (!document.getElementById('opp_select')) return;
+  populateOpponentSelect();
+  renderOpponentReport();
+}
+setupSeasonPills('oppSeasonPills', (s) => { oppSeason = s; populateOpponentSelect(); renderOpponentReport(); }, oppSeason);
+document.getElementById('opp_select').addEventListener('change', renderOpponentReport);
+document.getElementById('opp_print').addEventListener('click', () => window.print());
 
 // ---------------- Player Evaluations ----------------
 // Mirrors the coaching staff's scouting workbook: per-position attribute grid,
@@ -2617,6 +3206,9 @@ async function init() {
   toggleOpponentField();
   buildFieldClickWidget();
   buildGoalClickWidget();
+  document.getElementById('fo_date').value = new Date().toISOString().slice(0,10);
+  refreshFoRosterOptions();
+  toggleFoOpponentField();
   populatePlayerGoalieDropdowns();
   populatePlayerSelectForSeason(heatSeason);
   populateGoalieSelectForSeason(goalieHeatSeason);
@@ -2629,6 +3221,9 @@ async function init() {
   renderGoalieTrends();
   renderGoalieHeat();
   renderTable();
+  renderFaceoffs();
+  renderCompare();
+  renderOpponent();
 }
 </script>
 <script>
