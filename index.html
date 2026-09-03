@@ -823,12 +823,12 @@ async function loadAll() {
   const shotsRef = DB.doc('app/shots_live');
   try {
     const snap = await shotsRef.get();
-    if (snap.exists && Array.isArray(snap.data().list)) LIVE_SHOTS_TUPLES = snap.data().list;
+    if (snap.exists && typeof snap.data().json === 'string') LIVE_SHOTS_TUPLES = JSON.parse(snap.data().json);
   } catch (e) { console.error('shots load failed', e); }
   rebuildShots();
   shotsRef.onSnapshot(snap => {
-    if (!snap.exists || !Array.isArray(snap.data().list)) return;
-    LIVE_SHOTS_TUPLES = snap.data().list;
+    if (!snap.exists || typeof snap.data().json !== 'string') return;
+    LIVE_SHOTS_TUPLES = JSON.parse(snap.data().json);
     rebuildShots();
     renderTable();
     renderPlayerHeat();
@@ -846,12 +846,12 @@ async function loadAll() {
   const faceoffsRef = DB.doc('app/faceoffs_live');
   try {
     const fsnap = await faceoffsRef.get();
-    if (fsnap.exists && Array.isArray(fsnap.data().list)) LIVE_FACEOFFS_TUPLES = fsnap.data().list;
+    if (fsnap.exists && typeof fsnap.data().json === 'string') LIVE_FACEOFFS_TUPLES = JSON.parse(fsnap.data().json);
   } catch (e) { console.error('faceoffs load failed', e); }
   rebuildFaceoffs();
   faceoffsRef.onSnapshot(snap => {
-    if (!snap.exists || !Array.isArray(snap.data().list)) return;
-    LIVE_FACEOFFS_TUPLES = snap.data().list;
+    if (!snap.exists || typeof snap.data().json !== 'string') return;
+    LIVE_FACEOFFS_TUPLES = JSON.parse(snap.data().json);
     rebuildFaceoffs();
     renderFaceoffs();
   }, e => console.error('faceoffs sync error', e));
@@ -878,17 +878,21 @@ async function persistRoster(season) {
   try { await DB.doc('app/roster_' + season).set({ list: ROSTERS[season] || [] }); } catch (e) { console.error(e); return false; }
   return true;
 }
+// Stored as a JSON string, not a native Firestore array-of-arrays: Firestore
+// rejects "nested arrays" outright (an array field whose own elements are
+// arrays), and each shot/faceoff tuple is itself an array. This mirrors how
+// app/seed_shots already stores its tuples, which is why that path works.
 async function persistShots() {
   if (!DB) return false;
   const live = SHOTS.filter(s => !s.seed).map(s => objToTuple(s));
-  try { await DB.doc('app/shots_live').set({ list: live }); } catch (e) { console.error(e); return false; }
+  try { await DB.doc('app/shots_live').set({ json: JSON.stringify(live) }); } catch (e) { console.error(e); return false; }
   LIVE_SHOTS_TUPLES = live;
   return true;
 }
 async function persistFaceoffs() {
   if (!DB) return false;
   const live = FACEOFFS.map(f => objToTuple(f, FACEOFF_COLS));
-  try { await DB.doc('app/faceoffs_live').set({ list: live }); } catch (e) { console.error(e); return false; }
+  try { await DB.doc('app/faceoffs_live').set({ json: JSON.stringify(live) }); } catch (e) { console.error(e); return false; }
   LIVE_FACEOFFS_TUPLES = live;
   return true;
 }
@@ -3157,6 +3161,7 @@ resetConfirmBtn.addEventListener('click', async () => {
     await DB.doc('app/roster').delete();
     await Promise.all(SEASONS.map(s => DB.doc('app/roster_' + s).delete()));
     await DB.doc('app/shots_live').delete();
+    await DB.doc('app/faceoffs_live').delete();
     const playersSnap = await DB.collection('evalPlayers').get();
     await Promise.all(playersSnap.docs.map(d => DB.collection('evalPlayers').doc(d.id).delete()));
     const ratingsSnap = await DB.collection('evalRatings').get();
