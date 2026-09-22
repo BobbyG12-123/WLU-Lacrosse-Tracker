@@ -166,57 +166,60 @@
           <input type="date" id="f_date">
         </div>
         <div>
-          <label for="f_context">Context</label>
-          <select id="f_context"><option>Practice</option><option>Game</option></select>
+          <label>Context</label>
+          <div class="pill-row" id="f_context"></div>
         </div>
         <div id="opponentFieldWrap" style="display:none;">
           <label for="f_opponent">Which Game (Opponent)</label>
           <input type="text" id="f_opponent" placeholder="e.g. Washington & Lee">
         </div>
         <div>
-          <label for="f_shooter">Shooter</label>
-          <select id="f_shooter"></select>
+          <label for="f_shooter_name">Shooter</label>
+          <input type="text" id="f_shooter_name" list="shooterList" placeholder="Last name" autocomplete="off">
+          <datalist id="shooterList"></datalist>
+          <div class="readout" id="shooterResolve"></div>
         </div>
         <div>
           <label for="f_goalie">Goalie</label>
           <select id="f_goalie"></select>
         </div>
         <div>
-          <label for="f_handedness">Handedness</label>
-          <select id="f_handedness"><option value="">Select&hellip;</option><option value="Right">Right</option><option value="Left">Left</option></select>
+          <label>Handedness</label>
+          <div class="pill-row" id="f_handedness"></div>
         </div>
         <div>
-          <label for="f_transitiontype">Transition Type</label>
-          <select id="f_transitiontype"><option value="">None</option><option value="FO">FO (Faceoff)</option><option value="OTOD">OTOD (Offense-to-Defense)</option></select>
+          <label>Transition Type</label>
+          <div class="pill-row" id="f_transitiontype"></div>
         </div>
         <div>
-          <label for="f_assist">Assist &mdash; Who Passed</label>
-          <select id="f_assist"></select>
+          <label for="f_assist_name">Assist &mdash; Who Passed (optional)</label>
+          <input type="text" id="f_assist_name" list="assistList" placeholder="Last name">
+          <datalist id="assistList"></datalist>
+          <div class="readout" id="assistResolve"></div>
         </div>
         <div>
-          <label for="f_passtype">Pass Type</label>
-          <select id="f_passtype">
-            <option value="">Select&hellip;</option>
-            <option value="Feed">Feed (crease/inside)</option>
-            <option value="Skip Pass">Skip Pass</option>
-            <option value="Touch Pass">Touch Pass</option>
-            <option value="Behind-the-Back">Behind-the-Back</option>
-            <option value="Outlet/Clear">Outlet/Clear</option>
-            <option value="Dodge-and-Dish">Dodge-and-Dish</option>
-            <option value="No Pass">No Pass (self-created)</option>
-          </select>
+          <label>Shot Quality</label>
+          <div class="pill-row" id="f_quality"></div>
         </div>
         <div>
-          <label for="f_quality">Shot Quality</label>
-          <select id="f_quality"><option value="">Select&hellip;</option><option value="1-Gold">Gold</option><option value="2-Silver">Silver</option><option value="3-Bronze">Bronze</option></select>
+          <label>Contest Level</label>
+          <div class="pill-row" id="f_contest"></div>
         </div>
         <div>
-          <label for="f_contest">Contest Level</label>
-          <select id="f_contest"><option value="">Select&hellip;</option><option value="Open">Open</option><option value="Light">Light</option><option value="Heavy">Heavy</option></select>
+          <label>Defense Scheme</label>
+          <div class="pill-row" id="f_defscheme"></div>
         </div>
         <div>
-          <label for="f_defscheme">Defense Scheme</label>
-          <select id="f_defscheme"><option value="">Select&hellip;</option><option value="Man">Man</option><option value="Zone">Zone</option></select>
+          <label>Man Situation</label>
+          <div class="pill-row" id="f_mansituation"></div>
+        </div>
+        <div>
+          <label>Shot Mechanism (optional)</label>
+          <div class="pill-row" id="f_shotmechanism"></div>
+        </div>
+        <div>
+          <label>Rebound / Second-Chance (optional)</label>
+          <div class="pill-row" id="f_rebound"></div>
         </div>
         <div>
           <label for="f_tags">Custom Tags (optional)</label>
@@ -244,13 +247,19 @@
         </div>
       </div>
 
-      <div class="checks">
-        <label class="check-item"><input type="checkbox" id="f_ongoal"> On Goal</label>
-        <label class="check-item"><input type="checkbox" id="f_onkeeper"> On Keeper</label>
-        <label class="check-item"><input type="checkbox" id="f_goal"> Goal Scored</label>
-        <label class="check-item"><input type="checkbox" id="f_blocked"> Blocked</label>
-        <label class="check-item"><input type="checkbox" id="f_offdodge"> Off Dodge</label>
-        <label class="check-item"><input type="checkbox" id="f_cleansave"> Clean Save</label>
+      <div class="field-grid" style="grid-template-columns: repeat(3, 1fr);">
+        <div>
+          <label>Shot Outcome</label>
+          <div class="pill-row" id="f_outcome"></div>
+        </div>
+        <div id="cleanSaveWrap" style="display:none;">
+          <label>Clean Save?</label>
+          <div class="pill-row" id="f_cleansave"></div>
+        </div>
+        <div>
+          <label>Off the Catch / Off the Dodge</label>
+          <div class="pill-row" id="f_catchdodge"></div>
+        </div>
       </div>
 
       <div class="field-grid" style="grid-template-columns: 1fr 1fr;">
@@ -260,7 +269,7 @@
           <div class="readout" id="fieldReadout">Not set</div>
         </div>
         <div>
-          <label>Goal Placement (required if On Goal is checked)</label>
+          <label>Goal Placement (required for Goal/Saved outcomes)</label>
           <div class="click-field" id="goalClickWrap"></div>
           <div class="readout" id="goalReadout">Not set</div>
         </div>
@@ -289,6 +298,10 @@
         <div>
           <label for="fo_player">Faceoff Taker</label>
           <select id="fo_player"></select>
+        </div>
+        <div>
+          <label for="fo_vsplayer">Faceoff Opponent (optional)</label>
+          <select id="fo_vsplayer"></select>
         </div>
         <div>
           <label for="fo_won">Result</label>
@@ -333,6 +346,27 @@
       <p class="panel-title">Shot Quality Share</p>
       <p class="panel-sub">Left group: how each player's own shots break down by grade. Right group: what slice of the whole team's Gold/Silver/Bronze shots that player is taking &mdash; i.e. who's actually getting the good looks. Players with 5+ total shots.</p>
       <div class="table-wrap" id="shotQualityShareWrap"></div>
+    </div>
+    <div class="panel">
+      <p class="panel-title">Trigger Efficiency</p>
+      <p class="panel-sub">Team-wide, one row per offense trigger with 3+ logged shots this season.</p>
+      <div class="table-wrap" id="triggerEfficiencyWrap"></div>
+    </div>
+    <div class="panel">
+      <p class="panel-title">By Man Situation</p>
+      <div class="table-wrap" id="manSituationEfficiencyWrap"></div>
+    </div>
+    <div class="panel">
+      <p class="panel-title">By Shot Mechanism</p>
+      <div class="table-wrap" id="shotMechanismEfficiencyWrap"></div>
+    </div>
+    <div class="panel">
+      <p class="panel-title">By Catch / Dodge</p>
+      <div class="table-wrap" id="catchDodgeEfficiencyWrap"></div>
+    </div>
+    <div class="panel">
+      <p class="panel-title">By Rebound</p>
+      <div class="table-wrap" id="reboundEfficiencyWrap"></div>
     </div>
     <div class="panel">
       <div class="controls-row">
@@ -446,6 +480,11 @@
     <div class="panel">
       <p class="panel-title">Faceoff Summary</p>
       <div class="table-wrap" id="faceoffSummaryWrap"></div>
+    </div>
+    <div class="panel">
+      <p class="panel-title">Head-to-Head</p>
+      <p class="panel-sub">Win-loss record between your 4 faceoff specialists &mdash; only counts faceoffs logged with a Faceoff Opponent set, not real game faceoffs.</p>
+      <div class="table-wrap" id="faceoffHeadToHeadWrap"></div>
     </div>
     <div class="panel">
       <p class="panel-title">Faceoff Log</p>
@@ -705,7 +744,33 @@ firebase.auth().onAuthStateChanged(user => {
 });
 </script>
 <script>
-const COLS =["id","date","practiceId","context","shooterJersey","goalieJersey","onGoal","onKeeper","goal","blocked","defScheme","transition","offDodge","rightHanded","shotQuality","cleanSave","fieldX","fieldY","distanceYds","lateralYds","goalX","goalY","customTags","contestLevel","assistJersey","opponent","passType","trigger"];
+const COLS =["id","date","practiceId","context","shooterJersey","goalieJersey","onGoal","onKeeper","goal","blocked","defScheme","transition","offDodge","rightHanded","shotQuality","cleanSave","fieldX","fieldY","distanceYds","lateralYds","goalX","goalY","customTags","contestLevel","assistJersey","opponent","passType","trigger","outcome","manSituation","shotMechanism","rebound"];
+// Shot Outcome (one required pill pick) replaces the old On Goal/On
+// Keeper/Goal Scored/Blocked checkboxes. Rather than rewriting every
+// existing analytics function that reads onGoal/onKeeper/goal/blocked
+// directly, the save handler derives and still writes all 4 legacy
+// booleans from whichever outcome is picked, so nothing downstream needs
+// to change. A pipe shot counts the same as a Miss for those 4 booleans —
+// it's still visible separately since outcome itself is stored as "Pipe".
+const OUTCOME_OPTIONS = ["Goal","Saved","Miss","Pipe","Blocked"];
+const OUTCOME_DERIVED = {
+  Goal:    { onGoal: 1, onKeeper: 1, goal: 1, blocked: 0 },
+  Saved:   { onGoal: 1, onKeeper: 1, goal: 0, blocked: 0 },
+  Miss:    { onGoal: 0, onKeeper: 0, goal: 0, blocked: 0 },
+  Pipe:    { onGoal: 0, onKeeper: 0, goal: 0, blocked: 0 },
+  Blocked: { onGoal: 0, onKeeper: 0, goal: 0, blocked: 1 },
+};
+const CATCH_DODGE_OPTIONS = ["Off the Catch","Off the Dodge"];
+const MAN_SITUATION_OPTIONS = ["Man-Up","Man-Down","Even"];
+const SHOT_MECHANISM_OPTIONS = ["Overhand","Sidearm","Underhand","Bounce","One-Touch"];
+const REBOUND_OPTIONS = ["Yes","No"];
+// Faceoff specialists only — everyone else is excluded from the Faceoff
+// Taker/Opponent dropdowns. Matched by last name across all roster roles
+// (not just 'player') since a roster entry here may be tagged 'goalie'.
+const FOGO_LAST_NAMES = ["Irwin","Mikkelson","Moxley","Hodges"];
+function fogoRoster(season) {
+  return (ROSTERS[season] || []).filter(r => FOGO_LAST_NAMES.some(ln => r.name.trim().toLowerCase().endsWith(ln.toLowerCase()))).sort((a,b)=>a.name.localeCompare(b.name));
+}
 // Canonical offensive-trigger vocabulary ("Trigger Index"), shared with the
 // film-tagging project (ai-brain/reference/trigger_definitions.json) so
 // naming stays consistent across manual shot logging and film tagging.
@@ -716,7 +781,7 @@ document.getElementById('pf_trigger').insertAdjacentHTML('beforeend', TRIGGER_TE
 // Faceoffs are a separate event type from shots (a FO win doesn't always
 // produce a shot), so they get their own small collection rather than being
 // squeezed into the shot schema.
-const FACEOFF_COLS = ["id","date","context","opponent","playerJersey","won","notes"];
+const FACEOFF_COLS = ["id","date","context","opponent","playerJersey","won","notes","vsPlayerJersey"];
 // Season roster docs: app/roster_2026, app/roster_2027, ... To add a future
 // season, append its year here — it will auto-seed as a copy of the prior
 // season's roster the first time the app loads with the new year present.
@@ -847,6 +912,7 @@ async function loadAll() {
     renderPlayerHeat();
     renderPlayerDeepDive();
     renderShotQualityShare();
+    renderNewEfficiencyTables();
     renderGoalieSummary();
     renderShootingTrends();
     renderGoalieTrends();
@@ -943,9 +1009,9 @@ function excelColorScale(pct, vmin, vmed, vmax) {
 }
 
 const DIST_BANDS_PLAYER = [[0,5],[5,10],[10,15],[15,20]];
-const LAT_BANDS_PLAYER = [[-19,-6],[-6,6],[6,19]];
-const DIST_BANDS_TEAM = [[0,8],[8,15],[15,20]];
-const LAT_BANDS_TEAM = [[-19,-5],[-5,5],[5,19]];
+const LAT_BANDS_PLAYER = [[-19,-11],[-11,-3],[-3,3],[3,11],[11,19]];
+const DIST_BANDS_TEAM = [[0,5],[5,10],[10,15],[15,20]];
+const LAT_BANDS_TEAM = [[-19,-9],[-9,0],[0,9],[9,19]];
 
 function buildZones(subset, distBands, latBands) {
   const zones = [];
@@ -1175,6 +1241,23 @@ function buildFieldClickWidget(initial) {
   const wrap = document.getElementById('fieldClickWrap');
   wrap.innerHTML = fieldSVG(buildZones([], DIST_BANDS_PLAYER, LAT_BANDS_PLAYER), {metric:'score', interactive:false});
   const svgEl = wrap.querySelector('svg');
+  // Fine 2-yard reference gridlines so it's easier to judge exactly where
+  // to click — purely visual, doesn't change what's captured (the click
+  // handler below already records a near-continuous 0.1-yard coordinate).
+  for (let yd = 2; yd < 20; yd += 2) {
+    const hLine = document.createElementNS('http://www.w3.org/2000/svg','line');
+    hLine.setAttribute('x1','-18'); hLine.setAttribute('x2','18'); hLine.setAttribute('y1', yd); hLine.setAttribute('y2', yd);
+    hLine.setAttribute('stroke', '#B8B2A0'); hLine.setAttribute('stroke-width', '0.06'); hLine.setAttribute('stroke-dasharray', '0.3,0.3');
+    hLine.style.pointerEvents = 'none';
+    svgEl.appendChild(hLine);
+  }
+  for (let x = -18; x <= 18; x += 2) {
+    const vLine = document.createElementNS('http://www.w3.org/2000/svg','line');
+    vLine.setAttribute('x1', x); vLine.setAttribute('x2', x); vLine.setAttribute('y1', '0'); vLine.setAttribute('y2', '20');
+    vLine.setAttribute('stroke', '#B8B2A0'); vLine.setAttribute('stroke-width', '0.06'); vLine.setAttribute('stroke-dasharray', '0.3,0.3');
+    vLine.style.pointerEvents = 'none';
+    svgEl.appendChild(vLine);
+  }
   let marker = document.createElementNS('http://www.w3.org/2000/svg','circle');
   marker.setAttribute('r','0.6'); marker.setAttribute('fill','#1F3864'); marker.setAttribute('stroke','#fff'); marker.setAttribute('stroke-width','0.15');
   marker.style.display = 'none';
@@ -1230,23 +1313,86 @@ function currentLogSeason() { return seasonForDate(document.getElementById('f_da
 
 function refreshFormRosterOptions() {
   const season = currentLogSeason();
-  populateSelect(document.getElementById('f_shooter'), rosterPlayers(season), 'Select shooter…', false);
   populateSelect(document.getElementById('f_goalie'), rosterGoalies(season), 'Select goalie…', true);
-  populateSelect(document.getElementById('f_assist'), rosterPlayers(season), 'No assist / unassisted', false);
+  const shooterList = document.getElementById('shooterList');
+  const assistList = document.getElementById('assistList');
+  shooterList.innerHTML = assistList.innerHTML = rosterPlayers(season).map(p => `<option value="${p.name}"></option>`).join('');
+  updateNameResolve('shooter');
+  updateNameResolve('assist');
 }
 
 function toggleOpponentField() {
-  const isGame = document.getElementById('f_context').value === 'Game';
+  const isGame = document.getElementById('f_context').dataset.value === 'Game';
   document.getElementById('opponentFieldWrap').style.display = isGame ? '' : 'none';
   if (!isGame) document.getElementById('f_opponent').value = '';
 }
-document.getElementById('f_context').addEventListener('change', toggleOpponentField);
 document.getElementById('f_date').addEventListener('change', refreshFormRosterOptions);
+
+// ---------------- Shooter / Assist: type a last name, resolve to a roster jersey ----------------
+// No fuzzy/last-name matcher existed anywhere in the app before this — the
+// only prior name matching (the NAME: roster-continuity feature) requires
+// an exact full-name match. This one splits on the last space so "Keller"
+// resolves to "Andrew Keller" without picking from a dropdown.
+let resolvedShooterJersey = null;
+let resolvedAssistJersey = null;
+function escapeHtml(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+function lastNameOf(name) { const parts = name.trim().split(/\s+/); return parts[parts.length - 1]; }
+function resolveByLastName(text, season) {
+  const key = text.trim().toLowerCase();
+  if (!key) return [];
+  return rosterPlayers(season).filter(p => lastNameOf(p.name).toLowerCase() === key);
+}
+function updateNameResolve(kind) {
+  const inputId = kind === 'shooter' ? 'f_shooter_name' : 'f_assist_name';
+  const readoutId = kind === 'shooter' ? 'shooterResolve' : 'assistResolve';
+  const input = document.getElementById(inputId);
+  const readout = document.getElementById(readoutId);
+  const text = input.value.trim();
+  const season = currentLogSeason();
+  if (kind === 'shooter') resolvedShooterJersey = null; else resolvedAssistJersey = null;
+  if (!text) { readout.innerHTML = ''; return; }
+  const matches = resolveByLastName(text, season);
+  if (matches.length === 1) {
+    if (kind === 'shooter') resolvedShooterJersey = matches[0].jersey; else resolvedAssistJersey = matches[0].jersey;
+    readout.innerHTML = `#${matches[0].jersey} ${escapeHtml(matches[0].name)} ✓`;
+  } else if (matches.length > 1) {
+    readout.innerHTML = 'Multiple matches — pick one: ' + matches.map(p => `<button type="button" class="pill resolve-pick" data-kind="${kind}" data-jersey="${p.jersey}" data-name="${escapeHtml(p.name)}">#${p.jersey} ${escapeHtml(p.name)}</button>`).join(' ');
+    readout.querySelectorAll('.resolve-pick').forEach(btn => btn.addEventListener('click', () => {
+      document.getElementById(inputId).value = btn.dataset.name;
+      updateNameResolve(kind);
+    }));
+  } else {
+    readout.innerHTML = `No player found matching "${escapeHtml(text)}" — <button type="button" class="btn secondary resolve-addnew" data-kind="${kind}">Add as new player?</button>`;
+    readout.querySelector('.resolve-addnew').addEventListener('click', () => {
+      handleAddNew('player', (jersey, name) => {
+        document.getElementById(inputId).value = name;
+        updateNameResolve(kind);
+      });
+    });
+  }
+}
+document.getElementById('f_shooter_name').addEventListener('input', () => updateNameResolve('shooter'));
+document.getElementById('f_assist_name').addEventListener('input', () => updateNameResolve('assist'));
 
 // ---------------- Log Faceoff form (mirrors Log Shot's date-driven season) ----------------
 function currentFoSeason() { return seasonForDate(document.getElementById('fo_date').value); }
+function populateFogoSelect(sel, season, placeholderText, excludeJersey) {
+  const current = sel.value;
+  sel.innerHTML = '';
+  const ph = document.createElement('option');
+  ph.value = ''; ph.textContent = placeholderText;
+  sel.appendChild(ph);
+  fogoRoster(season).filter(p => p.jersey !== excludeJersey).forEach(p => {
+    const opt = document.createElement('option');
+    opt.value = p.jersey; opt.textContent = `#${p.jersey} ${p.name}`;
+    sel.appendChild(opt);
+  });
+  if ([...sel.options].some(o => o.value === current)) sel.value = current;
+}
 function refreshFoRosterOptions() {
-  populateSelect(document.getElementById('fo_player'), rosterPlayers(currentFoSeason()), 'Select faceoff taker…', false);
+  const season = currentFoSeason();
+  populateFogoSelect(document.getElementById('fo_player'), season, 'Select faceoff taker…', null);
+  populateFogoSelect(document.getElementById('fo_vsplayer'), season, 'N/A / real game opponent', document.getElementById('fo_player').value || null);
 }
 function toggleFoOpponentField() {
   const isGame = document.getElementById('fo_context').value === 'Game';
@@ -1255,7 +1401,7 @@ function toggleFoOpponentField() {
 }
 document.getElementById('fo_context').addEventListener('change', toggleFoOpponentField);
 document.getElementById('fo_date').addEventListener('change', refreshFoRosterOptions);
-document.getElementById('fo_player').addEventListener('change', (e) => { if (e.target.value === '__ADD_NEW__') handleAddNew(e.target, 'player'); });
+document.getElementById('fo_player').addEventListener('change', () => refreshFoRosterOptions());
 
 function showFoMsg(text, ok) {
   const box = document.getElementById('foMsg');
@@ -1266,7 +1412,7 @@ function showFoMsg(text, ok) {
 document.getElementById('submitFaceoffBtn').addEventListener('click', async () => {
   const player = document.getElementById('fo_player').value;
   const won = document.getElementById('fo_won').value;
-  if (!player || player === '__ADD_NEW__') { showFoMsg('Pick who took the faceoff.', false); return; }
+  if (!player) { showFoMsg('Pick who took the faceoff.', false); return; }
   if (!won) { showFoMsg('Pick the result.', false); return; }
 
   const maxId = FACEOFFS.reduce((m,f)=>Math.max(m, f.id||0), 0);
@@ -1278,6 +1424,7 @@ document.getElementById('submitFaceoffBtn').addEventListener('click', async () =
     playerJersey: player,
     won: won === 'Yes' ? 1 : 0,
     notes: document.getElementById('fo_notes').value || null,
+    vsPlayerJersey: document.getElementById('fo_vsplayer').value || null,
   };
   FACEOFFS.push(faceoff);
   const okSave = await persistFaceoffs();
@@ -1286,12 +1433,17 @@ document.getElementById('submitFaceoffBtn').addEventListener('click', async () =
   showFoMsg(`Saved faceoff #${faceoff.id} for #${player} ${nameFor(player, currentFoSeason())}.`, true);
   document.getElementById('fo_won').value = '';
   document.getElementById('fo_notes').value = '';
+  document.getElementById('fo_vsplayer').value = '';
 });
 
-let pendingNewPlayer = null; // { selectEl, role }
+let pendingNewPlayer = null; // { role, onResolved(jersey, name), onCancel() }
 
-function handleAddNew(selectEl, role) {
-  pendingNewPlayer = { selectEl, role };
+// Generic version: onResolved(jersey, name) fires once the new player is
+// saved, so callers can either set a <select>'s value (Goalie) or fill in
+// a resolver text input (Shooter/Assist). onCancel (optional) undoes
+// whatever the caller did to trigger this (e.g. reset a select to blank).
+function handleAddNew(role, onResolved, onCancel) {
+  pendingNewPlayer = { role, onResolved, onCancel };
   document.getElementById('np_name').value = '';
   document.getElementById('np_jersey').value = '';
   document.getElementById('addPlayerPanel').style.display = '';
@@ -1299,7 +1451,7 @@ function handleAddNew(selectEl, role) {
 }
 
 document.getElementById('np_cancel').addEventListener('click', () => {
-  if (pendingNewPlayer) pendingNewPlayer.selectEl.value = '';
+  if (pendingNewPlayer && pendingNewPlayer.onCancel) pendingNewPlayer.onCancel();
   pendingNewPlayer = null;
   document.getElementById('addPlayerPanel').style.display = 'none';
 });
@@ -1309,7 +1461,7 @@ document.getElementById('np_add').addEventListener('click', async () => {
   const name = document.getElementById('np_name').value.trim();
   const jersey = document.getElementById('np_jersey').value.trim();
   if (!name || !jersey) { showMsg('Enter both a name and a jersey number.', false); return; }
-  const { selectEl, role } = pendingNewPlayer;
+  const { role, onResolved } = pendingNewPlayer;
   await addPlayerToRoster(currentLogSeason(), name, jersey, role);
   refreshFormRosterOptions();
   refreshFoRosterOptions();
@@ -1317,14 +1469,31 @@ document.getElementById('np_add').addEventListener('click', async () => {
   populatePlayerSelectForSeason(heatSeason);
   populateGoalieSelectForSeason(goalieHeatSeason);
   renderRosterManager();
-  selectEl.value = jersey;
+  onResolved(jersey, name);
   pendingNewPlayer = null;
   document.getElementById('addPlayerPanel').style.display = 'none';
 });
 
-document.getElementById('f_shooter').addEventListener('change', (e) => { if (e.target.value === '__ADD_NEW__') handleAddNew(e.target, 'player'); });
-document.getElementById('f_goalie').addEventListener('change', (e) => { if (e.target.value === '__ADD_NEW__') handleAddNew(e.target, 'goalie'); });
-document.getElementById('f_assist').addEventListener('change', (e) => { if (e.target.value === '__ADD_NEW__') handleAddNew(e.target, 'player'); });
+document.getElementById('f_goalie').addEventListener('change', (e) => {
+  if (e.target.value === '__ADD_NEW__') handleAddNew('goalie', (jersey) => { e.target.value = jersey; }, () => { e.target.value = ''; });
+});
+
+// ---------------- Log Shot form: pill groups ----------------
+setupPillGroup('f_context', ['Practice','Game'], 'Practice', toggleOpponentField);
+setupPillGroup('f_handedness', ['Right','Left'], null);
+setupPillGroup('f_transitiontype', ['FO','OTOD'], null);
+setupPillGroup('f_quality', [{value:'1-Gold',label:'Gold'},{value:'2-Silver',label:'Silver'},{value:'3-Bronze',label:'Bronze'}], null);
+setupPillGroup('f_contest', ['Open','Light','Heavy'], null);
+setupPillGroup('f_defscheme', ['Man','Zone'], null);
+setupPillGroup('f_mansituation', MAN_SITUATION_OPTIONS, 'Even');
+setupPillGroup('f_shotmechanism', SHOT_MECHANISM_OPTIONS, null);
+setupPillGroup('f_rebound', REBOUND_OPTIONS, null);
+setupPillGroup('f_catchdodge', CATCH_DODGE_OPTIONS, null);
+setupPillGroup('f_cleansave', ['Yes','No'], null);
+setupPillGroup('f_outcome', OUTCOME_OPTIONS, null, (val) => {
+  document.getElementById('cleanSaveWrap').style.display = val === 'Saved' ? '' : 'none';
+  if (val !== 'Saved') setPillGroupValue('f_cleansave', null);
+});
 
 function showMsg(text, ok) {
   const box = document.getElementById('logMsg');
@@ -1345,27 +1514,43 @@ function showTableMsg(text) {
 // Shot Log when done. Historical (seed) shots aren't editable.
 let editingShotId = null;
 
+// Historical shots predate the `outcome` field, so editing one has to
+// reconstruct a best-guess outcome from the legacy booleans it does have.
+// "Pipe" can't be distinguished from "Miss" this way (they share identical
+// legacy boolean values) — that distinction is only available going forward.
+function outcomeFor(shot) {
+  if (shot.outcome) return shot.outcome;
+  if (shot.goal === 1) return 'Goal';
+  if (shot.blocked === 1) return 'Blocked';
+  if (shot.onKeeper === 1) return 'Saved';
+  return 'Miss';
+}
+
 function fullResetLogForm() {
   document.getElementById('f_date').value = new Date().toISOString().slice(0,10);
-  document.getElementById('f_context').value = 'Practice';
+  setPillGroupValue('f_context', 'Practice');
   toggleOpponentField();
   refreshFormRosterOptions();
-  document.getElementById('f_shooter').value = '';
+  document.getElementById('f_shooter_name').value = '';
+  document.getElementById('f_assist_name').value = '';
+  resolvedShooterJersey = null;
+  resolvedAssistJersey = null;
+  document.getElementById('shooterResolve').innerHTML = '';
+  document.getElementById('assistResolve').innerHTML = '';
   document.getElementById('f_goalie').value = '';
-  document.getElementById('f_assist').value = '';
-  document.getElementById('f_ongoal').checked = false;
-  document.getElementById('f_onkeeper').checked = false;
-  document.getElementById('f_goal').checked = false;
-  document.getElementById('f_blocked').checked = false;
-  document.getElementById('f_offdodge').checked = false;
-  document.getElementById('f_cleansave').checked = false;
-  document.getElementById('f_quality').value = '';
-  document.getElementById('f_contest').value = '';
-  document.getElementById('f_defscheme').value = '';
-  document.getElementById('f_handedness').value = '';
-  document.getElementById('f_transitiontype').value = '';
+  setPillGroupValue('f_outcome', null);
+  document.getElementById('cleanSaveWrap').style.display = 'none';
+  setPillGroupValue('f_cleansave', null);
+  setPillGroupValue('f_catchdodge', null);
+  setPillGroupValue('f_quality', null);
+  setPillGroupValue('f_contest', null);
+  setPillGroupValue('f_defscheme', null);
+  setPillGroupValue('f_handedness', null);
+  setPillGroupValue('f_transitiontype', null);
+  setPillGroupValue('f_mansituation', 'Even');
+  setPillGroupValue('f_shotmechanism', null);
+  setPillGroupValue('f_rebound', null);
   document.getElementById('f_tags').value = '';
-  document.getElementById('f_passtype').value = '';
   document.getElementById('f_trigger').value = '';
   pendingField = { distanceYds: null, lateralYds: null };
   pendingGoal = { goalX: null, goalY: null };
@@ -1387,27 +1572,32 @@ function startEditShot(id) {
   if (!shot || shot.seed) return;
   editingShotId = id;
   document.getElementById('f_date').value = shot.date || '';
-  document.getElementById('f_context').value = shot.context || 'Practice';
+  setPillGroupValue('f_context', shot.context || 'Practice');
   toggleOpponentField();
   document.getElementById('f_opponent').value = shot.opponent || '';
   refreshFormRosterOptions();
-  document.getElementById('f_shooter').value = shot.shooterJersey || '';
+  document.getElementById('f_shooter_name').value = shot.shooterJersey ? nameFor(shot.shooterJersey, seasonForDate(shot.date)) : '';
+  resolvedShooterJersey = shot.shooterJersey || null;
+  document.getElementById('shooterResolve').innerHTML = resolvedShooterJersey ? `#${resolvedShooterJersey} ${escapeHtml(nameFor(resolvedShooterJersey, seasonForDate(shot.date)))} ✓` : '';
+  document.getElementById('f_assist_name').value = shot.assistJersey ? nameFor(shot.assistJersey, seasonForDate(shot.date)) : '';
+  resolvedAssistJersey = shot.assistJersey || null;
+  document.getElementById('assistResolve').innerHTML = resolvedAssistJersey ? `#${resolvedAssistJersey} ${escapeHtml(nameFor(resolvedAssistJersey, seasonForDate(shot.date)))} ✓` : '';
   document.getElementById('f_goalie').value = shot.goalieJersey || '';
-  document.getElementById('f_assist').value = shot.assistJersey || '';
-  document.getElementById('f_handedness').value = getHandedness(shot) || '';
-  document.getElementById('f_transitiontype').value = (shot.transition === 'FO' || shot.transition === 'OTOD') ? shot.transition : '';
-  document.getElementById('f_passtype').value = shot.passType || '';
-  document.getElementById('f_quality').value = shot.shotQuality || '';
-  document.getElementById('f_contest').value = shot.contestLevel || '';
-  document.getElementById('f_defscheme').value = shot.defScheme || '';
+  setPillGroupValue('f_handedness', getHandedness(shot) || null);
+  setPillGroupValue('f_transitiontype', (shot.transition === 'FO' || shot.transition === 'OTOD') ? shot.transition : null);
+  setPillGroupValue('f_quality', shot.shotQuality || null);
+  setPillGroupValue('f_contest', shot.contestLevel || null);
+  setPillGroupValue('f_defscheme', shot.defScheme || null);
   document.getElementById('f_tags').value = shot.customTags || '';
   document.getElementById('f_trigger').value = shot.trigger || '';
-  document.getElementById('f_ongoal').checked = shot.onGoal === 1;
-  document.getElementById('f_onkeeper').checked = shot.onKeeper === 1;
-  document.getElementById('f_goal').checked = shot.goal === 1;
-  document.getElementById('f_blocked').checked = shot.blocked === 1;
-  document.getElementById('f_offdodge').checked = shot.offDodge === 1;
-  document.getElementById('f_cleansave').checked = shot.cleanSave === 1;
+  setPillGroupValue('f_mansituation', shot.manSituation || null);
+  setPillGroupValue('f_shotmechanism', shot.shotMechanism || null);
+  setPillGroupValue('f_rebound', shot.rebound || null);
+  const editOutcome = outcomeFor(shot);
+  setPillGroupValue('f_outcome', editOutcome);
+  document.getElementById('cleanSaveWrap').style.display = editOutcome === 'Saved' ? '' : 'none';
+  setPillGroupValue('f_cleansave', shot.cleanSave === 1 ? 'Yes' : (editOutcome === 'Saved' ? 'No' : null));
+  setPillGroupValue('f_catchdodge', shot.offDodge === 1 ? 'Off the Dodge' : 'Off the Catch');
   buildFieldClickWidget({ distanceYds: shot.distanceYds, lateralYds: shot.lateralYds });
   buildGoalClickWidget({ goalX: shot.goalX, goalY: shot.goalY });
   document.getElementById('submitShotBtn').textContent = `Update Shot #${id}`;
@@ -1426,43 +1616,50 @@ document.getElementById('cancelEditBtn').addEventListener('click', () => {
 });
 
 document.getElementById('submitShotBtn').addEventListener('click', async () => {
-  const shooter = document.getElementById('f_shooter').value;
-  const quality = document.getElementById('f_quality').value;
-  const contest = document.getElementById('f_contest').value;
-  if (!shooter || shooter === '__ADD_NEW__') { showMsg('Pick a shooter first.', false); return; }
+  const shooter = resolvedShooterJersey;
+  const quality = document.getElementById('f_quality').dataset.value;
+  const contest = document.getElementById('f_contest').dataset.value;
+  const outcome = document.getElementById('f_outcome').dataset.value;
+  const catchDodge = document.getElementById('f_catchdodge').dataset.value;
+  const assistText = document.getElementById('f_assist_name').value.trim();
+  if (!shooter) { showMsg('Type the shooter’s last name and resolve it to a player first.', false); return; }
+  if (assistText && !resolvedAssistJersey) { showMsg('That assist name didn’t resolve to a player — fix it or clear the field.', false); return; }
   if (!quality) { showMsg('Pick a shot quality grade.', false); return; }
   if (!contest) { showMsg('Pick a contest level.', false); return; }
+  if (!outcome) { showMsg('Pick a shot outcome.', false); return; }
+  if (!catchDodge) { showMsg('Pick Off the Catch or Off the Dodge.', false); return; }
   if (pendingField.distanceYds === null) { showMsg('Click the field to set shot location.', false); return; }
-  if (document.getElementById('f_ongoal').checked && pendingGoal.goalX === null) { showMsg('Click the goal to set placement for this on-goal shot.', false); return; }
+  if ((outcome === 'Goal' || outcome === 'Saved') && pendingGoal.goalX === null) { showMsg('Click the goal to set placement for this shot.', false); return; }
 
   const goalieVal = document.getElementById('f_goalie').value;
-  const assistVal = document.getElementById('f_assist').value;
+  const derived = OUTCOME_DERIVED[outcome];
 
   const shotData = {
     date: document.getElementById('f_date').value || new Date().toISOString().slice(0,10),
     practiceId: null,
-    context: document.getElementById('f_context').value,
+    context: document.getElementById('f_context').dataset.value || 'Practice',
     shooterJersey: shooter,
     goalieJersey: (goalieVal && goalieVal !== 'EMPTY_NET' && goalieVal !== '__ADD_NEW__') ? goalieVal : null,
-    onGoal: document.getElementById('f_ongoal').checked ? 1 : 0,
-    onKeeper: document.getElementById('f_onkeeper').checked ? 1 : 0,
-    goal: document.getElementById('f_goal').checked ? 1 : 0,
-    blocked: document.getElementById('f_blocked').checked ? 1 : 0,
-    defScheme: document.getElementById('f_defscheme').value || null,
-    transition: document.getElementById('f_transitiontype').value || null,
-    offDodge: document.getElementById('f_offdodge').checked ? 1 : 0,
-    rightHanded: document.getElementById('f_handedness').value || null,
+    onGoal: derived.onGoal, onKeeper: derived.onKeeper, goal: derived.goal, blocked: derived.blocked,
+    outcome,
+    defScheme: document.getElementById('f_defscheme').dataset.value || null,
+    transition: document.getElementById('f_transitiontype').dataset.value || null,
+    offDodge: catchDodge === 'Off the Dodge' ? 1 : 0,
+    rightHanded: document.getElementById('f_handedness').dataset.value || null,
     shotQuality: quality,
-    cleanSave: document.getElementById('f_cleansave').checked ? 1 : 0,
+    cleanSave: outcome === 'Saved' ? (document.getElementById('f_cleansave').dataset.value === 'Yes' ? 1 : 0) : 0,
     fieldX: null, fieldY: null,
     distanceYds: pendingField.distanceYds, lateralYds: pendingField.lateralYds,
     goalX: pendingGoal.goalX, goalY: pendingGoal.goalY,
     customTags: document.getElementById('f_tags').value || null,
     contestLevel: contest,
-    assistJersey: (assistVal && assistVal !== '__ADD_NEW__') ? assistVal : null,
+    assistJersey: resolvedAssistJersey || null,
     opponent: document.getElementById('f_opponent').value || null,
-    passType: document.getElementById('f_passtype').value || null,
+    passType: null,
     trigger: document.getElementById('f_trigger').value || null,
+    manSituation: document.getElementById('f_mansituation').dataset.value || null,
+    shotMechanism: document.getElementById('f_shotmechanism').dataset.value || null,
+    rebound: document.getElementById('f_rebound').dataset.value || null,
   };
 
   const isEdit = editingShotId !== null;
@@ -1493,18 +1690,25 @@ document.getElementById('submitShotBtn').addEventListener('click', async () => {
   }
 
   showMsg(`Saved shot #${savedId} for #${shooter} ${nameFor(shooter, currentLogSeason())}.`, true);
-  document.getElementById('f_goal').checked = false;
-  document.getElementById('f_blocked').checked = false;
-  document.getElementById('f_offdodge').checked = false;
-  document.getElementById('f_cleansave').checked = false;
-  document.getElementById('f_quality').value = '';
-  document.getElementById('f_contest').value = '';
-  document.getElementById('f_defscheme').value = '';
-  document.getElementById('f_handedness').value = '';
-  document.getElementById('f_transitiontype').value = '';
-  document.getElementById('f_assist').value = '';
+  setPillGroupValue('f_outcome', null);
+  document.getElementById('cleanSaveWrap').style.display = 'none';
+  setPillGroupValue('f_cleansave', null);
+  setPillGroupValue('f_catchdodge', null);
+  setPillGroupValue('f_quality', null);
+  setPillGroupValue('f_contest', null);
+  setPillGroupValue('f_defscheme', null);
+  setPillGroupValue('f_handedness', null);
+  setPillGroupValue('f_transitiontype', null);
+  setPillGroupValue('f_mansituation', 'Even');
+  setPillGroupValue('f_shotmechanism', null);
+  setPillGroupValue('f_rebound', null);
+  document.getElementById('f_shooter_name').value = '';
+  document.getElementById('f_assist_name').value = '';
+  resolvedShooterJersey = null;
+  resolvedAssistJersey = null;
+  document.getElementById('shooterResolve').innerHTML = '';
+  document.getElementById('assistResolve').innerHTML = '';
   document.getElementById('f_tags').value = '';
-  document.getElementById('f_passtype').value = '';
   document.getElementById('f_trigger').value = '';
   pendingField = { distanceYds: null, lateralYds: null };
   pendingGoal = { goalX: null, goalY: null };
@@ -1614,6 +1818,45 @@ function setupGradePills(containerId, onChange) {
     });
     el.appendChild(btn);
   });
+}
+
+// Generic single-select pill group for the Log Shot form (Context,
+// Handedness, Shot Quality, Shot Outcome, etc.) — unlike setupGradePills/
+// setupSeasonPills, which are hardcoded to their own option list, this
+// takes an arbitrary options array and tracks the picked value on the
+// container itself (container.dataset.value) rather than a module-level
+// variable, so callers just read document.getElementById(id).dataset.value.
+// initialValue may be null (nothing pre-selected, for optional fields).
+function setupPillGroup(containerId, options, initialValue, onChange) {
+  const el = document.getElementById(containerId);
+  el.innerHTML = '';
+  el.dataset.value = initialValue || '';
+  // options: array of plain strings, or {value,label} pairs when the
+  // stored value needs to differ from the button's display text (e.g.
+  // Shot Quality stores "1-Gold" but shows "Gold").
+  options.map(o => (typeof o === 'string' ? { value: o, label: o } : o)).forEach(({ value, label }) => {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'pill' + (value === initialValue ? ' active' : '');
+    btn.dataset.value = value;
+    btn.textContent = label;
+    btn.addEventListener('click', () => {
+      const deselecting = btn.classList.contains('active');
+      el.querySelectorAll('.pill').forEach(b => b.classList.remove('active'));
+      const newVal = deselecting ? '' : value;
+      if (!deselecting) btn.classList.add('active');
+      el.dataset.value = newVal;
+      if (onChange) onChange(newVal || null);
+    });
+    el.appendChild(btn);
+  });
+}
+// Reprograms an existing pill group's active state (edit-load, post-save
+// reset) without rebuilding its buttons.
+function setPillGroupValue(containerId, value) {
+  const el = document.getElementById(containerId);
+  el.dataset.value = value || '';
+  el.querySelectorAll('.pill').forEach(b => b.classList.toggle('active', b.dataset.value === value));
 }
 
 // Goalie tab and the Shot Log filter aren't season-toggled, so they span all
@@ -1847,6 +2090,47 @@ function renderShotQualityShare() {
   });
   html += '</tbody></table>';
   wrap.innerHTML = html;
+}
+
+// ---------------- New situational-tag efficiency tables ----------------
+// Team-wide (not per-player, to avoid tiny per-player samples), one row
+// per value actually used for the given field — same shot/goal%/grade-mix
+// shape as Shot Quality Share, just grouped by category instead of player.
+function computeCategoryEfficiency(shots, field, minShots) {
+  const groups = {};
+  shots.forEach(s => {
+    const val = s[field];
+    if (!val) return;
+    (groups[val] = groups[val] || []).push(s);
+  });
+  return Object.keys(groups).map(val => {
+    const list = groups[val];
+    const n = list.length;
+    const goals = list.filter(s => s.goal === 1).length;
+    const row = { label: val, shots: n, goalPct: n ? goals / n : null };
+    SHOT_QUALITY_GRADES.forEach(([q, key]) => { row[key + 'Pct'] = n ? list.filter(s => s.shotQuality === q).length / n : null; });
+    return row;
+  }).filter(r => r.shots >= (minShots || 1)).sort((a, b) => b.shots - a.shots);
+}
+function renderCategoryEfficiencyTable(wrapId, shots, field, columnLabel, minShots, emptyMsg) {
+  const wrap = document.getElementById(wrapId);
+  if (!wrap) return;
+  const rows = computeCategoryEfficiency(shots, field, minShots);
+  if (!rows.length) { wrap.innerHTML = `<p class="sans" style="color:var(--muted); font-size:13px;">${emptyMsg}</p>`; return; }
+  let html = `<table class="shotlog"><thead><tr><th>${columnLabel}</th><th>Shots</th><th>Goal%</th><th>Gold%</th><th>Silver%</th><th>Bronze%</th></tr></thead><tbody>`;
+  rows.forEach(r => {
+    html += `<tr><td>${r.label}</td><td>${r.shots}</td><td>${pct(r.goalPct)}</td><td>${pct(r.goldPct)}</td><td>${pct(r.silverPct)}</td><td>${pct(r.bronzePct)}</td></tr>`;
+  });
+  html += '</tbody></table>';
+  wrap.innerHTML = html;
+}
+function renderNewEfficiencyTables() {
+  const shots = shotsForSeason(heatSeason).filter(s => s.shooterJersey);
+  renderCategoryEfficiencyTable('triggerEfficiencyWrap', shots, 'trigger', 'Trigger', 3, 'No trigger has 3+ logged shots yet.');
+  renderCategoryEfficiencyTable('manSituationEfficiencyWrap', shots, 'manSituation', 'Man Situation', 1, 'No shots with a Man Situation tagged yet.');
+  renderCategoryEfficiencyTable('shotMechanismEfficiencyWrap', shots, 'shotMechanism', 'Shot Mechanism', 1, 'No shots with a Shot Mechanism tagged yet.');
+  renderCategoryEfficiencyTable('catchDodgeEfficiencyWrap', shots.map(s => Object.assign({}, s, { catchDodge: s.offDodge === 1 ? 'Off the Dodge' : (s.offDodge === 0 ? 'Off the Catch' : null) })), 'catchDodge', 'Catch / Dodge', 1, 'No shots tagged yet.');
+  renderCategoryEfficiencyTable('reboundEfficiencyWrap', shots, 'rebound', 'Rebound', 1, 'No shots with Rebound tagged yet.');
 }
 
 function renderGoalieSummary() {
@@ -2130,6 +2414,7 @@ setupSeasonPills('playerSeasonPills', (s) => {
   renderShootingTrends();
   renderPlayerDeepDive();
   renderShotQualityShare();
+  renderNewEfficiencyTables();
 }, heatSeason);
 (function setupCompareModePills() {
   const el = document.getElementById('ddComparePills');
@@ -2389,9 +2674,29 @@ function renderFaceoffTable() {
     });
   });
 }
+function renderFaceoffHeadToHead() {
+  const wrap = document.getElementById('faceoffHeadToHeadWrap');
+  if (!wrap) return;
+  const list = faceoffsForSeason(faceoffSeason).filter(f => f.vsPlayerJersey);
+  if (!list.length) { wrap.innerHTML = '<p class="sans" style="color:var(--muted); font-size:13px;">No head-to-head reps logged yet — set a Faceoff Opponent when logging one.</p>'; return; }
+  const pairs = {};
+  list.forEach(f => {
+    const key = [f.playerJersey, f.vsPlayerJersey].sort().join('-');
+    const rec = pairs[key] || (pairs[key] = { a: f.playerJersey, b: f.vsPlayerJersey, aWins: 0, bWins: 0 });
+    const winner = f.won === 1 ? f.playerJersey : f.vsPlayerJersey;
+    if (winner === rec.a) rec.aWins++; else rec.bWins++;
+  });
+  let html = '<table class="shotlog"><thead><tr><th>Matchup</th><th>Record</th></tr></thead><tbody>';
+  Object.values(pairs).sort((x,y)=>(y.aWins+y.bWins)-(x.aWins+x.bWins)).forEach(r => {
+    html += `<tr><td>#${r.a} ${nameFor(r.a)} vs #${r.b} ${nameFor(r.b)}</td><td>${r.aWins}-${r.bWins}</td></tr>`;
+  });
+  html += '</tbody></table>';
+  wrap.innerHTML = html;
+}
 function renderFaceoffs() {
   populateFoPlayerFilter();
   renderFaceoffSummary();
+  renderFaceoffHeadToHead();
   renderFaceoffTrends();
   renderFaceoffTable();
 }
@@ -3259,6 +3564,7 @@ async function init() {
   renderPlayerHeat();
   renderPlayerDeepDive();
   renderShotQualityShare();
+  renderNewEfficiencyTables();
   renderGoalieSummary();
   renderShootingTrends();
   renderGoalieTrends();
