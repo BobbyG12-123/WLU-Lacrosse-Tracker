@@ -75,7 +75,7 @@
   /* NOTE: inside an SVG with a viewBox, CSS px on text = coordinate units, not screen px.
      These sizes are tuned per-diagram to that diagram's own viewBox scale. */
   .field-label { font-size: 1.3px; font-weight: 700; fill: #1a1a1a; font-family: Arial, sans-serif; }
-  .field-axis { font-size: 1.1px; font-weight: 700; fill: #6B6455; font-family: Arial, sans-serif; }
+  .field-axis { font-size: 1.5px; font-weight: 700; fill: #222; font-family: Arial, sans-serif; }
   .field-yardage { font-size: 0.62px; fill: #8A8370; font-family: Arial, sans-serif; font-style: italic; }
   .heat-zone { cursor: pointer; }
   .heat-zone:hover { opacity: 0.7; }
@@ -1059,9 +1059,6 @@ function fieldSVG(zones, opts) {
 
   let s = `<svg viewBox="-20 -4 40 27" xmlns="http://www.w3.org/2000/svg">`;
   s += `<rect x="-18" y="-2" width="36" height="${maxDist+3}" fill="#EEF3E4" stroke="#333" stroke-width="0.25"/>`;
-  for (let yd = 5; yd <= maxDist; yd += 5) {
-    s += `<text x="-19.3" y="${yd-0.3}" class="field-axis">${yd}</text>`;
-  }
   zones.forEach((z, i) => {
     const pct = dispPct(z);
     const color = z.n > 0 ? colorForPct(pct, vmin, vmax) : '#F2F2F2';
@@ -1076,15 +1073,19 @@ function fieldSVG(zones, opts) {
     } else label = ['\u2014'];
     label.forEach((ln,i2) => { s += `<text x="${cx}" y="${cy + (i2 - (label.length-1)/2)*1.6}" text-anchor="middle" class="field-label" style="pointer-events:none;">${ln}</text>`; });
   });
-  // Real lacrosse field reference marks, drawn on top of the zone fills so
-  // they're never painted over — yard hash marks along both sidelines and
-  // a bold GLE (goal line extended) line right at the goal mouth, the same
-  // landmarks a coach already thinks in, not just a data grid.
+  // Real lacrosse field reference marks, drawn on top of the zone fills
+  // (not before them) so they're never painted over — that was the actual
+  // bug last round: this whole block used to run before zones.forEach, so
+  // the zone rectangles silently covered the hash marks and yardage
+  // numbers. Yard hash marks along both sidelines, their numbers, and a
+  // bold GLE (goal line extended) line at the goal mouth — the landmarks
+  // a coach already thinks in, not just a data grid.
   for (let yd = 5; yd <= maxDist; yd += 5) {
-    s += `<line x1="-18" y1="${yd}" x2="-17" y2="${yd}" stroke="#5C5540" stroke-width="0.2"/>`;
-    s += `<line x1="17" y1="${yd}" x2="18" y2="${yd}" stroke="#5C5540" stroke-width="0.2"/>`;
+    s += `<line x1="-18" y1="${yd}" x2="-16.5" y2="${yd}" stroke="#333" stroke-width="0.3"/>`;
+    s += `<line x1="16.5" y1="${yd}" x2="18" y2="${yd}" stroke="#333" stroke-width="0.3"/>`;
+    s += `<text x="-19.5" y="${yd+0.5}" class="field-axis">${yd}</text>`;
   }
-  s += `<line x1="-18" y1="0" x2="18" y2="0" stroke="#5C5540" stroke-width="0.3"/>`;
+  s += `<line x1="-18" y1="0" x2="18" y2="0" stroke="#333" stroke-width="0.35"/>`;
   s += `<rect x="-1.2" y="-1.6" width="2.4" height="1.6" fill="#444" stroke="#fff" stroke-width="0.1"/>`;
   s += `<circle cx="0" cy="0" r="3" fill="none" stroke="#5C5540" stroke-width="0.2" stroke-dasharray="0.5,0.4"/>`;
   s += `<text x="0" y="-2.4" text-anchor="middle" class="field-axis">X</text>`;
