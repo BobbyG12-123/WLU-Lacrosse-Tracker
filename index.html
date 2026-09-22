@@ -1086,6 +1086,14 @@ function fieldSVG(zones, opts) {
     s += `<text x="-19.5" y="${yd+0.5}" class="field-axis">${yd}</text>`;
   }
   s += `<line x1="-18" y1="0" x2="18" y2="0" stroke="#333" stroke-width="0.35"/>`;
+  // Alley lines — the vertical lane dividers a coach means by "alley,"
+  // splitting the box into left alley / middle / right alley, same as a
+  // real lacrosse field diagram (not just a data-grid boundary).
+  [-8, 8].forEach(ax => {
+    s += `<line x1="${ax}" y1="0" x2="${ax}" y2="${maxDist}" stroke="#333" stroke-width="0.15" stroke-dasharray="0.6,0.4"/>`;
+  });
+  s += `<text x="-13" y="${maxDist-0.6}" text-anchor="middle" class="field-axis">ALLEY</text>`;
+  s += `<text x="13" y="${maxDist-0.6}" text-anchor="middle" class="field-axis">ALLEY</text>`;
   s += `<rect x="-1.2" y="-1.6" width="2.4" height="1.6" fill="#444" stroke="#fff" stroke-width="0.1"/>`;
   s += `<circle cx="0" cy="0" r="3" fill="none" stroke="#5C5540" stroke-width="0.2" stroke-dasharray="0.5,0.4"/>`;
   s += `<text x="0" y="-2.4" text-anchor="middle" class="field-axis">X</text>`;
