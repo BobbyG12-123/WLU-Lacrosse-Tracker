@@ -222,8 +222,8 @@
           <div class="pill-row" id="f_rebound"></div>
         </div>
         <div>
-          <label for="f_tags">Custom Tags (optional)</label>
-          <input type="text" id="f_tags" placeholder="e.g. crease roll">
+          <label>Bounce Shot (optional)</label>
+          <div class="pill-row" id="f_bounceshot"></div>
         </div>
         <div>
           <label for="f_trigger">Offense Trigger (optional)</label>
@@ -744,7 +744,7 @@ firebase.auth().onAuthStateChanged(user => {
 });
 </script>
 <script>
-const COLS =["id","date","practiceId","context","shooterJersey","goalieJersey","onGoal","onKeeper","goal","blocked","defScheme","transition","offDodge","rightHanded","shotQuality","cleanSave","fieldX","fieldY","distanceYds","lateralYds","goalX","goalY","customTags","contestLevel","assistJersey","opponent","passType","trigger","outcome","manSituation","shotMechanism","rebound"];
+const COLS =["id","date","practiceId","context","shooterJersey","goalieJersey","onGoal","onKeeper","goal","blocked","defScheme","transition","offDodge","rightHanded","shotQuality","cleanSave","fieldX","fieldY","distanceYds","lateralYds","goalX","goalY","customTags","contestLevel","assistJersey","opponent","passType","trigger","outcome","manSituation","shotMechanism","rebound","bounceShot"];
 // Shot Outcome (one required pill pick) replaces the old On Goal/On
 // Keeper/Goal Scored/Blocked checkboxes. Rather than rewriting every
 // existing analytics function that reads onGoal/onKeeper/goal/blocked
@@ -762,8 +762,9 @@ const OUTCOME_DERIVED = {
 };
 const CATCH_DODGE_OPTIONS = ["Off the Catch","Off the Dodge"];
 const MAN_SITUATION_OPTIONS = ["Man-Up","Man-Down","Even"];
-const SHOT_MECHANISM_OPTIONS = ["Overhand","Sidearm","Underhand","Bounce","One-Touch"];
+const SHOT_MECHANISM_OPTIONS = ["Overhand","Sidearm","Underhand","BTB","Twister"];
 const REBOUND_OPTIONS = ["Yes","No"];
+const BOUNCE_SHOT_OPTIONS = ["Yes","No"];
 // Faceoff specialists only — everyone else is excluded from the Faceoff
 // Taker/Opponent dropdowns. Matched by last name across all roster roles
 // (not just 'player') since a roster entry here may be tagged 'goalie'.
@@ -1481,6 +1482,7 @@ setupPillGroup('f_defscheme', ['Man','Zone'], null);
 setupPillGroup('f_mansituation', MAN_SITUATION_OPTIONS, 'Even');
 setupPillGroup('f_shotmechanism', SHOT_MECHANISM_OPTIONS, null);
 setupPillGroup('f_rebound', REBOUND_OPTIONS, null);
+setupPillGroup('f_bounceshot', BOUNCE_SHOT_OPTIONS, null);
 setupPillGroup('f_catchdodge', CATCH_DODGE_OPTIONS, null);
 setupPillGroup('f_cleansave', ['Yes','No'], null);
 setupPillGroup('f_outcome', OUTCOME_OPTIONS, null, (val) => {
@@ -1543,7 +1545,7 @@ function fullResetLogForm() {
   setPillGroupValue('f_mansituation', 'Even');
   setPillGroupValue('f_shotmechanism', null);
   setPillGroupValue('f_rebound', null);
-  document.getElementById('f_tags').value = '';
+  setPillGroupValue('f_bounceshot', null);
   document.getElementById('f_trigger').value = '';
   pendingField = { distanceYds: null, lateralYds: null };
   pendingGoal = { goalX: null, goalY: null };
@@ -1581,11 +1583,11 @@ function startEditShot(id) {
   setPillGroupValue('f_quality', shot.shotQuality || null);
   setPillGroupValue('f_contest', shot.contestLevel || null);
   setPillGroupValue('f_defscheme', shot.defScheme || null);
-  document.getElementById('f_tags').value = shot.customTags || '';
   document.getElementById('f_trigger').value = shot.trigger || '';
   setPillGroupValue('f_mansituation', shot.manSituation || null);
   setPillGroupValue('f_shotmechanism', shot.shotMechanism || null);
   setPillGroupValue('f_rebound', shot.rebound || null);
+  setPillGroupValue('f_bounceshot', shot.bounceShot || null);
   const editOutcome = outcomeFor(shot);
   setPillGroupValue('f_outcome', editOutcome);
   document.getElementById('cleanSaveWrap').style.display = editOutcome === 'Saved' ? '' : 'none';
@@ -1644,7 +1646,7 @@ document.getElementById('submitShotBtn').addEventListener('click', async () => {
     fieldX: null, fieldY: null,
     distanceYds: pendingField.distanceYds, lateralYds: pendingField.lateralYds,
     goalX: pendingGoal.goalX, goalY: pendingGoal.goalY,
-    customTags: document.getElementById('f_tags').value || null,
+    customTags: null,
     contestLevel: contest,
     assistJersey: resolvedAssistJersey || null,
     opponent: document.getElementById('f_opponent').value || null,
@@ -1653,6 +1655,7 @@ document.getElementById('submitShotBtn').addEventListener('click', async () => {
     manSituation: document.getElementById('f_mansituation').dataset.value || null,
     shotMechanism: document.getElementById('f_shotmechanism').dataset.value || null,
     rebound: document.getElementById('f_rebound').dataset.value || null,
+    bounceShot: document.getElementById('f_bounceshot').dataset.value || null,
   };
 
   const isEdit = editingShotId !== null;
@@ -1695,13 +1698,13 @@ document.getElementById('submitShotBtn').addEventListener('click', async () => {
   setPillGroupValue('f_mansituation', 'Even');
   setPillGroupValue('f_shotmechanism', null);
   setPillGroupValue('f_rebound', null);
+  setPillGroupValue('f_bounceshot', null);
   document.getElementById('f_shooter_name').value = '';
   document.getElementById('f_assist_name').value = '';
   resolvedShooterJersey = null;
   resolvedAssistJersey = null;
   document.getElementById('shooterResolve').innerHTML = '';
   document.getElementById('assistResolve').innerHTML = '';
-  document.getElementById('f_tags').value = '';
   document.getElementById('f_trigger').value = '';
   pendingField = { distanceYds: null, lateralYds: null };
   pendingGoal = { goalX: null, goalY: null };
@@ -1848,7 +1851,12 @@ function setupPillGroup(containerId, options, initialValue, onChange) {
 // reset) without rebuilding its buttons.
 function setPillGroupValue(containerId, value) {
   const el = document.getElementById(containerId);
-  el.dataset.value = value || '';
+  // If value doesn't match any current pill (e.g. editing an older shot
+  // tagged with a since-retired option like the old "Bounce"/"One-Touch"
+  // Shot Mechanism choices), clear it rather than silently keeping an
+  // invalid value selected with no pill showing as active.
+  const matches = value && [...el.querySelectorAll('.pill')].some(b => b.dataset.value === value);
+  el.dataset.value = matches ? value : '';
   el.querySelectorAll('.pill').forEach(b => b.classList.toggle('active', b.dataset.value === value));
 }
 
