@@ -1058,19 +1058,16 @@ function fieldSVG(zones, opts) {
   const vmax = vmax0 === vmin ? vmin + 0.01 : vmax0;
 
   let s = `<svg viewBox="-20 -4 40 27" xmlns="http://www.w3.org/2000/svg">`;
-  s += `<rect x="-18" y="-2" width="36" height="${maxDist+3}" fill="#FBF6EC" stroke="#333" stroke-width="0.25"/>`;
-  // Axis labels sit at x=-19.3, just outside the leftmost zone's edge (zones
-  // start at x=-19), so a colored zone never draws over top of them.
-  for (let yd = 0; yd <= maxDist; yd += 5) {
-    s += `<line x1="-18" y1="${yd}" x2="18" y2="${yd}" stroke="#CFC9B8" stroke-width="0.1"/>`;
-    if (yd > 0) s += `<text x="-19.3" y="${yd-0.3}" class="field-axis">${yd}</text>`;
+  s += `<rect x="-18" y="-2" width="36" height="${maxDist+3}" fill="#EEF3E4" stroke="#333" stroke-width="0.25"/>`;
+  for (let yd = 5; yd <= maxDist; yd += 5) {
+    s += `<text x="-19.3" y="${yd-0.3}" class="field-axis">${yd}</text>`;
   }
   zones.forEach((z, i) => {
     const pct = dispPct(z);
     const color = z.n > 0 ? colorForPct(pct, vmin, vmax) : '#F2F2F2';
     const cls = interactive ? ' class="heat-zone"' : '';
     const idxAttr = interactive ? ` data-zidx="${i}"` : '';
-    s += `<rect x="${z.x0}" y="${z.y0}" width="${z.x1-z.x0}" height="${z.y1-z.y0}" fill="${color}" stroke="#fff" stroke-width="0.15" opacity="0.9"${cls}${idxAttr}/>`;
+    s += `<rect x="${z.x0}" y="${z.y0}" width="${z.x1-z.x0}" height="${z.y1-z.y0}" fill="${color}" stroke="#fff" stroke-width="0.15" opacity="0.85"${cls}${idxAttr}/>`;
     const cx = (z.x0+z.x1)/2, cy = (z.y0+z.y1)/2;
     let label;
     if (z.n > 0) {
@@ -1078,10 +1075,19 @@ function fieldSVG(zones, opts) {
       else { label = [`${z.goals}/${z.n}`, `${Math.round(pct*100)}%`]; }
     } else label = ['\u2014'];
     label.forEach((ln,i2) => { s += `<text x="${cx}" y="${cy + (i2 - (label.length-1)/2)*1.6}" text-anchor="middle" class="field-label" style="pointer-events:none;">${ln}</text>`; });
-    s += `<text x="${z.x0+0.4}" y="${z.y0+1.1}" class="field-yardage" style="pointer-events:none;">${z.y0}\u2013${z.y1} yd</text>`;
   });
+  // Real lacrosse field reference marks, drawn on top of the zone fills so
+  // they're never painted over — yard hash marks along both sidelines and
+  // a bold GLE (goal line extended) line right at the goal mouth, the same
+  // landmarks a coach already thinks in, not just a data grid.
+  for (let yd = 5; yd <= maxDist; yd += 5) {
+    s += `<line x1="-18" y1="${yd}" x2="-17" y2="${yd}" stroke="#5C5540" stroke-width="0.2"/>`;
+    s += `<line x1="17" y1="${yd}" x2="18" y2="${yd}" stroke="#5C5540" stroke-width="0.2"/>`;
+  }
+  s += `<line x1="-18" y1="0" x2="18" y2="0" stroke="#5C5540" stroke-width="0.3"/>`;
   s += `<rect x="-1.2" y="-1.6" width="2.4" height="1.6" fill="#444" stroke="#fff" stroke-width="0.1"/>`;
-  s += `<circle cx="0" cy="0" r="3" fill="none" stroke="#999" stroke-width="0.15" stroke-dasharray="0.5,0.4"/>`;
+  s += `<circle cx="0" cy="0" r="3" fill="none" stroke="#5C5540" stroke-width="0.2" stroke-dasharray="0.5,0.4"/>`;
+  s += `<text x="0" y="-2.4" text-anchor="middle" class="field-axis">X</text>`;
   s += `</svg>`;
   return s;
 }
@@ -1241,23 +1247,6 @@ function buildFieldClickWidget(initial) {
   const wrap = document.getElementById('fieldClickWrap');
   wrap.innerHTML = fieldSVG(buildZones([], DIST_BANDS_PLAYER, LAT_BANDS_PLAYER), {metric:'score', interactive:false});
   const svgEl = wrap.querySelector('svg');
-  // Fine 2-yard reference gridlines so it's easier to judge exactly where
-  // to click — purely visual, doesn't change what's captured (the click
-  // handler below already records a near-continuous 0.1-yard coordinate).
-  for (let yd = 2; yd < 20; yd += 2) {
-    const hLine = document.createElementNS('http://www.w3.org/2000/svg','line');
-    hLine.setAttribute('x1','-18'); hLine.setAttribute('x2','18'); hLine.setAttribute('y1', yd); hLine.setAttribute('y2', yd);
-    hLine.setAttribute('stroke', '#B8B2A0'); hLine.setAttribute('stroke-width', '0.06'); hLine.setAttribute('stroke-dasharray', '0.3,0.3');
-    hLine.style.pointerEvents = 'none';
-    svgEl.appendChild(hLine);
-  }
-  for (let x = -18; x <= 18; x += 2) {
-    const vLine = document.createElementNS('http://www.w3.org/2000/svg','line');
-    vLine.setAttribute('x1', x); vLine.setAttribute('x2', x); vLine.setAttribute('y1', '0'); vLine.setAttribute('y2', '20');
-    vLine.setAttribute('stroke', '#B8B2A0'); vLine.setAttribute('stroke-width', '0.06'); vLine.setAttribute('stroke-dasharray', '0.3,0.3');
-    vLine.style.pointerEvents = 'none';
-    svgEl.appendChild(vLine);
-  }
   let marker = document.createElementNS('http://www.w3.org/2000/svg','circle');
   marker.setAttribute('r','0.6'); marker.setAttribute('fill','#1F3864'); marker.setAttribute('stroke','#fff'); marker.setAttribute('stroke-width','0.15');
   marker.style.display = 'none';
