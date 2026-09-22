@@ -3,7 +3,7 @@
 // activate. index.html itself doesn't need a bump to update: the fetch
 // handler below is network-first, so a re-upload of index.html reaches
 // anyone who's online immediately, cache or no cache.
-const CACHE_NAME = 'wlu-tracker-v2';
+const CACHE_NAME = 'wlu-tracker-v3';
 const PRECACHE_URLS = [
   './',
   './index.html',
@@ -37,8 +37,13 @@ self.addEventListener('fetch', (event) => {
   if (req.method !== 'GET') return;
   if (new URL(req.url).origin !== self.location.origin) return;
 
+  // cache: 'no-store' forces this past the browser's own HTTP cache, not
+  // just past this service worker's Cache Storage — without it, a plain
+  // fetch() can silently hand back a stale disk-cached response and this
+  // "network-first" handler would cache and serve that stale copy as if
+  // it were fresh, which is exactly what kept happening on deploy.
   event.respondWith(
-    fetch(req)
+    fetch(req, { cache: 'no-store' })
       .then((res) => {
         const copy = res.clone();
         caches.open(CACHE_NAME).then((cache) => cache.put(req, copy)).catch(() => {});
