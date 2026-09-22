@@ -1335,16 +1335,23 @@ function resolveByLastName(text, season) {
   const key = text.trim().toLowerCase();
   if (!key) return [];
   const pool = rosterPlayers(season);
+  // Match against EITHER the last name alone or the full "First Last"
+  // name — a coach typing "Brennan" and a coach typing "Blair Brennan"
+  // both need to find the same player. Matching last-name-only was the
+  // actual bug: typing a full name never matched since it was compared
+  // only against the last-name token, so someone right there on the
+  // roster looked like they didn't exist.
+  const fullNameOf = p => p.name.trim().toLowerCase();
   // Exact match wins outright (so a full, correctly-typed name always
   // resolves cleanly even if it's also a prefix of someone else's name).
-  const exact = pool.filter(p => lastNameOf(p.name).toLowerCase() === key);
+  const exact = pool.filter(p => lastNameOf(p.name).toLowerCase() === key || fullNameOf(p) === key);
   if (exact.length) return exact;
   // Otherwise match live as the coach types, the same as any normal
   // autocomplete — requiring the FULL last name before showing anything
   // (the original behavior) meant typing "Kel" showed "no player found"
   // even though "Keller" is right there on the roster, which read as the
   // app not knowing its own roster.
-  return pool.filter(p => lastNameOf(p.name).toLowerCase().startsWith(key));
+  return pool.filter(p => lastNameOf(p.name).toLowerCase().startsWith(key) || fullNameOf(p).startsWith(key));
 }
 function updateNameResolve(kind) {
   const inputId = kind === 'shooter' ? 'f_shooter_name' : 'f_assist_name';
