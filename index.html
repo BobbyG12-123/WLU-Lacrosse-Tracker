@@ -1076,13 +1076,10 @@ function fieldSVG(zones, opts) {
   // Real lacrosse field reference marks, drawn on top of the zone fills
   // (not before them) so they're never painted over — that was the actual
   // bug last round: this whole block used to run before zones.forEach, so
-  // the zone rectangles silently covered the hash marks and yardage
-  // numbers. Yard hash marks along both sidelines, their numbers, and a
-  // bold GLE (goal line extended) line at the goal mouth — the landmarks
-  // a coach already thinks in, not just a data grid.
+  // the zone rectangles silently covered the yardage numbers. Yardage
+  // numbers along the left side and a bold GLE (goal line extended) line
+  // at the goal mouth — the landmarks a coach already thinks in.
   for (let yd = 5; yd <= maxDist; yd += 5) {
-    s += `<line x1="-18" y1="${yd}" x2="-16.5" y2="${yd}" stroke="#333" stroke-width="0.3"/>`;
-    s += `<line x1="16.5" y1="${yd}" x2="18" y2="${yd}" stroke="#333" stroke-width="0.3"/>`;
     s += `<text x="-19.5" y="${yd+0.5}" class="field-axis">${yd}</text>`;
   }
   s += `<line x1="-18" y1="0" x2="18" y2="0" stroke="#333" stroke-width="0.35"/>`;
@@ -1092,8 +1089,6 @@ function fieldSVG(zones, opts) {
   [-8, 8].forEach(ax => {
     s += `<line x1="${ax}" y1="0" x2="${ax}" y2="${maxDist}" stroke="#333" stroke-width="0.15" stroke-dasharray="0.6,0.4"/>`;
   });
-  s += `<text x="-13" y="${maxDist-0.6}" text-anchor="middle" class="field-axis">ALLEY</text>`;
-  s += `<text x="13" y="${maxDist-0.6}" text-anchor="middle" class="field-axis">ALLEY</text>`;
   s += `<rect x="-1.2" y="-1.6" width="2.4" height="1.6" fill="#444" stroke="#fff" stroke-width="0.1"/>`;
   s += `<circle cx="0" cy="0" r="3" fill="none" stroke="#5C5540" stroke-width="0.2" stroke-dasharray="0.5,0.4"/>`;
   s += `<text x="0" y="-2.4" text-anchor="middle" class="field-axis">X</text>`;
