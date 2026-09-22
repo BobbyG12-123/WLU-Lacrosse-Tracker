@@ -1334,7 +1334,17 @@ function lastNameOf(name) { const parts = name.trim().split(/\s+/); return parts
 function resolveByLastName(text, season) {
   const key = text.trim().toLowerCase();
   if (!key) return [];
-  return rosterPlayers(season).filter(p => lastNameOf(p.name).toLowerCase() === key);
+  const pool = rosterPlayers(season);
+  // Exact match wins outright (so a full, correctly-typed name always
+  // resolves cleanly even if it's also a prefix of someone else's name).
+  const exact = pool.filter(p => lastNameOf(p.name).toLowerCase() === key);
+  if (exact.length) return exact;
+  // Otherwise match live as the coach types, the same as any normal
+  // autocomplete — requiring the FULL last name before showing anything
+  // (the original behavior) meant typing "Kel" showed "no player found"
+  // even though "Keller" is right there on the roster, which read as the
+  // app not knowing its own roster.
+  return pool.filter(p => lastNameOf(p.name).toLowerCase().startsWith(key));
 }
 function updateNameResolve(kind) {
   const inputId = kind === 'shooter' ? 'f_shooter_name' : 'f_assist_name';
@@ -1350,7 +1360,10 @@ function updateNameResolve(kind) {
     if (kind === 'shooter') resolvedShooterJersey = matches[0].jersey; else resolvedAssistJersey = matches[0].jersey;
     readout.innerHTML = `#${matches[0].jersey} ${escapeHtml(matches[0].name)} ✓`;
   } else if (matches.length > 1) {
-    readout.innerHTML = 'Multiple matches — pick one: ' + matches.map(p => `<button type="button" class="pill resolve-pick" data-kind="${kind}" data-jersey="${p.jersey}" data-name="${escapeHtml(p.name)}">#${p.jersey} ${escapeHtml(p.name)}</button>`).join(' ');
+    const shown = matches.slice(0, 8);
+    const overflow = matches.length - shown.length;
+    readout.innerHTML = 'Pick one: ' + shown.map(p => `<button type="button" class="pill resolve-pick" data-kind="${kind}" data-jersey="${p.jersey}" data-name="${escapeHtml(p.name)}">#${p.jersey} ${escapeHtml(p.name)}</button>`).join(' ')
+      + (overflow > 0 ? ` <span class="sans" style="color:var(--muted); font-size:11px;">+${overflow} more — keep typing to narrow it down</span>` : '');
     readout.querySelectorAll('.resolve-pick').forEach(btn => btn.addEventListener('click', () => {
       document.getElementById(inputId).value = btn.dataset.name;
       updateNameResolve(kind);
