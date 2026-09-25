@@ -627,6 +627,14 @@
       <div class="table-wrap" id="effPlayerWrap"></div>
     </div>
     <div class="panel">
+      <p class="panel-title">Shot-Type Breakdown</p>
+      <p class="panel-sub" id="effShotTypeSub"></p>
+      <div class="controls-row" style="margin-bottom:10px;">
+        <div class="control-group"><label>Player</label><select id="effShotTypePlayer"></select></div>
+      </div>
+      <div class="table-wrap" id="effShotTypeWrap"></div>
+    </div>
+    <div class="panel">
       <p class="panel-title">Development Flags</p>
       <p class="panel-sub" id="effFlagsSub"></p>
       <div class="trend-grid" id="effFlagsWrap"></div>
@@ -1137,17 +1145,19 @@ function renderSortableTable(wrapId, cols, rows, opts) {
       i += span;
     }
     cols.forEach(c => {
-      if (!c.sortable && c.sortable !== undefined) { botRow += c.group ? `<th>${c.label}</th>` : ''; return; }
+      if (!c.sortable && c.sortable !== undefined) { botRow += c.group ? `<th${c.headerClass ? ` class="${c.headerClass}"` : ''}>${c.label}</th>` : ''; return; }
       if (!c.group) return;
       const active = c.key === state.key;
-      botRow += `<th class="sortable${active ? ' sorted' : ''}" data-key="${c.key}" title="${c.title || ''}">${c.label}<span class="caret">${active ? (state.dir === 'asc' ? '▲' : '▼') : '▼'}</span></th>`;
+      const cls = ['sortable', active ? 'sorted' : '', c.headerClass || ''].filter(Boolean).join(' ');
+      botRow += `<th class="${cls}" data-key="${c.key}" title="${c.title || ''}">${c.label}<span class="caret">${active ? (state.dir === 'asc' ? '▲' : '▼') : '▼'}</span></th>`;
     });
     thead += topRow + '</tr>' + botRow + '</tr>';
   } else {
     thead += '<tr>' + cols.map(c => {
-      if (c.sortable === false) return `<th>${c.label}</th>`;
+      if (c.sortable === false) return `<th${c.headerClass ? ` class="${c.headerClass}"` : ''}>${c.label}</th>`;
       const active = c.key === state.key;
-      return `<th class="sortable${active ? ' sorted' : ''}" data-key="${c.key}" title="${c.title || ''}">${c.label}<span class="caret">${active ? (state.dir === 'asc' ? '▲' : '▼') : '▼'}</span></th>`;
+      const cls = ['sortable', active ? 'sorted' : '', c.headerClass || ''].filter(Boolean).join(' ');
+      return `<th class="${cls}" data-key="${c.key}" title="${c.title || ''}">${c.label}<span class="caret">${active ? (state.dir === 'asc' ? '▲' : '▼') : '▼'}</span></th>`;
     }).join('') + '</tr>';
   }
   thead += '</thead>';
@@ -2601,6 +2611,161 @@ function buildFacedXgModel(calibrationShots, subjectShots) {
   return buildXgModel(calFaced, subFaced);
 }
 
+// ---------------- Joint shot-type ("beats expected efficiency") model ----------------
+// Answers "does this player convert better than the team average on THIS
+// EXACT kind of shot" — shot quality + mechanism + off-dodge/off-catch +
+// contest level + handedness, all five at once. This is a direct, honest
+// measurement when a combination has enough real shots (see
+// BUCKET_TEAM_MIN/BUCKET_PLAYER_MIN). trigger is deliberately excluded from
+// the combination — 60+ values on top of the other 5 would leave almost
+// every combination empty at any realistic season's volume — and keeps its
+// own separate views (the trigger leaderboards below). When a combination
+// doesn't have enough real shots, it falls back to an ESTIMATED rate built
+// by nudging the shot's base tier/context rate using whichever individual
+// factors (trigger, mechanism, dodge/catch, contest, handedness) already
+// have enough pooled volume on their own to trust. Every number surfaced by
+// this model is labeled Measured or Estimated, never blended silently.
+const BUCKET_DIMENSIONS = [
+  { key: 'quality', get: s => s.shotQuality || null },
+  { key: 'mechanism', get: s => s.shotMechanism || null },
+  { key: 'dodge', get: s => s.offDodge === 1 ? 'Off the Dodge' : (s.offDodge === 0 ? 'Off the Catch' : null) },
+  { key: 'contest', get: s => s.contestLevel || null },
+  { key: 'hand', get: s => getHandedness(s) },
+];
+function shotDims(shot) { return BUCKET_DIMENSIONS.map(d => d.get(shot)); }
+function bucketKeyFor(shot) {
+  const parts = shotDims(shot);
+  return parts.every(Boolean) ? parts.join('|') : null;
+}
+const BUCKET_TEAM_MIN = 8;    // real team-wide shots in this exact combination before it's "Measured"
+const BUCKET_PLAYER_MIN = 4;  // this player's own shots in the combination
+const BUCKET_SHRINK_K = 8;    // pseudo-shots of the tier/context prior blended into each bucket's own rate
+
+// A bucket's own shots' tier/context expectation absent any bucket-specific
+// info — a context-weighted blend of the existing practice/game tier rate,
+// weighted by how many of THIS bucket's own shots are practice vs. game.
+function bucketPriorRate(bucketShots, baseModel) {
+  const tier = bucketShots[0].shotQuality;
+  const practiceN = bucketShots.filter(s => s.context !== 'Game').length;
+  const gameN = bucketShots.length - practiceN;
+  const total = practiceN + gameN;
+  if (!total) return baseModel.rate.Practice[tier] || 0;
+  return (practiceN * (baseModel.rate.Practice[tier] || 0) + gameN * (baseModel.rate.Game[tier] || 0)) / total;
+}
+function computeShotTypeBuckets(shots, baseModel) {
+  const groups = {};
+  shots.forEach(s => {
+    const key = bucketKeyFor(s);
+    if (!key) return;
+    (groups[key] = groups[key] || []).push(s);
+  });
+  const buckets = {};
+  Object.keys(groups).forEach(key => {
+    const list = groups[key];
+    const n = list.length;
+    const goals = list.filter(s => s.goal === 1).length;
+    const prior = bucketPriorRate(list, baseModel);
+    const rate = (goals + BUCKET_SHRINK_K * prior) / (n + BUCKET_SHRINK_K);
+    const byPlayer = {};
+    list.forEach(s => { if (s.shooterJersey) (byPlayer[s.shooterJersey] = byPlayer[s.shooterJersey] || []).push(s); });
+    buckets[key] = { key, dims: shotDims(list[0]), n, goals, rate, trusted: n >= BUCKET_TEAM_MIN, shots: list, byPlayer };
+  });
+  return buckets;
+}
+
+// Pooled, single-factor adjustment tables for the ESTIMATED fallback — one
+// per dimension, each computed by pooling every shot sharing that one value
+// (across every other dimension) and comparing actual goals to what the
+// base tier/context model already expected for those same shots. This
+// isolates that factor's own marginal effect instead of re-measuring shot
+// quality (a trigger that mostly produces Gold looks shouldn't get credit
+// twice for that).
+const XG_ADJUST_FACTORS = [
+  { key: 'trigger', get: s => normalizeTrigger(s.trigger) },
+  { key: 'mechanism', get: s => s.shotMechanism || null },
+  { key: 'dodge', get: s => s.offDodge === 1 ? 'Off the Dodge' : (s.offDodge === 0 ? 'Off the Catch' : null) },
+  { key: 'contest', get: s => s.contestLevel || null },
+  { key: 'hand', get: s => getHandedness(s) },
+];
+const XG_ADJUST_MIN_N = 15;          // raw shots needed before a tag's multiplier is trusted
+const XG_ADJUST_K = 10;              // shrinkage weight, in expected-goal units; prior = 1.0 (neutral)
+const XG_ADJUST_CLAMP = [0.6, 1.6];  // per-factor multiplier clamp
+const XG_RICH_PROB_CLAMP = [0.02, 0.95];
+
+function buildEstimateAdjustments(subjectShots, baseModel) {
+  const out = {};
+  XG_ADJUST_FACTORS.forEach(def => {
+    const groups = {};
+    subjectShots.forEach(s => {
+      const v = def.get(s);
+      if (!v) return;
+      (groups[v] = groups[v] || []).push(s);
+    });
+    const table = {};
+    Object.keys(groups).forEach(v => {
+      const list = groups[v];
+      const n = list.length;
+      const actual = list.filter(s => s.goal === 1).length;
+      const expected = xgSum(list, baseModel);
+      const trusted = n >= XG_ADJUST_MIN_N;
+      const shrunk = (actual + XG_ADJUST_K) / (expected + XG_ADJUST_K);
+      const multiplier = trusted ? Math.max(XG_ADJUST_CLAMP[0], Math.min(XG_ADJUST_CLAMP[1], shrunk)) : 1.0;
+      table[v] = { n, actual, expected, trusted, multiplier };
+    });
+    out[def.key] = table;
+  });
+  return out;
+}
+function estimateForShot(shot, baseModel, adjustments) {
+  const baseP = xgForShot(shot, baseModel);
+  let m = 1;
+  XG_ADJUST_FACTORS.forEach(def => {
+    const v = def.get(shot);
+    const entry = v && adjustments[def.key][v];
+    if (entry && entry.trusted) m *= entry.multiplier;
+  });
+  const p = Math.max(XG_RICH_PROB_CLAMP[0], Math.min(XG_RICH_PROB_CLAMP[1], baseP * m));
+  return { p, base: baseP, multiplier: m };
+}
+function estimateTeamRateForBucketShots(bucketShots, baseModel, adjustments) {
+  if (!bucketShots.length) return null;
+  const sum = bucketShots.reduce((s, sh) => s + estimateForShot(sh, baseModel, adjustments).p, 0);
+  return sum / bucketShots.length;
+}
+
+function shotTypeModelFor2027(baseModel) {
+  const subject = shots2027();
+  return {
+    subject,
+    buckets: computeShotTypeBuckets(subject, baseModel),
+    adjustments: buildEstimateAdjustments(subject, baseModel),
+    baseModel,
+  };
+}
+
+// Every combination a player has at least one shot in — Measured when the
+// team-wide bucket AND this player both clear their minimums, Estimated
+// (clearly labeled) otherwise.
+function computePlayerShotTypeRows(jersey, shotTypeModel) {
+  const rows = [];
+  Object.keys(shotTypeModel.buckets).forEach(key => {
+    const bucket = shotTypeModel.buckets[key];
+    const playerShots = bucket.byPlayer[jersey];
+    if (!playerShots || !playerShots.length) return;
+    const playerN = playerShots.length;
+    const playerGoals = playerShots.filter(s => s.goal === 1).length;
+    const measured = bucket.trusted && playerN >= BUCKET_PLAYER_MIN;
+    const teamRate = measured ? bucket.rate : estimateTeamRateForBucketShots(bucket.shots, shotTypeModel.baseModel, shotTypeModel.adjustments);
+    rows.push({
+      dims: bucket.dims, key,
+      playerN, playerRate: playerN ? playerGoals / playerN : null,
+      teamN: bucket.n, teamRate, source: measured ? 'Measured' : 'Estimated',
+      beatsExpected: teamRate === null ? null : playerGoals - playerN * teamRate,
+    });
+  });
+  return rows.sort((a, b) => b.playerN - a.playerN);
+}
+
 // ---------------- Points / involvement / session helpers ----------------
 // Points = goals + assists. assistJersey postdates the 2026 seed data (0%
 // coverage there) but is being entered for 2027, so this is meaningful for
@@ -2693,12 +2858,20 @@ function renderGoalieSummary() {
   const rows = computeGoalieSummaryTiered(shots, model);
   if (xgNoteEl) {
     xgNoteEl.style.display = '';
-    xgNoteEl.textContent = 'xGA and GSAx are built from this team\'s own goalies, so the team-wide GSAx nets to roughly zero by construction — these numbers rank goalies against each other and against our own shot mix, not against an outside average.';
+    xgNoteEl.textContent = 'Exp. Goals Allowed is how many goals a goalie would be expected to give up, based only on the quality of shots he faced — not who was shooting. Saved vs. Expected is Exp. Goals Allowed minus goals actually allowed: positive (green) means he stopped more than shot quality predicted, negative means he allowed more. The /100 version scales that to a common 100-shots-faced basis so goalies with different workloads are comparable. Both are built from this team\'s own goalies, so the team-wide total nets to roughly zero by construction — these numbers rank goalies against each other and against our own shot mix, not against an outside average.';
   }
-  const tierGroupCols = SHOT_QUALITY_GRADES.map(([q, key, label]) => ({
-    key, label,
-    facedCol: { key: key + 'Faced', label: 'Faced', type: 'num', value: r => r[key + 'Faced'], group: label, groupClass: key },
-    svCol: { key: key + 'SavePct', label: 'Sv%', type: 'num', value: r => r[key + 'SavePct'], format: v => pct(v), group: label, groupClass: key, cellStyle: (v, r) => smallCellStyle(r[key + 'Faced'], 5) },
+  // One combined column per tier (save% primary, faced count small/muted
+  // beside it) instead of separate Faced/Sv% columns — the colored tier
+  // word is now the whole header, not a bar sitting above a generic label.
+  // One flat, colored header per tier ("Gold"/"Silver"/"Bronze" itself is
+  // the highlighted word) rather than a two-row grouped header sitting
+  // above generic "Faced"/"Sv%" labels.
+  const tierCols = SHOT_QUALITY_GRADES.map(([q, key, label]) => ({
+    key: key + 'Combined', label, type: 'num',
+    value: r => r[key + 'SavePct'],
+    format: (v, r) => v === null ? '—' : `${pct(v)} <span style="color:var(--muted); font-size:11px;">(${r[key + 'Faced']})</span>`,
+    cellStyle: (v, r) => smallCellStyle(r[key + 'Faced'], 5),
+    headerClass: 'group-head ' + key,
   }));
   const cols = [
     { key: 'jersey', label: 'Jersey', type: 'text', value: r => r.jersey },
@@ -2707,10 +2880,10 @@ function renderGoalieSummary() {
     { key: 'saves', label: 'Saves', type: 'num', value: r => r.saves },
     { key: 'goalsAllowed', label: 'GA', type: 'num', value: r => r.goalsAllowed },
     { key: 'savePct', label: 'Save %', type: 'num', value: r => r.savePct, format: v => pct(v) },
-  ].concat(tierGroupCols.flatMap(t => [t.facedCol, t.svCol])).concat([
-    { key: 'xGA', label: 'xGA', type: 'num', value: r => r.xGA, format: v => v.toFixed(1), title: 'Expected goals allowed given the tier mix faced' },
-    { key: 'gsax', label: 'GSAx', type: 'num', value: r => r.faced >= 25 ? r.gsax : null, format: (v, r) => r.faced >= 25 ? deltaChip(v, { format: 'decimal', digits: 1 }) : '—', title: 'Goals saved above expected (needs 25+ faced)' },
-    { key: 'gsaxPer100', label: 'GSAx/100', type: 'num', value: r => r.faced >= 25 ? r.gsaxPer100 : null, format: (v, r) => r.faced >= 25 && v !== null ? v.toFixed(1) : '—' },
+  ].concat(tierCols).concat([
+    { key: 'xGA', label: 'Exp. Goals Allowed', type: 'num', value: r => r.xGA, format: v => v.toFixed(1), title: 'Goals a goalie would be expected to allow, given the mix of shot quality he faced' },
+    { key: 'gsax', label: 'Saved vs. Expected', type: 'num', value: r => r.faced >= 25 ? r.gsax : null, format: (v, r) => r.faced >= 25 ? deltaChip(v, { format: 'decimal', digits: 1 }) : '—', title: 'Exp. Goals Allowed minus goals actually allowed (needs 25+ faced)' },
+    { key: 'gsaxPer100', label: 'Saved vs. Expected /100', type: 'num', value: r => r.faced >= 25 ? r.gsaxPer100 : null, format: (v, r) => r.faced >= 25 && v !== null ? deltaChip(v, { format: 'decimal', digits: 1 }) : '—' },
   ]);
   renderSortableTable('goalieSummaryWrap', cols, rows, {
     dense: true,
@@ -3046,16 +3219,72 @@ function renderPlayerBestTriggers(shots) {
 }
 
 // ---------------- Orchestrator ----------------
+function populateShotTypePlayerSelect() {
+  const sel = document.getElementById('effShotTypePlayer');
+  if (!sel) return;
+  const prevVal = sel.value;
+  const shots = shots2027().filter(s => s.shooterJersey);
+  const counts = {};
+  shots.forEach(s => { counts[s.shooterJersey] = (counts[s.shooterJersey] || 0) + 1; });
+  const jerseys = Object.keys(counts).sort((a, b) => counts[b] - counts[a]);
+  sel.innerHTML = '';
+  if (!jerseys.length) {
+    const opt = document.createElement('option'); opt.value = ''; opt.textContent = 'No 2027 shooters yet';
+    sel.appendChild(opt);
+    return;
+  }
+  jerseys.forEach(j => {
+    const opt = document.createElement('option');
+    opt.value = j;
+    opt.textContent = `#${j} ${nameFor(j)} (${counts[j]})`;
+    sel.appendChild(opt);
+  });
+  if (jerseys.includes(prevVal)) sel.value = prevVal;
+}
+function sourceBadge(v) {
+  const good = v === 'Measured';
+  return `<span class="sans" style="font-size:10.5px; font-weight:700; padding:2px 8px; border-radius:999px; ${good ? 'background:#E6F4EA; color:#256029;' : 'background:var(--overall-bg); color:var(--overall);'}">${v}</span>`;
+}
+function renderShotTypeBreakdown() {
+  const subEl = document.getElementById('effShotTypeSub');
+  const wrap = document.getElementById('effShotTypeWrap');
+  const sel = document.getElementById('effShotTypePlayer');
+  if (!subEl || !wrap || !sel) return;
+  populateShotTypePlayerSelect();
+  const jersey = sel.value;
+  const model = xgModelFor2027();
+  const shotTypeModel = shotTypeModelFor2027(model);
+  const taggedAll = shotTypeModel.subject.filter(s => bucketKeyFor(s));
+  subEl.textContent = `For a specific kind of shot — quality, mechanism, dodge/catch, contest, and handedness all together — this shows the team's real rate on that exact combination and how the selected player compares. "Measured" needs ${BUCKET_TEAM_MIN}+ team-wide shots and ${BUCKET_PLAYER_MIN}+ from this player in that exact combination; below that it falls back to an "Estimated" rate built from the shot-quality model, nudged by whichever tags already have enough volume on their own — never a direct measurement. Trigger isn't part of this combination (60+ possible values would leave almost every combination empty); it has its own tables below. ${taggedAll.length} of ${shotTypeModel.subject.length} 2027 shots have all five fields tagged.`;
+  if (!jersey) { wrap.innerHTML = ''; return; }
+  const rows = computePlayerShotTypeRows(jersey, shotTypeModel);
+  const cols = [
+    { key: 'quality', label: 'Quality', type: 'text', value: r => tierMeta(r.dims[0]).label },
+    { key: 'mechanism', label: 'Mechanism', type: 'text', value: r => r.dims[1] },
+    { key: 'dodge', label: 'Dodge/Catch', type: 'text', value: r => r.dims[2] },
+    { key: 'contest', label: 'Contest', type: 'text', value: r => r.dims[3] },
+    { key: 'hand', label: 'Hand', type: 'text', value: r => r.dims[4] },
+    { key: 'playerN', label: 'His Shots', type: 'num', value: r => r.playerN },
+    { key: 'playerRate', label: 'His Rate', type: 'num', value: r => r.playerRate, format: v => pct(v) },
+    { key: 'teamRate', label: 'Team Rate', type: 'num', value: r => r.teamRate, format: v => v === null ? '—' : pct(v) },
+    { key: 'source', label: 'Source', type: 'text', value: r => r.source, format: v => sourceBadge(v) },
+    { key: 'beatsExpected', label: 'Beats Expected', type: 'num', value: r => r.beatsExpected, format: v => deltaChip(v, { format: 'decimal', digits: 2 }) },
+  ];
+  renderSortableTable('effShotTypeWrap', cols, rows, { dense: true, defaultSort: { key: 'playerN', dir: 'desc' }, emptyMsg: 'This player has no shots with all five fields (quality, mechanism, dodge/catch, contest, handedness) tagged yet.' });
+}
+
 function renderEfficiencyView() {
   if (!document.getElementById('effXgModelWrap')) return;
   const shots = shots2027().filter(s => s.shooterJersey);
   const model = xgModelFor2027();
   renderXgModelPanel(shots, model);
   renderPlayerEfficiency(shots, model);
+  renderShotTypeBreakdown();
   renderDevelopmentFlags(shots, model);
   renderTriggerLeaders(shots);
   renderPlayerBestTriggers(shots);
 }
+document.getElementById('effShotTypePlayer').addEventListener('change', renderShotTypeBreakdown);
 
 let heatSeason = SEASONS[0];
 function renderPlayerHeat() {
