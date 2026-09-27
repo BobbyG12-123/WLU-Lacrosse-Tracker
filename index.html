@@ -1421,7 +1421,9 @@ function rebuildShots() {
   const seen = new Set();
   Object.keys(LIVE_SESSIONS).sort().forEach(sid => LIVE_SESSIONS[sid].shots.forEach(s => { live.push(s); seen.add(s.id); }));
   // Inbox tuples not yet moved into a session still show up right away.
-  LIVE_SHOTS_TUPLES.forEach(t => { const o = tupleToObj(t); if (!seen.has(o.id)) live.push(o); });
+  // Already-copied tuples live on in their session (edited or deleted there),
+  // so only not-yet-copied ones show from the inbox.
+  LIVE_SHOTS_TUPLES.forEach(t => { const o = tupleToObj(t); if (!seen.has(o.id) && !MOVED_HASHES.has(tupleHash(t))) live.push(o); });
   SHOTS = seed.concat(live.filter(s => s.team !== 'OPP'));
   OPP_SHOTS = live.filter(s => s.team === 'OPP');
   POSSESSIONS = [];
@@ -1525,12 +1527,15 @@ function deleteSessionEntry(kind, entry) {
 function deleteShotEntry(shot) { return deleteSessionEntry('shot', shot); }
 function deletePossessionEntry(p) { return deleteSessionEntry('poss', p); }
 
-// Moves anything sitting in the legacy app/shots_live doc into session docs.
-// A copy of every tuple ever moved is kept in app/shots_live_backup. The
-// inbox is only trimmed (in a transaction, so a tuple an older client adds
-// mid-migration is never lost) after the session writes are confirmed. An
-// inbox id that collides with a different existing shot gets a fresh id.
+// Copies anything in the legacy app/shots_live doc into session docs.
+// Nothing is ever removed from app/shots_live: it stays in Firebase as a
+// permanent copy of every shot logged before the move, and a second copy
+// of every tuple is kept in app/shots_live_backup. A short hash of each
+// copied tuple is recorded ("moved") so it is copied only once and isn't
+// shown twice. An inbox id that collides with a different existing shot
+// gets a fresh id.
 let migratingInbox = false;
+let MOVED_HASHES = new Set();
 function tupleHash(t) {
   const str = JSON.stringify(t);
   let h1 = 5381, h2 = 52711;
@@ -1548,13 +1553,16 @@ async function migrateShotsInbox(tuples) {
       try { backup = JSON.parse(bsnap.data().json || '[]'); } catch (e) { backup = []; }
       try { movedList = JSON.parse(bsnap.data().moved || '[]'); } catch (e) { movedList = []; }
     }
-    const backupKeys = new Set(backup.map(t => JSON.stringify(t)));
-    tuples.forEach(t => { const k = JSON.stringify(t); if (!backupKeys.has(k)) { backup.push(t); backupKeys.add(k); } });
-    await backupRef.set({ json: JSON.stringify(backup), moved: JSON.stringify(movedList) });
-    // Tuples a previous run already moved (and whose inbox trim then failed)
-    // must not be moved again — the shot may have been edited since.
     const alreadyMoved = new Set(movedList);
+    MOVED_HASHES = new Set(movedList);
+    // Tuples already copied must not be copied again — the shot may have
+    // been edited or deleted in its session since.
     const pending = tuples.filter(t => !alreadyMoved.has(tupleHash(t)));
+    if (!pending.length) { rebuildShots(); rerenderAfterShotsChange(); return; }
+    const backupKeys = new Set(backup.map(t => JSON.stringify(t)));
+    let grew = false;
+    tuples.forEach(t => { const k = JSON.stringify(t); if (!backupKeys.has(k)) { backup.push(t); backupKeys.add(k); grew = true; } });
+    if (grew || !bsnap.exists) await backupRef.set({ json: JSON.stringify(backup), moved: JSON.stringify(movedList) });
 
     const existing = {};
     Object.values(LIVE_SESSIONS).forEach(sess => sess.shots.forEach(s => { existing[s.id] = s; }));
@@ -1578,15 +1586,9 @@ async function migrateShotsInbox(tuples) {
     await batch.commit();
     pending.forEach(t => movedList.push(tupleHash(t)));
     await backupRef.set({ moved: JSON.stringify(movedList) }, { merge: true });
-
-    const moved = new Set(tuples.map(t => JSON.stringify(t)));
-    await DB.runTransaction(async tx => {
-      const ref = DB.doc('app/shots_live');
-      const snap = await tx.get(ref);
-      let cur = [];
-      if (snap.exists && typeof snap.data().json === 'string') { try { cur = JSON.parse(snap.data().json); } catch (e) { cur = []; } }
-      tx.set(ref, { json: JSON.stringify(cur.filter(t => !moved.has(JSON.stringify(t)))) });
-    });
+    MOVED_HASHES = new Set(movedList);
+    rebuildShots();
+    rerenderAfterShotsChange();
   } catch (e) {
     console.error('shots inbox migration failed (will retry next load)', e);
   } finally {
@@ -1677,6 +1679,10 @@ async function loadAll() {
     LIVE_SESSIONS = {};
     qs.docs.forEach(d => { LIVE_SESSIONS[d.id] = parseSessionDoc(d.id, d.data()); });
   } catch (e) { console.error('sessions load failed', e); }
+  try {
+    const bs = await DB.doc('app/shots_live_backup').get();
+    if (bs.exists) MOVED_HASHES = new Set(JSON.parse(bs.data().moved || '[]'));
+  } catch (e) { console.error('backup load failed', e); }
   const shotsRef = DB.doc('app/shots_live');
   try {
     const snap = await shotsRef.get();
