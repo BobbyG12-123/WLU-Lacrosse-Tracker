@@ -141,6 +141,32 @@
   .section-heading:first-child { margin-top: 0; }
   .section-heading.up { color: var(--good); }
   .section-heading.down { color: var(--critical); }
+  /* ---- In-tab organization: bar + sub-tabs + sub-pages ---- */
+  .view-bar { position: sticky; top: 0; z-index: 15; background: var(--paper); padding: 10px 0 0; margin: -10px 0 16px; border-bottom: 1px solid var(--line); }
+  .view-bar-row { display: flex; align-items: center; gap: 18px; flex-wrap: wrap; margin-bottom: 10px; }
+  .view-title { font-size: 22px; font-weight: 700; color: var(--navy-3); margin-right: auto; }
+  .view-bar .grade-pills .pill { padding: 6px 13px; font-size: 12.5px; }
+  .subtabs { display: flex; gap: 2px; overflow-x: auto; }
+  .subtab-btn { font-family: 'Helvetica Neue', Arial, sans-serif; font-size: 13px; font-weight: 700; color: var(--muted); background: none; border: none; border-bottom: 3px solid transparent; padding: 8px 14px 9px; cursor: pointer; white-space: nowrap; }
+  .subtab-btn:hover { color: var(--navy-3); }
+  .subtab-btn.active { color: var(--navy-3); border-bottom-color: var(--gold); }
+  .subpage { display: none; }
+  .subpage.active { display: block; }
+  .view-tiles { margin-bottom: 16px; }
+  .view-tiles:empty { display: none; }
+  .view-tiles .stat-tile { background: var(--card); }
+  .view-tiles .stat-tile .value { font-size: 26px; }
+  .view-intro { font-family: 'Helvetica Neue', Arial, sans-serif; font-size: 12.5px; color: var(--muted); margin: -4px 0 16px; line-height: 1.5; }
+  .collapsible-body { margin-top: 12px; }
+  .board-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(460px, 1fr)); gap: 0 18px; }
+  .info-tip { display: inline-flex; align-items: center; justify-content: center; width: 14px; height: 14px; border-radius: 50%; background: var(--overall-bg); color: var(--overall); font-size: 9.5px; font-weight: 700; font-style: normal; margin-left: 4px; cursor: help; vertical-align: 1px; }
+  @media (max-width: 700px) { .board-grid { grid-template-columns: 1fr; } }
+  .filters-box { margin-bottom: 14px; }
+  .filters-box > summary { cursor: pointer; font-family: 'Helvetica Neue', Arial, sans-serif; font-size: 12px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--navy-3); display: inline-flex; align-items: center; gap: 8px; padding: 6px 12px; border: 1.5px solid var(--line); border-radius: 999px; list-style: none; }
+  .filters-box > summary::-webkit-details-marker { display: none; }
+  .filters-box[open] > summary { margin-bottom: 12px; }
+  .filter-count { background: var(--gold-bg); color: var(--gold-ink); border-radius: 999px; padding: 1px 8px; font-size: 11px; letter-spacing: 0; }
+  .filter-count:empty { display: none; }
   /* ---- Log Shot: film-logging layout ---- */
   .log-sticky { margin-bottom: 14px; }
   .session-bar { display: flex; flex-wrap: wrap; gap: 14px 18px; align-items: flex-end; background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 12px 16px; box-shadow: 0 1px 3px rgba(15,31,61,.06); }
@@ -225,10 +251,10 @@
   <button class="tab-btn active" data-view="logView">Log Shot</button>
   <button class="tab-btn" data-view="playerView">Player Heat Maps</button>
   <button class="tab-btn" data-view="goalieView">Goalie Heat Maps</button>
+  <button class="tab-btn" data-view="efficiencyView">Efficiency</button>
   <button class="tab-btn" data-view="faceoffView">Faceoffs</button>
   <button class="tab-btn" data-view="tableView">Shot Log</button>
   <button class="tab-btn" data-view="compareView">Compare</button>
-  <button class="tab-btn" data-view="efficiencyView">Efficiency</button>
   <button class="tab-btn" data-view="opponentView">Opponent</button>
   <button class="tab-btn" data-view="recruitsView">Recruits</button>
   <button class="tab-btn" data-view="boardView">Board</button>
@@ -597,70 +623,15 @@
   </section>
 
   <section id="playerView" class="view">
-    <div class="panel">
-      <div class="controls-row" style="margin-bottom:0;">
-        <div class="control-group">
-          <label>Season</label>
-          <div class="grade-pills" id="playerSeasonPills"></div>
-        </div>
+    <div class="view-bar">
+      <div class="view-bar-row">
+        <div class="view-title">Player Heat Maps</div>
+        <div class="control-group"><div class="grade-pills" id="playerSeasonPills"></div></div>
       </div>
-      <p class="panel-sub" style="margin:10px 0 0;">Applies to every stat on this tab &mdash; Shooting Trends, Player Deep Dive, Shot Quality Share, and the heat maps below.</p>
+      <div class="subtabs" data-view="playerView"></div>
     </div>
-    <div class="panel">
-      <p class="panel-title">Shooting Trends</p>
-      <p class="panel-sub" id="shootingTrendsSub">Shot % across each quarter of a player's logged shots, in order &mdash; who's heating up, who's cooling off. Players need 12+ shots (3+ per quarter) to show a trend.</p>
-      <div class="controls-row" id="trendControlsRow" style="display:none; margin-bottom:8px;">
-        <div class="control-group"><label>Window</label><div class="pill-row" id="trendWindowPills"></div></div>
-        <div class="control-group"><label>Metric</label><div class="pill-row" id="trendMetricPills"></div></div>
-      </div>
-      <div class="chart-wrap" id="trendRollingWrap" style="display:none;"></div>
-      <div id="trendWindowGroups">
-        <div class="section-heading up"><span>&#9650;</span> Top 5 Trending Up</div>
-        <div class="trend-grid" id="shootingTrendsUpGrid"></div>
-        <div class="section-heading down"><span>&#9660;</span> Trending Down</div>
-        <div class="trend-grid" id="shootingTrendsDownGrid"></div>
-      </div>
-    </div>
-    <div class="panel">
-      <p class="panel-title">Player Deep Dive</p>
-      <p class="panel-sub">Full per-player breakdown &mdash; each % is shot % (goals &divide; shots) within that slice. Players with 5+ total shots; italic gray = fewer than 5 shots in that specific column (real number, small sample). Scroll right for more columns.</p>
-      <p class="panel-sub sans" style="font-weight:700; text-transform:uppercase; font-size:11px; letter-spacing:.04em; color:var(--muted); margin-top:14px;">Compare colors against:</p>
-      <div class="grade-pills" id="ddComparePills"></div>
-      <p class="panel-sub" id="ddCompareHint" style="margin-top:6px;"></p>
-      <div class="table-wrap" id="playerDeepDiveWrap"></div>
-    </div>
-    <div class="panel">
-      <p class="panel-title">Shot Quality Share</p>
-      <p class="panel-sub">Left group: how each player's own shots break down by grade. Right group: what slice of the whole team's Gold/Silver/Bronze shots that player is taking &mdash; i.e. who's actually getting the good looks. Players with 5+ total shots.</p>
-      <div class="table-wrap" id="shotQualityShareWrap"></div>
-    </div>
-    <div class="panel">
-      <p class="panel-title">Trigger Efficiency</p>
-      <p class="panel-sub" id="trigExplainer">Team-wide, one row per offense trigger with 3+ logged shots this season.</p>
-      <div class="controls-row" id="trigControlsRow" style="display:none; margin-bottom:10px;">
-        <div class="control-group"><label>Contest Level</label><div class="pill-row" id="trigContestPills"></div></div>
-        <div class="control-group"><label>Shot Quality</label><div class="pill-row" id="trigQualityPills"></div></div>
-        <div class="control-group"><label>Min Reps</label><div class="pill-row" id="trigMinRepsPills"></div></div>
-      </div>
-      <div class="model-note" id="trigModelNote" style="display:none;"></div>
-      <div class="table-wrap" id="triggerEfficiencyWrap"></div>
-    </div>
-    <div class="panel">
-      <p class="panel-title">By Man Situation</p>
-      <div class="table-wrap" id="manSituationEfficiencyWrap"></div>
-    </div>
-    <div class="panel">
-      <p class="panel-title">By Shot Mechanism</p>
-      <div class="table-wrap" id="shotMechanismEfficiencyWrap"></div>
-    </div>
-    <div class="panel">
-      <p class="panel-title">By Catch / Dodge</p>
-      <div class="table-wrap" id="catchDodgeEfficiencyWrap"></div>
-    </div>
-    <div class="panel">
-      <p class="panel-title">By Rebound</p>
-      <div class="table-wrap" id="reboundEfficiencyWrap"></div>
-    </div>
+    <div class="view-tiles trend-grid" id="playerTiles"></div>
+    <div class="subpage" data-label="Heat Map">
     <div class="panel">
       <div class="controls-row">
         <div class="control-group">
@@ -672,7 +643,7 @@
           <div class="grade-pills" id="playerGradePills"></div>
         </div>
       </div>
-      <div style="border:1px solid var(--line); border-radius:8px; padding:14px; background:#FBFAF6; margin-bottom:18px;" id="rosterManagerWrap"></div>
+      <details class="filters-box" id="playerFilterRowBox"><summary>Filters <span class="filter-count" id="pfCount"></span></summary>
       <div class="filter-row" id="playerFilterRow">
         <select id="pf_context"><option value="">Any context</option><option value="Practice">Practice</option><option value="Game">Game</option></select>
         <select id="pf_defscheme"><option value="">Any defense</option><option value="Man">Man</option><option value="Zone">Zone</option></select>
@@ -692,34 +663,102 @@
         <label class="sans" style="font-size:12px; color:var(--muted); display:flex; align-items:center; gap:6px;">To <input type="date" id="pf_dateto"></label>
         <button class="btn secondary" id="pf_clear">Clear filters</button>
       </div>
+      </details>
       <div class="image-row" id="playerHeatWrap"></div>
+    </div>
+    </div>
+    <div class="subpage" data-label="Trends">
+    <div class="panel">
+      <p class="panel-title">Shooting Trends</p>
+      <p class="panel-sub" id="shootingTrendsSub">Shot % across each quarter of a player's logged shots, in order &mdash; who's heating up, who's cooling off. Players need 12+ shots (3+ per quarter) to show a trend.</p>
+      <div class="controls-row" id="trendControlsRow" style="display:none; margin-bottom:8px;">
+        <div class="control-group"><label>Window</label><div class="pill-row" id="trendWindowPills"></div></div>
+        <div class="control-group"><label>Metric</label><div class="pill-row" id="trendMetricPills"></div></div>
+      </div>
+      <div class="chart-wrap" id="trendRollingWrap" style="display:none;"></div>
+      <div id="trendWindowGroups">
+        <div class="section-heading up"><span>&#9650;</span> Top 5 Trending Up</div>
+        <div class="trend-grid" id="shootingTrendsUpGrid"></div>
+        <div class="section-heading down"><span>&#9660;</span> Trending Down</div>
+        <div class="trend-grid" id="shootingTrendsDownGrid"></div>
+      </div>
+    </div>
+    </div>
+    <div class="subpage" data-label="Deep Dive">
+    <div class="panel">
+      <p class="panel-title">Player Deep Dive</p>
+      <p class="panel-sub">Full per-player breakdown &mdash; each % is shot % (goals &divide; shots) within that slice. Players with 5+ total shots; italic gray = fewer than 5 shots in that specific column (real number, small sample). Scroll right for more columns.</p>
+      <p class="panel-sub sans" style="font-weight:700; text-transform:uppercase; font-size:11px; letter-spacing:.04em; color:var(--muted); margin-top:14px;">Compare colors against:</p>
+      <div class="grade-pills" id="ddComparePills"></div>
+      <p class="panel-sub" id="ddCompareHint" style="margin-top:6px;"></p>
+      <div class="table-wrap" id="playerDeepDiveWrap"></div>
+    </div>
+    </div>
+    <div class="subpage" data-label="Shot Quality">
+    <div class="panel">
+      <p class="panel-title">Shot Quality Share</p>
+      <p class="panel-sub">Left group: how each player's own shots break down by grade. Right group: what slice of the whole team's Gold/Silver/Bronze shots that player is taking &mdash; i.e. who's actually getting the good looks. Players with 5+ total shots.</p>
+      <div class="table-wrap" id="shotQualityShareWrap"></div>
+    </div>
+    </div>
+    <div class="subpage" data-label="Situations">
+    <details class="panel collapsible" open>
+      <summary><span class="panel-title">Trigger Efficiency</span></summary>
+      <div class="collapsible-body">
+      <p class="panel-sub" id="trigExplainer">Team-wide, one row per offense trigger with 3+ logged shots this season.</p>
+      <div class="controls-row" id="trigControlsRow" style="display:none; margin-bottom:10px;">
+        <div class="control-group"><label>Contest Level</label><div class="pill-row" id="trigContestPills"></div></div>
+        <div class="control-group"><label>Shot Quality</label><div class="pill-row" id="trigQualityPills"></div></div>
+        <div class="control-group"><label>Min Reps</label><div class="pill-row" id="trigMinRepsPills"></div></div>
+      </div>
+      <div class="model-note" id="trigModelNote" style="display:none;"></div>
+      <div class="table-wrap" id="triggerEfficiencyWrap"></div>
+      </div>
+    </details>
+    <details class="panel collapsible">
+      <summary><span class="panel-title">By Man Situation</span></summary>
+      <div class="collapsible-body">
+      <div class="table-wrap" id="manSituationEfficiencyWrap"></div>
+      </div>
+    </details>
+    <details class="panel collapsible">
+      <summary><span class="panel-title">By Shot Mechanism</span></summary>
+      <div class="collapsible-body">
+      <div class="table-wrap" id="shotMechanismEfficiencyWrap"></div>
+      </div>
+    </details>
+    <details class="panel collapsible">
+      <summary><span class="panel-title">By Catch / Dodge</span></summary>
+      <div class="collapsible-body">
+      <div class="table-wrap" id="catchDodgeEfficiencyWrap"></div>
+      </div>
+    </details>
+    <details class="panel collapsible">
+      <summary><span class="panel-title">By Rebound</span></summary>
+      <div class="collapsible-body">
+      <div class="table-wrap" id="reboundEfficiencyWrap"></div>
+      </div>
+    </details>
+    </div>
+    <div class="subpage" data-label="Roster">
+    <div class="panel">
+      <p class="panel-title">Roster</p>
+      <p class="panel-sub">Uses the season picked above.</p>
+      <div style="border:1px solid var(--line); border-radius:8px; padding:14px; background:#FBFAF6; margin-bottom:18px;" id="rosterManagerWrap"></div>
+    </div>
     </div>
   </section>
 
   <section id="goalieView" class="view">
-    <div class="panel">
-      <div class="controls-row" style="margin-bottom:0;">
-        <div class="control-group">
-          <label>Season</label>
-          <div class="grade-pills" id="goalieSeasonPills"></div>
-        </div>
+    <div class="view-bar">
+      <div class="view-bar-row">
+        <div class="view-title">Goalie Heat Maps</div>
+        <div class="control-group"><div class="grade-pills" id="goalieSeasonPills"></div></div>
       </div>
-      <p class="panel-sub" style="margin:10px 0 0;">Applies to every stat on this tab &mdash; Goalie Trends, Goalie Summary, and the heat maps below.</p>
+      <div class="subtabs" data-view="goalieView"></div>
     </div>
-    <div class="panel">
-      <p class="panel-title">Goalie Trends</p>
-      <p class="panel-sub">Save % across each quarter of a goalie's faced shots, in order. Goalies need 12+ faced shots (3+ per quarter) to show a trend.</p>
-      <div class="section-heading up"><span>&#9650;</span> Top 5 Trending Up</div>
-      <div class="trend-grid" id="goalieTrendsUpGrid"></div>
-      <div class="section-heading down"><span>&#9660;</span> Trending Down</div>
-      <div class="trend-grid" id="goalieTrendsDownGrid"></div>
-    </div>
-    <div class="panel">
-      <p class="panel-title">Goalie Summary</p>
-      <p class="panel-sub" id="goalieSummaryNote">Faced = shots where OnKeeper = 1.</p>
-      <div class="model-note" id="goalieXgNote" style="display:none;"></div>
-      <div class="table-wrap" id="goalieSummaryWrap"></div>
-    </div>
+    <div class="view-tiles trend-grid" id="goalieTiles"></div>
+    <div class="subpage" data-label="Save Map">
     <div class="panel">
       <div class="controls-row">
         <div class="control-group">
@@ -731,6 +770,7 @@
           <div class="grade-pills" id="goalieGradePills"></div>
         </div>
       </div>
+      <details class="filters-box" id="goalieFilterRowBox"><summary>Filters <span class="filter-count" id="gfCount"></span></summary>
       <div class="filter-row" id="goalieFilterRow">
         <select id="gf_context"><option value="">Any context</option><option value="Practice">Practice</option><option value="Game">Game</option></select>
         <select id="gf_defscheme"><option value="">Any defense</option><option value="Man">Man</option><option value="Zone">Zone</option></select>
@@ -749,20 +789,107 @@
         <label class="sans" style="font-size:12px; color:var(--muted); display:flex; align-items:center; gap:6px;">To <input type="date" id="gf_dateto"></label>
         <button class="btn secondary" id="gf_clear">Clear filters</button>
       </div>
+      </details>
       <div class="image-row" id="goalieHeatWrap"></div>
+    </div>
+    </div>
+    <div class="subpage" data-label="Summary">
+    <div class="panel">
+      <p class="panel-title">Goalie Summary</p>
+      <p class="panel-sub" id="goalieSummaryNote">Faced = shots where OnKeeper = 1.</p>
+      <div class="model-note" id="goalieXgNote" style="display:none;"></div>
+      <div class="table-wrap" id="goalieSummaryWrap"></div>
+    </div>
+    </div>
+    <div class="subpage" data-label="Trends">
+    <div class="panel">
+      <p class="panel-title">Goalie Trends</p>
+      <p class="panel-sub">Save % across each quarter of a goalie's faced shots, in order. Goalies need 12+ faced shots (3+ per quarter) to show a trend.</p>
+      <div class="section-heading up"><span>&#9650;</span> Top 5 Trending Up</div>
+      <div class="trend-grid" id="goalieTrendsUpGrid"></div>
+      <div class="section-heading down"><span>&#9660;</span> Trending Down</div>
+      <div class="trend-grid" id="goalieTrendsDownGrid"></div>
+    </div>
+    </div>
+  </section>
+
+  <section id="efficiencyView" class="view">
+    <div class="view-bar">
+      <div class="view-bar-row">
+        <div class="view-title">Efficiency</div>
+        <div class="control-group"><div class="grade-pills" id="effContextPills"></div></div>
+      </div>
+      <div class="subtabs" data-view="efficiencyView"></div>
+    </div>
+    <p class="view-intro">Expected goals, shot-quality score and scoring output &mdash; all built from this team's own logged shots. Nothing here is entered by hand. <strong>Showing 2027 shots only, live as you log</strong> &mdash; the 2026 season predates trigger, contest level and assist tracking, so it isn't part of this tab.</p>
+    <div class="subpage" data-label="Overview">
+    <div class="panel">
+      <p class="panel-title">The Expected-Goals Model</p>
+      <p class="panel-sub" id="effModelSub"></p>
+      <div class="trend-grid" id="effXgModelWrap"></div>
+      <div class="model-note" id="effModelNote"></div>
+    </div>
+    </div>
+    <div class="subpage" data-label="Players">
+    <div class="panel">
+      <p class="panel-title">Player Efficiency</p>
+      <p class="panel-sub" id="effPlayerSub"></p>
+      <div class="table-wrap" id="effPlayerWrap"></div>
+    </div>
+    </div>
+    <div class="subpage" data-label="Shot Types">
+    <div class="panel">
+      <p class="panel-title">Shot-Type Breakdown</p>
+      <p class="panel-sub" id="effShotTypeSub"></p>
+      <div class="controls-row" style="margin-bottom:10px;">
+        <div class="control-group"><label>Player</label><select id="effShotTypePlayer"></select></div>
+      </div>
+      <div class="table-wrap" id="effShotTypeWrap"></div>
+    </div>
+    </div>
+    <div class="subpage" data-label="Triggers">
+    <div class="panel">
+      <p class="panel-title">Best Player at Each Trigger</p>
+      <p class="panel-sub" id="effTriggerLeadersSub"></p>
+      <div class="table-wrap" id="effTriggerLeadersWrap"></div>
+    </div>
+    <div class="panel">
+      <p class="panel-title">Best Trigger for Each Player</p>
+      <p class="panel-sub" id="effPlayerTriggerSub"></p>
+      <div class="table-wrap" id="effPlayerTriggerWrap"></div>
+    </div>
+    </div>
+    <div class="subpage" data-label="Flags">
+    <div class="panel">
+      <p class="panel-title">Development Flags</p>
+      <p class="panel-sub" id="effFlagsSub"></p>
+      <div class="trend-grid" id="effFlagsWrap"></div>
+    </div>
     </div>
   </section>
 
   <section id="faceoffView" class="view">
-    <div class="panel">
-      <div class="controls-row" style="margin-bottom:0;">
-        <div class="control-group">
-          <label>Season</label>
-          <div class="grade-pills" id="faceoffSeasonPills"></div>
-        </div>
+    <div class="view-bar">
+      <div class="view-bar-row">
+        <div class="view-title">Faceoffs</div>
+        <div class="control-group"><div class="grade-pills" id="faceoffSeasonPills"></div></div>
       </div>
-      <p class="panel-sub" style="margin:10px 0 0;">Applies to every stat on this tab.</p>
+      <div class="subtabs" data-view="faceoffView"></div>
     </div>
+    <div class="subpage" data-label="Summary">
+    <div class="panel">
+      <p class="panel-title">Faceoff Summary</p>
+      <div class="table-wrap" id="faceoffSummaryWrap"></div>
+    </div>
+    </div>
+    <div class="subpage" data-label="Head-to-Head">
+    <div class="panel">
+      <p class="panel-title">Head-to-Head</p>
+      <p class="panel-sub">Win-loss record between your 4 faceoff specialists &mdash; only counts faceoffs logged with a Faceoff Opponent set, not real game faceoffs.</p>
+      <div class="table-wrap" id="faceoffHeadToHeadWrap"></div>
+    </div>
+    </div>
+    <div class="subpage" data-label="Trends">
     <div class="panel">
       <p class="panel-title">Faceoff Trends</p>
       <p class="panel-sub">Win % across each quarter of a player's faceoffs, in order. Players need 12+ faceoffs (3+ per quarter) to show a trend.</p>
@@ -771,15 +898,8 @@
       <div class="section-heading down"><span>&#9660;</span> Trending Down</div>
       <div class="trend-grid" id="faceoffTrendsDownGrid"></div>
     </div>
-    <div class="panel">
-      <p class="panel-title">Faceoff Summary</p>
-      <div class="table-wrap" id="faceoffSummaryWrap"></div>
     </div>
-    <div class="panel">
-      <p class="panel-title">Head-to-Head</p>
-      <p class="panel-sub">Win-loss record between your 4 faceoff specialists &mdash; only counts faceoffs logged with a Faceoff Opponent set, not real game faceoffs.</p>
-      <div class="table-wrap" id="faceoffHeadToHeadWrap"></div>
-    </div>
+    <div class="subpage" data-label="Log">
     <div class="panel">
       <p class="panel-title">Faceoff Log</p>
       <p class="panel-sub" id="faceoffCountSub"></p>
@@ -793,6 +913,7 @@
           <tbody id="faceoffTableBody"></tbody>
         </table>
       </div>
+    </div>
     </div>
   </section>
 
@@ -858,47 +979,6 @@
         <div><label for="cs_player">Player</label><select id="cs_player"></select></div>
       </div>
       <div class="table-wrap" id="compareSeasonsWrap"></div>
-    </div>
-  </section>
-
-  <section id="efficiencyView" class="view">
-    <div class="panel">
-      <p class="panel-title">Efficiency</p>
-      <p class="panel-sub">Expected goals, shot-quality score and scoring output &mdash; all built from this team's own logged shots. Nothing here is entered by hand. <strong>Showing 2027 shots only, live as you log</strong> &mdash; the 2026 season predates trigger, contest level and assist tracking, so it isn't part of this tab.</p>
-    </div>
-    <div class="panel">
-      <p class="panel-title">The Expected-Goals Model</p>
-      <p class="panel-sub" id="effModelSub"></p>
-      <div class="trend-grid" id="effXgModelWrap"></div>
-      <div class="model-note" id="effModelNote"></div>
-    </div>
-    <div class="panel">
-      <p class="panel-title">Player Efficiency</p>
-      <p class="panel-sub" id="effPlayerSub"></p>
-      <div class="table-wrap" id="effPlayerWrap"></div>
-    </div>
-    <div class="panel">
-      <p class="panel-title">Shot-Type Breakdown</p>
-      <p class="panel-sub" id="effShotTypeSub"></p>
-      <div class="controls-row" style="margin-bottom:10px;">
-        <div class="control-group"><label>Player</label><select id="effShotTypePlayer"></select></div>
-      </div>
-      <div class="table-wrap" id="effShotTypeWrap"></div>
-    </div>
-    <div class="panel">
-      <p class="panel-title">Development Flags</p>
-      <p class="panel-sub" id="effFlagsSub"></p>
-      <div class="trend-grid" id="effFlagsWrap"></div>
-    </div>
-    <div class="panel">
-      <p class="panel-title">Best Player at Each Trigger</p>
-      <p class="panel-sub" id="effTriggerLeadersSub"></p>
-      <div class="table-wrap" id="effTriggerLeadersWrap"></div>
-    </div>
-    <div class="panel">
-      <p class="panel-title">Best Trigger for Each Player</p>
-      <p class="panel-sub" id="effPlayerTriggerSub"></p>
-      <div class="table-wrap" id="effPlayerTriggerWrap"></div>
     </div>
   </section>
 
@@ -1007,6 +1087,7 @@
       <p class="panel-title">Board</p>
       <p class="panel-sub">Prospects added to the board from the Recruits tab &mdash; use "Add to Board" next to a player there. Ranked by current score within each position; scoreless additions sort to the bottom until they're rated.</p>
     </div>
+    <div class="board-grid">
     <div class="panel">
       <p class="panel-title" style="margin-bottom:10px;">Top 10 Offense</p>
       <div class="table-wrap" id="boardOffense"></div>
@@ -1026,6 +1107,7 @@
     <div class="panel">
       <p class="panel-title" style="margin-bottom:10px;">Top 5 Goalies</p>
       <div class="table-wrap" id="boardGoalie"></div>
+    </div>
     </div>
   </section>
 
@@ -1136,6 +1218,12 @@ const FACEOFF_COLS = ["id","date","context","opponent","playerJersey","won","not
 // season, append its year here — it will auto-seed as a copy of the prior
 // season's roster the first time the app loads with the new year present.
 const SEASONS = ["2026","2027"];
+// Tabs open on the season we're in now (fall counts toward next spring),
+// falling back to the newest listed season.
+function defaultSeason() {
+  const now = seasonForDate(localDateStr());
+  return SEASONS.includes(now) ? now : SEASONS[SEASONS.length - 1];
+}
 let SEED_ROSTER = [];
 let SEED_SHOTS_TUPLES = [];
 
@@ -1931,6 +2019,44 @@ function switchTab(viewId) {
 document.querySelectorAll('.tab-btn').forEach(btn => {
   btn.addEventListener('click', () => switchTab(btn.dataset.view));
 });
+
+// ---------------- Sub-tabs inside a tab ----------------
+// Each tab's content is split into <div class="subpage" data-label="...">
+// blocks; the strip of buttons is built from those labels. The last
+// sub-tab picked in each tab is remembered on this device.
+const SUBTAB_HOOKS = {}; // viewId -> fn(label) run after a sub-page is shown
+function showSubpage(viewId, label) {
+  const view = document.getElementById(viewId);
+  const pages = [...view.querySelectorAll(':scope > .subpage')];
+  if (!pages.length) return;
+  const page = pages.find(p => p.dataset.label === label) || pages[0];
+  pages.forEach(p => p.classList.toggle('active', p === page));
+  view.querySelectorAll('.subtab-btn').forEach(b => b.classList.toggle('active', b.dataset.label === page.dataset.label));
+  try { localStorage.setItem('wluSubtab:' + viewId, page.dataset.label); } catch (e) { /* storage unavailable */ }
+  if (SUBTAB_HOOKS[viewId]) SUBTAB_HOOKS[viewId](page.dataset.label);
+}
+function currentSubpage(viewId) {
+  const p = document.querySelector(`#${viewId} > .subpage.active`);
+  return p ? p.dataset.label : null;
+}
+function initSubtabs() {
+  document.querySelectorAll('.subtabs[data-view]').forEach(strip => {
+    const viewId = strip.dataset.view;
+    const pages = [...document.getElementById(viewId).querySelectorAll(':scope > .subpage')];
+    strip.innerHTML = pages.map(p => `<button type="button" class="subtab-btn" data-label="${escapeHtml(p.dataset.label)}">${escapeHtml(p.dataset.label)}</button>`).join('');
+    strip.querySelectorAll('.subtab-btn').forEach(b => b.addEventListener('click', () => showSubpage(viewId, b.dataset.label)));
+    let saved = null;
+    try { saved = localStorage.getItem('wluSubtab:' + viewId); } catch (e) { saved = null; }
+    showSubpage(viewId, saved);
+  });
+}
+initSubtabs();
+
+// Small (i) marker with a plain-language explanation on hover/long-press.
+function infoTip(text) { return `<i class="info-tip" title="${escapeHtml(text)}">i</i>`; }
+function statTile(name, value, meta, tip) {
+  return `<div class="stat-tile"><div class="name">${escapeHtml(name)}${tip ? infoTip(tip) : ''}</div><div class="row"><span class="value">${value}</span></div>${meta ? `<div class="meta">${meta}</div>` : ''}</div>`;
+}
 
 // ---------------- Log Shot form ----------------
 let pendingField = { distanceYds: null, lateralYds: null };
@@ -3026,6 +3152,14 @@ function getTransitionType(s) {
   return 'Unspecified'; // legacy boolean 1 with no type recorded
 }
 
+// "Filters (3)" badge on the collapsed filter box.
+function updateFilterCount(prefix, countId) {
+  const row = document.getElementById(prefix === 'pf_' ? 'playerFilterRow' : 'goalieFilterRow');
+  const el = document.getElementById(countId);
+  if (!row || !el) return;
+  const n = [...row.querySelectorAll('select, input')].filter(x => x.value && x.value.trim()).length;
+  el.textContent = n ? String(n) : '';
+}
 function readFilterState(prefix) {
   return {
     context: document.getElementById(prefix+'context').value,
@@ -4360,8 +4494,29 @@ function renderEfficiencyView() {
 }
 document.getElementById('effShotTypePlayer').addEventListener('change', renderShotTypeBreakdown);
 
-let heatSeason = SEASONS[0];
+let heatSeason = defaultSeason();
+// Headline numbers for the Player tab's season, above every sub-page.
+function renderPlayerTiles() {
+  const wrap = document.getElementById('playerTiles');
+  if (!wrap) return;
+  const shots = shotsForSeason(heatSeason).filter(s => s.shooterJersey);
+  const n = shots.length;
+  const goals = shots.filter(s => s.goal === 1).length;
+  const onGoal = shots.filter(s => s.onGoal === 1).length;
+  const graded = shots.filter(s => s.shotQuality);
+  const gold = graded.filter(s => s.shotQuality === '1-Gold').length;
+  const games = shots.filter(s => s.context === 'Game').length;
+  const label = heatSeason === 'All Seasons' ? 'All seasons' : heatSeason + ' season';
+  wrap.innerHTML = n ? [
+    statTile('Shots', n.toLocaleString(), `${label} \u00b7 ${games} in games, ${n - games} in practice`),
+    statTile('Goals', goals.toLocaleString(), `${pct(n ? goals / n : null)} shot %`, 'Goals \u00f7 all shot attempts.'),
+    statTile('On Goal', pct(n ? onGoal / n : null), `${onGoal} of ${n} shots on cage`),
+    statTile('Gold Looks', pct(graded.length ? gold / graded.length : null), `${gold} of ${graded.length} graded shots`, 'Share of graded shots that were Gold-tier looks.'),
+  ].join('') : '';
+}
 function renderPlayerHeat() {
+  renderPlayerTiles();
+  updateFilterCount('pf_', 'pfCount');
   const sel = document.getElementById('playerSelect').value;
   const grade = playerGrade;
   const gradeVal = GRADE_MAP[grade];
@@ -4677,8 +4832,30 @@ document.getElementById('pf_clear').addEventListener('click', () => { clearFilte
 
 // ---------------- Goalie Heat Maps ----------------
 let goalieGrade = 'Overall';
-let goalieHeatSeason = SEASONS[0];
+let goalieHeatSeason = defaultSeason();
+// Headline numbers for the Goalie tab's season.
+function renderGoalieTiles() {
+  const wrap = document.getElementById('goalieTiles');
+  if (!wrap) return;
+  const faced = goalieShotsForSeason(goalieHeatSeason).filter(s => s.onKeeper === 1);
+  const n = faced.length;
+  const ga = faced.filter(s => s.goal === 1).length;
+  const clean = faced.filter(s => s.goal !== 1 && s.cleanSave === 1).length;
+  const tiles = [
+    statTile('Shots Faced', n.toLocaleString(), 'On-cage shots with a WLU goalie in net'),
+    statTile('Save %', pct(n ? (n - ga) / n : null), `${n - ga} saves, ${ga} goals allowed`),
+    statTile('Clean Saves', pct(n - ga ? clean / (n - ga) : null), 'Share of saves controlled with no rebound', 'Clean saves \u00f7 all saves. Only counted where Clean Save was logged.'),
+  ];
+  if (goalieHeatSeason === '2027' && n) {
+    const model = facedXgModelFor2027();
+    const gsax = xgSum(faced, model) - ga;
+    tiles.push(statTile('Goals Saved Above Expected', (gsax >= 0 ? '+' : '') + gsax.toFixed(1), 'Team total vs the faced-shot xG model', 'Expected goals on the shots faced minus goals actually allowed. Positive = better than expected.'));
+  }
+  wrap.innerHTML = n ? tiles.join('') : '';
+}
 function renderGoalieHeat() {
+  renderGoalieTiles();
+  updateFilterCount('gf_', 'gfCount');
   const sel = document.getElementById('goalieSelect').value;
   if (!sel) { document.getElementById('goalieHeatWrap').innerHTML = ''; return; }
   const gradeVal = GRADE_MAP[goalieGrade];
@@ -4816,7 +4993,7 @@ function renderTable() {
 ['tf_season','tf_player','tf_grade','tf_context'].forEach(id => document.getElementById(id).addEventListener('change', renderTable));
 
 // ---------------- Faceoffs ----------------
-let faceoffSeason = SEASONS[0];
+let faceoffSeason = defaultSeason();
 let deleteFaceoffArmed = null;
 function faceoffsForSeason(season) {
   return season === 'All Seasons' ? FACEOFFS : FACEOFFS.filter(f => seasonForDate(f.date) === season);
@@ -4949,7 +5126,7 @@ setupSeasonPills('faceoffSeasonPills', (s) => { faceoffSeason = s; renderFaceoff
 
 // ---------------- Compare (Players / Seasons) ----------------
 let compareMode = 'players';
-let cpSeason = SEASONS[0];
+let cpSeason = defaultSeason();
 
 // Same slice math as Player Deep Dive but for one explicit selection, with
 // no 5+ shot minimum — the coach picked this player on purpose, so still
