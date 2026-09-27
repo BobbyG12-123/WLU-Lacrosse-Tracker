@@ -848,11 +848,12 @@
     <div class="view-bar">
       <div class="view-bar-row">
         <div class="view-title">Efficiency</div>
+        <div class="control-group"><div class="grade-pills" id="effSeasonPills"></div></div>
         <div class="control-group"><div class="grade-pills" id="effContextPills"></div></div>
       </div>
       <div class="subtabs" data-view="efficiencyView"></div>
     </div>
-    <p class="view-intro">Expected goals, shot-quality score and scoring output &mdash; all built from this team's own logged shots. Nothing here is entered by hand. <strong>Showing 2027 shots only, live as you log</strong> &mdash; the 2026 season predates trigger, contest level and assist tracking, so it isn't part of this tab.</p>
+    <p class="view-intro">Expected goals, shot-quality score and scoring output &mdash; all built from this team's own logged shots. Nothing here is entered by hand. <strong>Showing one season at a time (2027 and later), live as you log</strong> &mdash; the 2026 season predates trigger, contest level and assist tracking, so it isn't part of this tab.</p>
     <div class="subpage" data-label="Overview">
     <div class="trend-grid view-tiles" id="effTeamTiles"></div>
     <div class="panel">
@@ -1314,10 +1315,23 @@ document.getElementById('pf_trigger').insertAdjacentHTML('beforeend', TRIGGER_TE
 // produce a shot), so they get their own small collection rather than being
 // squeezed into the shot schema.
 const FACEOFF_COLS = ["id","date","context","opponent","playerJersey","won","notes","vsPlayerJersey"];
-// Season roster docs: app/roster_2026, app/roster_2027, ... To add a future
-// season, append its year here — it will auto-seed as a copy of the prior
-// season's roster the first time the app loads with the new year present.
-const SEASONS = ["2026","2027"];
+// Season roster docs: app/roster_2026, app/roster_2027, ... The list runs
+// from 2026 through the season we're in now (fall counts toward next
+// spring), so a new season appears on its own and its roster doc is seeded
+// as a copy of the prior season's roster the first time the app loads in it.
+const FIRST_SEASON = 2026;
+// Film-logging fields and the advanced metrics start with this season and
+// cover every season after it. 2026 keeps its original views.
+const ADV_FIRST_SEASON = 2027;
+const SEASONS = (() => {
+  const d = new Date();
+  const now = d.getMonth() >= 7 ? d.getFullYear() + 1 : d.getFullYear();
+  const list = [];
+  for (let y = FIRST_SEASON; y <= Math.max(now, ADV_FIRST_SEASON); y++) list.push(String(y));
+  return list;
+})();
+const ADV_SEASONS = SEASONS.filter(s => Number(s) >= ADV_FIRST_SEASON);
+function isAdvSeason(s) { return ADV_SEASONS.includes(s); }
 // Tabs open on the season we're in now (fall counts toward next spring),
 // falling back to the newest listed season.
 function defaultSeason() {
@@ -1437,7 +1451,6 @@ function goalieShotsForSeason(season) {
   const pool = allShotEntries().filter(s => s.goalieJersey);
   return season === 'All Seasons' ? pool : pool.filter(s => seasonForDate(s.date) === season);
 }
-function goalieShots2027() { return goalieShotsForSeason('2027'); }
 function nextShotId() {
   return allShotEntries().reduce((m, s) => Math.max(m, Number(s.id) || 0), 0) + 1;
 }
@@ -1913,16 +1926,22 @@ function renderSortableTable(wrapId, cols, rows, opts) {
 
 // The historical 2,285-shot season (2026) was logged before trigger,
 // contestLevel and assistJersey existed as fields, so it carries none of
-// them. All new 2027-scoped analytics call this directly instead of taking
-// a season argument, so there is no code path that can accidentally treat
-// 2026 shots as 2027 data. 2026's existing views are untouched elsewhere.
-function shots2027() { return SHOTS.filter(s => seasonForDate(s.date) === '2027'); }
+// them. The advanced analytics only ever read a season from ADV_SEASONS
+// (2027 and later), so there is no code path that can treat 2026 shots as
+// advanced data. 2026's existing views are untouched elsewhere.
+function advShots(season) { return isAdvSeason(season) ? SHOTS.filter(s => seasonForDate(s.date) === season) : []; }
 function calibration2026Shots() { return SHOTS.filter(s => seasonForDate(s.date) === '2026'); }
-// Shared xG models for every 2027-scoped view, so the trigger table, the
-// trends metric, the Efficiency tab and the goalie table never disagree
-// with each other about the same shot's expected value.
-function xgModelFor2027() { return buildXgModel(calibration2026Shots(), shots2027()); }
-function facedXgModelFor2027() { return buildFacedXgModel(calibration2026Shots(), goalieShots2027()); }
+// Shared xG models per advanced season, so the trigger table, the trends
+// metric, the Efficiency tab and the goalie table never disagree with each
+// other about the same shot's expected value. Every season is calibrated on
+// the 2026 prior and shifts toward its own rate as its volume grows.
+function xgModelFor(season) { return buildXgModel(calibration2026Shots(), advShots(season)); }
+function facedXgModelFor(season) { return buildFacedXgModel(calibration2026Shots(), isAdvSeason(season) ? goalieShotsForSeason(season) : []); }
+// The season the advanced views read when their tab's season pill is on
+// 2026 or All Seasons: the season we're in now.
+function currentAdvSeason() { return ADV_SEASONS[ADV_SEASONS.length - 1]; }
+function heatAdvSeason() { return isAdvSeason(heatSeason) ? heatSeason : currentAdvSeason(); }
+function goalieAdvSeason() { return isAdvSeason(goalieHeatSeason) ? goalieHeatSeason : currentAdvSeason(); }
 
 const DIST_BANDS_PLAYER = [[0,5],[5,10],[10,15],[15,20]];
 const LAT_BANDS_PLAYER = [[-19,-11],[-11,-3],[-3,3],[3,11],[11,19]];
@@ -3994,7 +4013,7 @@ function renderCategoryEfficiencyTable(wrapId, shots, field, columnLabel, minSho
 
 // ---------------- Trigger Efficiency, 2027 only ----------------
 // contestLevel and trigger both postdate the 2026 seed data, so this table
-// only ever looks at shots2027() regardless of the season pill above it —
+// only ever reads a 2027-or-later season (heatAdvSeason()) — never 2026 —
 // see renderNewEfficiencyTables for the season branch that keeps 2026 on
 // its original, unfiltered, unsortable table.
 function computeTriggerEfficiency(shots, model, opts) {
@@ -4030,20 +4049,21 @@ function computeTriggerEfficiency(shots, model, opts) {
 }
 let trigContest = 'All', trigQuality = 'All', trigMinReps = 3;
 function renderTriggerEfficiency() {
+  const season = heatAdvSeason();
   const controlsRow = document.getElementById('trigControlsRow');
   const noteEl = document.getElementById('trigModelNote');
   const explainerEl = document.getElementById('trigExplainer');
   controlsRow.style.display = '';
-  const all2027 = shots2027().filter(s => s.shooterJersey);
-  const tagged = all2027.filter(s => s.trigger);
+  const allShots = advShots(season).filter(s => s.shooterJersey);
+  const tagged = allShots.filter(s => s.trigger);
 
-  if (!all2027.length) {
+  if (!allShots.length) {
     noteEl.style.display = 'none';
-    explainerEl.textContent = 'No 2027 shots logged yet. This table fills in automatically as you log 2027 shots with a trigger.';
+    explainerEl.textContent = 'No ' + season + ' shots logged yet. This table fills in automatically as you log ' + season + ' shots with a trigger.';
     document.getElementById('triggerEfficiencyWrap').innerHTML = '';
     return;
   }
-  const coverageNote = `${tagged.length} of ${all2027.length} 2027 shots have a trigger tagged (${pct(tagged.length / all2027.length)}).`;
+  const coverageNote = `${tagged.length} of ${allShots.length} ${season} shots have a trigger tagged (${pct(tagged.length / allShots.length)}).`;
   if (tagged.length < 20) {
     noteEl.style.display = 'none';
     explainerEl.textContent = coverageNote + ' Not enough tagged shots yet for a reliable trigger breakdown (need ~20) — this activates itself as you keep logging.';
@@ -4051,8 +4071,8 @@ function renderTriggerEfficiency() {
     return;
   }
 
-  const model = xgModelFor2027();
-  const rows = computeTriggerEfficiency(all2027, model, { contest: trigContest, quality: trigQuality, minReps: trigMinReps });
+  const model = xgModelFor(season);
+  const rows = computeTriggerEfficiency(allShots, model, { contest: trigContest, quality: trigQuality, minReps: trigMinReps });
 
   const parts = [coverageNote];
   if (trigContest !== 'All') parts.push(`Contest: ${trigContest}.`);
@@ -4064,7 +4084,7 @@ function renderTriggerEfficiency() {
   const silverRate = (model.rate.Practice['2-Silver'] + model.rate.Game['2-Silver']) / 2;
   const bronzeRate = (model.rate.Practice['3-Bronze'] + model.rate.Game['3-Bronze']) / 2;
   noteEl.style.display = '';
-  noteEl.textContent = `xG tiers for 2027 (blended toward the 2026 season as a prior until 2027 has enough of its own): Gold ${pct(goldRate)}, Silver ${pct(silverRate)}, Bronze ${pct(bronzeRate)}.`;
+  noteEl.textContent = `xG tiers for ${season} (blended toward the 2026 season as a prior until ${season} has enough of its own): Gold ${pct(goldRate)}, Silver ${pct(silverRate)}, Bronze ${pct(bronzeRate)}.`;
 
   const showMix = trigQuality === 'All';
   const cols = [
@@ -4095,7 +4115,7 @@ function renderTriggerEfficiency() {
 
 function renderNewEfficiencyTables() {
   const shots = shotsForSeason(heatSeason).filter(s => s.shooterJersey);
-  if (heatSeason === '2027') {
+  if (isAdvSeason(heatSeason)) {
     renderTriggerEfficiency();
   } else {
     document.getElementById('trigControlsRow').style.display = 'none';
@@ -4316,8 +4336,8 @@ function estimateTeamRateForBucketShots(bucketShots, baseModel, adjustments) {
   return sum / bucketShots.length;
 }
 
-function shotTypeModelFor2027(baseModel) {
-  const subject = effShots2027();
+function shotTypeModelFor(baseModel) {
+  const subject = effShots();
   return {
     subject,
     buckets: computeShotTypeBuckets(subject, baseModel),
@@ -4388,7 +4408,7 @@ function renderGoalieSummary() {
   const xgNoteEl = document.getElementById('goalieXgNote');
 
   // 2026 / All Seasons: identical to the original 6-column table, untouched.
-  if (goalieHeatSeason !== '2027') {
+  if (!isAdvSeason(goalieHeatSeason)) {
     if (noteEl) noteEl.textContent = 'Faced = shots where OnKeeper = 1.';
     if (xgNoteEl) xgNoteEl.style.display = 'none';
     const rows = computeGoalieSummary(goalieShotsForSeason(goalieHeatSeason));
@@ -4401,10 +4421,11 @@ function renderGoalieSummary() {
     return;
   }
 
-  // 2027: tiered breakdown + GSAx, live as new shots are logged.
-  const shots = goalieShots2027();
+  // 2027 and later: tiered breakdown + GSAx, live as new shots are logged.
+  const season = goalieHeatSeason;
+  const shots = goalieShotsForSeason(season);
   const facedTotal = shots.filter(s => s.onKeeper === 1 && s.goalieJersey).length;
-  if (noteEl) noteEl.textContent = `Faced = 2027 shots where OnKeeper = 1 (${facedTotal} so far). Save % by tier shows whether a goalie is stopping the shots he should and stealing the ones he shouldn't.`;
+  if (noteEl) noteEl.textContent = `Faced = ${season} shots where OnKeeper = 1 (${facedTotal} so far). Save % by tier shows whether a goalie is stopping the shots he should and stealing the ones he shouldn't.`;
 
   if (facedTotal < 60) {
     if (xgNoteEl) xgNoteEl.style.display = 'none';
@@ -4419,12 +4440,12 @@ function renderGoalieSummary() {
     ];
     renderSortableTable('goalieSummaryWrap', cols, rows, {
       defaultSort: { key: 'faced', dir: 'desc' },
-      emptyMsg: `Not enough 2027 shots on goal yet to build a tier breakdown (need ~60 faced, have ${facedTotal}). Showing totals only.`,
+      emptyMsg: `Not enough ${season} shots on goal yet to build a tier breakdown (need ~60 faced, have ${facedTotal}). Showing totals only.`,
     });
     return;
   }
 
-  const model = facedXgModelFor2027();
+  const model = facedXgModelFor(season);
   const rows = computeGoalieSummaryTiered(shots, model);
   if (xgNoteEl) {
     xgNoteEl.style.display = '';
@@ -4458,12 +4479,12 @@ function renderGoalieSummary() {
   renderSortableTable('goalieSummaryWrap', cols, rows, {
     dense: true,
     defaultSort: { key: 'faced', dir: 'desc' },
-    emptyMsg: 'No 2027 shots faced yet.',
+    emptyMsg: 'No ' + season + ' shots faced yet.',
   });
 }
 
 // ==================== Efficiency tab (2027 only, new top-level tab) ====================
-// Every function below reads shots2027() only — there is no legacy branch
+// Every function below reads EFF_SEASON (2027 or later) only — no legacy branch
 // here because this tab has no pre-existing view to preserve.
 
 // ---------------- The Expected-Goals Model panel ----------------
@@ -4471,28 +4492,28 @@ function renderXgModelPanel(shots, model) {
   const subEl = document.getElementById('effModelSub');
   const noteEl = document.getElementById('effModelNote');
   const wrap = document.getElementById('effXgModelWrap');
-  subEl.textContent = 'Calibrated on the 2026 season (2,285 shots, split by practice/game) as a starting prior, shifting toward 2027\'s own rate as 2027 volume grows — by roughly 200 shots in a tier, the rate is almost entirely 2027\'s own.';
+  subEl.textContent = 'Calibrated on the 2026 season (2,285 shots, split by practice/game) as a starting prior, shifting toward ' + EFF_SEASON + '\'s own rate as ' + EFF_SEASON + ' volume grows — by roughly 200 shots in a tier, the rate is almost entirely ' + EFF_SEASON + '\'s own.';
   const tierTiles = SHOT_QUALITY_GRADES.map(([q, key, label]) => {
     const totals = model.subjectTotals[q] || { n: 0, g: 0 };
     const rate = (model.rate.Practice[q] + model.rate.Game[q]) / 2;
     const observed = totals.n ? totals.g / totals.n : null;
     return `<div class="stat-tile">
       <div class="name">${tierChip(q)}</div>
-      <div class="meta">2027 so far: ${totals.g}/${totals.n}${observed !== null ? ' = ' + pct(observed) : ''}</div>
+      <div class="meta">${EFF_SEASON} so far: ${totals.g}/${totals.n}${observed !== null ? ' = ' + pct(observed) : ''}</div>
       <div class="row"><span class="value">${pct(rate)}</span><span class="delta flat">model rate</span></div>
-      <div class="n-note">${totals.n >= 30 ? 'mostly 2027 by now' : 'still mostly the 2026 prior'}</div>
+      <div class="n-note">${totals.n >= 30 ? 'mostly ' + EFF_SEASON + ' by now' : 'still mostly the 2026 prior'}</div>
     </div>`;
   });
   const totalXg = xgSum(shots, model);
   const totalGoals = shots.filter(s => s.goal === 1).length;
   const teamTile = `<div class="stat-tile">
-      <div class="name">Team (2027)</div>
+      <div class="name">Team (${EFF_SEASON})</div>
       <div class="meta">${shots.length} shots</div>
       <div class="row"><span class="value">${totalGoals} G</span><span class="delta flat">${totalXg.toFixed(1)} xG</span></div>
       <div class="n-note">${deltaChip(totalGoals - totalXg, { format: 'decimal', digits: 1 })} vs expected</div>
     </div>`;
   wrap.innerHTML = tierTiles.join('') + teamTile;
-  noteEl.textContent = 'These rates are derived from our own logged shots, blended toward the Gold 60% / Silver 33% / Bronze 15% baseline (shot-quality.md) until 2027 has enough of its own. Because the model is fit on our own data, the team\'s total goals-above-expected is near zero by construction — use these numbers to compare players and goalies to each other, not to an outside standard.';
+  noteEl.textContent = 'These rates are derived from our own logged shots, blended toward the Gold 60% / Silver 33% / Bronze 15% baseline (shot-quality.md) until ' + EFF_SEASON + ' has enough of its own. Because the model is fit on our own data, the team\'s total goals-above-expected is near zero by construction — use these numbers to compare players and goalies to each other, not to an outside standard.';
 }
 
 // ---------------- Player Efficiency table ----------------
@@ -4586,7 +4607,7 @@ function computeStrengthCallout(p, t, teamLookVal) {
   if (p.gradedN >= 20 && t.goldMix !== null && p.goldMix !== null && p.goldMix >= t.goldMix + 0.05) return { headline: 'Shot selection', why: `${pct(p.goldMix)} of his graded shots are Gold, above the team's ${pct(t.goldMix)}.` };
   if (p.onTargetableN >= 20 && t.offTarget !== null && p.offTarget !== null && p.offTarget <= t.offTarget - 0.05) return { headline: 'Accuracy', why: `Only ${pct(p.offTarget)} of his attempts miss the cage, better than the team's ${pct(t.offTarget)}.` };
   if (p.shots >= 20 && teamLookVal !== null && p.lookVal !== null && p.lookVal >= teamLookVal + 5) return { headline: 'Shot quality', why: `Look Value ${p.lookVal.toFixed(0)}, above the team average of ${teamLookVal.toFixed(0)}.` };
-  return { headline: 'Reliable volume', why: `${p.shots} shots logged in 2027, nothing below the team line yet.` };
+  return { headline: 'Reliable volume', why: `${p.shots} shots logged in ${EFF_SEASON}, nothing below the team line yet.` };
 }
 function computeDevelopmentFlags(shots, model) {
   if (shots.length < 100) return { gated: true, total: shots.length };
@@ -4613,12 +4634,12 @@ function renderDevelopmentFlags(shots, model) {
   const wrap = document.getElementById('effFlagsWrap');
   const result = computeDevelopmentFlags(shots, model);
   if (result.gated) {
-    subEl.textContent = `Not enough 2027 shots logged yet to compare players against a team baseline (need ~100, have ${result.total}).`;
+    subEl.textContent = `Not enough ${EFF_SEASON} shots logged yet to compare players against a team baseline (need ~100, have ${result.total}).`;
     wrap.innerHTML = '';
     return;
   }
-  subEl.textContent = `Computed from 2027 shots vs. the 2027 team baseline. Players need 20+ shots to get a card${result.skipped ? ` — ${result.skipped} player(s) don't have enough yet` : ''}. Every player gets at least one strength callout.`;
-  if (!result.cards.length) { wrap.innerHTML = '<p class="sans" style="color:var(--muted); font-size:13px;">No player has 20+ 2027 shots yet.</p>'; return; }
+  subEl.textContent = `Computed from ${EFF_SEASON} shots vs. the ${EFF_SEASON} team baseline. Players need 20+ shots to get a card${result.skipped ? ` — ${result.skipped} player(s) don't have enough yet` : ''}. Every player gets at least one strength callout.`;
+  if (!result.cards.length) { wrap.innerHTML = '<p class="sans" style="color:var(--muted); font-size:13px;">No player has 20+ ' + EFF_SEASON + ' shots yet.</p>'; return; }
   wrap.innerHTML = result.cards.map(c => `
     <div class="flag-card ${c.severity}">
       <div class="name" style="font-weight:700; color:var(--navy-3);">#${c.jersey} ${c.name} &mdash; ${c.headline}</div>
@@ -4666,12 +4687,12 @@ function renderTriggerLeaders(shots) {
   const subEl = document.getElementById('effTriggerLeadersSub');
   const tagged = shots.filter(s => s.trigger).length;
   if (tagged < 20) {
-    subEl.textContent = `${tagged} of ${shots.length} 2027 shots have a trigger tagged — not enough yet (need ~20). Fills in automatically as you log.`;
+    subEl.textContent = `${tagged} of ${shots.length} ${EFF_SEASON} shots have a trigger tagged — not enough yet (need ~20). Fills in automatically as you log.`;
     document.getElementById('effTriggerLeadersWrap').innerHTML = '';
     return;
   }
   const { rows, droppedCount } = computeTriggerLeaders(shots, {});
-  subEl.textContent = `Triggers with 8+ team reps in 2027; the best player needs 4+ reps on that trigger.${droppedCount ? ` ${droppedCount} more trigger(s) have team reps but no player with 4+.` : ''}`;
+  subEl.textContent = `Triggers with 8+ team reps in ${EFF_SEASON}; the best player needs 4+ reps on that trigger.${droppedCount ? ` ${droppedCount} more trigger(s) have team reps but no player with 4+.` : ''}`;
   const cols = [
     { key: 'trigger', label: 'Trigger', type: 'text', value: r => r.trigger },
     { key: 'teamReps', label: 'Team Reps', type: 'num', value: r => r.teamReps },
@@ -4723,12 +4744,12 @@ function renderPlayerBestTriggers(shots) {
   const subEl = document.getElementById('effPlayerTriggerSub');
   const tagged = shots.filter(s => s.trigger).length;
   if (tagged < 20) {
-    subEl.textContent = `${tagged} of ${shots.length} 2027 shots have a trigger tagged — not enough yet (need ~20). Fills in automatically as you log.`;
+    subEl.textContent = `${tagged} of ${shots.length} ${EFF_SEASON} shots have a trigger tagged — not enough yet (need ~20). Fills in automatically as you log.`;
     document.getElementById('effPlayerTriggerWrap').innerHTML = '';
     return;
   }
   const rows = computePlayerBestTriggers(shots, {});
-  subEl.textContent = 'Players with 12+ 2027 shots; a trigger needs 4+ reps to be ranked. Edge = that player\'s Pts/Rep on the trigger minus the team\'s Pts/Rep on it — answers "what should this guy run," not just "what\'s the best call overall."';
+  subEl.textContent = 'Players with 12+ ' + EFF_SEASON + ' shots; a trigger needs 4+ reps to be ranked. Edge = that player\'s Pts/Rep on the trigger minus the team\'s Pts/Rep on it — answers "what should this guy run," not just "what\'s the best call overall."';
   const cols = [
     { key: 'jersey', label: 'Jersey', type: 'text', value: r => r.jersey },
     { key: 'name', label: 'Name', type: 'text', value: r => r.name },
@@ -4740,7 +4761,7 @@ function renderPlayerBestTriggers(shots) {
     { key: 'worstReps', label: 'Reps', type: 'num', value: r => r.worstReps },
     { key: 'worstEdge', label: 'Edge', type: 'num', value: r => r.worstEdge, format: v => deltaChip(v, { format: 'decimal', digits: 2 }) },
   ];
-  renderSortableTable('effPlayerTriggerWrap', cols, rows, { dense: true, defaultSort: { key: 'shots', dir: 'desc' }, emptyMsg: 'No player has 12+ 2027 shots with a trigger tagged yet.' });
+  renderSortableTable('effPlayerTriggerWrap', cols, rows, { dense: true, defaultSort: { key: 'shots', dir: 'desc' }, emptyMsg: 'No player has 12+ ' + EFF_SEASON + ' shots with a trigger tagged yet.' });
 }
 
 // ---------------- Orchestrator ----------------
@@ -4748,13 +4769,13 @@ function populateShotTypePlayerSelect() {
   const sel = document.getElementById('effShotTypePlayer');
   if (!sel) return;
   const prevVal = sel.value;
-  const shots = effShots2027().filter(s => s.shooterJersey);
+  const shots = effShots().filter(s => s.shooterJersey);
   const counts = {};
   shots.forEach(s => { counts[s.shooterJersey] = (counts[s.shooterJersey] || 0) + 1; });
   const jerseys = Object.keys(counts).sort((a, b) => counts[b] - counts[a]);
   sel.innerHTML = '';
   if (!jerseys.length) {
-    const opt = document.createElement('option'); opt.value = ''; opt.textContent = 'No 2027 shooters yet';
+    const opt = document.createElement('option'); opt.value = ''; opt.textContent = 'No ' + EFF_SEASON + ' shooters yet';
     sel.appendChild(opt);
     return;
   }
@@ -4777,10 +4798,10 @@ function renderShotTypeBreakdown() {
   if (!subEl || !wrap || !sel) return;
   populateShotTypePlayerSelect();
   const jersey = sel.value;
-  const model = xgModelFor2027();
-  const shotTypeModel = shotTypeModelFor2027(model);
+  const model = xgModelFor(EFF_SEASON);
+  const shotTypeModel = shotTypeModelFor(model);
   const taggedAll = shotTypeModel.subject.filter(s => bucketKeyFor(s));
-  subEl.textContent = `For a specific kind of shot — quality, mechanism, dodge/catch, contest, and handedness all together — this shows the team's real rate on that exact combination and how the selected player compares. "Measured" needs ${BUCKET_TEAM_MIN}+ team-wide shots and ${BUCKET_PLAYER_MIN}+ from this player in that exact combination; below that it falls back to an "Estimated" rate built from the shot-quality model, nudged by whichever tags already have enough volume on their own — never a direct measurement. Trigger isn't part of this combination (60+ possible values would leave almost every combination empty); it has its own tables below. ${taggedAll.length} of ${shotTypeModel.subject.length} 2027 shots have all five fields tagged.`;
+  subEl.textContent = `For a specific kind of shot — quality, mechanism, dodge/catch, contest, and handedness all together — this shows the team's real rate on that exact combination and how the selected player compares. "Measured" needs ${BUCKET_TEAM_MIN}+ team-wide shots and ${BUCKET_PLAYER_MIN}+ from this player in that exact combination; below that it falls back to an "Estimated" rate built from the shot-quality model, nudged by whichever tags already have enough volume on their own — never a direct measurement. Trigger isn't part of this combination (60+ possible values would leave almost every combination empty); it has its own tables below. ${taggedAll.length} of ${shotTypeModel.subject.length} ${EFF_SEASON} shots have all five fields tagged.`;
   if (!jersey) { wrap.innerHTML = ''; return; }
   const rows = computePlayerShotTypeRows(jersey, shotTypeModel);
   const cols = [
@@ -4803,10 +4824,11 @@ function renderShotTypeBreakdown() {
 // All pills at the top of the Efficiency tab. Nothing is entered by hand;
 // it is all derived from logged shots, no-shot possessions and lineups.
 let EFF_CONTEXT = 'All';
+let EFF_SEASON = currentAdvSeason();
 function effContextOk(e) { return EFF_CONTEXT === 'All' || e.context === EFF_CONTEXT; }
-function effShots2027() { return shots2027().filter(effContextOk); }
-function effOppShots2027() { return OPP_SHOTS.filter(s => seasonForDate(s.date) === '2027' && effContextOk(s)); }
-function effPoss2027() { return POSSESSIONS.filter(p => seasonForDate(p.date) === '2027' && effContextOk(p)); }
+function effShots() { return advShots(EFF_SEASON).filter(effContextOk); }
+function effOppShots() { return OPP_SHOTS.filter(s => seasonForDate(s.date) === EFF_SEASON && effContextOk(s)); }
+function effPoss() { return POSSESSIONS.filter(p => seasonForDate(p.date) === EFF_SEASON && effContextOk(p)); }
 const EFF_CTX_WORD = () => EFF_CONTEXT === 'All' ? 'practice + game' : EFF_CONTEXT.toLowerCase();
 
 function nameCell(v) { return `<span style="white-space:nowrap;">${escapeHtml(v || '')}</span>`; }
@@ -4834,10 +4856,10 @@ function wluOnFieldRaw(e) {
 
 // ---- One pass over everything: per-player box score by session ----
 function buildEffData() {
-  const model = xgModelFor2027();
-  const shots = effShots2027().filter(s => s.shooterJersey);
-  const oppShots = effOppShots2027();
-  const poss = effPoss2027();
+  const model = xgModelFor(EFF_SEASON);
+  const shots = effShots().filter(s => s.shooterJersey);
+  const oppShots = effOppShots();
+  const poss = effPoss();
   const xgOf = s => xgForShot(s, model);
   const players = {}; // jersey -> totals
   const bySession = {}; // sid -> { meta, players: { jersey: box } }
@@ -4975,7 +4997,7 @@ function renderEffPlayers(d) {
     const xp = p.xg + p.xa;
     const pts = p.goals + p.assists;
     return {
-      jersey: p.jersey, name: nameFor(p.jersey, '2027'), shots: p.shots, goals: p.goals, assists: p.assists, points: pts,
+      jersey: p.jersey, name: nameFor(p.jersey, EFF_SEASON), shots: p.shots, goals: p.goals, assists: p.assists, points: pts,
       shotPct: ratio(p.goals, p.shots), regPct: p.shots ? (p.goals + REGRESS_K * teamRate) / (p.shots + REGRESS_K) : null,
       lookVal: p.ownShots.length ? lookValue(p.ownShots, d.model) : null,
       xg: p.xg, gmx: p.goals - p.xg, potAst: p.potAst, xa: p.xa, chance: lookFed, amx: p.assists - p.xa, xp, pmx: pts - xp,
@@ -4985,7 +5007,7 @@ function renderEffPlayers(d) {
   });
   const goalsWithAssist = d.shots.filter(s => s.goal === 1 && s.assistJersey).length;
   const shotsWithPasser = d.shots.filter(s => s.assistJersey).length;
-  subEl.textContent = `2027 ${EFF_CTX_WORD()} — players with 5+ shots or 5+ potential assists. A passer is recorded on ${pct(ratio(shotsWithPasser, teamShots))} of shots and ${pct(ratio(goalsWithAssist, teamGoals))} of goals; assist-side numbers get more complete as passers are logged on misses too.`;
+  subEl.textContent = `${EFF_SEASON} ${EFF_CTX_WORD()} — players with 5+ shots or 5+ potential assists. A passer is recorded on ${pct(ratio(shotsWithPasser, teamShots))} of shots and ${pct(ratio(goalsWithAssist, teamGoals))} of goals; assist-side numbers get more complete as passers are logged on misses too.`;
   const d1 = v => num(v, 1), d2 = v => num(v, 2);
   const cols = [
     { key: 'jersey', label: '#', type: 'text', value: r => r.jersey },
@@ -5009,13 +5031,13 @@ function renderEffPlayers(d) {
     { key: 'assistedPct', label: 'Assisted G%', type: 'num', value: r => r.assistedPct, format: v => pct(v), group: 'Role', title: 'Share of his goals that came off a pass. Low = he creates his own.' },
     { key: 'onKeeperPct', label: 'On Cage', type: 'num', value: r => r.onKeeperPct, format: v => pct(v), group: 'Role' },
   ];
-  renderSortableTable('effPlayerWrap', cols, rows, { dense: true, defaultSort: { key: 'xp', dir: 'desc' }, emptyMsg: `No player has 5+ 2027 ${EFF_CTX_WORD()} shots or potential assists yet.` });
+  renderSortableTable('effPlayerWrap', cols, rows, { dense: true, defaultSort: { key: 'xp', dir: 'desc' }, emptyMsg: `No player has 5+ ${EFF_SEASON} ${EFF_CTX_WORD()} shots or potential assists yet.` });
 }
 
 function renderEffPossession(d, possList) {
   const sub = document.getElementById('effPossSub');
   const rows = Object.values(d.players).filter(p => p.gb || p.to || p.ct || p.foWins || p.dominoes).map(p => ({
-    jersey: p.jersey, name: nameFor(p.jersey, '2027'), gb: p.gb, ct: p.ct, to: p.to, foWins: p.foWins, dominoes: p.dominoes, net: p.gb + p.ct - p.to,
+    jersey: p.jersey, name: nameFor(p.jersey, EFF_SEASON), gb: p.gb, ct: p.ct, to: p.to, foWins: p.foWins, dominoes: p.dominoes, net: p.gb + p.ct - p.to,
   }));
   const wlu = possList.filter(x => x.team === 'WLU');
   // A clear succeeds when a possession that started on a clear didn't end
@@ -5085,7 +5107,7 @@ function renderEffRates(d) {
     const g = sum('g'), a = sum('a'), xg = sum('xg'), xa = sum('xa');
     const fromStints = sessions.filter(s => p.stintSessions.has(s.sid)).length;
     rows.push({
-      jersey: p.jersey, name: nameFor(p.jersey, '2027'), apps, fromStints,
+      jersey: p.jersey, name: nameFor(p.jersey, EFF_SEASON), apps, fromStints,
       gPer: g / apps, aPer: a / apps, pPer: (g + a) / apps, xgPer: xg / apps, xaPer: xa / apps, xpPer: (xg + xa) / apps,
       gs: boxes.reduce((acc, b) => acc + gameScore(b), 0) / apps,
       consistency: stdev(boxes.map(b => b.xg + b.xa)),
@@ -5093,7 +5115,7 @@ function renderEffRates(d) {
   });
   const withStints = Object.values(d.bySession).filter(s => s.hasStints).length;
   const totalSess = Object.keys(d.bySession).length;
-  sub.textContent = `2027 ${EFF_CTX_WORD()}, per ${EFF_CONTEXT === 'Game' ? 'game' : EFF_CONTEXT === 'Practice' ? 'practice' : 'session (practice or game)'} played. An appearance is any session a player was in a logged lineup; in sessions without lineups (${totalSess - withStints} of ${totalSess}) it falls back to sessions where he shot, passed or was tagged — which misses sessions he played quietly. Apps marked * include fallback sessions.`;
+  sub.textContent = `${EFF_SEASON} ${EFF_CTX_WORD()}, per ${EFF_CONTEXT === 'Game' ? 'game' : EFF_CONTEXT === 'Practice' ? 'practice' : 'session (practice or game)'} played. An appearance is any session a player was in a logged lineup; in sessions without lineups (${totalSess - withStints} of ${totalSess}) it falls back to sessions where he shot, passed or was tagged — which misses sessions he played quietly. Apps marked * include fallback sessions.`;
   const d2 = v => num(v, 2);
   const cols = [
     { key: 'jersey', label: '#', type: 'text', value: r => r.jersey },
@@ -5108,7 +5130,7 @@ function renderEffRates(d) {
     { key: 'gs', label: 'Game Score', type: 'num', value: r => r.gs, format: d2, title: GAME_SCORE_TIP + ' Averaged per session.' },
     { key: 'consistency', label: 'Swing', type: 'num', value: r => r.consistency, format: d2, title: 'Consistency: how much his per-session xP moves around (standard deviation). Lower = steadier. Needs 2+ sessions.' },
   ];
-  renderSortableTable('effRateWrap', cols, rows, { dense: true, defaultSort: { key: 'xpPer', dir: 'desc' }, emptyMsg: 'No 2027 sessions logged yet.' });
+  renderSortableTable('effRateWrap', cols, rows, { dense: true, defaultSort: { key: 'xpPer', dir: 'desc' }, emptyMsg: 'No ' + EFF_SEASON + ' sessions logged yet.' });
   renderEffBoxScore(d);
 }
 function renderEffBoxScore(d) {
@@ -5120,7 +5142,7 @@ function renderEffBoxScore(d) {
   const sess = d.bySession[sel.value];
   const sub = document.getElementById('effBoxSub');
   if (!sess) { sub.textContent = ''; document.getElementById('effBoxWrap').innerHTML = ''; return; }
-  const rows = Object.values(sess.players).map(b => Object.assign({ name: nameFor(b.jersey, '2027'), p: b.g + b.a, gs: gameScore(b) }, b));
+  const rows = Object.values(sess.players).map(b => Object.assign({ name: nameFor(b.jersey, EFF_SEASON), p: b.g + b.a, gs: gameScore(b) }, b));
   sub.textContent = `${rows.length} player(s) with a logged lineup or involvement.` + (sess.hasStints ? '' : ' No lineups logged for this session.');
   const d1 = v => num(v, 1);
   const cols = [
@@ -5156,11 +5178,11 @@ function renderEffDominoes(d, possList) {
   const onField = {};
   wlu.forEach(p => { const on = wluOnField(p.e); if (on) on.offense.forEach(j => { onField[j] = (onField[j] || 0) + 1; }); });
   const rows = Object.values(d.players).filter(p => p.dominoes).map(p => ({
-    jersey: p.jersey, name: nameFor(p.jersey, '2027'), dom: p.dominoes, sessions: p.sessions.size, perSess: p.dominoes / Math.max(1, p.sessions.size),
+    jersey: p.jersey, name: nameFor(p.jersey, EFF_SEASON), dom: p.dominoes, sessions: p.sessions.size, perSess: p.dominoes / Math.max(1, p.sessions.size),
     onPoss: onField[p.jersey] || null, domRate: onField[p.jersey] ? p.dominoes / onField[p.jersey] : null,
     toShot: ratio(p.domShots, p.dominoes), toGood: ratio(p.domGood, p.dominoes), toGoal: ratio(p.domGoals, p.dominoes), died: ratio(p.dominoes - p.domShots, p.dominoes), xgAfter: p.domXg,
   }));
-  document.getElementById('effDomSub').textContent = `2027 ${EFF_CTX_WORD()}. "On-field poss." needs lineups; the rest counts every logged domino. Outcomes are what the possession he started produced — a shot, a Gold/Silver look, a goal, or nothing.`;
+  document.getElementById('effDomSub').textContent = `${EFF_SEASON} ${EFF_CTX_WORD()}. "On-field poss." needs lineups; the rest counts every logged domino. Outcomes are what the possession he started produced — a shot, a Gold/Silver look, a goal, or nothing.`;
   const cols = [
     { key: 'jersey', label: '#', type: 'text', value: r => r.jersey },
     { key: 'name', label: 'Name', type: 'text', value: r => r.name, format: nameCell },
@@ -5189,7 +5211,7 @@ function renderEffDominoes(d, possList) {
 
 // ---------------- Lineups ----------------
 let effLineupMin = 5;
-function lineupLabel(js) { return js.slice().sort((a, b) => a - b).map(j => '#' + escapeHtml(j) + ' ' + escapeHtml(lastNameOf(nameFor(j, '2027') || ''))).join(', '); }
+function lineupLabel(js) { return js.slice().sort((a, b) => a - b).map(j => '#' + escapeHtml(j) + ' ' + escapeHtml(lastNameOf(nameFor(j, EFF_SEASON) || ''))).join(', '); }
 function renderEffLineups(d, possList) {
   const off = {}, def = {}, pairs = {};
   const onMemo = new Map();
@@ -5230,10 +5252,10 @@ function renderEffLineups(d, possList) {
     const dOn = defPoss.filter(p => wluOnField(p.e).defense.includes(j)), dOff = defPoss.filter(p => !wluOnField(p.e).defense.includes(j));
     const oDiff = per(oOn, 'xg') !== null && per(oOff, 'xg') !== null ? per(oOn, 'xg') - per(oOff, 'xg') : null;
     const dDiff = per(dOn, 'xg') !== null && per(dOff, 'xg') !== null ? per(dOff, 'xg') - per(dOn, 'xg') : null;
-    return { jersey: j, name: nameFor(j, '2027'), oOnN: oOn.length, oOn: per(oOn, 'xg'), oOff: per(oOff, 'xg'), oDiff, dOnN: dOn.length, dOn: per(dOn, 'xg'), dOff: per(dOff, 'xg'), dDiff,
+    return { jersey: j, name: nameFor(j, EFF_SEASON), oOnN: oOn.length, oOn: per(oOn, 'xg'), oOff: per(oOff, 'xg'), oDiff, dOnN: dOn.length, dOn: per(dOn, 'xg'), dOff: per(dOff, 'xg'), dDiff,
       net: (oDiff || 0) + (dDiff || 0) };
   }).filter(r => r.oOnN + r.dOnN >= effLineupMin);
-  document.getElementById('effLineupSub').textContent = `2027 ${EFF_CTX_WORD()}: ${withLineup} of ${possList.length} possessions have a lineup logged. Numbers are per possession; a possession counts once even with rebound shots. Defense xG uses the shots the defense gave up (opponent shots in games, the other WLU group in practice).`;
+  document.getElementById('effLineupSub').textContent = `${EFF_SEASON} ${EFF_CTX_WORD()}: ${withLineup} of ${possList.length} possessions have a lineup logged. Numbers are per possession; a possession counts once even with rebound shots. Defense xG uses the shots the defense gave up (opponent shots in games, the other WLU group in practice).`;
   const lineRows = (map, defense) => Object.values(map).filter(r => r.poss >= effLineupMin).map(r => ({
     unit: lineupLabel(r.members), size: r.members.length, poss: r.poss, goalsPer: r.goals / r.poss, xgPer: r.xg / r.poss, toRate: r.to / r.poss, domRate: r.dom / r.poss, defense,
   }));
@@ -5284,8 +5306,8 @@ function renderEffFilmMetrics() {
 // "expected saves" is the sum of (1 - that chance) over the shots he faced.
 let goalieAdvContext = 'All';
 let goalieAdvSelected = '';
-function goalieAdvShots() {
-  return goalieShots2027().filter(s => s.onKeeper === 1 && (goalieAdvContext === 'All' || s.context === goalieAdvContext));
+function goalieAdvShots(season) {
+  return goalieShotsForSeason(season).filter(s => s.onKeeper === 1 && (goalieAdvContext === 'All' || s.context === goalieAdvContext));
 }
 function saveStats(list, model) {
   const n = list.length;
@@ -5308,8 +5330,9 @@ const GOALIE_REGRESS_K = 25;
 function renderGoalieAdvanced() {
   const wrap = document.getElementById('goalieAdvWrap');
   if (!wrap) return;
-  const model = facedXgModelFor2027();
-  const faced = goalieAdvShots();
+  const season = goalieAdvSeason();
+  const model = facedXgModelFor(season);
+  const faced = goalieAdvShots(season);
   const team = saveStats(faced, model);
   const byG = {};
   faced.forEach(s => { (byG[s.goalieJersey] = byG[s.goalieJersey] || []).push(s); });
@@ -5327,7 +5350,7 @@ function renderGoalieAdvanced() {
     list.forEach(s => { (sessions[sessKey(s)] = sessions[sessKey(s)] || []).push(s); });
     const sessStats = Object.values(sessions).filter(l => l.length >= 5).map(l => saveStats(l, model));
     return {
-      jersey: j, name: nameFor(j, '2027'), faced: st.n, svPct: st.svPct, adjSv: st.n ? (st.saves + GOALIE_REGRESS_K * (team.svPct || 0)) / (st.n + GOALIE_REGRESS_K) : null,
+      jersey: j, name: nameFor(j, season), faced: st.n, svPct: st.svPct, adjSv: st.n ? (st.saves + GOALIE_REGRESS_K * (team.svPct || 0)) / (st.n + GOALIE_REGRESS_K) : null,
       gsax: st.gsax, gsax100: st.n ? st.gsax / st.n * 100 : null,
       cleanPct: saves.length ? clean / saves.length : null, rebPerSave: saves.length ? rebounds / saves.length : null,
       scrSv: scr.svPct, scrN: scr.n, movSv: moving.svPct, movN: moving.n,
@@ -5336,7 +5359,7 @@ function renderGoalieAdvanced() {
       rough: sessStats.filter(x => x.gsax <= ROUGH_SESSION_GSAX).length,
     };
   });
-  document.getElementById('goalieAdvSub').textContent = `2027 ${goalieAdvContext === 'All' ? 'practice + game' : goalieAdvContext.toLowerCase()} shots on cage with a WLU goalie in net (${faced.length}). In games these are the opponent shots you log. Team save % ${pct(team.svPct)} vs ${pct(team.xSvPct)} expected.`;
+  document.getElementById('goalieAdvSub').textContent = `${season} ${goalieAdvContext === 'All' ? 'practice + game' : goalieAdvContext.toLowerCase()} shots on cage with a WLU goalie in net (${faced.length}). In games these are the opponent shots you log. Team save % ${pct(team.svPct)} vs ${pct(team.xSvPct)} expected.`;
   const small = (n, min) => n < min ? 'color:var(--muted); font-style:italic;' : '';
   const svCell = (nKey) => (v, r) => v === null ? '—' : `${pct(v)} <span class="n-note">(${r[nKey]})</span>`;
   renderSortableTable('goalieAdvWrap', [
@@ -5354,7 +5377,7 @@ function renderGoalieAdvanced() {
     { key: 'outletPct', label: 'Outlet %', type: 'num', value: r => r.outletPct, format: svCell('outletN'), cellStyle: (v, r) => small(r.outletN, 5), group: 'Situations', title: 'Outlets completed after a save (Completed ÷ Completed + Turnover; Held not counted).' },
     { key: 'qsPct', label: 'Quality %', type: 'num', value: r => r.qsPct, format: svCell('qsN'), group: 'Consistency', title: 'Quality sessions: share of his sessions (5+ shots faced) where he saved at least as many as expected (GSAx >= 0).' },
     { key: 'rough', label: 'Rough', type: 'num', value: r => r.rough, group: 'Consistency', title: `Sessions (5+ shots faced) with GSAx of ${ROUGH_SESSION_GSAX} or worse.` },
-  ], rows, { dense: true, defaultSort: { key: 'faced', dir: 'desc' }, emptyMsg: 'No 2027 shots on cage with a WLU goalie logged yet.' });
+  ], rows, { dense: true, defaultSort: { key: 'faced', dir: 'desc' }, emptyMsg: 'No ' + season + ' shots on cage with a WLU goalie logged yet.' });
 
   // Where & when for one goalie (or all).
   const sel = document.getElementById('goalieAdvSelect');
@@ -5399,8 +5422,8 @@ function renderEfficiencyView() {
   if (!document.getElementById('effXgModelWrap')) return;
   // Heavy: only while the tab is on screen (switchTab re-runs this on entry).
   if (!document.getElementById('efficiencyView').classList.contains('active')) return;
-  const shots = effShots2027().filter(s => s.shooterJersey);
-  const model = xgModelFor2027();
+  const shots = effShots().filter(s => s.shooterJersey);
+  const model = xgModelFor(EFF_SEASON);
   renderXgModelPanel(shots, model);
   renderShotTypeBreakdown();
   renderDevelopmentFlags(shots, model);
@@ -5408,6 +5431,11 @@ function renderEfficiencyView() {
   renderPlayerBestTriggers(shots);
   renderEffFilmMetrics();
 }
+setupPillGroup('effSeasonPills', ADV_SEASONS, EFF_SEASON, v => {
+  if (v) EFF_SEASON = v;
+  else setPillGroupValue('effSeasonPills', EFF_SEASON);
+  renderEfficiencyView();
+});
 setupPillGroup('effContextPills', ['All', 'Practice', 'Game'], 'All', v => {
   EFF_CONTEXT = v || 'All';
   if (!v) setPillGroupValue('effContextPills', 'All');
@@ -5696,7 +5724,7 @@ function renderHeatPanel(containerId, items) {
   }));
   wrap.appendChild(bar);
   let model = null;
-  if (HEAT_MODE === 'shots') { try { model = xgModelFor2027(); } catch (e) { model = null; } }
+  if (HEAT_MODE === 'shots') { try { model = xgModelFor(heatAdvSeason()); } catch (e) { model = null; } }
   items.forEach(it => {
     const isGoal = !!(it.hotspots && it.hotspots.length && it.hotspots[0].label);
     const shots = it.shots || (it.hotspots ? [].concat(...it.hotspots.map(z => z.shots || [])) : []);
@@ -5813,8 +5841,8 @@ function renderGoalieTiles() {
     statTile('Save %', pct(n ? (n - ga) / n : null), `${n - ga} saves, ${ga} goals allowed`),
     statTile('Clean Saves', pct(n - ga ? clean / (n - ga) : null), 'Share of saves controlled with no rebound', 'Clean saves \u00f7 all saves. Only counted where Clean Save was logged.'),
   ];
-  if (goalieHeatSeason === '2027' && n) {
-    const model = facedXgModelFor2027();
+  if (isAdvSeason(goalieHeatSeason) && n) {
+    const model = facedXgModelFor(goalieHeatSeason);
     const gsax = xgSum(faced, model) - ga;
     tiles.push(statTile('Goals Saved Above Expected', (gsax >= 0 ? '+' : '') + gsax.toFixed(1), 'Team total vs the faced-shot xG model', 'Expected goals on the shots faced minus goals actually allowed. Positive = better than expected.'));
   }
@@ -5866,6 +5894,7 @@ setupSeasonPills('goalieSeasonPills', (s) => {
   renderGoalieHeat();
   renderGoalieSummary();
   renderGoalieTrends();
+  renderGoalieAdvanced();
 }, goalieHeatSeason);
 ['gf_context','gf_defscheme','gf_transitiontype','gf_handedness','gf_offdodge','gf_contest','gf_passtype','gf_ongoal','gf_blocked','gf_cleansave','gf_datefrom','gf_dateto'].forEach(id => document.getElementById(id).addEventListener('change', renderGoalieHeat));
 ['gf_assist','gf_opponent','gf_tags'].forEach(id => document.getElementById(id).addEventListener('input', renderGoalieHeat));
@@ -6692,7 +6721,7 @@ function computeShootingTrendsWindowed(shots, opts) {
     contextNote = ' Practice shots are excluded in this mode.';
   } else {
     const split = splitByDateWindow(shots, 7);
-    if (!split) return { entries: [], explainer: 'No 2027 shots logged yet.' };
+    if (!split) return { entries: [], explainer: 'No shots logged this season yet.' };
     recentAll = split.recent; priorAll = split.prior;
     recentLabel = split.recentLabel; priorLabel = split.priorLabel;
   }
@@ -6793,7 +6822,7 @@ function renderShootingTrends() {
 
   // 2026 / All Seasons: identical to the original quartile-based view,
   // untouched — see computeShootingTrends above.
-  if (heatSeason !== '2027') {
+  if (!isAdvSeason(heatSeason)) {
     controlsRow.style.display = 'none';
     rollingWrap.style.display = 'none';
     groupsWrap.style.display = '';
@@ -6806,19 +6835,19 @@ function renderShootingTrends() {
     return;
   }
 
-  // 2027: windowed trends, live as new shots are logged.
+  // 2027 and later: windowed trends, live as new shots are logged.
   controlsRow.style.display = '';
-  const shots = shots2027().filter(s => s.shooterJersey);
-  const model = xgModelFor2027();
+  const shots = advShots(heatSeason).filter(s => s.shooterJersey);
+  const model = xgModelFor(heatSeason);
 
   if (trendWindow === 'rolling') {
     groupsWrap.style.display = 'none';
     rollingWrap.style.display = '';
     const players = computeRollingTrendSeries(shots, trendMetric, model);
     subEl.textContent = players.length
-      ? `Trailing ${TREND_ROLLING_K}-shot rolling average of ${trendMetricLabel(trendMetric)} (${trendMetricExplain(trendMetric)}), top ${players.length} players by 2027 shot volume. Needs ${TREND_ROLLING_MIN}+ shots to draw a line.`
-      : `Not enough 2027 shots yet for a rolling trend — need ${TREND_ROLLING_MIN}+ from at least one player.`;
-    renderRollingTrendChart('trendRollingWrap', players, { format: trendMetric === 'gax' ? 'decimal' : 'pct', emptyMsg: `Not enough 2027 shots yet — need ${TREND_ROLLING_MIN}+ from a player to draw a rolling line.` });
+      ? `Trailing ${TREND_ROLLING_K}-shot rolling average of ${trendMetricLabel(trendMetric)} (${trendMetricExplain(trendMetric)}), top ${players.length} players by ${heatSeason} shot volume. Needs ${TREND_ROLLING_MIN}+ shots to draw a line.`
+      : `Not enough ${heatSeason} shots yet for a rolling trend — need ${TREND_ROLLING_MIN}+ from at least one player.`;
+    renderRollingTrendChart('trendRollingWrap', players, { format: trendMetric === 'gax' ? 'decimal' : 'pct', emptyMsg: `Not enough ${heatSeason} shots yet — need ${TREND_ROLLING_MIN}+ from a player to draw a rolling line.` });
     return;
   }
 
