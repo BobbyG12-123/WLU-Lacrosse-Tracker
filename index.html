@@ -814,6 +814,24 @@
       <div class="table-wrap" id="goalieSummaryWrap"></div>
     </div>
     </div>
+    <div class="subpage" data-label="Advanced">
+    <div class="panel">
+      <div class="controls-row" style="margin-bottom:8px;">
+        <div class="control-group"><label>Shots from</label><div class="pill-row" id="goalieAdvContextPills"></div></div>
+      </div>
+      <p class="panel-title">Advanced Goalie Stats</p>
+      <p class="panel-sub" id="goalieAdvSub"></p>
+      <div class="table-wrap" id="goalieAdvWrap"></div>
+    </div>
+    <div class="panel">
+      <p class="panel-title">Where &amp; When</p>
+      <p class="panel-sub">Save % against expected by goal zone (near/far pipe from the shooter&rsquo;s side of the field), shot type, situation and distance.</p>
+      <div class="controls-row" style="margin-bottom:10px;">
+        <div class="control-group"><label for="goalieAdvSelect">Goalie</label><select id="goalieAdvSelect"></select></div>
+      </div>
+      <div class="table-wrap" id="goalieSitWrap"></div>
+    </div>
+    </div>
     <div class="subpage" data-label="Trends">
     <div class="panel">
       <p class="panel-title">Goalie Trends</p>
@@ -964,6 +982,11 @@
       <p class="panel-title">Head-to-Head</p>
       <p class="panel-sub">Win-loss record between your 4 faceoff specialists &mdash; only counts faceoffs logged with a Faceoff Opponent set, not real game faceoffs.</p>
       <div class="table-wrap" id="faceoffHeadToHeadWrap"></div>
+    </div>
+    <div class="panel">
+      <p class="panel-title">Faceoff Rating</p>
+      <p class="panel-sub">An Elo-style rating from logged head-to-head reps (faceoffs with a Faceoff Opponent set): beating a strong taker moves you up more than beating a weak one. Everyone starts at 1500; 100 points &asymp; a 64% expected win rate against that opponent. Uses the season picked above.</p>
+      <div class="table-wrap" id="faceoffRatingWrap"></div>
     </div>
     </div>
     <div class="subpage" data-label="Trends">
@@ -1285,7 +1308,7 @@ function fogoRoster(season) {
 // naming stays consistent across manual shot logging and film tagging.
 // Suggestions only — the Offense Trigger field also accepts free text.
 const TRIGGER_TERMS = ["Pick","Screen","Seal","Side","Rub","Razor","Low","Logo","Chase","Boomer","Empty","Horns","V","Slip","Ghost","Pop","Stick","Veer","Flip","Ricky","Reject","Double","Pin","Rip","Gortat","Shallow","Scratch","Wedge","Clyde","UCLA","Brush","Post","Flare","Stagger","Twirl","Gaggle","Iverson","Ram","Scissors","Gut","Zipper","Curl","STS","Elevator","Hammer","77 (double drag)","Wheel","Cross","Spain","Nations","Finland","Get","Keep","Miami","Zoom","Stampede (a pass)","Weave","Blast Cut","Hung","Entries","Decoys","Drag screen (transition)","Grenade","Spanish Slip (Spain vs Switch)"];
-document.getElementById('triggerList').innerHTML = TRIGGER_TERMS.map(t => `<option value="${t}"></option>`).join('');
+document.getElementById('triggerList').innerHTML = TRIGGER_TERMS.map(t => `<option value="${escapeHtml(t)}"></option>`).join('');
 document.getElementById('pf_trigger').insertAdjacentHTML('beforeend', TRIGGER_TERMS.map(t => `<option value="${t}">${t}</option>`).join(''));
 // Faceoffs are a separate event type from shots (a FO win doesn't always
 // produce a shot), so they get their own small collection rather than being
@@ -1315,10 +1338,24 @@ let LIVE_FACEOFFS_TUPLES = [];
 let PLAYERS = [];
 let RATINGS = [];
 
+// Defense in depth against markup in stored text: every string read from
+// the database loses <, > and " before the app ever renders it, so a name,
+// opponent or note can't become HTML even where a template forgets to
+// escape. (Apostrophes and & are kept: "O'Brien", "Washington & Lee".)
+function cleanText(v) { return typeof v === 'string' ? v.replace(/[<>"]/g, '') : v; }
+function cleanDeep(v) {
+  if (typeof v === 'string') return cleanText(v);
+  if (Array.isArray(v)) return v.map(cleanDeep);
+  if (v && typeof v === 'object') { const o = {}; Object.keys(v).forEach(k => { o[cleanText(k)] = cleanDeep(v[k]); }); return o; }
+  return v;
+}
+function cleanRoster(list) {
+  return Array.isArray(list) ? list.filter(r => r && typeof r === 'object').map(r => ({ jersey: String(cleanText(r.jersey) || ''), name: String(cleanText(r.name) || ''), roles: Array.isArray(r.roles) ? r.roles.filter(x => x === 'player' || x === 'goalie') : ['player'] })) : [];
+}
 function tupleToObj(t, cols) {
   const c = cols || COLS;
   const o = {};
-  c.forEach((k, i) => o[k] = t[i]);
+  c.forEach((k, i) => o[k] = cleanText(t[i]));
   return o;
 }
 function objToTuple(o, cols) {
@@ -1351,19 +1388,19 @@ function sessionSlug(s) {
 function sessionIdFor(entry) {
   const date = /^\d{4}-\d{2}-\d{2}$/.test(entry.date || '') ? entry.date : 'nodate';
   const ctx = entry.context === 'Game' ? 'game' : 'practice';
-  const opp = ctx === 'game' ? (sessionSlug(entry.opponent) || 'unknown') : '';
+  const opp = ctx === 'game' ? (sessionSlug(cleanText(entry.opponent)) || 'unknown') : '';
   return date + '_' + ctx + (opp ? '_' + opp : '');
 }
 function parseSessionDoc(id, data) {
-  const sess = { id, date: data.date || null, context: data.context || null, opponent: data.opponent || null, shots: [], poss: [], stints: [] };
+  const sess = { id, date: cleanText(data.date) || null, context: cleanText(data.context) || null, opponent: cleanText(data.opponent) || null, shots: [], poss: [], stints: [] };
   Object.keys(data).forEach(k => {
     if (typeof data[k] !== 'string') return;
     try {
       if (k.startsWith(SESSION_ENTRY_PREFIX.shot)) { const o = tupleToObj(JSON.parse(data[k])); o._sid = id; sess.shots.push(o); }
       else if (k.startsWith(SESSION_ENTRY_PREFIX.poss)) { const o = tupleToObj(JSON.parse(data[k]), POSS_COLS); o._sid = id; sess.poss.push(o); }
       else if (k.startsWith(SESSION_ENTRY_PREFIX.stint)) {
-        const o = JSON.parse(data[k]);
-        if (o && Array.isArray(o.offense) && Array.isArray(o.defense)) { o.id = k.slice(SESSION_ENTRY_PREFIX.stint.length); sess.stints.push(o); }
+        const o = cleanDeep(JSON.parse(data[k]));
+        if (o && Array.isArray(o.offense) && Array.isArray(o.defense)) { o.id = cleanText(k.slice(SESSION_ENTRY_PREFIX.stint.length)); sess.stints.push(o); }
       }
     } catch (e) { console.error('bad session entry', id, k, e); }
   });
@@ -1574,7 +1611,7 @@ async function loadAll() {
   if (DB) {
     try {
       const sr = await DB.doc('app/seed_roster').get();
-      if (sr.exists && Array.isArray(sr.data().list)) SEED_ROSTER = sr.data().list;
+      if (sr.exists && Array.isArray(sr.data().list)) SEED_ROSTER = cleanRoster(sr.data().list);
     } catch (e) { console.error(e); }
     try {
       const ss = await DB.doc('app/seed_shots').get();
@@ -1600,13 +1637,13 @@ async function loadAll() {
     let list = null;
     try {
       const snap = await ref.get();
-      if (snap.exists && Array.isArray(snap.data().list)) list = snap.data().list;
+      if (snap.exists && Array.isArray(snap.data().list)) list = cleanRoster(snap.data().list);
     } catch (e) { console.error('roster load failed', season, e); }
     if (list === null) {
       if (season === SEASONS[0]) {
         try {
           const legacy = await DB.doc('app/roster').get();
-          list = (legacy.exists && Array.isArray(legacy.data().list)) ? legacy.data().list : SEED_ROSTER;
+          list = (legacy.exists && Array.isArray(legacy.data().list)) ? cleanRoster(legacy.data().list) : SEED_ROSTER;
         } catch (e) { list = SEED_ROSTER; }
       } else {
         const prevSeason = SEASONS[SEASONS.indexOf(season) - 1];
@@ -1617,7 +1654,7 @@ async function loadAll() {
     ROSTERS[season] = list;
     ref.onSnapshot(snap => {
       if (!snap.exists || !Array.isArray(snap.data().list)) return;
-      ROSTERS[season] = snap.data().list;
+      ROSTERS[season] = cleanRoster(snap.data().list);
       refreshFormRosterOptions();
       refreshFoRosterOptions();
       populatePlayerGoalieDropdowns();
@@ -1686,6 +1723,7 @@ function rerenderAfterShotsChange() {
   renderShootingTrends();
   renderGoalieTrends();
   renderGoalieHeat();
+  renderGoalieAdvanced();
   renderEfficiencyView();
   populatePlayerGoalieDropdowns();
   populatePlayerSelectForSeason(heatSeason);
@@ -1694,7 +1732,7 @@ function rerenderAfterShotsChange() {
 
 function loadEvalListeners() {
   DB.collection('evalPlayers').onSnapshot(snap => {
-    PLAYERS = snap.docs.map(d => Object.assign({ id: d.id }, d.data()));
+    PLAYERS = snap.docs.map(d => Object.assign({ id: cleanText(d.id) }, cleanDeep(d.data())));
     renderRecruits();
     renderTrends();
     renderBoard();
@@ -1702,7 +1740,7 @@ function loadEvalListeners() {
   }, e => console.error('players sync error', e));
 
   DB.collection('evalRatings').onSnapshot(snap => {
-    RATINGS = snap.docs.map(d => Object.assign({ id: d.id }, d.data()));
+    RATINGS = snap.docs.map(d => Object.assign({ id: cleanText(d.id) }, cleanDeep(d.data())));
     renderRecruits();
     renderTrends();
     renderBoard();
@@ -2271,6 +2309,9 @@ function nameFor(jersey, season) {
   return jersey;
 }
 async function addPlayerToRoster(season, name, jersey, role) {
+  name = cleanText(String(name || '')).trim().slice(0, 60);
+  jersey = String(jersey || '').trim().replace(/^#/, '');
+  if (!name || !/^\d{1,3}$/.test(jersey) || (role !== 'player' && role !== 'goalie')) return false;
   const list = ROSTERS[season] || (ROSTERS[season] = []);
   const existing = list.find(r => r.jersey === jersey);
   if (existing) { if (!existing.roles.includes(role)) existing.roles.push(role); }
@@ -2313,7 +2354,7 @@ function switchTab(viewId) {
   document.querySelectorAll('.tab-btn').forEach(b=>b.classList.toggle('active', b.dataset.view === viewId));
   document.querySelectorAll('.view').forEach(v=>v.classList.toggle('active', v.id === viewId));
   if (viewId === 'playerView') renderPlayerHeat();
-  if (viewId === 'goalieView') renderGoalieHeat();
+  if (viewId === 'goalieView') { renderGoalieHeat(); renderGoalieAdvanced(); }
   if (viewId === 'faceoffView') renderFaceoffs();
   if (viewId === 'tableView') renderTable();
   if (viewId === 'compareView') renderCompare();
@@ -2450,7 +2491,7 @@ function refreshFormRosterOptions() {
   populateSelect(document.getElementById('f_goalie'), rosterGoalies(season), 'Select goalie…', true);
   const shooterList = document.getElementById('shooterList');
   const assistList = document.getElementById('assistList');
-  shooterList.innerHTML = assistList.innerHTML = rosterPlayers(season).map(p => `<option value="${p.name}"></option>`).join('');
+  shooterList.innerHTML = assistList.innerHTML = rosterPlayers(season).map(p => `<option value="${escapeHtml(p.name)}"></option>`).join('');
   updateNameResolve('shooter');
   updateNameResolve('assist');
 }
@@ -2597,7 +2638,7 @@ document.getElementById('submitFaceoffBtn').addEventListener('click', async () =
     opponent: sess.opponent,
     playerJersey: player,
     won: won === 'Yes' ? 1 : 0,
-    notes: document.getElementById('fo_notes').value.trim().slice(0, 120) || null,
+    notes: cleanText(document.getElementById('fo_notes').value).trim().slice(0, 120) || null,
     vsPlayerJersey: document.getElementById('fo_vsplayer').value || null,
   };
   FACEOFFS.push(faceoff);
@@ -2635,6 +2676,7 @@ document.getElementById('np_add').addEventListener('click', async () => {
   const name = document.getElementById('np_name').value.trim();
   const jersey = document.getElementById('np_jersey').value.trim();
   if (!name || !jersey) { showMsg('Enter both a name and a jersey number.', false); return; }
+  if (!/^#?\d{1,3}$/.test(jersey)) { showMsg('Jersey numbers are 1\u20133 digits.', false); return; }
   const { role, onResolved } = pendingNewPlayer;
   await addPlayerToRoster(currentLogSeason(), name, jersey, role);
   refreshFormRosterOptions();
@@ -3208,7 +3250,7 @@ function localDateStr(d) {
 function readSessionFields() {
   const date = document.getElementById('f_date').value;
   const context = isGameSession() ? 'Game' : 'Practice';
-  const opponent = context === 'Game' ? document.getElementById('f_opponent').value.trim().slice(0, 60) : '';
+  const opponent = context === 'Game' ? cleanText(document.getElementById('f_opponent').value).trim().slice(0, 60) : '';
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return { error: 'Pick a date.' };
   if (context === 'Game' && !opponent) return { error: 'Type the opponent for this game.' };
   return { date, context, opponent: opponent || null };
@@ -3272,7 +3314,7 @@ document.getElementById('submitShotBtn').addEventListener('click', async () => {
     assistJersey: opp ? null : (resolvedAssistJersey || null),
     opponent: sess.opponent,
     passType: null,
-    trigger: document.getElementById('f_trigger').value.trim().slice(0, 60) || null,
+    trigger: cleanText(document.getElementById('f_trigger').value).trim().slice(0, 60) || null,
     manSituation: document.getElementById('f_mansituation').dataset.value || null,
     shotMechanism: document.getElementById('f_shotmechanism').dataset.value || null,
     rebound: document.getElementById('f_rebound').dataset.value || null,
@@ -5222,6 +5264,123 @@ function renderEffFilmMetrics() {
   renderEffLineups(d, possList);
 }
 
+// ---------------- Goalies > Advanced (2027+) ----------------
+// Built on the faced-shot xG model: each on-cage shot has an expected
+// chance of going in given its tier and practice/game. A goalie's
+// "expected saves" is the sum of (1 - that chance) over the shots he faced.
+let goalieAdvContext = 'All';
+let goalieAdvSelected = '';
+function goalieAdvShots() {
+  return goalieShots2027().filter(s => s.onKeeper === 1 && (goalieAdvContext === 'All' || s.context === goalieAdvContext));
+}
+function saveStats(list, model) {
+  const n = list.length;
+  const ga = list.filter(s => s.goal === 1).length;
+  const xga = list.reduce((a, s) => a + xgForShot(s, model), 0);
+  return { n, ga, saves: n - ga, svPct: n ? (n - ga) / n : null, xSvPct: n ? 1 - xga / n : null, gsax: xga - ga };
+}
+// Near/far pipe: the side of the cage on the shooter's side of the field
+// (goal chart and field chart share the same left/right, looking at goal).
+function pipeSide(s) {
+  if (s.goalX === null || s.goalX === undefined || s.lateralYds === null || s.lateralYds === undefined || Math.abs(s.lateralYds) < 1.5) return null;
+  return (s.goalX < 0.5) === (s.lateralYds < 0) ? 'Near side' : 'Far side';
+}
+function goalHeight(s) {
+  if (s.goalY === null || s.goalY === undefined) return null;
+  return s.goalY >= 2 / 3 ? 'High' : (s.goalY >= 1 / 3 ? 'Mid' : 'Low');
+}
+const ROUGH_SESSION_GSAX = -1.5;
+const GOALIE_REGRESS_K = 25;
+function renderGoalieAdvanced() {
+  const wrap = document.getElementById('goalieAdvWrap');
+  if (!wrap) return;
+  const model = facedXgModelFor2027();
+  const faced = goalieAdvShots();
+  const team = saveStats(faced, model);
+  const byG = {};
+  faced.forEach(s => { (byG[s.goalieJersey] = byG[s.goalieJersey] || []).push(s); });
+  // Rebounds a goalie gave up: rebound shots he then faced, per save.
+  const rows = Object.keys(byG).map(j => {
+    const list = byG[j];
+    const st = saveStats(list, model);
+    const saves = list.filter(s => s.goal !== 1);
+    const clean = saves.filter(s => s.cleanSave === 1).length;
+    const rebounds = list.filter(s => s.rebound === 'Yes').length;
+    const scr = saveStats(list.filter(s => s.screened === 'Yes'), model);
+    const moving = saveStats(list.filter(s => s.goalieSet === 'No'), model);
+    const outlets = saves.filter(s => s.outlet === 'Completed' || s.outlet === 'Turnover');
+    const sessions = {};
+    list.forEach(s => { (sessions[sessKey(s)] = sessions[sessKey(s)] || []).push(s); });
+    const sessStats = Object.values(sessions).filter(l => l.length >= 5).map(l => saveStats(l, model));
+    return {
+      jersey: j, name: nameFor(j, '2027'), faced: st.n, svPct: st.svPct, adjSv: st.n ? (st.saves + GOALIE_REGRESS_K * (team.svPct || 0)) / (st.n + GOALIE_REGRESS_K) : null,
+      gsax: st.gsax, gsax100: st.n ? st.gsax / st.n * 100 : null,
+      cleanPct: saves.length ? clean / saves.length : null, rebPerSave: saves.length ? rebounds / saves.length : null,
+      scrSv: scr.svPct, scrN: scr.n, movSv: moving.svPct, movN: moving.n,
+      outletPct: outlets.length ? outlets.filter(s => s.outlet === 'Completed').length / outlets.length : null, outletN: outlets.length,
+      qsPct: sessStats.length ? sessStats.filter(x => x.gsax >= 0).length / sessStats.length : null, qsN: sessStats.length,
+      rough: sessStats.filter(x => x.gsax <= ROUGH_SESSION_GSAX).length,
+    };
+  });
+  document.getElementById('goalieAdvSub').textContent = `2027 ${goalieAdvContext === 'All' ? 'practice + game' : goalieAdvContext.toLowerCase()} shots on cage with a WLU goalie in net (${faced.length}). In games these are the opponent shots you log. Team save % ${pct(team.svPct)} vs ${pct(team.xSvPct)} expected.`;
+  const small = (n, min) => n < min ? 'color:var(--muted); font-style:italic;' : '';
+  const svCell = (nKey) => (v, r) => v === null ? '—' : `${pct(v)} <span class="n-note">(${r[nKey]})</span>`;
+  renderSortableTable('goalieAdvWrap', [
+    { key: 'jersey', label: '#', type: 'text', value: r => r.jersey },
+    { key: 'name', label: 'Name', type: 'text', value: r => r.name, format: v => `<span style="white-space:nowrap;">${escapeHtml(v)}</span>` },
+    { key: 'faced', label: 'Faced', type: 'num', value: r => r.faced },
+    { key: 'svPct', label: 'Sv%', type: 'num', value: r => r.svPct, format: v => pct(v), group: 'Stopping shots' },
+    { key: 'adjSv', label: 'Adj Sv%', type: 'num', value: r => r.adjSv, format: v => pct(v), group: 'Stopping shots', title: `Save % pulled toward the team rate by ${GOALIE_REGRESS_K} shots’ worth, so a small sample can’t top the list.` },
+    { key: 'gsax', label: 'GSAx', type: 'num', value: r => r.gsax, format: v => signed(v), group: 'Stopping shots', title: 'Goals saved above expected: expected goals on the shots he faced minus goals allowed. Positive = better than the shot quality predicted.' },
+    { key: 'gsax100', label: 'GSAx/100', type: 'num', value: r => r.gsax100, format: v => signed(v), group: 'Stopping shots', title: 'GSAx per 100 shots faced, so different workloads compare fairly.' },
+    { key: 'cleanPct', label: 'Clean Sv%', type: 'num', value: r => r.cleanPct, format: v => pct(v), group: 'Rebound control', title: 'Share of saves controlled with no rebound (where Clean Save was logged).' },
+    { key: 'rebPerSave', label: 'Reb / Save', type: 'num', value: r => r.rebPerSave, format: v => num(v, 2), group: 'Rebound control', title: 'Rebound / second-chance shots he faced per save he made. Lower is better.' },
+    { key: 'scrSv', label: 'Screened Sv%', type: 'num', value: r => r.scrSv, format: svCell('scrN'), cellStyle: (v, r) => small(r.scrN, 5), group: 'Situations', title: 'Save % on shots logged as screened.' },
+    { key: 'movSv', label: 'Moving Sv%', type: 'num', value: r => r.movSv, format: svCell('movN'), cellStyle: (v, r) => small(r.movN, 5), group: 'Situations', title: 'Save % on shots where he wasn’t set.' },
+    { key: 'outletPct', label: 'Outlet %', type: 'num', value: r => r.outletPct, format: svCell('outletN'), cellStyle: (v, r) => small(r.outletN, 5), group: 'Situations', title: 'Outlets completed after a save (Completed ÷ Completed + Turnover; Held not counted).' },
+    { key: 'qsPct', label: 'Quality %', type: 'num', value: r => r.qsPct, format: svCell('qsN'), group: 'Consistency', title: 'Quality sessions: share of his sessions (5+ shots faced) where he saved at least as many as expected (GSAx >= 0).' },
+    { key: 'rough', label: 'Rough', type: 'num', value: r => r.rough, group: 'Consistency', title: `Sessions (5+ shots faced) with GSAx of ${ROUGH_SESSION_GSAX} or worse.` },
+  ], rows, { dense: true, defaultSort: { key: 'faced', dir: 'desc' }, emptyMsg: 'No 2027 shots on cage with a WLU goalie logged yet.' });
+
+  // Where & when for one goalie (or all).
+  const sel = document.getElementById('goalieAdvSelect');
+  const opts = [{ v: '', t: 'All WLU goalies' }].concat(rows.sort((a, b) => b.faced - a.faced).map(r => ({ v: r.jersey, t: `#${r.jersey} ${r.name} (${r.faced})` })));
+  sel.innerHTML = opts.map(o => `<option value="${escapeHtml(o.v)}">${escapeHtml(o.t)}</option>`).join('');
+  sel.value = opts.some(o => o.v === goalieAdvSelected) ? goalieAdvSelected : '';
+  const list = sel.value ? (byG[sel.value] || []) : faced;
+  const sitRows = [];
+  const addRow = (group, label, sub) => { const st = saveStats(sub, model); if (st.n) sitRows.push({ group, label, n: st.n, sv: st.svPct, xsv: st.xSvPct, gsax: st.gsax, per100: st.gsax / st.n * 100 }); };
+  ['High', 'Mid', 'Low'].forEach(h => ['Near side', 'Far side'].forEach(side => addRow('Goal zone', `${h} · ${side}`, list.filter(s => goalHeight(s) === h && pipeSide(s) === side))));
+  ['High', 'Mid', 'Low'].forEach(h => addRow('Height', h, list.filter(s => goalHeight(s) === h)));
+  addRow('Shot type', 'Bounce shots', list.filter(s => s.bounceShot === 'Yes'));
+  addRow('Shot type', 'Off the dodge', list.filter(s => s.offDodge === 1));
+  addRow('Shot type', 'Off the catch', list.filter(s => s.offDodge === 0));
+  addRow('Shot type', 'Rebound / second chance', list.filter(s => s.rebound === 'Yes'));
+  addRow('Situation', 'Transition (FO / OTOD)', list.filter(s => s.transition === 'FO' || s.transition === 'OTOD'));
+  addRow('Situation', 'Settled', list.filter(s => !s.transition));
+  addRow('Situation', 'Man-down (shooter man-up)', list.filter(s => s.manSituation === 'Man-Up'));
+  addRow('Situation', 'Screened', list.filter(s => s.screened === 'Yes'));
+  addRow('Situation', 'Not set', list.filter(s => s.goalieSet === 'No'));
+  addRow('Distance', 'Inside 8 yds', list.filter(s => s.distanceYds !== null && s.distanceYds !== undefined && s.distanceYds < 8));
+  addRow('Distance', '8–12 yds', list.filter(s => s.distanceYds >= 8 && s.distanceYds < 12));
+  addRow('Distance', '12+ yds', list.filter(s => s.distanceYds >= 12));
+  renderSortableTable('goalieSitWrap', [
+    { key: 'group', label: 'Type', type: 'text', value: r => r.group },
+    { key: 'label', label: 'Shots', type: 'text', value: r => r.label },
+    { key: 'n', label: 'Faced', type: 'num', value: r => r.n },
+    { key: 'sv', label: 'Sv%', type: 'num', value: r => r.sv, format: v => pct(v), cellStyle: (v, r) => small(r.n, 5) },
+    { key: 'xsv', label: 'Expected Sv%', type: 'num', value: r => r.xsv, format: v => pct(v), title: 'Save % the shot quality alone predicts.' },
+    { key: 'gsax', label: 'GSAx', type: 'num', value: r => r.gsax, format: v => signed(v) },
+    { key: 'per100', label: 'Above Expected /100', type: 'num', value: r => r.per100, format: v => signed(v), title: 'Saves above expected per 100 shots of this kind. Italic gray rows have fewer than 5 shots.' },
+  ], sitRows, { dense: true, defaultSort: { key: 'group', dir: 'asc' }, emptyMsg: 'No shots on cage for this selection yet.' });
+}
+setupPillGroup('goalieAdvContextPills', ['All', 'Practice', 'Game'], 'All', v => {
+  goalieAdvContext = v || 'All';
+  if (!v) setPillGroupValue('goalieAdvContextPills', 'All');
+  renderGoalieAdvanced();
+});
+document.getElementById('goalieAdvSelect').addEventListener('change', e => { goalieAdvSelected = e.target.value; renderGoalieAdvanced(); });
+
 function renderEfficiencyView() {
   if (!document.getElementById('effXgModelWrap')) return;
   // Heavy: only while the tab is on screen (switchTab re-runs this on entry).
@@ -5346,7 +5505,7 @@ function renderRosterManager() {
   html += '<div style="display:flex; flex-wrap:wrap; gap:6px; margin-bottom:12px;">';
   list.forEach(r => {
     r.roles.forEach(role => {
-      html += `<span class="pill sans" style="cursor:default; padding:6px 10px; display:inline-flex; align-items:center; gap:6px;">#${r.jersey} ${r.name} <span style="font-size:10px; opacity:.7; text-transform:uppercase;">${role}</span> <button type="button" class="rm-remove" data-jersey="${r.jersey}" data-role="${role}" title="Remove from ${season} roster" style="border:none; background:none; cursor:pointer; color:var(--muted); font-weight:700; font-size:13px; line-height:1; padding:0;">&times;</button></span>`;
+      html += `<span class="pill sans" style="cursor:default; padding:6px 10px; display:inline-flex; align-items:center; gap:6px;">#${escapeHtml(r.jersey)} ${escapeHtml(r.name)} <span style="font-size:10px; opacity:.7; text-transform:uppercase;">${escapeHtml(role)}</span> <button type="button" class="rm-remove" data-jersey="${r.jersey}" data-role="${role}" title="Remove from ${season} roster" style="border:none; background:none; cursor:pointer; color:var(--muted); font-weight:700; font-size:13px; line-height:1; padding:0;">&times;</button></span>`;
     });
   });
   html += '</div>';
@@ -5379,7 +5538,10 @@ function renderRosterManager() {
     const name = document.getElementById('rm_name').value.trim();
     const jersey = document.getElementById('rm_jersey').value.trim();
     const role = document.getElementById('rm_role').value;
+    const jerseyEl = document.getElementById('rm_jersey');
+    jerseyEl.style.borderColor = '';
     if (!name || !jersey) return;
+    if (!/^#?\d{1,3}$/.test(jersey)) { jerseyEl.style.borderColor = 'var(--critical)'; jerseyEl.title = 'Jersey numbers are 1-3 digits.'; return; }
     await addPlayerToRoster(season, name, jersey, role);
     refreshFormRosterOptions();
     refreshFoRosterOptions();
@@ -5456,7 +5618,7 @@ function renderZoneDrilldown(wrap, zone, it) {
   const shots = (zone.shots || []).slice().sort((a,b) => (b.date||'').localeCompare(a.date||'')).slice(0, 150);
   const title = zoneRangeLabel(zone);
   if (!shots.length) {
-    wrap.innerHTML = `<div class="msg" style="background:#EEF1F6; color:var(--navy-3);">No shots in ${title} with the current filters.</div>`;
+    wrap.innerHTML = `<div class="msg" style="background:#EEF1F6; color:var(--navy-3);">No shots in ${escapeHtml(title)} with the current filters.</div>`;
     return;
   }
   const capNote = zone.shots.length > 150 ? ` (showing most recent 150 of ${zone.shots.length})` : '';
@@ -5464,7 +5626,7 @@ function renderZoneDrilldown(wrap, zone, it) {
   html += '<div class="table-wrap"><table class="shotlog"><thead><tr><th>Date</th><th>Ctx</th><th>Shooter</th><th>Grade</th><th>Goal</th><th>Contest</th><th>Pass</th><th>Assist</th></tr></thead><tbody>';
   shots.forEach(s => {
     const season = seasonForDate(s.date);
-    html += `<tr><td>${s.date||''}</td><td>${s.context||''}</td><td>#${s.shooterJersey||''} ${nameFor(s.shooterJersey, season)||''}</td><td>${(s.shotQuality||'').replace(/^\d-/,'')}</td><td>${s.goal?'Yes':'No'}</td><td>${s.contestLevel||''}</td><td>${s.passType||''}</td><td>${assistDisplay(s)}</td></tr>`;
+    html += `<tr><td>${escapeHtml(s.date||'')}</td><td>${escapeHtml(s.context||'')}</td><td>${s.team === 'OPP' ? 'Opp ' + (s.oppShooter ? '#' + escapeHtml(s.oppShooter) : '') : '#' + escapeHtml(s.shooterJersey||'') + ' ' + escapeHtml(nameFor(s.shooterJersey, season)||'')}</td><td>${(s.shotQuality||'').replace(/^\d-/,'')}</td><td>${s.goal?'Yes':'No'}</td><td>${s.contestLevel||''}</td><td>${s.passType||''}</td><td>${assistDisplay(s)}</td></tr>`;
   });
   html += '</tbody></table></div>';
   wrap.innerHTML = html;
@@ -5905,10 +6067,45 @@ function renderFaceoffHeadToHead() {
   html += '</tbody></table>';
   wrap.innerHTML = html;
 }
+// Elo: rating moves by K x (result - expected). Processed oldest first.
+const FO_ELO_START = 1500, FO_ELO_K = 24;
+function computeFaceoffRatings(list) {
+  const r = {}, rec = {};
+  const get = j => (r[j] === undefined ? (r[j] = FO_ELO_START) : r[j]);
+  const R = j => (rec[j] = rec[j] || { w: 0, l: 0, expW: 0, n: 0 });
+  list.filter(f => f.playerJersey && f.vsPlayerJersey && f.playerJersey !== f.vsPlayerJersey)
+    .slice().sort((a, b) => (a.date || '').localeCompare(b.date || '') || (a.id - b.id))
+    .forEach(f => {
+      const a = f.playerJersey, b = f.vsPlayerJersey;
+      const ra = get(a), rb = get(b);
+      const ea = 1 / (1 + Math.pow(10, (rb - ra) / 400));
+      const sa = f.won === 1 ? 1 : 0;
+      r[a] = ra + FO_ELO_K * (sa - ea);
+      r[b] = rb + FO_ELO_K * ((1 - sa) - (1 - ea));
+      R(a).n++; R(b).n++;
+      R(a).expW += ea; R(b).expW += 1 - ea;
+      if (sa) { R(a).w++; R(b).l++; } else { R(a).l++; R(b).w++; }
+    });
+  return Object.keys(r).map(j => ({ jersey: j, name: nameFor(j), rating: r[j], w: rec[j].w, l: rec[j].l, n: rec[j].n, winPct: rec[j].n ? rec[j].w / rec[j].n : null, vsExp: rec[j].w - rec[j].expW }));
+}
+function renderFaceoffRatings() {
+  const rows = computeFaceoffRatings(faceoffsForSeason(faceoffSeason));
+  renderSortableTable('faceoffRatingWrap', [
+    { key: 'jersey', label: '#', type: 'text', value: r => r.jersey },
+    { key: 'name', label: 'Name', type: 'text', value: r => r.name },
+    { key: 'rating', label: 'Rating', type: 'num', value: r => r.rating, format: v => Math.round(v) },
+    { key: 'n', label: 'Reps', type: 'num', value: r => r.n },
+    { key: 'w', label: 'W', type: 'num', value: r => r.w },
+    { key: 'l', label: 'L', type: 'num', value: r => r.l },
+    { key: 'winPct', label: 'Win %', type: 'num', value: r => r.winPct, format: v => pct(v) },
+    { key: 'vsExp', label: 'Wins vs Expected', type: 'num', value: r => r.vsExp, format: v => deltaChip(v, { format: 'decimal', digits: 1 }), title: 'Wins minus the wins his opponents\u2019 ratings predicted. Positive = beating tougher competition than his record alone shows.' },
+  ], rows, { dense: true, defaultSort: { key: 'rating', dir: 'desc' }, emptyMsg: 'No head-to-head faceoffs logged for this season yet.' });
+}
 function renderFaceoffs() {
   populateFoPlayerFilter();
   renderFaceoffSummary();
   renderFaceoffHeadToHead();
+  renderFaceoffRatings();
   renderFaceoffTrends();
   renderFaceoffTable();
 }
@@ -6751,7 +6948,7 @@ function renderRecruits() {
   if (coach && !COACHES.includes(coach)) { coachOtherInput.style.display = ''; coachOtherInput.value = coach; }
   else { coachOtherInput.style.display = 'none'; }
   const clubTeams = Array.from(new Set(PLAYERS.map(p => p.clubTeam).filter(Boolean))).sort();
-  document.getElementById('clubTeamList').innerHTML = clubTeams.map(c => `<option value="${c}"></option>`).join('');
+  document.getElementById('clubTeamList').innerHTML = clubTeams.map(c => `<option value="${escapeHtml(c)}"></option>`).join('');
   if (!PLAYERS.length) { wrap.innerHTML = '<p class="sans" style="color:var(--muted); font-size:13px;">No prospects added yet.</p>'; return; }
   const query = document.getElementById('recruitsSearch').value.trim().toLowerCase();
   const filtered = query ? PLAYERS.filter(p => (p.name || '').toLowerCase().includes(query) || (p.clubTeam || '').toLowerCase().includes(query)) : PLAYERS;
@@ -6871,7 +7068,7 @@ function renderAllRatings() {
   const coachSel = document.getElementById('ratingsFilterCoach');
   const coaches = Array.from(new Set(RATINGS.map(r => r.coach).filter(Boolean))).sort();
   const currentCoach = coachSel.value;
-  coachSel.innerHTML = '<option value="">All coaches</option>' + coaches.map(c => `<option value="${c}" ${c === currentCoach ? 'selected' : ''}>${c}</option>`).join('');
+  coachSel.innerHTML = '<option value="">All coaches</option>' + coaches.map(c => `<option value="${escapeHtml(c)}" ${c === currentCoach ? 'selected' : ''}>${escapeHtml(c)}</option>`).join('');
   const dateFrom = document.getElementById('ratingsFilterDateFrom').value;
   const dateTo = document.getElementById('ratingsFilterDateTo').value;
 
