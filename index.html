@@ -1343,6 +1343,14 @@ let RATINGS = [];
 // opponent or note can't become HTML even where a template forgets to
 // escape. (Apostrophes and & are kept: "O'Brien", "Washington & Lee".)
 function cleanText(v) { return typeof v === 'string' ? v.replace(/[<>"]/g, '') : v; }
+// A stored field value is always a primitive; anything else (an array or
+// object smuggled into a tuple) is dropped rather than rendered.
+function cleanValue(v) {
+  if (typeof v === 'string') return cleanText(v);
+  if (typeof v === 'number') return isFinite(v) ? v : null;
+  if (typeof v === 'boolean' || v === null || v === undefined) return v === undefined ? null : v;
+  return null;
+}
 function cleanDeep(v) {
   if (typeof v === 'string') return cleanText(v);
   if (Array.isArray(v)) return v.map(cleanDeep);
@@ -1350,12 +1358,12 @@ function cleanDeep(v) {
   return v;
 }
 function cleanRoster(list) {
-  return Array.isArray(list) ? list.filter(r => r && typeof r === 'object').map(r => ({ jersey: String(cleanText(r.jersey) || ''), name: String(cleanText(r.name) || ''), roles: Array.isArray(r.roles) ? r.roles.filter(x => x === 'player' || x === 'goalie') : ['player'] })) : [];
+  return Array.isArray(list) ? list.filter(r => r && typeof r === 'object').map(r => ({ jersey: String(cleanValue(r.jersey) ?? ''), name: String(cleanValue(r.name) ?? ''), roles: Array.isArray(r.roles) ? r.roles.filter(x => x === 'player' || x === 'goalie') : ['player'] })) : [];
 }
 function tupleToObj(t, cols) {
   const c = cols || COLS;
   const o = {};
-  c.forEach((k, i) => o[k] = cleanText(t[i]));
+  c.forEach((k, i) => o[k] = cleanValue(Array.isArray(t) ? t[i] : null));
   return o;
 }
 function objToTuple(o, cols) {
@@ -1392,12 +1400,12 @@ function sessionIdFor(entry) {
   return date + '_' + ctx + (opp ? '_' + opp : '');
 }
 function parseSessionDoc(id, data) {
-  const sess = { id, date: cleanText(data.date) || null, context: cleanText(data.context) || null, opponent: cleanText(data.opponent) || null, shots: [], poss: [], stints: [] };
+  const sess = { id, date: cleanValue(data.date) || null, context: cleanValue(data.context) || null, opponent: cleanValue(data.opponent) || null, shots: [], poss: [], stints: [] };
   Object.keys(data).forEach(k => {
     if (typeof data[k] !== 'string') return;
     try {
-      if (k.startsWith(SESSION_ENTRY_PREFIX.shot)) { const o = tupleToObj(JSON.parse(data[k])); o._sid = id; sess.shots.push(o); }
-      else if (k.startsWith(SESSION_ENTRY_PREFIX.poss)) { const o = tupleToObj(JSON.parse(data[k]), POSS_COLS); o._sid = id; sess.poss.push(o); }
+      if (k.startsWith(SESSION_ENTRY_PREFIX.shot)) { const o = tupleToObj(JSON.parse(data[k])); if (Number.isInteger(o.id)) { o._sid = id; sess.shots.push(o); } }
+      else if (k.startsWith(SESSION_ENTRY_PREFIX.poss)) { const o = tupleToObj(JSON.parse(data[k]), POSS_COLS); if (Number.isInteger(o.id)) { o._sid = id; sess.poss.push(o); } }
       else if (k.startsWith(SESSION_ENTRY_PREFIX.stint)) {
         const o = cleanDeep(JSON.parse(data[k]));
         if (o && Array.isArray(o.offense) && Array.isArray(o.defense)) { o.id = cleanText(k.slice(SESSION_ENTRY_PREFIX.stint.length)); sess.stints.push(o); }
@@ -3477,9 +3485,9 @@ function renderRecentEntries() {
     : `<button class="btn secondary" data-redit="${kind}:${id}">Edit</button> <button class="btn danger" data-rdel="${kind}:${id}">Delete</button>`;
   const shotRows = shots.map(s => {
     const who = s.team === 'OPP' ? (s.oppShooter ? 'Opp #' + escapeHtml(s.oppShooter) : 'Opponent') : escapeHtml(jerseyLabel(s.shooterJersey, season));
-    return `<tr><td><span class="recent-kind${s.team === 'OPP' ? ' opp' : ''}">${s.team === 'OPP' ? 'Opp shot' : 'Shot'}</span></td><td>#${s.id}</td><td>${who}</td><td>${escapeHtml(outcomeFor(s))}</td><td>${escapeHtml((s.shotQuality || '').replace(/^\d-/, ''))}</td><td>${s.dominoes === 'Yes' ? 'Dominoes: ' + escapeHtml(jerseyLabel(s.advCreator, season)) : ''}</td><td>${lineupText(s)}</td><td style="white-space:nowrap;">${actions('shot', s.id)}</td></tr>`;
+    return `<tr><td><span class="recent-kind${s.team === 'OPP' ? ' opp' : ''}">${s.team === 'OPP' ? 'Opp shot' : 'Shot'}</span></td><td>#${escapeHtml(s.id)}</td><td>${who}</td><td>${escapeHtml(outcomeFor(s))}</td><td>${escapeHtml((s.shotQuality || '').replace(/^\d-/, ''))}</td><td>${s.dominoes === 'Yes' ? 'Dominoes: ' + escapeHtml(jerseyLabel(s.advCreator, season)) : ''}</td><td>${lineupText(s)}</td><td style="white-space:nowrap;">${actions('shot', s.id)}</td></tr>`;
   });
-  const possRows = poss.map(p => `<tr><td><span class="recent-kind${p.team === 'OPP' ? ' opp' : ''}">${p.team === 'OPP' ? 'Opp poss.' : 'Possession'}</span></td><td>#${p.id}</td><td>${p.turnoverBy ? escapeHtml(jerseyLabel(p.turnoverBy, season)) : ''}</td><td>${escapeHtml(p.end || '')}</td><td></td><td>${p.dominoes === 'Yes' ? 'Dominoes: ' + escapeHtml(jerseyLabel(p.advCreator, season)) : ''}</td><td>${lineupText(p)}</td><td style="white-space:nowrap;">${actions('poss', p.id)}</td></tr>`);
+  const possRows = poss.map(p => `<tr><td><span class="recent-kind${p.team === 'OPP' ? ' opp' : ''}">${p.team === 'OPP' ? 'Opp poss.' : 'Possession'}</span></td><td>#${escapeHtml(p.id)}</td><td>${p.turnoverBy ? escapeHtml(jerseyLabel(p.turnoverBy, season)) : ''}</td><td>${escapeHtml(p.end || '')}</td><td></td><td>${p.dominoes === 'Yes' ? 'Dominoes: ' + escapeHtml(jerseyLabel(p.advCreator, season)) : ''}</td><td>${lineupText(p)}</td><td style="white-space:nowrap;">${actions('poss', p.id)}</td></tr>`);
   wrap.innerHTML = `<table class="shotlog dense"><thead><tr><th>Type</th><th>ID</th><th>Player</th><th>Result</th><th>Quality</th><th>Dominoes</th><th>Lineup</th><th></th></tr></thead><tbody>${shotRows.concat(possRows).join('')}</tbody></table>`;
   const parse = v => { const [k, i] = v.split(':'); return [k, parseInt(i, 10)]; };
   wrap.querySelectorAll('[data-redit]').forEach(b => b.addEventListener('click', () => { const [k, i] = parse(b.dataset.redit); if (k === 'shot') startEditShot(i, 'logView'); else startEditPoss(i); }));
@@ -5661,7 +5669,7 @@ function shotTooltipHtml(s) {
   const season = seasonForDate(s.date);
   const who = s.team === 'OPP' ? (s.oppShooter ? 'Opp #' + escapeHtml(s.oppShooter) : 'Opponent') : escapeHtml(jerseyLabel(s.shooterJersey, season));
   const bits = [escapeHtml(outcomeFor(s)), s.shotQuality ? escapeHtml(s.shotQuality.replace(/^\d-/, '')) : null, s.contestLevel ? escapeHtml(s.contestLevel) : null].filter(Boolean).join(' \u00b7 ');
-  const where = (s.distanceYds !== null && s.distanceYds !== undefined) ? `${s.distanceYds} yds out` : '';
+  const where = (s.distanceYds !== null && s.distanceYds !== undefined) ? `${escapeHtml(s.distanceYds)} yds out` : '';
   return `<b>${who}</b><br>${bits}<br><span style="opacity:.75;">${escapeHtml(s.date || '')} ${escapeHtml(s.context || '')}${s.opponent ? ' vs ' + escapeHtml(s.opponent) : ''}${where ? ' \u00b7 ' + where : ''}</span>`;
 }
 function renderHeatPanel(containerId, items) {
