@@ -842,6 +842,7 @@
     </div>
     <p class="view-intro">Expected goals, shot-quality score and scoring output &mdash; all built from this team's own logged shots. Nothing here is entered by hand. <strong>Showing 2027 shots only, live as you log</strong> &mdash; the 2026 season predates trigger, contest level and assist tracking, so it isn't part of this tab.</p>
     <div class="subpage" data-label="Overview">
+    <div class="trend-grid view-tiles" id="effTeamTiles"></div>
     <div class="panel">
       <p class="panel-title">The Expected-Goals Model</p>
       <p class="panel-sub" id="effModelSub"></p>
@@ -854,6 +855,69 @@
       <p class="panel-title">Player Efficiency</p>
       <p class="panel-sub" id="effPlayerSub"></p>
       <div class="table-wrap" id="effPlayerWrap"></div>
+    </div>
+    <div class="panel">
+      <p class="panel-title">Possession Stats</p>
+      <p class="panel-sub" id="effPossSub"></p>
+      <div class="table-wrap" id="effPossWrap"></div>
+    </div>
+    <div class="panel">
+      <p class="panel-title">Man-Up / Man-Down</p>
+      <p class="panel-sub" id="effManSub"></p>
+      <div class="table-wrap" id="effManWrap"></div>
+    </div>
+    </div>
+    <div class="subpage" data-label="Per Session">
+    <div class="panel">
+      <p class="panel-title">Per-Session Rates</p>
+      <p class="panel-sub" id="effRateSub"></p>
+      <div class="table-wrap" id="effRateWrap"></div>
+    </div>
+    <div class="panel">
+      <p class="panel-title">Session Box Score</p>
+      <div class="controls-row" style="margin-bottom:10px;">
+        <div class="control-group"><label for="effSessionSelect">Session</label><select id="effSessionSelect"></select></div>
+      </div>
+      <p class="panel-sub" id="effBoxSub"></p>
+      <div class="table-wrap" id="effBoxWrap"></div>
+    </div>
+    </div>
+    <div class="subpage" data-label="Dominoes">
+    <div class="trend-grid view-tiles" id="effDomTiles"></div>
+    <div class="panel">
+      <p class="panel-title">Who Starts the Dominoes</p>
+      <p class="panel-sub" id="effDomSub"></p>
+      <div class="table-wrap" id="effDomWrap"></div>
+    </div>
+    <div class="panel">
+      <p class="panel-title">By Advantage Type</p>
+      <p class="panel-sub">Only counts dominoes where a type was picked (More detail on the Log Shot form).</p>
+      <div class="table-wrap" id="effDomTypeWrap"></div>
+    </div>
+    </div>
+    <div class="subpage" data-label="Lineups">
+    <div class="panel">
+      <div class="controls-row" style="margin-bottom:6px;">
+        <div class="control-group"><label>Minimum possessions</label><div class="pill-row" id="effLineupMinPills"></div></div>
+      </div>
+      <p class="panel-sub" id="effLineupSub" style="margin-bottom:0;"></p>
+    </div>
+    <div class="panel">
+      <p class="panel-title">Offensive Lineups</p>
+      <div class="table-wrap" id="effLineupOffWrap"></div>
+    </div>
+    <div class="panel">
+      <p class="panel-title">Defensive Lineups</p>
+      <div class="table-wrap" id="effLineupDefWrap"></div>
+    </div>
+    <details class="panel collapsible">
+      <summary><span class="panel-title">Offensive Pairs</span> <span class="panel-sub">Every 2-man combination on the field together</span></summary>
+      <div class="collapsible-body"><div class="table-wrap" id="effPairsWrap"></div></div>
+    </details>
+    <div class="panel">
+      <p class="panel-title">On / Off</p>
+      <p class="panel-sub">Each player: how the team does with him on the field vs off it, per possession.</p>
+      <div class="table-wrap" id="effOnOffWrap"></div>
     </div>
     </div>
     <div class="subpage" data-label="Shot Types">
@@ -1754,7 +1818,7 @@ function renderSortableTable(wrapId, cols, rows, opts) {
       if (!c.group) return;
       const active = c.key === state.key;
       const cls = ['sortable', active ? 'sorted' : '', c.headerClass || ''].filter(Boolean).join(' ');
-      botRow += `<th class="${cls}" data-key="${c.key}" title="${c.title || ''}">${c.label}<span class="caret">${active ? (state.dir === 'asc' ? '▲' : '▼') : '▼'}</span></th>`;
+      botRow += `<th class="${cls}" data-key="${c.key}" title="${escapeHtml(c.title || '')}">${c.label}${c.title ? '<i class="info-tip">i</i>' : ''}<span class="caret">${active ? (state.dir === 'asc' ? '▲' : '▼') : '▼'}</span></th>`;
     });
     thead += topRow + '</tr>' + botRow + '</tr>';
   } else {
@@ -1762,7 +1826,7 @@ function renderSortableTable(wrapId, cols, rows, opts) {
       if (c.sortable === false) return `<th${c.headerClass ? ` class="${c.headerClass}"` : ''}>${c.label}</th>`;
       const active = c.key === state.key;
       const cls = ['sortable', active ? 'sorted' : '', c.headerClass || ''].filter(Boolean).join(' ');
-      return `<th class="${cls}" data-key="${c.key}" title="${c.title || ''}">${c.label}<span class="caret">${active ? (state.dir === 'asc' ? '▲' : '▼') : '▼'}</span></th>`;
+      return `<th class="${cls}" data-key="${c.key}" title="${escapeHtml(c.title || '')}">${c.label}${c.title ? '<i class="info-tip">i</i>' : ''}<span class="caret">${active ? (state.dir === 'asc' ? '▲' : '▼') : '▼'}</span></th>`;
     }).join('') + '</tr>';
   }
   thead += '</thead>';
@@ -1772,7 +1836,9 @@ function renderSortableTable(wrapId, cols, rows, opts) {
     const rowStyle = opts.rowStyle ? opts.rowStyle(row) : '';
     tbody += `<tr${rowStyle ? ` style="${rowStyle}"` : ''}>` + cols.map(c => {
       const raw = c.value(row);
-      const html = c.format ? c.format(raw, row) : (raw === null || raw === undefined ? '—' : raw);
+      // Plain values are text (names etc.) and get escaped; a column's
+      // format() returns trusted markup built from escaped pieces.
+      const html = c.format ? c.format(raw, row) : (raw === null || raw === undefined ? '—' : escapeHtml(raw));
       const style = c.cellStyle ? (c.cellStyle(raw, row) || '') : '';
       return `<td${style ? ` style="${style}"` : ''}>${html}</td>`;
     }).join('') + '</tr>';
@@ -4201,7 +4267,7 @@ function estimateTeamRateForBucketShots(bucketShots, baseModel, adjustments) {
 }
 
 function shotTypeModelFor2027(baseModel) {
-  const subject = shots2027();
+  const subject = effShots2027();
   return {
     subject,
     buckets: computeShotTypeBuckets(subject, baseModel),
@@ -4393,52 +4459,7 @@ function renderXgModelPanel(shots, model) {
 }
 
 // ---------------- Player Efficiency table ----------------
-function computePlayerEfficiency(shots, model, minShots) {
-  const byJersey = {};
-  shots.forEach(s => { if (s.shooterJersey) (byJersey[s.shooterJersey] = byJersey[s.shooterJersey] || []).push(s); });
-  return Object.keys(byJersey).map(j => {
-    const list = byJersey[j];
-    const n = list.length;
-    const goals = list.filter(s => s.goal === 1).length;
-    const assists = shots.filter(s => s.goal === 1 && s.assistJersey === j).length;
-    const onKeeperN = list.filter(s => s.onKeeper === 1).length;
-    const xg = xgSum(list, model);
-    const involvements = playerInvolvements(j, shots);
-    const points = playerPoints(j, shots);
-    return {
-      jersey: j, name: nameFor(j), shots: n, goals, assists,
-      shotPct: n ? goals / n : null,
-      lookVal: lookValue(list, model),
-      xg, gMinusXg: goals - xg,
-      points, involvements,
-      ptsPerInvolvement: involvements ? points / involvements : null,
-      onKeeperPct: n ? onKeeperN / n : null,
-    };
-  }).filter(r => r.shots >= minShots).sort((a, b) => b.shots - a.shots);
-}
-function renderPlayerEfficiency(shots, model) {
-  const subEl = document.getElementById('effPlayerSub');
-  const rows = computePlayerEfficiency(shots, model, 10);
-  const totalGoals2027 = shots.filter(s => s.goal === 1).length;
-  const goalsWithAssist = shots.filter(s => s.goal === 1 && s.assistJersey).length;
-  const assistCoverage = totalGoals2027 ? goalsWithAssist / totalGoals2027 : null;
-  subEl.textContent = `Players with 10+ 2027 shots. ${assistCoverage !== null ? pct(assistCoverage) + ' of 2027 goals have an assist recorded — Assists/Points reflect that coverage.' : 'No 2027 goals logged yet.'}`;
-  const cols = [
-    { key: 'jersey', label: 'Jersey', type: 'text', value: r => r.jersey },
-    { key: 'name', label: 'Name', type: 'text', value: r => r.name },
-    { key: 'shots', label: 'Shots', type: 'num', value: r => r.shots },
-    { key: 'goals', label: 'Goals', type: 'num', value: r => r.goals },
-    { key: 'assists', label: 'Assists', type: 'num', value: r => r.assists },
-    { key: 'shotPct', label: 'Shot%', type: 'num', value: r => r.shotPct, format: v => pct(v) },
-    { key: 'lookVal', label: 'Look Value', type: 'num', value: r => r.lookVal, format: v => v === null ? '—' : v.toFixed(0), title: '0-100, average look quality (100 = a Gold look)' },
-    { key: 'xg', label: 'xG', type: 'num', value: r => r.xg, format: v => v.toFixed(1) },
-    { key: 'gMinusXg', label: 'G−xG', type: 'num', value: r => r.gMinusXg, format: v => deltaChip(v, { format: 'decimal', digits: 1 }) },
-    { key: 'points', label: 'Points', type: 'num', value: r => r.points },
-    { key: 'ptsPerInvolvement', label: 'Pts/Involvement', type: 'num', value: r => r.ptsPerInvolvement, format: v => v === null ? '—' : v.toFixed(2) },
-    { key: 'onKeeperPct', label: 'On-Keeper%', type: 'num', value: r => r.onKeeperPct, format: v => pct(v) },
-  ];
-  renderSortableTable('effPlayerWrap', cols, rows, { dense: true, defaultSort: { key: 'shots', dir: 'desc' }, emptyMsg: 'No player has 10+ 2027 shots yet.' });
-}
+// Player Efficiency now lives in renderEffPlayers (film-logging metrics).
 
 // ---------------- Development Flags ----------------
 function computeTeamBaselines(shots) {
@@ -4690,7 +4711,7 @@ function populateShotTypePlayerSelect() {
   const sel = document.getElementById('effShotTypePlayer');
   if (!sel) return;
   const prevVal = sel.value;
-  const shots = shots2027().filter(s => s.shooterJersey);
+  const shots = effShots2027().filter(s => s.shooterJersey);
   const counts = {};
   shots.forEach(s => { counts[s.shooterJersey] = (counts[s.shooterJersey] || 0) + 1; });
   const jerseys = Object.keys(counts).sort((a, b) => counts[b] - counts[a]);
@@ -4740,17 +4761,491 @@ function renderShotTypeBreakdown() {
   renderSortableTable('effShotTypeWrap', cols, rows, { dense: true, defaultSort: { key: 'playerN', dir: 'desc' }, emptyMsg: 'This player has no shots with all five fields (quality, mechanism, dodge/catch, contest, handedness) tagged yet.' });
 }
 
+// ================= Efficiency: film-logging metrics (2027+) =================
+// Everything below reads 2027 data only, filtered by the Practice / Game /
+// All pills at the top of the Efficiency tab. Nothing is entered by hand;
+// it is all derived from logged shots, no-shot possessions and lineups.
+let EFF_CONTEXT = 'All';
+function effContextOk(e) { return EFF_CONTEXT === 'All' || e.context === EFF_CONTEXT; }
+function effShots2027() { return shots2027().filter(effContextOk); }
+function effOppShots2027() { return OPP_SHOTS.filter(s => seasonForDate(s.date) === '2027' && effContextOk(s)); }
+function effPoss2027() { return POSSESSIONS.filter(p => seasonForDate(p.date) === '2027' && effContextOk(p)); }
+const EFF_CTX_WORD = () => EFF_CONTEXT === 'All' ? 'practice + game' : EFF_CONTEXT.toLowerCase();
+
+function nameCell(v) { return `<span style="white-space:nowrap;">${escapeHtml(v || '')}</span>`; }
+function num(v, d) { return (v === null || v === undefined || !isFinite(v)) ? '—' : v.toFixed(d === undefined ? 1 : d); }
+function signed(v, d) { return (v === null || v === undefined || !isFinite(v)) ? '—' : deltaChip(v, { format: 'decimal', digits: d === undefined ? 1 : d }); }
+function ratio(a, b) { return b ? a / b : null; }
+function sessKey(e) { return e._sid || sessionIdFor(e); }
+function stintOf(e) { return stintById(sessKey(e), e.stintId); }
+
+// A possession is a no-shot possession, or a shot that isn't a
+// rebound/second chance (a rebound continues the possession before it).
+function isNewPossessionShot(s) { return s.rebound !== 'Yes'; }
+
+// WLU players on the field for an entry, split by side of the ball.
+// Practice: offense row = WLU offense, defense row = WLU defense.
+// Game: whichever row holds WLU numbers.
+function wluOnField(e) {
+  const t = stintOf(e);
+  if (!t) return null;
+  const wlu = arr => arr.filter(j => !isOppJersey(j));
+  if (e.context !== 'Game') return { offense: wlu(t.offense), defense: wlu(t.defense), offTeam: 'WLU' };
+  return t.offTeam === 'OPP' ? { offense: [], defense: wlu(t.defense), offTeam: 'OPP' } : { offense: wlu(t.offense), defense: [], offTeam: 'WLU' };
+}
+
+// ---- One pass over everything: per-player box score by session ----
+function buildEffData() {
+  const model = xgModelFor2027();
+  const shots = effShots2027().filter(s => s.shooterJersey);
+  const oppShots = effOppShots2027();
+  const poss = effPoss2027();
+  const xgOf = s => xgForShot(s, model);
+  const players = {}; // jersey -> totals
+  const bySession = {}; // sid -> { meta, players: { jersey: box } }
+  const P = j => (players[j] = players[j] || { jersey: j, shots: 0, goals: 0, assists: 0, xg: 0, potAst: 0, xa: 0, fedShots: [], onGoal: 0, ownShots: [],
+    gb: 0, to: 0, ct: 0, foWins: 0, dominoes: 0, domShots: 0, domGood: 0, domGoals: 0, domXg: 0, sessions: new Set(), stintSessions: new Set() });
+  const S = (e) => {
+    const sid = sessKey(e);
+    return (bySession[sid] = bySession[sid] || { sid, date: e.date, context: e.context, opponent: e.opponent, players: {}, hasStints: false });
+  };
+  const B = (e, j) => {
+    const sess = S(e);
+    P(j).sessions.add(sess.sid);
+    return (sess.players[j] = sess.players[j] || { jersey: j, g: 0, a: 0, xg: 0, xa: 0, shots: 0, potAst: 0, gb: 0, to: 0, ct: 0, dom: 0 });
+  };
+  const markStint = e => {
+    const on = wluOnField(e);
+    if (!on) return;
+    const sess = S(e);
+    sess.hasStints = true;
+    on.offense.concat(on.defense).forEach(j => { P(j).stintSessions.add(sess.sid); P(j).sessions.add(sess.sid); B(e, j); });
+  };
+  shots.forEach(s => {
+    const xg = xgOf(s);
+    const p = P(s.shooterJersey);
+    p.shots++; p.xg += xg; p.ownShots.push(s);
+    if (s.goal === 1) p.goals++;
+    if (s.onGoal === 1) p.onGoal++;
+    const b = B(s, s.shooterJersey); b.shots++; b.xg += xg; if (s.goal === 1) b.g++;
+    if (s.assistJersey) {
+      const a = P(s.assistJersey); a.potAst++; a.xa += xg; a.fedShots.push(s);
+      const ab = B(s, s.assistJersey); ab.potAst++; ab.xa += xg;
+      if (s.goal === 1) { a.assists++; ab.a++; }
+    }
+    if (s.possStart === 'Ground ball' && s.possStartJersey && !isOppJersey(s.possStartJersey)) { P(s.possStartJersey).gb++; B(s, s.possStartJersey).gb++; }
+    if (s.possStart === 'FO win' && s.possStartJersey && !isOppJersey(s.possStartJersey)) P(s.possStartJersey).foWins++;
+    if (s.dominoes === 'Yes' && s.advCreator && !isOppJersey(s.advCreator)) {
+      const d = P(s.advCreator); d.dominoes++; d.domShots++; d.domXg += xg;
+      if (s.shotQuality === '1-Gold' || s.shotQuality === '2-Silver') d.domGood++;
+      if (s.goal === 1) d.domGoals++;
+      B(s, s.advCreator).dom++;
+    }
+    markStint(s);
+  });
+  // Opponent shots only matter here for who was on the field.
+  oppShots.forEach(s => markStint(s));
+  poss.forEach(p => {
+    const team = p.team === 'OPP' ? 'OPP' : 'WLU';
+    // Turnovers/GBs/dominoes by WLU players (practice: everyone is WLU).
+    if (p.turnoverBy && !isOppJersey(p.turnoverBy)) { P(p.turnoverBy).to++; B(p, p.turnoverBy).to++; }
+    if (p.causedBy && !isOppJersey(p.causedBy)) { P(p.causedBy).ct++; B(p, p.causedBy).ct++; }
+    if (p.possStart === 'Ground ball' && p.possStartJersey && !isOppJersey(p.possStartJersey)) { P(p.possStartJersey).gb++; B(p, p.possStartJersey).gb++; }
+    if (p.possStart === 'FO win' && p.possStartJersey && !isOppJersey(p.possStartJersey)) P(p.possStartJersey).foWins++;
+    if (team === 'WLU' && p.dominoes === 'Yes' && p.advCreator && !isOppJersey(p.advCreator)) { P(p.advCreator).dominoes++; B(p, p.advCreator).dom++; }
+    markStint(p);
+  });
+  return { model, shots, oppShots, poss, players, bySession, xgOf };
+}
+
+// Game Score: one number per player per session. Weights are shown in the
+// column tooltip; they reward finishing and creating, and charge turnovers.
+const GAME_SCORE_W = { g: 1.0, a: 0.75, xg: 0.5, xa: 0.35, gb: 0.3, ct: 0.5, to: -0.5, dom: 0.25 };
+const GAME_SCORE_TIP = 'Game Score = 1.0 x goals + 0.75 x assists + 0.5 x xG + 0.35 x xA + 0.3 x ground balls + 0.5 x caused turnovers + 0.25 x dominoes started - 0.5 x turnovers.';
+function gameScore(b) { return Object.keys(GAME_SCORE_W).reduce((sum, k) => sum + GAME_SCORE_W[k] * (b[k] || 0), 0); }
+function stdev(arr) {
+  if (arr.length < 2) return null;
+  const m = arr.reduce((a, b) => a + b, 0) / arr.length;
+  return Math.sqrt(arr.reduce((a, b) => a + (b - m) * (b - m), 0) / (arr.length - 1));
+}
+const REGRESS_K = 25; // pseudo-shots at the team rate blended into a player's shot %
+
+// ---- Team possessions (used by Overview, Man-up, Dominoes, Lineups) ----
+function teamPossessions(d) {
+  const list = []; // { team, entries:[shot|poss], shots:[], goals, xg, to, dominoes, man, stint, context }
+  const push = (team, e, isShot) => {
+    list.push({ team, e, shots: isShot ? [e] : [], goal: isShot && e.goal === 1 ? 1 : 0, xg: isShot ? d.xgOf(e) : 0,
+      to: !isShot && e.end === 'Turnover' ? 1 : 0, failedClear: !isShot && e.end === 'Failed clear' ? 1 : 0, dom: e.dominoes === 'Yes' ? 1 : 0, man: e.manSituation || 'Even' });
+  };
+  // Rebound shots add to the most recent shot possession of that team in the same session.
+  const bySess = {};
+  const all = d.shots.map(s => ({ e: s, team: 'WLU', shot: true })).concat(d.oppShots.map(s => ({ e: s, team: 'OPP', shot: true })), d.poss.map(p => ({ e: p, team: p.team === 'OPP' ? 'OPP' : 'WLU', shot: false })));
+  all.sort((a, b) => sessKey(a.e).localeCompare(sessKey(b.e)) || (a.shot === b.shot ? a.e.id - b.e.id : (a.shot ? -1 : 1)));
+  all.forEach(x => {
+    const k = sessKey(x.e) + '|' + x.team;
+    if (x.shot && !isNewPossessionShot(x.e) && bySess[k]) {
+      const last = bySess[k];
+      last.shots.push(x.e); last.goal += x.e.goal === 1 ? 1 : 0;
+      last.xg += d.xgOf(x.e);
+      if (x.e.dominoes === 'Yes') last.dom = 1;
+      return;
+    }
+    push(x.team, x.e, x.shot);
+    // Only a shot possession can be continued by a rebound shot; shots and
+    // no-shot possessions have separate id sequences, so ordering between
+    // the two kinds isn't known.
+    if (x.shot) bySess[k] = list[list.length - 1];
+  });
+  return list;
+}
+
+// ---------------- Overview tiles ----------------
+function renderEffTeamTiles(d, possList) {
+  const wrap = document.getElementById('effTeamTiles');
+  if (!wrap) return;
+  const wp = possList.filter(p => p.team === 'WLU');
+  const goals = d.shots.filter(s => s.goal === 1).length;
+  const xg = d.shots.reduce((a, s) => a + d.xgOf(s), 0);
+  const noShot = d.poss.filter(p => p.team !== 'OPP').length;
+  wrap.innerHTML = [
+    statTile('Shots', d.shots.length.toLocaleString(), `${EFF_CTX_WORD()} · ${goals} goals, ${pct(ratio(goals, d.shots.length))}`),
+    statTile('Expected Goals', num(xg), `Goals vs expected: ${(goals - xg >= 0 ? '+' : '') + num(goals - xg)}`, 'Sum of every shot’s expected-goal value (shot tier, practice vs game).'),
+    statTile('Possessions', wp.length.toLocaleString(), noShot ? `${noShot} logged without a shot` : 'No no-shot possessions logged yet', 'Shots that aren’t rebounds, plus no-shot possessions.'),
+    statTile('xG / Possession', num(ratio(wp.reduce((a, p) => a + p.xg, 0), wp.length), 2), `${pct(ratio(wp.filter(p => p.goal).length, wp.length))} of possessions score`),
+    statTile('Domino Rate', pct(ratio(wp.filter(p => p.dom).length, wp.length)), 'Possessions where someone created an advantage', 'Share of WLU possessions logged with Created Dominoes = Yes.'),
+    statTile('Turnover Rate', pct(ratio(wp.filter(p => p.to).length, wp.length)), 'Possessions ending in a turnover'),
+  ].join('');
+}
+
+// ---------------- Players ----------------
+function renderEffPlayers(d) {
+  const subEl = document.getElementById('effPlayerSub');
+  const teamShots = d.shots.length;
+  const teamGoals = d.shots.filter(s => s.goal === 1).length;
+  const teamRate = ratio(teamGoals, teamShots) || 0;
+  const rows = Object.values(d.players).filter(p => p.shots >= 5 || p.potAst >= 5).map(p => {
+    const lookFed = p.fedShots.length ? lookValue(p.fedShots, d.model) : null;
+    const assistedGoals = p.ownShots.filter(s => s.goal === 1 && s.assistJersey).length;
+    const xp = p.xg + p.xa;
+    const pts = p.goals + p.assists;
+    return {
+      jersey: p.jersey, name: nameFor(p.jersey, '2027'), shots: p.shots, goals: p.goals, assists: p.assists, points: pts,
+      shotPct: ratio(p.goals, p.shots), regPct: p.shots ? (p.goals + REGRESS_K * teamRate) / (p.shots + REGRESS_K) : null,
+      lookVal: p.ownShots.length ? lookValue(p.ownShots, d.model) : null,
+      xg: p.xg, gmx: p.goals - p.xg, potAst: p.potAst, xa: p.xa, chance: lookFed, amx: p.assists - p.xa, xp, pmx: pts - xp,
+      usage: ratio(p.shots + p.potAst, teamShots), assistedPct: ratio(assistedGoals, p.goals),
+      onKeeperPct: ratio(p.onGoal, p.shots),
+    };
+  });
+  const goalsWithAssist = d.shots.filter(s => s.goal === 1 && s.assistJersey).length;
+  const shotsWithPasser = d.shots.filter(s => s.assistJersey).length;
+  subEl.textContent = `2027 ${EFF_CTX_WORD()} — players with 5+ shots or 5+ potential assists. A passer is recorded on ${pct(ratio(shotsWithPasser, teamShots))} of shots and ${pct(ratio(goalsWithAssist, teamGoals))} of goals; assist-side numbers get more complete as passers are logged on misses too.`;
+  const d1 = v => num(v, 1), d2 = v => num(v, 2);
+  const cols = [
+    { key: 'jersey', label: '#', type: 'text', value: r => r.jersey },
+    { key: 'name', label: 'Name', type: 'text', value: r => r.name, format: nameCell },
+    { key: 'shots', label: 'Shots', type: 'num', value: r => r.shots, group: 'Shooting' },
+    { key: 'goals', label: 'G', type: 'num', value: r => r.goals, group: 'Shooting' },
+    { key: 'shotPct', label: 'Sh%', type: 'num', value: r => r.shotPct, format: v => pct(v), group: 'Shooting' },
+    { key: 'regPct', label: 'Adj Sh%', type: 'num', value: r => r.regPct, format: v => pct(v), group: 'Shooting', title: `Shot % pulled toward the team rate by ${REGRESS_K} shots’ worth, so a hot 4-for-6 doesn’t top the list. The more shots a player has, the closer it is to his real %.` },
+    { key: 'xg', label: 'xG', type: 'num', value: r => r.xg, format: d1, group: 'Shooting', title: 'Expected goals: the sum of each shot’s chance of scoring, from its tier (Gold/Silver/Bronze) and practice vs game.' },
+    { key: 'gmx', label: 'G−xG', type: 'num', value: r => r.gmx, format: v => signed(v), group: 'Shooting', title: 'Goals above (+) or below (−) expected. Finishing skill, or luck, on the looks he got.' },
+    { key: 'lookVal', label: 'Look', type: 'num', value: r => r.lookVal, format: v => num(v, 0), group: 'Shooting', title: 'Look Value, 0–100: the average quality of his shots (100 = a Gold look).' },
+    { key: 'potAst', label: 'Pot. A', type: 'num', value: r => r.potAst, group: 'Passing', title: 'Potential assists: shots taken off his pass, made or not.' },
+    { key: 'assists', label: 'A', type: 'num', value: r => r.assists, group: 'Passing' },
+    { key: 'xa', label: 'xA', type: 'num', value: r => r.xa, format: d1, group: 'Passing', title: 'Expected assists: the expected-goal value of every shot taken off his passes.' },
+    { key: 'amx', label: 'A−xA', type: 'num', value: r => r.amx, format: v => signed(v), group: 'Passing', title: 'Assists above (+) or below (−) expected. Mostly about his teammates’ finishing.' },
+    { key: 'chance', label: 'Feed Quality', type: 'num', value: r => r.chance, format: v => num(v, 0), group: 'Passing', title: 'Chance quality per potential assist, on the 0–100 Look scale (xA ÷ potential assists vs a Gold look).' },
+    { key: 'points', label: 'P', type: 'num', value: r => r.points, group: 'Points' },
+    { key: 'xp', label: 'xP', type: 'num', value: r => r.xp, format: d1, group: 'Points', title: 'Expected points = xG + xA.' },
+    { key: 'pmx', label: 'P−xP', type: 'num', value: r => r.pmx, format: v => signed(v), group: 'Points', title: 'Points above (+) or below (−) expected.' },
+    { key: 'usage', label: 'Usage', type: 'num', value: r => r.usage, format: v => pct(v), group: 'Role', title: 'Share of team shots he either took or set up (shots + potential assists ÷ team shots).' },
+    { key: 'assistedPct', label: 'Assisted G%', type: 'num', value: r => r.assistedPct, format: v => pct(v), group: 'Role', title: 'Share of his goals that came off a pass. Low = he creates his own.' },
+    { key: 'onKeeperPct', label: 'On Cage', type: 'num', value: r => r.onKeeperPct, format: v => pct(v), group: 'Role' },
+  ];
+  renderSortableTable('effPlayerWrap', cols, rows, { dense: true, defaultSort: { key: 'xp', dir: 'desc' }, emptyMsg: `No player has 5+ 2027 ${EFF_CTX_WORD()} shots or potential assists yet.` });
+}
+
+function renderEffPossession(d, possList) {
+  const sub = document.getElementById('effPossSub');
+  const rows = Object.values(d.players).filter(p => p.gb || p.to || p.ct || p.foWins || p.dominoes).map(p => ({
+    jersey: p.jersey, name: nameFor(p.jersey, '2027'), gb: p.gb, ct: p.ct, to: p.to, foWins: p.foWins, dominoes: p.dominoes, net: p.gb + p.ct - p.to,
+  }));
+  const wlu = possList.filter(x => x.team === 'WLU');
+  const clears = d.shots.concat(d.poss.filter(p => p.team !== 'OPP')).filter(e => e.possStart === 'Clear').length;
+  const failed = d.poss.filter(p => p.team !== 'OPP' && p.end === 'Failed clear').length;
+  const oppFailed = d.poss.filter(p => p.team === 'OPP' && p.end === 'Failed clear').length;
+  const oppClears = d.oppShots.concat(d.poss.filter(p => p.team === 'OPP')).filter(e => e.possStart === 'Clear').length;
+  sub.innerHTML = `Ground balls and faceoff wins come from <b>Possession Started By</b>; turnovers and caused turnovers from no-shot possessions. `
+    + `Clearing: ${clears + failed ? `${clears}/${clears + failed} (${pct(ratio(clears, clears + failed))})` : 'none logged'}.`
+    + (EFF_CONTEXT !== 'Practice' ? ` Riding (opponent failed clears): ${oppClears + oppFailed ? `${oppFailed}/${oppClears + oppFailed} (${pct(ratio(oppFailed, oppClears + oppFailed))})` : 'none logged'}.` : '')
+    + ` ${wlu.length} WLU possessions in view.`;
+  const cols = [
+    { key: 'jersey', label: '#', type: 'text', value: r => r.jersey },
+    { key: 'name', label: 'Name', type: 'text', value: r => r.name, format: nameCell },
+    { key: 'gb', label: 'GB', type: 'num', value: r => r.gb, title: 'Ground balls that started a possession.' },
+    { key: 'ct', label: 'Caused TO', type: 'num', value: r => r.ct },
+    { key: 'to', label: 'TO', type: 'num', value: r => r.to },
+    { key: 'net', label: 'GB+CT−TO', type: 'num', value: r => r.net, format: v => signed(v, 0), title: 'Possessions won minus possessions given away.' },
+    { key: 'foWins', label: 'FO Wins', type: 'num', value: r => r.foWins, title: 'Faceoff wins tagged as the start of a logged possession (the Faceoffs tab has full faceoff records).' },
+    { key: 'dominoes', label: 'Dominoes', type: 'num', value: r => r.dominoes },
+  ];
+  renderSortableTable('effPossWrap', cols, rows, { dense: true, defaultSort: { key: 'net', dir: 'desc' }, emptyMsg: 'No possession stats logged yet — use Possession Started By, and log no-shot possessions.' });
+}
+
+function renderEffManUp(possList) {
+  const sub = document.getElementById('effManSub');
+  const row = (label, list, defense) => {
+    const n = list.length, g = list.reduce((a, p) => a + (p.goal ? 1 : 0), 0), xg = list.reduce((a, p) => a + p.xg, 0);
+    return { label, n, g, rate: ratio(g, n), xgPer: ratio(xg, n), defense };
+  };
+  const wlu = possList.filter(p => p.team === 'WLU'), opp = possList.filter(p => p.team === 'OPP');
+  const rows = [
+    row('WLU man-up (offense)', wlu.filter(p => p.man === 'Man-Up'), false),
+    row('WLU man-down (offense short)', wlu.filter(p => p.man === 'Man-Down'), false),
+    row('WLU even strength', wlu.filter(p => p.man === 'Even'), false),
+  ];
+  if (opp.length) {
+    rows.push(row('Opponent man-up (WLU man-down D)', opp.filter(p => p.man === 'Man-Up'), true));
+    rows.push(row('Opponent even strength (WLU D)', opp.filter(p => p.man === 'Even'), true));
+  }
+  sub.textContent = 'Per possession: a possession counts once even if it had rebound shots. For defense rows, "Scored" is goals allowed and Kill % = possessions stopped.';
+  const cols = [
+    { key: 'label', label: 'Situation', type: 'text', value: r => r.label },
+    { key: 'n', label: 'Possessions', type: 'num', value: r => r.n },
+    { key: 'g', label: 'Scored', type: 'num', value: r => r.g },
+    { key: 'rate', label: 'Conversion', type: 'num', value: r => r.rate, format: (v, r) => r.defense ? pct(v) + ` <span class="n-note">kill ${pct(v === null ? null : 1 - v)}</span>` : pct(v) },
+    { key: 'xgPer', label: 'xG / Poss', type: 'num', value: r => r.xgPer, format: v => num(v, 2) },
+  ];
+  renderSortableTable('effManWrap', cols, rows.filter(r => r.n), { dense: true, defaultSort: { key: 'n', dir: 'desc' }, emptyMsg: 'No possessions logged yet.' });
+}
+
+// ---------------- Per Session ----------------
+function renderEffRates(d) {
+  const sub = document.getElementById('effRateSub');
+  const rows = [];
+  Object.values(d.players).forEach(p => {
+    const sessions = [...p.sessions].map(sid => d.bySession[sid]).filter(Boolean);
+    if (!sessions.length) return;
+    const boxes = sessions.map(s => s.players[p.jersey]).filter(Boolean);
+    const apps = sessions.length;
+    const sum = k => boxes.reduce((a, b) => a + (b[k] || 0), 0);
+    const g = sum('g'), a = sum('a'), xg = sum('xg'), xa = sum('xa');
+    const fromStints = sessions.filter(s => p.stintSessions.has(s.sid)).length;
+    rows.push({
+      jersey: p.jersey, name: nameFor(p.jersey, '2027'), apps, fromStints,
+      gPer: g / apps, aPer: a / apps, pPer: (g + a) / apps, xgPer: xg / apps, xaPer: xa / apps, xpPer: (xg + xa) / apps,
+      gs: boxes.reduce((acc, b) => acc + gameScore(b), 0) / apps,
+      consistency: stdev(boxes.map(b => b.xg + b.xa)),
+    });
+  });
+  const withStints = Object.values(d.bySession).filter(s => s.hasStints).length;
+  const totalSess = Object.keys(d.bySession).length;
+  sub.textContent = `2027 ${EFF_CTX_WORD()}, per ${EFF_CONTEXT === 'Game' ? 'game' : EFF_CONTEXT === 'Practice' ? 'practice' : 'session (practice or game)'} played. An appearance is any session a player was in a logged lineup; in sessions without lineups (${totalSess - withStints} of ${totalSess}) it falls back to sessions where he shot, passed or was tagged — which misses sessions he played quietly. Apps marked * include fallback sessions.`;
+  const d2 = v => num(v, 2);
+  const cols = [
+    { key: 'jersey', label: '#', type: 'text', value: r => r.jersey },
+    { key: 'name', label: 'Name', type: 'text', value: r => r.name, format: nameCell },
+    { key: 'apps', label: 'Apps', type: 'num', value: r => r.apps, format: (v, r) => v + (r.fromStints < r.apps ? '*' : ''), title: 'Sessions played (from lineups; * = some sessions counted from involvement only).' },
+    { key: 'gPer', label: 'G', type: 'num', value: r => r.gPer, format: d2, group: 'Per session' },
+    { key: 'aPer', label: 'A', type: 'num', value: r => r.aPer, format: d2, group: 'Per session' },
+    { key: 'pPer', label: 'P', type: 'num', value: r => r.pPer, format: d2, group: 'Per session' },
+    { key: 'xgPer', label: 'xG', type: 'num', value: r => r.xgPer, format: d2, group: 'Expected per session' },
+    { key: 'xaPer', label: 'xA', type: 'num', value: r => r.xaPer, format: d2, group: 'Expected per session' },
+    { key: 'xpPer', label: 'xP', type: 'num', value: r => r.xpPer, format: d2, group: 'Expected per session', title: 'Expected points per session (xG + xA). The best single read of a player’s output rate, since it doesn’t swing on finishing luck.' },
+    { key: 'gs', label: 'Game Score', type: 'num', value: r => r.gs, format: d2, title: GAME_SCORE_TIP + ' Averaged per session.' },
+    { key: 'consistency', label: 'Swing', type: 'num', value: r => r.consistency, format: d2, title: 'Consistency: how much his per-session xP moves around (standard deviation). Lower = steadier. Needs 2+ sessions.' },
+  ];
+  renderSortableTable('effRateWrap', cols, rows, { dense: true, defaultSort: { key: 'xpPer', dir: 'desc' }, emptyMsg: 'No 2027 sessions logged yet.' });
+  renderEffBoxScore(d);
+}
+function renderEffBoxScore(d) {
+  const sel = document.getElementById('effSessionSelect');
+  const sessions = Object.values(d.bySession).sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+  const prev = sel.value;
+  sel.innerHTML = sessions.length ? sessions.map(s => `<option value="${escapeHtml(s.sid)}">${escapeHtml(s.date || '')} · ${escapeHtml(s.context || '')}${s.opponent ? ' vs ' + escapeHtml(s.opponent) : ''}</option>`).join('') : '<option value="">No sessions yet</option>';
+  if (sessions.some(s => s.sid === prev)) sel.value = prev;
+  const sess = d.bySession[sel.value];
+  const sub = document.getElementById('effBoxSub');
+  if (!sess) { sub.textContent = ''; document.getElementById('effBoxWrap').innerHTML = ''; return; }
+  const rows = Object.values(sess.players).map(b => Object.assign({ name: nameFor(b.jersey, '2027'), p: b.g + b.a, gs: gameScore(b) }, b));
+  sub.textContent = `${rows.length} player(s) with a logged lineup or involvement.` + (sess.hasStints ? '' : ' No lineups logged for this session.');
+  const d1 = v => num(v, 1);
+  const cols = [
+    { key: 'jersey', label: '#', type: 'text', value: r => r.jersey },
+    { key: 'name', label: 'Name', type: 'text', value: r => r.name, format: nameCell },
+    { key: 'shots', label: 'Shots', type: 'num', value: r => r.shots },
+    { key: 'g', label: 'G', type: 'num', value: r => r.g },
+    { key: 'a', label: 'A', type: 'num', value: r => r.a },
+    { key: 'xg', label: 'xG', type: 'num', value: r => r.xg, format: d1 },
+    { key: 'xa', label: 'xA', type: 'num', value: r => r.xa, format: d1 },
+    { key: 'gb', label: 'GB', type: 'num', value: r => r.gb },
+    { key: 'ct', label: 'CT', type: 'num', value: r => r.ct },
+    { key: 'to', label: 'TO', type: 'num', value: r => r.to },
+    { key: 'dom', label: 'Dominoes', type: 'num', value: r => r.dom },
+    { key: 'gs', label: 'Game Score', type: 'num', value: r => r.gs, format: v => num(v, 2), title: GAME_SCORE_TIP },
+  ];
+  renderSortableTable('effBoxWrap', cols, rows, { dense: true, defaultSort: { key: 'gs', dir: 'desc' } });
+}
+
+// ---------------- Dominoes ----------------
+function renderEffDominoes(d, possList) {
+  const wlu = possList.filter(p => p.team === 'WLU');
+  const dom = wlu.filter(p => p.dom), non = wlu.filter(p => !p.dom);
+  const rate = list => ({ n: list.length, shot: ratio(list.filter(p => p.shots.length).length, list.length), goal: ratio(list.filter(p => p.goal).length, list.length), xg: ratio(list.reduce((a, p) => a + p.xg, 0), list.length) });
+  const rd = rate(dom), rn = rate(non);
+  document.getElementById('effDomTiles').innerHTML = wlu.length ? [
+    statTile('Domino Rate', pct(ratio(dom.length, wlu.length)), `${dom.length} of ${wlu.length} possessions`, 'Share of WLU possessions where someone beat his man, forced an approach, won a matchup or otherwise started the defense rotating.'),
+    statTile('Score % With Dominoes', pct(rd.goal), `vs ${pct(rn.goal)} without`),
+    statTile('xG / Possession', num(rd.xg, 2), `vs ${num(rn.xg, 2)} without`),
+    statTile('Ended With a Shot', pct(rd.shot), `vs ${pct(rn.shot)} without`),
+  ].join('') : '';
+  // on-field offensive possessions per player (from lineups)
+  const onField = {};
+  wlu.forEach(p => { const on = wluOnField(p.e); if (on) on.offense.forEach(j => { onField[j] = (onField[j] || 0) + 1; }); });
+  const rows = Object.values(d.players).filter(p => p.dominoes).map(p => ({
+    jersey: p.jersey, name: nameFor(p.jersey, '2027'), dom: p.dominoes, sessions: p.sessions.size, perSess: p.dominoes / Math.max(1, p.sessions.size),
+    onPoss: onField[p.jersey] || null, domRate: onField[p.jersey] ? p.dominoes / onField[p.jersey] : null,
+    toShot: ratio(p.domShots, p.dominoes), toGood: ratio(p.domGood, p.dominoes), toGoal: ratio(p.domGoals, p.dominoes), died: ratio(p.dominoes - p.domShots, p.dominoes), xgAfter: p.domXg,
+  }));
+  document.getElementById('effDomSub').textContent = `2027 ${EFF_CTX_WORD()}. "On-field poss." needs lineups; the rest counts every logged domino. Outcomes are what the possession he started produced — a shot, a Gold/Silver look, a goal, or nothing.`;
+  const cols = [
+    { key: 'jersey', label: '#', type: 'text', value: r => r.jersey },
+    { key: 'name', label: 'Name', type: 'text', value: r => r.name, format: nameCell },
+    { key: 'dom', label: 'Started', type: 'num', value: r => r.dom },
+    { key: 'perSess', label: 'Per Session', type: 'num', value: r => r.perSess, format: v => num(v, 2) },
+    { key: 'onPoss', label: 'On-field Poss.', type: 'num', value: r => r.onPoss, format: v => v === null ? '—' : v },
+    { key: 'domRate', label: 'Domino Rate', type: 'num', value: r => r.domRate, format: v => pct(v), title: 'Dominoes he started ÷ offensive possessions he was on the field for.' },
+    { key: 'toShot', label: '→ Shot', type: 'num', value: r => r.toShot, format: v => pct(v), group: 'What followed' },
+    { key: 'toGood', label: '→ Gold/Silver', type: 'num', value: r => r.toGood, format: v => pct(v), group: 'What followed' },
+    { key: 'toGoal', label: '→ Goal', type: 'num', value: r => r.toGoal, format: v => pct(v), group: 'What followed' },
+    { key: 'died', label: 'Died', type: 'num', value: r => r.died, format: v => pct(v), group: 'What followed', title: 'Dominoes that ended with no shot (turnover, failed clear, end of period).' },
+    { key: 'xgAfter', label: 'xG Created', type: 'num', value: r => r.xgAfter, format: v => num(v, 1), group: 'What followed', title: 'Expected goals of the shots that came out of his dominoes.' },
+  ];
+  renderSortableTable('effDomWrap', cols, rows, { dense: true, defaultSort: { key: 'dom', dir: 'desc' }, emptyMsg: 'No dominoes logged yet — set Created Dominoes on the Log Shot form.' });
+  const types = {};
+  wlu.filter(p => p.dom && p.e.advType).forEach(p => { (types[p.e.advType] = types[p.e.advType] || []).push(p); });
+  const trows = Object.keys(types).map(t => Object.assign({ type: t }, rate(types[t])));
+  renderSortableTable('effDomTypeWrap', [
+    { key: 'type', label: 'Advantage Type', type: 'text', value: r => r.type },
+    { key: 'n', label: 'Possessions', type: 'num', value: r => r.n },
+    { key: 'shot', label: '→ Shot', type: 'num', value: r => r.shot, format: v => pct(v) },
+    { key: 'goal', label: '→ Goal', type: 'num', value: r => r.goal, format: v => pct(v) },
+    { key: 'xg', label: 'xG / Poss', type: 'num', value: r => r.xg, format: v => num(v, 2) },
+  ], trows, { dense: true, defaultSort: { key: 'n', dir: 'desc' }, emptyMsg: 'No advantage types logged yet.' });
+}
+
+// ---------------- Lineups ----------------
+let effLineupMin = 5;
+function lineupLabel(js) { return js.slice().sort((a, b) => a - b).map(j => '#' + escapeHtml(j) + ' ' + escapeHtml(lastNameOf(nameFor(j, '2027') || ''))).join(', '); }
+function renderEffLineups(d, possList) {
+  const off = {}, def = {}, pairs = {}, onOff = {};
+  const add = (map, key, members, p, forDefense) => {
+    const r = (map[key] = map[key] || { key, members, poss: 0, goals: 0, xg: 0, to: 0, dom: 0, shots: 0 });
+    r.poss++; r.goals += p.goal; r.xg += p.xg; r.to += p.to; r.dom += p.dom; r.shots += p.shots.length;
+  };
+  let withLineup = 0;
+  const oppPossWithWluD = [];
+  possList.forEach(p => {
+    const on = wluOnField(p.e);
+    if (!on) return;
+    withLineup++;
+    if (p.team === 'WLU' && on.offense.length) {
+      const k = on.offense.slice().sort().join(',');
+      add(off, k, on.offense, p);
+      for (let i = 0; i < on.offense.length; i++) for (let j = i + 1; j < on.offense.length; j++) {
+        const pr = [on.offense[i], on.offense[j]].sort();
+        add(pairs, pr.join(','), pr, p);
+      }
+    }
+    // WLU defense: practice rows the defense on WLU possessions; games use opponent possessions.
+    if (on.defense.length) {
+      const k = on.defense.slice().sort().join(',');
+      add(def, k, on.defense, p, true);
+    }
+  });
+  // On/off: offense (WLU possessions with lineups) and defense (possessions WLU defended).
+  const offPoss = possList.filter(p => p.team === 'WLU' && wluOnField(p.e) && wluOnField(p.e).offense.length);
+  const defPoss = possList.filter(p => wluOnField(p.e) && wluOnField(p.e).defense.length);
+  const players = new Set();
+  offPoss.forEach(p => wluOnField(p.e).offense.forEach(j => players.add(j)));
+  defPoss.forEach(p => wluOnField(p.e).defense.forEach(j => players.add(j)));
+  const per = (list, k) => list.length ? list.reduce((a, p) => a + p[k], 0) / list.length : null;
+  const ooRows = [...players].map(j => {
+    const oOn = offPoss.filter(p => wluOnField(p.e).offense.includes(j)), oOff = offPoss.filter(p => !wluOnField(p.e).offense.includes(j));
+    const dOn = defPoss.filter(p => wluOnField(p.e).defense.includes(j)), dOff = defPoss.filter(p => !wluOnField(p.e).defense.includes(j));
+    const oDiff = per(oOn, 'xg') !== null && per(oOff, 'xg') !== null ? per(oOn, 'xg') - per(oOff, 'xg') : null;
+    const dDiff = per(dOn, 'xg') !== null && per(dOff, 'xg') !== null ? per(dOff, 'xg') - per(dOn, 'xg') : null;
+    return { jersey: j, name: nameFor(j, '2027'), oOnN: oOn.length, oOn: per(oOn, 'xg'), oOff: per(oOff, 'xg'), oDiff, dOnN: dOn.length, dOn: per(dOn, 'xg'), dOff: per(dOff, 'xg'), dDiff,
+      net: (oDiff || 0) + (dDiff || 0) };
+  }).filter(r => r.oOnN + r.dOnN >= effLineupMin);
+  document.getElementById('effLineupSub').textContent = `2027 ${EFF_CTX_WORD()}: ${withLineup} of ${possList.length} possessions have a lineup logged. Numbers are per possession; a possession counts once even with rebound shots. Defense xG uses the shots the defense gave up (opponent shots in games, the other WLU group in practice).`;
+  const lineRows = (map, defense) => Object.values(map).filter(r => r.poss >= effLineupMin).map(r => ({
+    unit: lineupLabel(r.members), size: r.members.length, poss: r.poss, goalsPer: r.goals / r.poss, xgPer: r.xg / r.poss, toRate: r.to / r.poss, domRate: r.dom / r.poss, defense,
+  }));
+  const lineCols = defense => [
+    { key: 'unit', label: defense ? 'WLU Defenders' : 'WLU Offense', type: 'text', value: r => r.unit, format: v => `<span style="font-size:11.5px;">${v}</span>` },
+    { key: 'poss', label: 'Poss.', type: 'num', value: r => r.poss },
+    { key: 'goalsPer', label: defense ? 'GA / Poss' : 'Goals / Poss', type: 'num', value: r => r.goalsPer, format: v => num(v, 2) },
+    { key: 'xgPer', label: defense ? 'xGA / Poss' : 'xG / Poss', type: 'num', value: r => r.xgPer, format: v => num(v, 2), title: defense ? 'Expected goals allowed per possession defended. Lower is better.' : 'Expected goals per possession. The steadiest measure of how well a group generates looks.' },
+    { key: 'toRate', label: defense ? 'Forced TO %' : 'TO %', type: 'num', value: r => r.toRate, format: v => pct(v) },
+    { key: 'domRate', label: defense ? 'Dominoes Allowed' : 'Domino %', type: 'num', value: r => r.domRate, format: v => pct(v) },
+  ];
+  renderSortableTable('effLineupOffWrap', lineCols(false), lineRows(off, false), { dense: true, defaultSort: { key: 'poss', dir: 'desc' }, emptyMsg: `No offensive lineup has ${effLineupMin}+ possessions yet.` });
+  renderSortableTable('effLineupDefWrap', lineCols(true), lineRows(def, true), { dense: true, defaultSort: { key: 'poss', dir: 'desc' }, emptyMsg: `No defensive lineup has ${effLineupMin}+ possessions yet.` });
+  renderSortableTable('effPairsWrap', lineCols(false).map(c => c.key === 'unit' ? Object.assign({}, c, { label: 'Pair' }) : c), lineRows(pairs, false), { dense: true, defaultSort: { key: 'xgPer', dir: 'desc' }, emptyMsg: `No pair has ${effLineupMin}+ possessions together yet.` });
+  const d2 = v => num(v, 2);
+  renderSortableTable('effOnOffWrap', [
+    { key: 'jersey', label: '#', type: 'text', value: r => r.jersey },
+    { key: 'name', label: 'Name', type: 'text', value: r => r.name, format: nameCell },
+    { key: 'oOnN', label: 'Poss. On', type: 'num', value: r => r.oOnN, group: 'Offense (xG / poss)' },
+    { key: 'oOn', label: 'On', type: 'num', value: r => r.oOn, format: d2, group: 'Offense (xG / poss)' },
+    { key: 'oOff', label: 'Off', type: 'num', value: r => r.oOff, format: d2, group: 'Offense (xG / poss)' },
+    { key: 'oDiff', label: 'On−Off', type: 'num', value: r => r.oDiff, format: v => signed(v, 2), group: 'Offense (xG / poss)' },
+    { key: 'dOnN', label: 'Poss. On', type: 'num', value: r => r.dOnN, group: 'Defense (xGA / poss)' },
+    { key: 'dOn', label: 'On', type: 'num', value: r => r.dOn, format: d2, group: 'Defense (xGA / poss)' },
+    { key: 'dOff', label: 'Off', type: 'num', value: r => r.dOff, format: d2, group: 'Defense (xGA / poss)' },
+    { key: 'dDiff', label: 'Off−On', type: 'num', value: r => r.dDiff, format: v => signed(v, 2), group: 'Defense (xGA / poss)', title: 'How much less the team gives up with him on the field. Positive = better.' },
+    { key: 'net', label: 'Net', type: 'num', value: r => r.net, format: v => signed(v, 2), title: 'Offense on−off plus defense improvement, in expected goals per possession.' },
+  ], ooRows, { dense: true, defaultSort: { key: 'net', dir: 'desc' }, emptyMsg: `No player has ${effLineupMin}+ possessions with a logged lineup yet.` });
+}
+
+// Renders every film-logging section of the Efficiency tab.
+function renderEffFilmMetrics() {
+  if (!document.getElementById('effTeamTiles')) return;
+  const d = buildEffData();
+  const possList = teamPossessions(d);
+  renderEffTeamTiles(d, possList);
+  renderEffPlayers(d);
+  renderEffPossession(d, possList);
+  renderEffManUp(possList);
+  renderEffRates(d);
+  renderEffDominoes(d, possList);
+  renderEffLineups(d, possList);
+}
+
 function renderEfficiencyView() {
   if (!document.getElementById('effXgModelWrap')) return;
-  const shots = shots2027().filter(s => s.shooterJersey);
+  const shots = effShots2027().filter(s => s.shooterJersey);
   const model = xgModelFor2027();
   renderXgModelPanel(shots, model);
-  renderPlayerEfficiency(shots, model);
   renderShotTypeBreakdown();
   renderDevelopmentFlags(shots, model);
   renderTriggerLeaders(shots);
   renderPlayerBestTriggers(shots);
+  renderEffFilmMetrics();
 }
+setupPillGroup('effContextPills', ['All', 'Practice', 'Game'], 'All', v => {
+  EFF_CONTEXT = v || 'All';
+  if (!v) setPillGroupValue('effContextPills', 'All');
+  renderEfficiencyView();
+});
+setupPillGroup('effLineupMinPills', [{ value: '1', label: '1+' }, { value: '5', label: '5+' }, { value: '10', label: '10+' }, { value: '20', label: '20+' }], '5', v => {
+  effLineupMin = Number(v) || 5;
+  if (!v) setPillGroupValue('effLineupMinPills', '5');
+  renderEffFilmMetrics();
+});
+document.getElementById('effSessionSelect').addEventListener('change', () => renderEffBoxScore(buildEffData()));
 document.getElementById('effShotTypePlayer').addEventListener('change', renderShotTypeBreakdown);
 
 let heatSeason = defaultSeason();
