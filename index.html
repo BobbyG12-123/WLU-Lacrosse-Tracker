@@ -900,9 +900,147 @@ function objToTuple(o, cols) {
 // fetched in loadAll() below rather than baked into the page, so it stays behind
 // the auth gate like everything else. Only shots logged after go-live are read
 // from / written to app/shots_live.
+//
+// Live entries are stored one Firestore doc per practice/game in the
+// `sessions` collection (see sessionIdFor). Each entry is its own field
+// ("s_<id>" for shots) holding that entry's tuple as a JSON string, and
+// every save is a merge-write of just that field. That keeps each doc far
+// under Firestore's 1 MB cap, lets two devices log into the same session
+// without overwriting each other, and still queues offline like before.
+// app/shots_live is now only an inbox: anything an older cached copy of the
+// app writes there is moved into sessions by migrateShotsInbox().
+let LIVE_SESSIONS = {}; // { sessionDocId: { date, context, opponent, shots: [obj], ... } }
+const SESSION_ENTRY_PREFIX = { shot: 's_' };
+
+function sessionSlug(s) {
+  return String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 60);
+}
+function sessionIdFor(entry) {
+  const date = /^\d{4}-\d{2}-\d{2}$/.test(entry.date || '') ? entry.date : 'nodate';
+  const ctx = entry.context === 'Game' ? 'game' : 'practice';
+  const opp = ctx === 'game' ? (sessionSlug(entry.opponent) || 'unknown') : '';
+  return date + '_' + ctx + (opp ? '_' + opp : '');
+}
+function parseSessionDoc(id, data) {
+  const sess = { id, date: data.date || null, context: data.context || null, opponent: data.opponent || null, shots: [] };
+  Object.keys(data).forEach(k => {
+    if (k.startsWith(SESSION_ENTRY_PREFIX.shot) && typeof data[k] === 'string') {
+      try { const o = tupleToObj(JSON.parse(data[k])); o._sid = id; sess.shots.push(o); } catch (e) { console.error('bad shot entry', id, k, e); }
+    }
+  });
+  return sess;
+}
 function rebuildShots() {
   const seed = SEED_SHOTS_TUPLES.map(t => { const o = tupleToObj(t); o.seed = true; return o; });
-  SHOTS = seed.concat(LIVE_SHOTS_TUPLES.map(t => tupleToObj(t)));
+  const live = [];
+  const seen = new Set();
+  Object.keys(LIVE_SESSIONS).sort().forEach(sid => LIVE_SESSIONS[sid].shots.forEach(s => { live.push(s); seen.add(s.id); }));
+  // Inbox tuples not yet moved into a session still show up right away.
+  LIVE_SHOTS_TUPLES.forEach(t => { const o = tupleToObj(t); if (!seen.has(o.id)) live.push(o); });
+  SHOTS = seed.concat(live);
+}
+function nextShotId() {
+  return SHOTS.reduce((m, s) => Math.max(m, Number(s.id) || 0), 0) + 1;
+}
+function sessionMeta(entry) {
+  return { date: entry.date || null, context: entry.context === 'Game' ? 'Game' : 'Practice', opponent: entry.context === 'Game' ? (entry.opponent || null) : null };
+}
+// Resolves 'ok' once the server confirms, or 'queued' if it hasn't within a
+// few seconds (offline: Firestore keeps the write locally and syncs later),
+// or 'error' if the write was rejected.
+function settleWrite(promise, ms) {
+  return Promise.race([
+    promise.then(() => 'ok', e => { console.error(e); return 'error'; }),
+    new Promise(res => setTimeout(() => res('queued'), ms || 4000)),
+  ]);
+}
+// Writes one shot into its session doc; if an edit moved it to a different
+// session (date/context/opponent changed), removes it from the old one in
+// the same batch.
+function persistShot(shot) {
+  if (!DB) return Promise.resolve('error');
+  const sid = sessionIdFor(shot);
+  const key = SESSION_ENTRY_PREFIX.shot + shot.id;
+  const clean = Object.assign({}, shot); delete clean._sid; delete clean.seed;
+  const batch = DB.batch();
+  batch.set(DB.collection('sessions').doc(sid), Object.assign(sessionMeta(shot), { [key]: JSON.stringify(objToTuple(clean)) }), { merge: true });
+  if (shot._sid && shot._sid !== sid) {
+    batch.set(DB.collection('sessions').doc(shot._sid), { [key]: firebase.firestore.FieldValue.delete() }, { merge: true });
+  }
+  shot._sid = sid;
+  return settleWrite(batch.commit());
+}
+function deleteShotEntry(shot) {
+  if (!DB || !shot || shot.seed) return Promise.resolve('error');
+  const sid = shot._sid || sessionIdFor(shot);
+  return settleWrite(DB.collection('sessions').doc(sid).set({ [SESSION_ENTRY_PREFIX.shot + shot.id]: firebase.firestore.FieldValue.delete() }, { merge: true }));
+}
+
+// Moves anything sitting in the legacy app/shots_live doc into session docs.
+// A copy of every tuple ever moved is kept in app/shots_live_backup. The
+// inbox is only trimmed (in a transaction, so a tuple an older client adds
+// mid-migration is never lost) after the session writes are confirmed. An
+// inbox id that collides with a different existing shot gets a fresh id.
+let migratingInbox = false;
+function tupleHash(t) {
+  const str = JSON.stringify(t);
+  let h1 = 5381, h2 = 52711;
+  for (let i = 0; i < str.length; i++) { const c = str.charCodeAt(i); h1 = (h1 * 33) ^ c; h2 = (h2 * 33) ^ c; }
+  return (h1 >>> 0).toString(36) + (h2 >>> 0).toString(36) + ':' + str.length;
+}
+async function migrateShotsInbox(tuples) {
+  if (!DB || migratingInbox || !tuples.length) return;
+  migratingInbox = true;
+  try {
+    const backupRef = DB.doc('app/shots_live_backup');
+    const bsnap = await backupRef.get();
+    let backup = [], movedList = [];
+    if (bsnap.exists) {
+      try { backup = JSON.parse(bsnap.data().json || '[]'); } catch (e) { backup = []; }
+      try { movedList = JSON.parse(bsnap.data().moved || '[]'); } catch (e) { movedList = []; }
+    }
+    const backupKeys = new Set(backup.map(t => JSON.stringify(t)));
+    tuples.forEach(t => { const k = JSON.stringify(t); if (!backupKeys.has(k)) { backup.push(t); backupKeys.add(k); } });
+    await backupRef.set({ json: JSON.stringify(backup), moved: JSON.stringify(movedList) });
+    // Tuples a previous run already moved (and whose inbox trim then failed)
+    // must not be moved again — the shot may have been edited since.
+    const alreadyMoved = new Set(movedList);
+    const pending = tuples.filter(t => !alreadyMoved.has(tupleHash(t)));
+
+    const existing = {};
+    Object.values(LIVE_SESSIONS).forEach(sess => sess.shots.forEach(s => { existing[s.id] = s; }));
+    let maxId = SHOTS.reduce((m, s) => Math.max(m, Number(s.id) || 0), 0);
+    tuples.forEach(t => maxId = Math.max(maxId, Number(tupleToObj(t).id) || 0));
+    const batch = DB.batch();
+    pending.forEach(t => {
+      const o = tupleToObj(t);
+      const prior = existing[o.id];
+      if (prior) {
+        const a = Object.assign({}, prior); delete a._sid;
+        if (JSON.stringify(objToTuple(a)) === JSON.stringify(t)) return; // already moved
+        o.id = ++maxId; // same id, different shot: keep both
+      }
+      const sid = sessionIdFor(o);
+      batch.set(DB.collection('sessions').doc(sid), Object.assign(sessionMeta(o), { [SESSION_ENTRY_PREFIX.shot + o.id]: JSON.stringify(objToTuple(o)) }), { merge: true });
+      existing[o.id] = Object.assign({ _sid: sid }, o);
+    });
+    await batch.commit();
+    pending.forEach(t => movedList.push(tupleHash(t)));
+    await backupRef.set({ moved: JSON.stringify(movedList) }, { merge: true });
+
+    const moved = new Set(tuples.map(t => JSON.stringify(t)));
+    await DB.runTransaction(async tx => {
+      const ref = DB.doc('app/shots_live');
+      const snap = await tx.get(ref);
+      let cur = [];
+      if (snap.exists && typeof snap.data().json === 'string') { try { cur = JSON.parse(snap.data().json); } catch (e) { cur = []; } }
+      tx.set(ref, { json: JSON.stringify(cur.filter(t => !moved.has(JSON.stringify(t)))) });
+    });
+  } catch (e) {
+    console.error('shots inbox migration failed (will retry next load)', e);
+  } finally {
+    migratingInbox = false;
+  }
 }
 function rebuildFaceoffs() {
   FACEOFFS = LIVE_FACEOFFS_TUPLES.map(t => tupleToObj(t, FACEOFF_COLS));
@@ -983,29 +1121,29 @@ async function loadAll() {
     }, e => console.error('roster sync error', season, e));
   }
 
+  try {
+    const qs = await DB.collection('sessions').get();
+    LIVE_SESSIONS = {};
+    qs.docs.forEach(d => { LIVE_SESSIONS[d.id] = parseSessionDoc(d.id, d.data()); });
+  } catch (e) { console.error('sessions load failed', e); }
   const shotsRef = DB.doc('app/shots_live');
   try {
     const snap = await shotsRef.get();
     if (snap.exists && typeof snap.data().json === 'string') LIVE_SHOTS_TUPLES = JSON.parse(snap.data().json);
   } catch (e) { console.error('shots load failed', e); }
   rebuildShots();
+  DB.collection('sessions').onSnapshot(qs => {
+    LIVE_SESSIONS = {};
+    qs.docs.forEach(d => { LIVE_SESSIONS[d.id] = parseSessionDoc(d.id, d.data()); });
+    rebuildShots();
+    rerenderAfterShotsChange();
+  }, e => console.error('sessions sync error', e));
   shotsRef.onSnapshot(snap => {
     if (!snap.exists || typeof snap.data().json !== 'string') return;
-    LIVE_SHOTS_TUPLES = JSON.parse(snap.data().json);
+    try { LIVE_SHOTS_TUPLES = JSON.parse(snap.data().json); } catch (e) { LIVE_SHOTS_TUPLES = []; }
     rebuildShots();
-    renderTable();
-    renderPlayerHeat();
-    renderPlayerDeepDive();
-    renderShotQualityShare();
-    renderNewEfficiencyTables();
-    renderGoalieSummary();
-    renderShootingTrends();
-    renderGoalieTrends();
-    renderGoalieHeat();
-    renderEfficiencyView();
-    populatePlayerGoalieDropdowns();
-    populatePlayerSelectForSeason(heatSeason);
-    populateGoalieSelectForSeason(goalieHeatSeason);
+    rerenderAfterShotsChange();
+    if (LIVE_SHOTS_TUPLES.length) migrateShotsInbox(LIVE_SHOTS_TUPLES);
   }, e => console.error('shots sync error', e));
 
   const faceoffsRef = DB.doc('app/faceoffs_live');
@@ -1020,7 +1158,29 @@ async function loadAll() {
     rebuildFaceoffs();
     renderFaceoffs();
   }, e => console.error('faceoffs sync error', e));
+  loadEvalListeners();
+}
 
+// Everything that reads SHOTS, redrawn after live shot data changes. Guarded
+// so a snapshot that lands before init() has built the page is harmless.
+function rerenderAfterShotsChange() {
+  if (!window.__appReady) return;
+  renderTable();
+  renderPlayerHeat();
+  renderPlayerDeepDive();
+  renderShotQualityShare();
+  renderNewEfficiencyTables();
+  renderGoalieSummary();
+  renderShootingTrends();
+  renderGoalieTrends();
+  renderGoalieHeat();
+  renderEfficiencyView();
+  populatePlayerGoalieDropdowns();
+  populatePlayerSelectForSeason(heatSeason);
+  populateGoalieSelectForSeason(goalieHeatSeason);
+}
+
+function loadEvalListeners() {
   DB.collection('evalPlayers').onSnapshot(snap => {
     PLAYERS = snap.docs.map(d => Object.assign({ id: d.id }, d.data()));
     renderRecruits();
@@ -1043,17 +1203,9 @@ async function persistRoster(season) {
   try { await DB.doc('app/roster_' + season).set({ list: ROSTERS[season] || [] }); } catch (e) { console.error(e); return false; }
   return true;
 }
-// Stored as a JSON string, not a native Firestore array-of-arrays: Firestore
-// rejects "nested arrays" outright (an array field whose own elements are
-// arrays), and each shot/faceoff tuple is itself an array. This mirrors how
-// app/seed_shots already stores its tuples, which is why that path works.
-async function persistShots() {
-  if (!DB) return false;
-  const live = SHOTS.filter(s => !s.seed).map(s => objToTuple(s));
-  try { await DB.doc('app/shots_live').set({ json: JSON.stringify(live) }); } catch (e) { console.error(e); return false; }
-  LIVE_SHOTS_TUPLES = live;
-  return true;
-}
+// Faceoffs (and rosters) are small, so they stay as one doc each. Stored as
+// a JSON string, not a native Firestore array-of-arrays: Firestore rejects
+// "nested arrays" outright, and each faceoff tuple is itself an array.
 async function persistFaceoffs() {
   if (!DB) return false;
   const live = FACEOFFS.map(f => objToTuple(f, FACEOFF_COLS));
@@ -1876,22 +2028,22 @@ document.getElementById('submitShotBtn').addEventListener('click', async () => {
   };
 
   const isEdit = editingShotId !== null;
-  let savedId;
+  let savedId, saveResult;
   if (isEdit) {
     const idx = SHOTS.findIndex(s => s.id === editingShotId);
     if (idx === -1) { showMsg('That shot no longer exists.', false); exitEditMode(); return; }
     const original = SHOTS[idx];
     savedId = editingShotId;
-    SHOTS[idx] = Object.assign({ id: savedId }, shotData);
-    const okSave = await persistShots();
-    if (!okSave) { SHOTS[idx] = original; showMsg('Save failed \u2014 please try again.', false); return; }
+    const updated = Object.assign({ id: savedId, _sid: original._sid }, shotData);
+    SHOTS[idx] = updated;
+    saveResult = await persistShot(updated);
+    if (saveResult === 'error') { SHOTS[idx] = original; showMsg('Save failed \u2014 please try again.', false); return; }
   } else {
-    const maxId = SHOTS.reduce((m,s)=>Math.max(m, s.id||0), 0);
-    savedId = maxId + 1;
+    savedId = nextShotId();
     const shot = Object.assign({ id: savedId }, shotData);
     SHOTS.push(shot);
-    const okSave = await persistShots();
-    if (!okSave) { SHOTS.pop(); showMsg('Save failed \u2014 please try again.', false); return; }
+    saveResult = await persistShot(shot);
+    if (saveResult === 'error') { SHOTS = SHOTS.filter(s => s !== shot); showMsg('Save failed \u2014 please try again.', false); return; }
   }
 
   if (isEdit) {
@@ -1902,7 +2054,7 @@ document.getElementById('submitShotBtn').addEventListener('click', async () => {
     return;
   }
 
-  showMsg(`Saved shot #${savedId} for #${shooter} ${nameFor(shooter, currentLogSeason())}.`, true);
+  showMsg(`Saved shot #${savedId} for #${escapeHtml(shooter)} ${escapeHtml(nameFor(shooter, currentLogSeason()))}.` + (saveResult === 'queued' ? ' (Offline — it will sync when you reconnect.)' : ''), true);
   setPillGroupValue('f_outcome', null);
   document.getElementById('cleanSaveWrap').style.display = 'none';
   setPillGroupValue('f_cleansave', null);
@@ -3719,9 +3871,12 @@ function renderTable() {
   tbody.querySelectorAll('button[data-confirm-id]').forEach(b => {
     b.addEventListener('click', async () => {
       const id = parseInt(b.dataset.confirmId, 10);
-      SHOTS = SHOTS.filter(s => s.id !== id);
+      const target = SHOTS.find(s => s.id === id && !s.seed);
       deleteShotArmed = null;
-      await persistShots();
+      if (!target) { renderTable(); return; }
+      SHOTS = SHOTS.filter(s => s !== target);
+      const res = await deleteShotEntry(target);
+      if (res === 'error') { SHOTS.push(target); showTableMsg('Delete failed — please try again.'); }
       renderTable();
       populatePlayerGoalieDropdowns();
       populatePlayerSelectForSeason(heatSeason);
@@ -4882,6 +5037,8 @@ resetConfirmBtn.addEventListener('click', async () => {
     await DB.doc('app/roster').delete();
     await Promise.all(SEASONS.map(s => DB.doc('app/roster_' + s).delete()));
     await DB.doc('app/shots_live').delete();
+    const sessSnap = await DB.collection('sessions').get();
+    await Promise.all(sessSnap.docs.map(d => DB.collection('sessions').doc(d.id).delete()));
     await DB.doc('app/faceoffs_live').delete();
     const playersSnap = await DB.collection('evalPlayers').get();
     await Promise.all(playersSnap.docs.map(d => DB.collection('evalPlayers').doc(d.id).delete()));
@@ -4952,6 +5109,8 @@ async function init() {
   renderCompare();
   renderEfficiencyView();
   renderOpponent();
+  window.__appReady = true;
+  if (LIVE_SHOTS_TUPLES.length) migrateShotsInbox(LIVE_SHOTS_TUPLES);
 }
 </script>
 <script>
