@@ -167,6 +167,25 @@
   .filters-box[open] > summary { margin-bottom: 12px; }
   .filter-count { background: var(--gold-bg); color: var(--gold-ink); border-radius: 999px; padding: 1px 8px; font-size: 11px; letter-spacing: 0; }
   .filter-count:empty { display: none; }
+  /* ---- 2.5D charts ---- */
+  .image-row { align-items: flex-start; }
+  .heat-modebar { flex: 1 1 100%; display: flex; justify-content: flex-end; margin-bottom: -6px; }
+  .seg.seg-sm button { font-size: 11.5px; padding: 5px 11px; }
+  .heat-fig { margin: 0; text-align: center; max-width: 560px; flex: 1 1 340px; }
+  .heat-fig.is-goal { max-width: 460px; }
+  .heat-cap { font-family: 'Helvetica Neue', Arial, sans-serif; font-weight: 700; color: var(--navy-3); margin-bottom: 2px; }
+  .heat-sub { font-family: 'Helvetica Neue', Arial, sans-serif; font-size: 11px; color: var(--muted); margin-bottom: 8px; }
+  .heat-img svg { display: block; border-radius: 10px; box-shadow: 0 6px 18px rgba(15,31,61,.18), 0 1px 3px rgba(15,31,61,.12); }
+  .heat-legend { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 6px 10px; margin-top: 10px; font-family: 'Helvetica Neue', Arial, sans-serif; font-size: 11px; color: var(--muted); }
+  .heat-legend .bar { width: 120px; height: 9px; border-radius: 5px; }
+  .heat-legend .avg { flex-basis: 100%; }
+  .heat-legend .key { display: inline-flex; align-items: center; gap: 5px; }
+  .heat-legend .key i { width: 10px; height: 10px; border-radius: 50%; display: inline-block; border: 1px solid rgba(0,0,0,.35); }
+  .shot-dot { cursor: pointer; }
+  .shot-dot:hover { stroke: #FFFFFF; stroke-width: 0.6; }
+  .field-25d .heat-zone:hover, .goal-25d .heat-zone:hover { fill-opacity: 1; opacity: 1; stroke: #FFFFFF; stroke-width: 0.5; }
+  .field-25d .heat-zone-selected, .goal-25d .heat-zone-selected { stroke: #D4AF37 !important; stroke-width: 0.8 !important; }
+  .click-field svg { border-radius: 10px; box-shadow: 0 4px 14px rgba(15,31,61,.16); }
   /* ---- Log Shot: film-logging layout ---- */
   .log-sticky { margin-bottom: 14px; }
   .session-bar { display: flex; flex-wrap: wrap; gap: 14px 18px; align-items: flex-end; background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 12px 16px; box-shadow: 0 1px 3px rgba(15,31,61,.06); }
@@ -1829,87 +1848,308 @@ function buildGoalGrid(subset) {
   return cells;
 }
 
-// ---------------- SVG generators ----------------
+// ---------------- SVG generators: 2.5D field + goal ----------------
+// The field is drawn from a raised "broadcast" camera behind the shooting
+// area looking at the goal: a true perspective projection of field yards
+// (lateral, distance from the goal line) onto the image, so zones and shot
+// dots sit exactly where they happened, and a click can be projected back
+// to yards (unprojectField) for logging.
+const FIELD_CAM = (() => {
+  const zc = 88;           // camera ground position, yards from the goal line
+  const nearD = zc - 21.5; // near edge of the drawn field (21.5 yds out)
+  const farD = zc + 3.5;   // far edge (3.5 yds behind the goal line)
+  const f = 47 * nearD / 19.5;          // near edge spans ~94 of 100 units
+  const h = 58 / (f * (1 / nearD - 1 / farD)); // camera height: field is ~58 units tall
+  const horizon = 7 - f * h / farD;     // far edge sits at y = 7
+  const nearY = horizon + f * h / nearD;
+  // refD: depth at mid-field, so labels are ~1x size there, larger near, smaller far
+  return { zc, h, f, horizon, cx: 50, refD: zc - 10, viewH: Math.ceil(nearY + 3) };
+})();
+function projectField(lat, dist, up) {
+  const d = FIELD_CAM.zc - dist;
+  return [FIELD_CAM.cx + FIELD_CAM.f * lat / d, FIELD_CAM.horizon + FIELD_CAM.f * (FIELD_CAM.h - (up || 0)) / d];
+}
+function unprojectField(x, y) {
+  const d = FIELD_CAM.f * FIELD_CAM.h / (y - FIELD_CAM.horizon);
+  return { lateral: (x - FIELD_CAM.cx) * d / FIELD_CAM.f, distance: FIELD_CAM.zc - d };
+}
+const fpt = p => p[0].toFixed(2) + ',' + p[1].toFixed(2);
+function fieldQuad(x0, x1, y0, y1) {
+  return [projectField(x0, y0), projectField(x1, y0), projectField(x1, y1), projectField(x0, y1)].map(fpt).join(' ');
+}
+// Diverging hot/cold scale around a baseline rate: blue = colder than the
+// baseline, neutral gray = at it, red = hotter. Colorblind-safe (blue/red
+// poles, gray midpoint), unlike a red-yellow-green ramp.
+const HEAT_COLD = [74, 111, 165];   // #4A6FA5
+const HEAT_MID = [226, 223, 216];   // warm gray
+const HEAT_HOT = [200, 67, 52];     // #C84334
+function heatColor(rate, base, spread) {
+  if (rate === null || rate === undefined) return null;
+  const t = Math.max(-1, Math.min(1, spread > 0 ? (rate - base) / spread : 0));
+  const to = t < 0 ? HEAT_COLD : HEAT_HOT;
+  const k = Math.pow(Math.abs(t), 0.85);
+  const c = HEAT_MID.map((m, i) => Math.round(m + (to[i] - m) * k));
+  return `rgb(${c[0]},${c[1]},${c[2]})`;
+}
+// Text on a filled zone: dark ink on light fills, white on strong fills.
+function inkOn(rgb) {
+  const m = /rgb\((\d+),(\d+),(\d+)\)/.exec(rgb || '');
+  if (!m) return '#1A1A1A';
+  const L = (0.299 * m[1] + 0.587 * m[2] + 0.114 * m[3]);
+  return L < 150 ? '#FFFFFF' : '#1A1A1A';
+}
+// Baseline = the overall rate of everything on this map; spread = the
+// largest gap from it among zones with enough shots to mean something.
+function heatScale(cells, metric) {
+  const rateOf = c => c.n ? (metric === 'save' ? (c.n - c.goals) / c.n : c.goals / c.n) : null;
+  const total = cells.reduce((a, c) => a + c.n, 0);
+  const made = cells.reduce((a, c) => a + (metric === 'save' ? c.n - c.goals : c.goals), 0);
+  const base = total ? made / total : 0;
+  const spread = Math.max(0.08, ...cells.filter(c => c.n >= 3).map(c => Math.abs(rateOf(c) - base)));
+  return { base, spread, rateOf, total };
+}
+const HEAT_MIN_N = 3; // zones with fewer shots are drawn faded + hatched
+
+function svgDefs(uid) {
+  return `<defs>
+    <linearGradient id="${uid}turf" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#3F7A4A"/><stop offset="1" stop-color="#2F6A3C"/>
+    </linearGradient>
+    <radialGradient id="${uid}vig" cx="50%" cy="40%" r="75%">
+      <stop offset="0.6" stop-color="#000" stop-opacity="0"/><stop offset="1" stop-color="#000" stop-opacity="0.28"/>
+    </radialGradient>
+    <linearGradient id="${uid}pipe" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#C9541B"/><stop offset="0.45" stop-color="#FF8A3D"/><stop offset="1" stop-color="#B8481A"/>
+    </linearGradient>
+    <linearGradient id="${uid}pipeH" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#FF9A55"/><stop offset="0.55" stop-color="#E8621F"/><stop offset="1" stop-color="#B8481A"/>
+    </linearGradient>
+    <pattern id="${uid}net" width="2.2" height="2.2" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+      <path d="M0 0 H2.2 M0 0 V2.2" stroke="#FFFFFF" stroke-width="0.22" stroke-opacity="0.55" fill="none"/>
+    </pattern>
+    <pattern id="${uid}hatch" width="1.6" height="1.6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+      <path d="M0 0 V1.6" stroke="#FFFFFF" stroke-width="0.3" stroke-opacity="0.35"/>
+    </pattern>
+    <filter id="${uid}shadow" x="-20%" y="-20%" width="140%" height="160%"><feGaussianBlur stdDeviation="0.6"/></filter>
+  </defs>`;
+}
+let svgUid = 0;
+
+// The 3D cage at the crease, drawn in the same projection as the field.
+// Frame is 2 x 2 yards; the net runs back to a point 2.3 yards deep.
+function fieldGoal3D(uid) {
+  const P = (x, z, up) => fpt(projectField(x, z, up));
+  const back = -2.3;
+  let s = '';
+  s += `<ellipse cx="${projectField(0, -0.9)[0].toFixed(2)}" cy="${projectField(0, -0.9)[1].toFixed(2)}" rx="${(projectField(1.6, -0.9)[0] - 50).toFixed(2)}" ry="1.1" fill="#000" opacity="0.35" filter="url(#${uid}shadow)"/>`;
+  // net: sides + top back to the apex
+  s += `<polygon points="${P(-1, 0, 0)} ${P(-1, 0, 2)} ${P(0, back, 1.1)} ${P(0, back, 0)}" fill="url(#${uid}net)" stroke="#FFFFFF" stroke-opacity="0.5" stroke-width="0.12"/>`;
+  s += `<polygon points="${P(1, 0, 0)} ${P(1, 0, 2)} ${P(0, back, 1.1)} ${P(0, back, 0)}" fill="url(#${uid}net)" stroke="#FFFFFF" stroke-opacity="0.5" stroke-width="0.12"/>`;
+  s += `<polygon points="${P(-1, 0, 2)} ${P(1, 0, 2)} ${P(0, back, 1.1)}" fill="url(#${uid}net)" stroke="#FFFFFF" stroke-opacity="0.5" stroke-width="0.12"/>`;
+  // base bar on the ground
+  s += `<polyline points="${P(-1, 0, 0)} ${P(0, back, 0)} ${P(1, 0, 0)}" fill="none" stroke="#E8621F" stroke-width="0.35" stroke-linejoin="round"/>`;
+  // front frame (posts + crossbar)
+  s += `<polyline points="${P(-1, 0, 0)} ${P(-1, 0, 2)} ${P(1, 0, 2)} ${P(1, 0, 0)}" fill="none" stroke="url(#${uid}pipeH)" stroke-width="0.7" stroke-linejoin="round" stroke-linecap="round"/>`;
+  return s;
+}
+
+// Turf, stripes, lines, crease and yard numbers (everything but data).
+function fieldBase(uid) {
+  let s = `<rect x="0" y="0" width="100" height="${FIELD_CAM.viewH}" fill="#1F4F2B"/>`;
+  s += `<polygon points="${fieldQuad(-21, 21, -3.5, 21.5)}" fill="url(#${uid}turf)"/>`;
+  // mowed stripes every 2.5 yards
+  for (let z = -2.5; z < 21.5; z += 5) s += `<polygon points="${fieldQuad(-21, 21, z, Math.min(21.5, z + 2.5))}" fill="#FFFFFF" opacity="0.045"/>`;
+  return s;
+}
+function fieldLines(uid, opts) {
+  let s = '';
+  const W = 'rgba(255,255,255,0.92)';
+  s += `<polyline points="${[projectField(-19.5, 0), projectField(19.5, 0)].map(fpt).join(' ')}" stroke="${W}" stroke-width="0.45" fill="none"/>`;
+  [-8, 8].forEach(ax => { s += `<polyline points="${[projectField(ax, 0), projectField(ax, 21)].map(fpt).join(' ')}" stroke="${W}" stroke-width="0.25" stroke-dasharray="1.2,0.9" fill="none" opacity="0.8"/>`; });
+  // crease: 3-yard circle around the goal
+  const crease = [];
+  for (let i = 0; i <= 64; i++) { const a = i / 64 * Math.PI * 2; crease.push(projectField(Math.cos(a) * 3, Math.sin(a) * 3 - 0.2)); }
+  s += `<polygon points="${crease.map(fpt).join(' ')}" fill="rgba(255,255,255,0.10)" stroke="${W}" stroke-width="0.3"/>`;
+  if (opts.yardNumbers !== false) {
+    for (let yd = 5; yd <= 20; yd += 5) {
+      const [x, y] = projectField(-20.1, yd);
+      const fs = (2.6 * FIELD_CAM.refD / (FIELD_CAM.zc - yd)).toFixed(2);
+      s += `<text x="${x.toFixed(2)}" y="${(y + 0.9).toFixed(2)}" text-anchor="middle" font-family="Helvetica Neue, Arial, sans-serif" font-weight="700" font-size="${fs}" fill="rgba(255,255,255,0.75)">${yd}</text>`;
+    }
+    const [gx, gy] = projectField(19.6, 0);
+    s += `<text x="${gx.toFixed(2)}" y="${(gy - 0.8).toFixed(2)}" text-anchor="end" font-family="Helvetica Neue, Arial, sans-serif" font-size="1.7" fill="rgba(255,255,255,0.7)">GLE</text>`;
+  }
+  return s;
+}
+
 function fieldSVG(zones, opts) {
+  opts = opts || {};
   const metric = opts.metric || 'score';
   const interactive = opts.interactive !== false;
-  const maxDist = 20;
-  const dispPct = z => z.n === 0 ? null : (metric === 'save' ? (z.n - z.goals)/z.n : z.goals/z.n);
-  const pcts = zones.filter(z=>z.n>0).map(dispPct);
-  const vmin = pcts.length ? Math.min(...pcts) : 0;
-  const vmax0 = pcts.length ? Math.max(...pcts) : 1;
-  const vmax = vmax0 === vmin ? vmin + 0.01 : vmax0;
-
-  let s = `<svg viewBox="-20 -4 40 27" xmlns="http://www.w3.org/2000/svg">`;
-  s += `<rect x="-18" y="-2" width="36" height="${maxDist+3}" fill="#EEF3E4" stroke="#333" stroke-width="0.25"/>`;
+  const uid = 'f' + (++svgUid) + '_';
+  const sc = heatScale(zones, metric);
+  let s = `<svg viewBox="0 0 100 ${FIELD_CAM.viewH}" xmlns="http://www.w3.org/2000/svg" class="field-25d" role="img" aria-label="Shot location heat map">${svgDefs(uid)}`;
+  s += fieldBase(uid);
   zones.forEach((z, i) => {
-    const pct = dispPct(z);
-    const color = z.n > 0 ? colorForPct(pct, vmin, vmax) : '#F2F2F2';
+    const rate = sc.rateOf(z);
+    const color = z.n ? heatColor(rate, sc.base, sc.spread) : null;
     const cls = interactive ? ' class="heat-zone"' : '';
     const idxAttr = interactive ? ` data-zidx="${i}"` : '';
-    s += `<rect x="${z.x0}" y="${z.y0}" width="${z.x1-z.x0}" height="${z.y1-z.y0}" fill="${color}" stroke="#fff" stroke-width="0.15" opacity="0.85"${cls}${idxAttr}/>`;
-    const cx = (z.x0+z.x1)/2, cy = (z.y0+z.y1)/2;
-    let label;
+    const faded = z.n > 0 && z.n < HEAT_MIN_N;
+    s += `<polygon points="${fieldQuad(z.x0, z.x1, z.y0, z.y1)}" fill="${color || 'rgba(255,255,255,0.06)'}" fill-opacity="${color ? (faded ? 0.5 : 0.86) : 1}" stroke="rgba(255,255,255,0.55)" stroke-width="0.18"${cls}${idxAttr}/>`;
+    if (faded) s += `<polygon points="${fieldQuad(z.x0, z.x1, z.y0, z.y1)}" fill="url(#${uid}hatch)" style="pointer-events:none;"/>`;
+  });
+  s += fieldLines(uid, opts);
+  s += fieldGoal3D(uid);
+  zones.forEach(z => {
+    const [cx, cy] = projectField((z.x0 + z.x1) / 2, (z.y0 + z.y1) / 2);
+    const scale = FIELD_CAM.refD / (FIELD_CAM.zc - (z.y0 + z.y1) / 2);
+    const rate = sc.rateOf(z);
+    const color = z.n ? heatColor(rate, sc.base, sc.spread) : null;
+    const ink = color && z.n >= HEAT_MIN_N ? inkOn(color) : '#FFFFFF';
+    const style = `font-family="Helvetica Neue, Arial, sans-serif" text-anchor="middle" fill="${ink}" style="pointer-events:none;"`;
     if (z.n > 0) {
-      if (metric === 'save') { const saves = z.n - z.goals; label = [`${saves}/${z.n} saved`, `${Math.round(pct*100)}%`]; }
-      else { label = [`${z.goals}/${z.n}`, `${Math.round(pct*100)}%`]; }
-    } else label = ['\u2014'];
-    label.forEach((ln,i2) => { s += `<text x="${cx}" y="${cy + (i2 - (label.length-1)/2)*1.6}" text-anchor="middle" class="field-label" style="pointer-events:none;">${ln}</text>`; });
+      s += `<text x="${cx.toFixed(2)}" y="${(cy - 0.2 * scale).toFixed(2)}" font-size="${(3.1 * scale).toFixed(2)}" font-weight="700" ${style}>${Math.round(rate * 100)}%</text>`;
+      const small = metric === 'save' ? `${z.n - z.goals}/${z.n} saved` : `${z.goals}/${z.n}`;
+      s += `<text x="${cx.toFixed(2)}" y="${(cy + 2.6 * scale).toFixed(2)}" font-size="${(1.9 * scale).toFixed(2)}" ${style} opacity="0.9">${small}</text>`;
+    } else if (opts.showEmpty !== false && interactive) {
+      s += `<text x="${cx.toFixed(2)}" y="${(cy + 0.6 * scale).toFixed(2)}" font-size="${(2 * scale).toFixed(2)}" ${style} opacity="0.45">—</text>`;
+    }
   });
-  // Real lacrosse field reference marks, drawn on top of the zone fills
-  // (not before them) so they're never painted over — that was the actual
-  // bug last round: this whole block used to run before zones.forEach, so
-  // the zone rectangles silently covered the yardage numbers. Yardage
-  // numbers along the left side and a bold GLE (goal line extended) line
-  // at the goal mouth — the landmarks a coach already thinks in.
-  for (let yd = 5; yd <= maxDist; yd += 5) {
-    s += `<text x="-19.5" y="${yd+0.5}" class="field-axis">${yd}</text>`;
-  }
-  s += `<line x1="-18" y1="0" x2="18" y2="0" stroke="#333" stroke-width="0.35"/>`;
-  // Alley lines — the vertical lane dividers a coach means by "alley,"
-  // splitting the box into left alley / middle / right alley, same as a
-  // real lacrosse field diagram (not just a data-grid boundary).
-  [-8, 8].forEach(ax => {
-    s += `<line x1="${ax}" y1="0" x2="${ax}" y2="${maxDist}" stroke="#333" stroke-width="0.15" stroke-dasharray="0.6,0.4"/>`;
-  });
-  s += `<rect x="-1.2" y="-1.6" width="2.4" height="1.6" fill="#444" stroke="#fff" stroke-width="0.1"/>`;
-  s += `<circle cx="0" cy="0" r="3" fill="none" stroke="#5C5540" stroke-width="0.2" stroke-dasharray="0.5,0.4"/>`;
-  s += `<text x="0" y="-2.4" text-anchor="middle" class="field-axis">X</text>`;
+  s += `<rect x="0" y="0" width="100" height="${FIELD_CAM.viewH}" fill="url(#${uid}vig)" style="pointer-events:none;"/>`;
   s += `</svg>`;
   return s;
 }
 
-function goalSVG(cells, opts) {
-  const metric = opts.metric || 'score';
-  const interactive = opts.interactive !== false;
-  const dispPct = c => c.n === 0 ? null : (metric === 'save' ? (c.n-c.goals)/c.n : c.goals/c.n);
-  const pcts = cells.filter(c=>c.n>0).map(dispPct);
-  const vmin = pcts.length ? Math.min(...pcts) : 0;
-  const vmax0 = pcts.length ? Math.max(...pcts) : 1;
-  const vmax = vmax0 === vmin ? vmin + 0.01 : vmax0;
-  let s = `<svg viewBox="0 0 10 10.4" xmlns="http://www.w3.org/2000/svg">`;
-  s += `<rect x="0.5" y="0.5" width="9" height="9" fill="#F7F7F7" stroke="#333" stroke-width="0.1"/>`;
-  s += `<line x1="3.5" y1="0.5" x2="3.5" y2="9.5" stroke="#333" stroke-width="0.06"/>`;
-  s += `<line x1="6.5" y1="0.5" x2="6.5" y2="9.5" stroke="#333" stroke-width="0.06"/>`;
-  s += `<line x1="0.5" y1="3.5" x2="9.5" y2="3.5" stroke="#333" stroke-width="0.06"/>`;
-  s += `<line x1="0.5" y1="6.5" x2="9.5" y2="6.5" stroke="#333" stroke-width="0.06"/>`;
-  cells.forEach((cell, i) => {
-    const x0 = 0.5 + cell.col*3, y0 = 0.5 + cell.row*3, w = 3, h = 3;
-    const pct = dispPct(cell);
-    const color = cell.n > 0 ? colorForPct(pct, vmin, vmax) : '#F2F2F2';
-    const cls = interactive ? ' class="heat-zone"' : '';
-    const idxAttr = interactive ? ` data-zidx="${i}"` : '';
-    s += `<rect x="${x0}" y="${y0}" width="${w}" height="${h}" fill="${color}" stroke="#fff" stroke-width="0.1" opacity="0.9"${cls}${idxAttr}/>`;
-    const cx = x0+w/2, cy = y0+h/2;
-    let lines = [cell.label];
-    if (cell.n > 0) {
-      if (metric === 'save') { const saves = cell.n-cell.goals; lines.push(`${saves}/${cell.n} saved`, `${Math.round(pct*100)}%`); }
-      else { lines.push(`${cell.goals}/${cell.n}`, `${Math.round(pct*100)}%`); }
-    } else lines.push('\u2014');
-    lines.forEach((ln,i2) => { s += `<text x="${cx}" y="${cy + (i2-(lines.length-1)/2)*0.5}" text-anchor="middle" class="goal-label" style="pointer-events:none;">${ln}</text>`; });
+// Shot-by-shot version: one dot per shot where it was taken, colored by
+// outcome, sized by that shot's expected-goal value.
+const OUTCOME_COLORS = { Goal: '#C84334', Saved: '#F2C14E', Miss: '#D9D6CE', Pipe: '#9B7BD4', Blocked: '#6FA8DC' };
+function shotDotRadius(s, model) {
+  const xg = model ? xgForShot(s, model) : null;
+  return xg === null ? 0.9 : 0.55 + Math.sqrt(Math.max(0, xg)) * 1.6;
+}
+function fieldShotsSVG(shots, opts) {
+  opts = opts || {};
+  const uid = 'f' + (++svgUid) + '_';
+  const model = opts.model || null;
+  let s = `<svg viewBox="0 0 100 ${FIELD_CAM.viewH}" xmlns="http://www.w3.org/2000/svg" class="field-25d" role="img" aria-label="Shot locations">${svgDefs(uid)}`;
+  s += fieldBase(uid) + fieldLines(uid, opts) + fieldGoal3D(uid);
+  // far shots first so near ones draw on top
+  const list = shots.map((sh, i) => ({ sh, i })).filter(o => o.sh.distanceYds !== null && o.sh.distanceYds !== undefined && o.sh.lateralYds !== null && o.sh.lateralYds !== undefined)
+    .sort((a, b) => a.sh.distanceYds - b.sh.distanceYds);
+  list.forEach(({ sh, i }) => {
+    const [x, y] = projectField(Math.max(-19.5, Math.min(19.5, sh.lateralYds)), Math.max(-1, Math.min(21, sh.distanceYds)));
+    const scale = FIELD_CAM.refD / (FIELD_CAM.zc - sh.distanceYds);
+    const r = shotDotRadius(sh, model) * scale;
+    const col = OUTCOME_COLORS[outcomeFor(sh)] || '#FFFFFF';
+    s += `<ellipse cx="${x.toFixed(2)}" cy="${(y + r * 0.35).toFixed(2)}" rx="${r.toFixed(2)}" ry="${(r * 0.45).toFixed(2)}" fill="#000" opacity="0.28" style="pointer-events:none;"/>`;
+    s += `<circle class="shot-dot" data-sidx="${i}" cx="${x.toFixed(2)}" cy="${(y - r * 0.2).toFixed(2)}" r="${r.toFixed(2)}" fill="${col}" stroke="#14231A" stroke-width="${(0.18 * scale).toFixed(2)}"/>`;
   });
+  s += `<rect x="0" y="0" width="100" height="${FIELD_CAM.viewH}" fill="url(#${uid}vig)" style="pointer-events:none;"/>`;
   s += `</svg>`;
   return s;
+}
+
+// ---- Goal chart: front view of a real cage ----
+// The mouth (inside the pipes) is where goalX/goalY live: x 0..1 left to
+// right, y 0..1 bottom to top, mapped linearly so clicks and stored data
+// mean exactly what they always have.
+const GOAL_VIEW = { w: 100, h: 92, mx: 14, my: 12, mw: 72, mh: 72 };
+function goalMouthPoint(gx, gy) { return [GOAL_VIEW.mx + gx * GOAL_VIEW.mw, GOAL_VIEW.my + (1 - gy) * GOAL_VIEW.mh]; }
+function goalFromPoint(x, y) { return { gx: (x - GOAL_VIEW.mx) / GOAL_VIEW.mw, gy: 1 - (y - GOAL_VIEW.my) / GOAL_VIEW.mh }; }
+function goalCage(uid) {
+  const { mx, my, mw, mh } = GOAL_VIEW;
+  const bx = mx + mw * 0.18, bw = mw * 0.64, by = my + mh * 0.34, bh = mh * 0.66; // back of net (smaller, lower)
+  let s = `<rect x="0" y="0" width="100" height="${GOAL_VIEW.h}" fill="#F3F1EA"/>`;
+  s += `<rect x="0" y="${my + mh}" width="100" height="${GOAL_VIEW.h - my - mh}" fill="#3A7446"/>`;
+  s += `<rect x="0" y="${my + mh}" width="100" height="0.6" fill="#FFFFFF" opacity="0.85"/>`;
+  s += `<ellipse cx="50" cy="${my + mh + 1.6}" rx="${mw * 0.58}" ry="2.4" fill="#000" opacity="0.28" filter="url(#${uid}shadow)"/>`;
+  // net: back panel + side/top panels in perspective
+  s += `<rect x="${bx}" y="${by}" width="${bw}" height="${bh}" fill="#DCD8CE"/>`;
+  s += `<polygon points="${mx},${my} ${bx},${by} ${bx},${my + mh} ${mx},${my + mh}" fill="#E6E2D8"/>`;
+  s += `<polygon points="${mx + mw},${my} ${bx + bw},${by} ${bx + bw},${my + mh} ${mx + mw},${my + mh}" fill="#E6E2D8"/>`;
+  s += `<polygon points="${mx},${my} ${mx + mw},${my} ${bx + bw},${by} ${bx},${by}" fill="#EFEBE2"/>`;
+  s += `<g stroke="#9E998C" stroke-width="0.18" opacity="0.7">`;
+  for (let i = 1; i < 8; i++) {
+    const t = i / 8;
+    s += `<line x1="${mx}" y1="${my + mh * t}" x2="${bx}" y2="${by + bh * t}"/><line x1="${mx + mw}" y1="${my + mh * t}" x2="${bx + bw}" y2="${by + bh * t}"/>`;
+    s += `<line x1="${mx + mw * t}" y1="${my}" x2="${bx + bw * t}" y2="${by}"/>`;
+    s += `<line x1="${bx}" y1="${by + bh * t}" x2="${bx + bw}" y2="${by + bh * t}"/><line x1="${bx + bw * t}" y1="${by}" x2="${bx + bw * t}" y2="${by + bh}"/>`;
+  }
+  s += `</g>`;
+  return s;
+}
+function goalPipes(uid) {
+  const { mx, my, mw, mh } = GOAL_VIEW;
+  const t = 2.6;
+  let s = '';
+  s += `<rect x="${mx - t}" y="${my - t}" width="${t}" height="${mh + t}" rx="${t / 2}" fill="url(#${uid}pipe)"/>`;
+  s += `<rect x="${mx + mw}" y="${my - t}" width="${t}" height="${mh + t}" rx="${t / 2}" fill="url(#${uid}pipe)"/>`;
+  s += `<rect x="${mx - t}" y="${my - t}" width="${mw + 2 * t}" height="${t}" rx="${t / 2}" fill="url(#${uid}pipeH)"/>`;
+  return s;
+}
+function goalSVG(cells, opts) {
+  opts = opts || {};
+  const metric = opts.metric || 'score';
+  const interactive = opts.interactive !== false;
+  const uid = 'g' + (++svgUid) + '_';
+  const sc = heatScale(cells, metric);
+  const { mx, my, mw, mh } = GOAL_VIEW;
+  let s = `<svg viewBox="0 0 ${GOAL_VIEW.w} ${GOAL_VIEW.h}" xmlns="http://www.w3.org/2000/svg" class="goal-25d" role="img" aria-label="Goal placement heat map">${svgDefs(uid)}`;
+  s += goalCage(uid);
+  cells.forEach((cell, i) => {
+    const x0 = mx + cell.col * mw / 3, y0 = my + cell.row * mh / 3, w = mw / 3, h = mh / 3;
+    const rate = sc.rateOf(cell);
+    const color = cell.n ? heatColor(rate, sc.base, sc.spread) : null;
+    const cls = interactive ? ' class="heat-zone"' : '';
+    const idxAttr = interactive ? ` data-zidx="${i}"` : '';
+    const faded = cell.n > 0 && cell.n < HEAT_MIN_N;
+    if (color || interactive) s += `<rect x="${x0 + 0.5}" y="${y0 + 0.5}" width="${w - 1}" height="${h - 1}" rx="1.2" fill="${color || '#FFFFFF'}" fill-opacity="${color ? (faded ? 0.45 : 0.82) : 0.01}"${cls}${idxAttr}/>`;
+    if (faded) s += `<rect x="${x0 + 0.5}" y="${y0 + 0.5}" width="${w - 1}" height="${h - 1}" rx="1.2" fill="url(#${uid}hatch)" style="pointer-events:none;"/>`;
+    const ink = color && !faded ? inkOn(color) : '#1A1A1A';
+    const cx = x0 + w / 2, cy = y0 + h / 2;
+    const tstyle = `font-family="Helvetica Neue, Arial, sans-serif" text-anchor="middle" fill="${ink}" style="pointer-events:none;"`;
+    if (cell.n > 0) {
+      s += `<text x="${cx}" y="${cy + 1}" font-size="6" font-weight="700" ${tstyle}>${Math.round(rate * 100)}%</text>`;
+      s += `<text x="${cx}" y="${cy + 6}" font-size="3.3" ${tstyle} opacity="0.9">${metric === 'save' ? `${cell.n - cell.goals}/${cell.n} saved` : `${cell.goals}/${cell.n}`}</text>`;
+      s += `<text x="${cx}" y="${cy - 5.5}" font-size="2.6" ${tstyle} opacity="0.75">${escapeHtml(cell.label)}</text>`;
+    } else if (interactive && opts.labels !== false) {
+      s += `<text x="${cx}" y="${cy + 1}" font-size="2.6" ${tstyle} opacity="0.55">${escapeHtml(cell.label)}</text>`;
+    }
+  });
+  s += goalPipes(uid);
+  s += `</svg>`;
+  return s;
+}
+function goalShotsSVG(shots, opts) {
+  opts = opts || {};
+  const uid = 'g' + (++svgUid) + '_';
+  const model = opts.model || null;
+  const { mx, my, mw, mh } = GOAL_VIEW;
+  let s = `<svg viewBox="0 0 ${GOAL_VIEW.w} ${GOAL_VIEW.h}" xmlns="http://www.w3.org/2000/svg" class="goal-25d" role="img" aria-label="Shot placements">${svgDefs(uid)}`;
+  s += goalCage(uid);
+  s += `<g stroke="#8E897C" stroke-width="0.2" stroke-dasharray="1,1" opacity="0.6"><line x1="${mx + mw / 3}" y1="${my}" x2="${mx + mw / 3}" y2="${my + mh}"/><line x1="${mx + 2 * mw / 3}" y1="${my}" x2="${mx + 2 * mw / 3}" y2="${my + mh}"/><line x1="${mx}" y1="${my + mh / 3}" x2="${mx + mw}" y2="${my + mh / 3}"/><line x1="${mx}" y1="${my + 2 * mh / 3}" x2="${mx + mw}" y2="${my + 2 * mh / 3}"/></g>`;
+  shots.forEach((sh, i) => {
+    if (sh.goalX === null || sh.goalX === undefined || sh.goalY === null || sh.goalY === undefined) return;
+    const [x, y] = goalMouthPoint(Math.max(0, Math.min(1, sh.goalX)), Math.max(0, Math.min(1, sh.goalY)));
+    const r = shotDotRadius(sh, model) * 1.7;
+    s += `<circle class="shot-dot" data-sidx="${i}" cx="${x.toFixed(2)}" cy="${y.toFixed(2)}" r="${r.toFixed(2)}" fill="${OUTCOME_COLORS[outcomeFor(sh)] || '#999'}" stroke="#1A1A1A" stroke-width="0.35"/>`;
+  });
+  s += goalPipes(uid);
+  s += `</svg>`;
+  return s;
+}
+// Legend strip under a chart: the diverging scale (zones) or outcome keys (shots).
+function heatLegendHtml(cells, metric) {
+  const sc = heatScale(cells, metric);
+  if (!sc.total) return '';
+  const word = metric === 'save' ? 'save %' : 'shot %';
+  const stops = [-1, -0.5, 0, 0.5, 1].map(t => heatColor(sc.base + t * sc.spread, sc.base, sc.spread)).join(',');
+  return `<div class="heat-legend"><span>Colder</span><span class="bar" style="background:linear-gradient(90deg,${stops});"></span><span>Hotter</span>
+    <span class="avg">Gray = this map&rsquo;s overall ${word} (${Math.round(sc.base * 100)}%). Faded/hatched = under ${HEAT_MIN_N} shots.</span></div>`;
+}
+function outcomeLegendHtml() {
+  return `<div class="heat-legend">${Object.keys(OUTCOME_COLORS).map(k => `<span class="key"><i style="background:${OUTCOME_COLORS[k]};"></i>${k}</span>`).join('')}<span class="avg">Bigger dot = better look (higher expected-goal value).</span></div>`;
 }
 
 // ---------------- Roster helpers ----------------
@@ -2069,56 +2309,75 @@ function svgPoint(svgEl, evt) {
   return pt.matrixTransform(ctm);
 }
 
+// Log Shot tap areas: same 2.5D art as the heat maps. A tap on the field is
+// projected back to yards (unprojectField), so it stores the same
+// distanceYds / lateralYds values as before.
+function makeMarker(svgEl, r, sw) {
+  const ns = 'http://www.w3.org/2000/svg';
+  const g = document.createElementNS(ns, 'g');
+  g.style.display = 'none';
+  g.style.pointerEvents = 'none';
+  const halo = document.createElementNS(ns, 'circle');
+  halo.setAttribute('r', r * 1.9); halo.setAttribute('fill', '#D4AF37'); halo.setAttribute('opacity', '0.35');
+  const dot = document.createElementNS(ns, 'circle');
+  dot.setAttribute('r', r); dot.setAttribute('fill', '#0F1F3D'); dot.setAttribute('stroke', '#FFFFFF'); dot.setAttribute('stroke-width', sw);
+  g.appendChild(halo); g.appendChild(dot);
+  svgEl.appendChild(g);
+  return { g, place(x, y) { g.setAttribute('transform', `translate(${x.toFixed(2)},${y.toFixed(2)})`); g.style.display = ''; } };
+}
 function buildFieldClickWidget(initial) {
   const wrap = document.getElementById('fieldClickWrap');
   wrap.innerHTML = fieldSVG(buildZones([], DIST_BANDS_PLAYER, LAT_BANDS_PLAYER), {metric:'score', interactive:false});
   const svgEl = wrap.querySelector('svg');
-  let marker = document.createElementNS('http://www.w3.org/2000/svg','circle');
-  marker.setAttribute('r','0.6'); marker.setAttribute('fill','#1F3864'); marker.setAttribute('stroke','#fff'); marker.setAttribute('stroke-width','0.15');
-  marker.style.display = 'none';
-  svgEl.appendChild(marker);
+  const marker = makeMarker(svgEl, 1.1, 0.35);
+  const show = (lat, dist) => {
+    const [x, y] = projectField(lat, dist);
+    marker.place(x, y);
+    document.getElementById('fieldReadout').textContent = `${dist} yds from goal, ${lat} yds lateral`;
+  };
   svgEl.addEventListener('click', (evt) => {
     const p = svgPoint(svgEl, evt);
-    const lateral = Math.max(-19, Math.min(19, p.x));
-    const distance = Math.max(0, Math.min(20, p.y));
+    const yd = unprojectField(p.x, p.y);
+    if (!isFinite(yd.distance) || !isFinite(yd.lateral)) return;
+    const lateral = Math.max(-19, Math.min(19, yd.lateral));
+    const distance = Math.max(0, Math.min(20, yd.distance));
     pendingField = { distanceYds: Math.round(distance*10)/10, lateralYds: Math.round(lateral*10)/10 };
-    marker.setAttribute('cx', lateral); marker.setAttribute('cy', distance);
-    marker.style.display = '';
-    document.getElementById('fieldReadout').textContent = `${pendingField.distanceYds} yds from goal, ${pendingField.lateralYds} yds lateral`;
+    show(pendingField.lateralYds, pendingField.distanceYds);
   });
   // Editing an existing shot pre-places the marker at its saved location so
   // "fixing a mis-tap" just means clicking a new spot, not starting blank.
   if (initial && initial.distanceYds !== null && initial.distanceYds !== undefined) {
     pendingField = { distanceYds: initial.distanceYds, lateralYds: initial.lateralYds };
-    marker.setAttribute('cx', initial.lateralYds); marker.setAttribute('cy', initial.distanceYds);
-    marker.style.display = '';
-    document.getElementById('fieldReadout').textContent = `${initial.distanceYds} yds from goal, ${initial.lateralYds} yds lateral`;
+    show(initial.lateralYds, initial.distanceYds);
   }
 }
 
 function buildGoalClickWidget(initial) {
   const wrap = document.getElementById('goalClickWrap');
-  wrap.innerHTML = goalSVG(buildGoalGrid([]), {metric:'score', interactive:false});
+  wrap.innerHTML = goalSVG(buildGoalGrid([]), {metric:'score', interactive:false, labels:false});
   const svgEl = wrap.querySelector('svg');
-  let marker = document.createElementNS('http://www.w3.org/2000/svg','circle');
-  marker.setAttribute('r','0.18'); marker.setAttribute('fill','#1F3864'); marker.setAttribute('stroke','#fff'); marker.setAttribute('stroke-width','0.05');
-  marker.style.display = 'none';
-  svgEl.appendChild(marker);
+  const marker = makeMarker(svgEl, 1.6, 0.5);
+  const show = (gx, gy) => {
+    const [x, y] = goalMouthPoint(gx, gy);
+    marker.place(x, y);
+    document.getElementById('goalReadout').textContent = `${goalZoneName(gx, gy)} (x=${gx}, y=${gy})`;
+  };
   svgEl.addEventListener('click', (evt) => {
     const p = svgPoint(svgEl, evt);
-    const nx = Math.max(0, Math.min(1, (p.x - 0.5) / 9));
-    const ny = Math.max(0, Math.min(1, 1 - (p.y - 0.5) / 9));
+    const g = goalFromPoint(p.x, p.y);
+    const nx = Math.max(0, Math.min(1, g.gx));
+    const ny = Math.max(0, Math.min(1, g.gy));
     pendingGoal = { goalX: Math.round(nx*100)/100, goalY: Math.round(ny*100)/100 };
-    marker.setAttribute('cx', 0.5 + nx*9); marker.setAttribute('cy', 0.5 + (1-ny)*9);
-    marker.style.display = '';
-    document.getElementById('goalReadout').textContent = `x=${pendingGoal.goalX}, y=${pendingGoal.goalY}`;
+    show(pendingGoal.goalX, pendingGoal.goalY);
   });
   if (initial && initial.goalX !== null && initial.goalX !== undefined) {
     pendingGoal = { goalX: initial.goalX, goalY: initial.goalY };
-    marker.setAttribute('cx', 0.5 + initial.goalX*9); marker.setAttribute('cy', 0.5 + (1-initial.goalY)*9);
-    marker.style.display = '';
-    document.getElementById('goalReadout').textContent = `x=${initial.goalX}, y=${initial.goalY}`;
+    show(initial.goalX, initial.goalY);
   }
+}
+function goalZoneName(gx, gy) {
+  const col = Math.min(2, Math.floor(gx * 3)), row = 2 - Math.min(2, Math.floor(gy * 3));
+  return GOAL_GRID_LABELS[row][col];
 }
 
 // The Log Shot form's shooter/goalie roster always matches the season the
@@ -4736,31 +4995,67 @@ function toggleZoneDrilldown(containerId, zone, zoneEl, it) {
   renderZoneDrilldown(drillWrap, zone, it);
 }
 
+// Zones (heat map) vs Shots (one dot per shot) — one choice for every heat
+// panel, remembered on this device.
+let HEAT_MODE = 'zones';
+try { if (localStorage.getItem('wluHeatMode') === 'shots') HEAT_MODE = 'shots'; } catch (e) { /* storage unavailable */ }
+const HEAT_PANEL_ITEMS = {};
+function shotTooltipHtml(s) {
+  const season = seasonForDate(s.date);
+  const who = s.team === 'OPP' ? (s.oppShooter ? 'Opp #' + escapeHtml(s.oppShooter) : 'Opponent') : escapeHtml(jerseyLabel(s.shooterJersey, season));
+  const bits = [escapeHtml(outcomeFor(s)), s.shotQuality ? escapeHtml(s.shotQuality.replace(/^\d-/, '')) : null, s.contestLevel ? escapeHtml(s.contestLevel) : null].filter(Boolean).join(' \u00b7 ');
+  const where = (s.distanceYds !== null && s.distanceYds !== undefined) ? `${s.distanceYds} yds out` : '';
+  return `<b>${who}</b><br>${bits}<br><span style="opacity:.75;">${escapeHtml(s.date || '')} ${escapeHtml(s.context || '')}${s.opponent ? ' vs ' + escapeHtml(s.opponent) : ''}${where ? ' \u00b7 ' + where : ''}</span>`;
+}
 function renderHeatPanel(containerId, items) {
+  HEAT_PANEL_ITEMS[containerId] = items;
   const wrap = document.getElementById(containerId);
   wrap.innerHTML = '';
   const drillWrap = document.getElementById(containerId + 'Drilldown');
   if (drillWrap) drillWrap.innerHTML = '';
   if (activeDrilldown.containerId === containerId) activeDrilldown = { containerId: null, key: null };
+  const bar = document.createElement('div');
+  bar.className = 'heat-modebar';
+  bar.innerHTML = `<div class="seg seg-sm"><button type="button" data-mode="zones" class="${HEAT_MODE === 'zones' ? 'active' : ''}">Zones</button><button type="button" data-mode="shots" class="${HEAT_MODE === 'shots' ? 'active' : ''}">Shots</button></div>`;
+  bar.querySelectorAll('button').forEach(b => b.addEventListener('click', () => {
+    HEAT_MODE = b.dataset.mode;
+    try { localStorage.setItem('wluHeatMode', HEAT_MODE); } catch (e) { /* storage unavailable */ }
+    Object.keys(HEAT_PANEL_ITEMS).forEach(id => { if (document.getElementById(id)) renderHeatPanel(id, HEAT_PANEL_ITEMS[id]); });
+  }));
+  wrap.appendChild(bar);
+  let model = null;
+  try { model = xgModelFor2027(); } catch (e) { model = null; }
   items.forEach(it => {
+    const isGoal = !!(it.hotspots && it.hotspots.length && it.hotspots[0].label);
+    const shots = it.hotspots ? [].concat(...it.hotspots.map(z => z.shots || [])) : [];
+    const shotsMode = HEAT_MODE === 'shots' && it.hotspots;
     const fig = document.createElement('figure');
-    fig.style.margin = '0'; fig.style.textAlign = 'center'; fig.style.maxWidth = '520px'; fig.style.flex = '1 1 320px';
+    fig.className = 'heat-fig' + (isGoal ? ' is-goal' : '');
     const capTitle = document.createElement('div');
-    capTitle.className = 'sans'; capTitle.style.fontWeight = '700'; capTitle.style.color = 'var(--navy-3)'; capTitle.style.marginBottom = '2px';
+    capTitle.className = 'heat-cap';
     capTitle.textContent = it.caption;
     const capSub = document.createElement('div');
-    capSub.className = 'sans'; capSub.style.fontSize = '11px'; capSub.style.color = 'var(--muted)'; capSub.style.marginBottom = '8px';
-    capSub.textContent = it.sub;
+    capSub.className = 'heat-sub';
+    capSub.textContent = shotsMode ? `${shots.length} shot(s) plotted \u2014 hover a dot for detail` : it.sub;
     const imgHolder = document.createElement('div');
-    imgHolder.innerHTML = it.svg;
+    imgHolder.className = 'heat-img';
+    imgHolder.innerHTML = shotsMode ? (isGoal ? goalShotsSVG(shots, { model }) : fieldShotsSVG(shots, { model })) : it.svg;
+    const legend = document.createElement('div');
+    legend.innerHTML = it.hotspots ? (shotsMode ? outcomeLegendHtml() : heatLegendHtml(it.hotspots, it.metric)) : '';
     const svgEl = imgHolder.querySelector('svg');
     svgEl.style.width = '100%';
-    svgEl.style.border = '1px solid var(--line)';
-    svgEl.style.borderRadius = '6px';
-    fig.appendChild(capTitle); fig.appendChild(capSub); fig.appendChild(imgHolder);
+    fig.appendChild(capTitle); fig.appendChild(capSub); fig.appendChild(imgHolder); fig.appendChild(legend);
     wrap.appendChild(fig);
 
-    if (it.hotspots) {
+    if (shotsMode) {
+      svgEl.querySelectorAll('.shot-dot').forEach(dot => {
+        const sh = shots[Number(dot.dataset.sidx)];
+        if (!sh) return;
+        dot.addEventListener('mouseenter', evt => { const el = getHeatTooltipEl(); el.innerHTML = shotTooltipHtml(sh); el.style.display = 'block'; moveHeatTooltip(evt); });
+        dot.addEventListener('mousemove', moveHeatTooltip);
+        dot.addEventListener('mouseleave', hideHeatTooltip);
+      });
+    } else if (it.hotspots) {
       svgEl.querySelectorAll('.heat-zone').forEach(zoneEl => {
         const idx = Number(zoneEl.dataset.zidx);
         const zone = it.hotspots[idx];
