@@ -72,12 +72,7 @@
   .controls-row { display: flex; flex-wrap: wrap; gap: 20px; align-items: flex-end; margin-bottom: 18px; }
   .control-group select { min-width: 240px; }
   .image-row { display: flex; gap: 22px; justify-content: center; flex-wrap: wrap; }
-  /* NOTE: inside an SVG with a viewBox, CSS px on text = coordinate units, not screen px.
-     These sizes are tuned per-diagram to that diagram's own viewBox scale. */
-  .field-label { font-size: 1.3px; font-weight: 700; fill: #1a1a1a; font-family: Arial, sans-serif; }
-  .field-axis { font-size: 1.5px; font-weight: 700; fill: #222; font-family: Arial, sans-serif; }
-  .field-yardage { font-size: 0.62px; fill: #8A8370; font-family: Arial, sans-serif; font-style: italic; }
-  .heat-zone { cursor: pointer; }
+    .heat-zone { cursor: pointer; }
   .heat-zone:hover { opacity: 0.7; }
   .heat-zone-selected { stroke: #1F3864 !important; stroke-width: 0.35 !important; }
   #heatTooltip { position: fixed; pointer-events: none; z-index: 9999; background: var(--navy); color: #fff; font-family: 'Helvetica Neue', Arial, sans-serif; font-size: 12px; line-height: 1.45; padding: 8px 12px; border-radius: 6px; box-shadow: 0 4px 14px rgba(0,0,0,.28); max-width: 240px; display: none; }
@@ -85,7 +80,6 @@
   .zone-drilldown { margin-top: 14px; }
   .zone-drilldown .table-wrap { max-height: 280px; }
   table.shot-quality-table th { position: static; }
-  .goal-label { font-size: 0.3px; font-weight: 700; fill: #1a1a1a; font-family: Arial, sans-serif; }
   table.shotlog { width: 100%; border-collapse: collapse; font-family: 'Helvetica Neue', Arial, sans-serif; font-size: 12.5px; }
   table.shotlog th { text-align: left; padding: 8px 8px; border-bottom: 2px solid var(--navy-3); color: var(--navy-3); position: sticky; top: 0; background: #fff; }
   table.shotlog td { padding: 7px 8px; border-bottom: 1px solid var(--line); }
@@ -1304,7 +1298,8 @@ const SEASONS = ["2026","2027"];
 // Tabs open on the season we're in now (fall counts toward next spring),
 // falling back to the newest listed season.
 function defaultSeason() {
-  const now = seasonForDate(localDateStr());
+  const d = new Date();
+  const now = String(d.getMonth() >= 7 ? d.getFullYear() + 1 : d.getFullYear());
   return SEASONS.includes(now) ? now : SEASONS[SEASONS.length - 1];
 }
 let SEED_ROSTER = [];
@@ -1738,13 +1733,6 @@ function hexInterp(hex1, hex2, t) {
   const c = c1.map((v,i) => Math.round(v + (c2[i]-v)*t));
   return '#' + c.map(v => v.toString(16).padStart(2,'0')).join('');
 }
-function colorForPct(pct, vmin, vmax) {
-  if (pct === null || pct === undefined) return '#E8E8E8';
-  let t = vmax > vmin ? (pct - vmin) / (vmax - vmin) : 0.5;
-  t = Math.max(0, Math.min(1, t));
-  if (t < 0.5) return hexInterp('#F8696B', '#FFEB84', t / 0.5);
-  return hexInterp('#FFEB84', '#63BE7B', (t - 0.5) / 0.5);
-}
 function median(nums) {
   if (!nums.length) return 0;
   const s = nums.slice().sort((a, b) => a - b);
@@ -1807,7 +1795,15 @@ function renderSortableTable(wrapId, cols, rows, opts) {
     let i = 0;
     while (i < cols.length) {
       const c = cols[i];
-      if (!c.group) { topRow += `<th rowspan="2">${c.label}</th>`; i++; continue; }
+      if (!c.group) {
+        if (c.sortable === false) topRow += `<th rowspan="2">${c.label}</th>`;
+        else {
+          const active = c.key === state.key;
+          const cls = ['sortable', active ? 'sorted' : '', c.headerClass || ''].filter(Boolean).join(' ');
+          topRow += `<th rowspan="2" class="${cls}" data-key="${c.key}" title="${escapeHtml(c.title || '')}">${c.label}${c.title ? '<i class="info-tip">i</i>' : ''}<span class="caret">${active ? (state.dir === 'asc' ? '▲' : '▼') : '▼'}</span></th>`;
+        }
+        i++; continue;
+      }
       let span = 0;
       while (i + span < cols.length && cols[i + span].group === c.group) span++;
       topRow += `<th colspan="${span}" class="group-head${c.groupClass ? ' ' + c.groupClass : ''}">${c.group}</th>`;
@@ -1883,10 +1879,14 @@ const LAT_BANDS_TEAM = [[-19,-9],[-9,0],[0,9],[9,19]];
 
 function buildZones(subset, distBands, latBands) {
   const zones = [];
+  const yMax = distBands[distBands.length - 1][1], xMax = latBands[latBands.length - 1][1];
+  // Bands are [low, high); the outermost band also takes its high edge so
+  // a shot at exactly 20 yards or 19 yards lateral isn't dropped.
+  const inBand = (v, lo, hi, max) => v >= lo && (v < hi || (hi === max && v === hi));
   for (const [y0,y1] of distBands) {
     for (const [x0,x1] of latBands) {
       const s = subset.filter(r => r.distanceYds !== null && r.distanceYds !== undefined && r.lateralYds !== null && r.lateralYds !== undefined
-        && r.distanceYds >= y0 && r.distanceYds < y1 && r.lateralYds >= x0 && r.lateralYds < x1);
+        && inBand(r.distanceYds, y0, y1, yMax) && inBand(r.lateralYds, x0, x1, xMax));
       const n = s.length;
       const goals = s.filter(r => r.goal === 1).length;
       zones.push({x0,x1,y0,y1,n,goals,shots:s});
@@ -2330,7 +2330,6 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
 // Each tab's content is split into <div class="subpage" data-label="...">
 // blocks; the strip of buttons is built from those labels. The last
 // sub-tab picked in each tab is remembered on this device.
-const SUBTAB_HOOKS = {}; // viewId -> fn(label) run after a sub-page is shown
 function showSubpage(viewId, label) {
   const view = document.getElementById(viewId);
   const pages = [...view.querySelectorAll(':scope > .subpage')];
@@ -2339,11 +2338,6 @@ function showSubpage(viewId, label) {
   pages.forEach(p => p.classList.toggle('active', p === page));
   view.querySelectorAll('.subtab-btn').forEach(b => b.classList.toggle('active', b.dataset.label === page.dataset.label));
   try { localStorage.setItem('wluSubtab:' + viewId, page.dataset.label); } catch (e) { /* storage unavailable */ }
-  if (SUBTAB_HOOKS[viewId]) SUBTAB_HOOKS[viewId](page.dataset.label);
-}
-function currentSubpage(viewId) {
-  const p = document.querySelector(`#${viewId} > .subpage.active`);
-  return p ? p.dataset.label : null;
 }
 function initSubtabs() {
   document.querySelectorAll('.subtabs[data-view]').forEach(strip => {
@@ -4304,19 +4298,6 @@ function computePlayerShotTypeRows(jersey, shotTypeModel) {
 // coverage there) but is being entered for 2027, so this is meaningful for
 // 2027-scoped views.
 function shotPoints(s) { return s.goal === 1 ? (s.assistJersey ? 2 : 1) : 0; }
-function playerPoints(jersey, shots) {
-  let pts = 0;
-  shots.forEach(s => {
-    if (s.goal === 1) {
-      if (s.shooterJersey === jersey) pts += 1;
-      if (s.assistJersey === jersey) pts += 1;
-    }
-  });
-  return pts;
-}
-function playerInvolvements(jersey, shots) {
-  return shots.filter(s => s.shooterJersey === jersey || (s.goal === 1 && s.assistJersey === jersey)).length;
-}
 function pointsForShots(list) { return list.reduce((sum, s) => sum + shotPoints(s), 0); }
 function pointsPerRep(list) { return list.length ? pointsForShots(list) / list.length : null; }
 
@@ -4786,7 +4767,8 @@ function isNewPossessionShot(s) { return s.rebound !== 'Yes'; }
 // WLU players on the field for an entry, split by side of the ball.
 // Practice: offense row = WLU offense, defense row = WLU defense.
 // Game: whichever row holds WLU numbers.
-function wluOnField(e) {
+function wluOnField(e) { return wluOnFieldRaw(e); }
+function wluOnFieldRaw(e) {
   const t = stintOf(e);
   if (!t) return null;
   const wlu = arr => arr.filter(j => !isOppJersey(j));
@@ -4835,12 +4817,6 @@ function buildEffData() {
     }
     if (s.possStart === 'Ground ball' && s.possStartJersey && !isOppJersey(s.possStartJersey)) { P(s.possStartJersey).gb++; B(s, s.possStartJersey).gb++; }
     if (s.possStart === 'FO win' && s.possStartJersey && !isOppJersey(s.possStartJersey)) P(s.possStartJersey).foWins++;
-    if (s.dominoes === 'Yes' && s.advCreator && !isOppJersey(s.advCreator)) {
-      const d = P(s.advCreator); d.dominoes++; d.domShots++; d.domXg += xg;
-      if (s.shotQuality === '1-Gold' || s.shotQuality === '2-Silver') d.domGood++;
-      if (s.goal === 1) d.domGoals++;
-      B(s, s.advCreator).dom++;
-    }
     markStint(s);
   });
   // Opponent shots only matter here for who was on the field.
@@ -4852,10 +4828,23 @@ function buildEffData() {
     if (p.causedBy && !isOppJersey(p.causedBy)) { P(p.causedBy).ct++; B(p, p.causedBy).ct++; }
     if (p.possStart === 'Ground ball' && p.possStartJersey && !isOppJersey(p.possStartJersey)) { P(p.possStartJersey).gb++; B(p, p.possStartJersey).gb++; }
     if (p.possStart === 'FO win' && p.possStartJersey && !isOppJersey(p.possStartJersey)) P(p.possStartJersey).foWins++;
-    if (team === 'WLU' && p.dominoes === 'Yes' && p.advCreator && !isOppJersey(p.advCreator)) { P(p.advCreator).dominoes++; B(p, p.advCreator).dom++; }
     markStint(p);
   });
-  return { model, shots, oppShots, poss, players, bySession, xgOf };
+  const d = { model, shots, oppShots, poss, players, bySession, xgOf };
+  // Dominoes are credited once per possession (a rebound shot flagged again
+  // doesn't count twice), to whoever is logged as starting them.
+  d.possList = teamPossessions(d);
+  d.possList.forEach(pp => {
+    if (pp.team !== 'WLU' || !pp.dom || !pp.creator || isOppJersey(pp.creator)) return;
+    const c = P(pp.creator);
+    c.dominoes++;
+    if (pp.shots.length) c.domShots++;
+    if (pp.shots.some(x => x.shotQuality === '1-Gold' || x.shotQuality === '2-Silver')) c.domGood++;
+    if (pp.goal) c.domGoals++;
+    c.domXg += pp.xg;
+    B(pp.e, pp.creator).dom++;
+  });
+  return d;
 }
 
 // Game Score: one number per player per session. Weights are shown in the
@@ -4875,7 +4864,8 @@ function teamPossessions(d) {
   const list = []; // { team, entries:[shot|poss], shots:[], goals, xg, to, dominoes, man, stint, context }
   const push = (team, e, isShot) => {
     list.push({ team, e, shots: isShot ? [e] : [], goal: isShot && e.goal === 1 ? 1 : 0, xg: isShot ? d.xgOf(e) : 0,
-      to: !isShot && e.end === 'Turnover' ? 1 : 0, failedClear: !isShot && e.end === 'Failed clear' ? 1 : 0, dom: e.dominoes === 'Yes' ? 1 : 0, man: e.manSituation || 'Even' });
+      to: !isShot && e.end === 'Turnover' ? 1 : 0, failedClear: !isShot && e.end === 'Failed clear' ? 1 : 0, dom: e.dominoes === 'Yes' ? 1 : 0,
+      creator: e.dominoes === 'Yes' ? (e.advCreator || null) : null, man: e.manSituation || 'Even' });
   };
   // Rebound shots add to the most recent shot possession of that team in the same session.
   const bySess = {};
@@ -4887,7 +4877,7 @@ function teamPossessions(d) {
       const last = bySess[k];
       last.shots.push(x.e); last.goal += x.e.goal === 1 ? 1 : 0;
       last.xg += d.xgOf(x.e);
-      if (x.e.dominoes === 'Yes') last.dom = 1;
+      if (x.e.dominoes === 'Yes') { last.dom = 1; if (!last.creator) last.creator = x.e.advCreator || null; }
       return;
     }
     push(x.team, x.e, x.shot);
@@ -4972,10 +4962,15 @@ function renderEffPossession(d, possList) {
     jersey: p.jersey, name: nameFor(p.jersey, '2027'), gb: p.gb, ct: p.ct, to: p.to, foWins: p.foWins, dominoes: p.dominoes, net: p.gb + p.ct - p.to,
   }));
   const wlu = possList.filter(x => x.team === 'WLU');
-  const clears = d.shots.concat(d.poss.filter(p => p.team !== 'OPP')).filter(e => e.possStart === 'Clear').length;
-  const failed = d.poss.filter(p => p.team !== 'OPP' && p.end === 'Failed clear').length;
-  const oppFailed = d.poss.filter(p => p.team === 'OPP' && p.end === 'Failed clear').length;
-  const oppClears = d.oppShots.concat(d.poss.filter(p => p.team === 'OPP')).filter(e => e.possStart === 'Clear').length;
+  // A clear succeeds when a possession that started on a clear didn't end
+  // as a failed clear; every failed clear counts as an attempt.
+  const clearTally = (shots, poss) => {
+    const ok = shots.filter(e => e.possStart === 'Clear').length + poss.filter(p => p.possStart === 'Clear' && p.end !== 'Failed clear').length;
+    return { ok, failed: poss.filter(p => p.end === 'Failed clear').length };
+  };
+  const wc = clearTally(d.shots, d.poss.filter(p => p.team !== 'OPP'));
+  const oc = clearTally(d.oppShots, d.poss.filter(p => p.team === 'OPP'));
+  const clears = wc.ok, failed = wc.failed, oppClears = oc.ok, oppFailed = oc.failed;
   sub.innerHTML = `Ground balls and faceoff wins come from <b>Possession Started By</b>; turnovers and caused turnovers from no-shot possessions. `
     + `Clearing: ${clears + failed ? `${clears}/${clears + failed} (${pct(ratio(clears, clears + failed))})` : 'none logged'}.`
     + (EFF_CONTEXT !== 'Practice' ? ` Riding (opponent failed clears): ${oppClears + oppFailed ? `${oppFailed}/${oppClears + oppFailed} (${pct(ratio(oppFailed, oppClears + oppFailed))})` : 'none logged'}.` : '')
@@ -5008,6 +5003,7 @@ function renderEffManUp(possList) {
   if (opp.length) {
     rows.push(row('Opponent man-up (WLU man-down D)', opp.filter(p => p.man === 'Man-Up'), true));
     rows.push(row('Opponent even strength (WLU D)', opp.filter(p => p.man === 'Even'), true));
+    rows.push(row('Opponent man-down (WLU man-up D)', opp.filter(p => p.man === 'Man-Down'), true));
   }
   sub.textContent = 'Per possession: a possession counts once even if it had rebound shots. For defense rows, "Scored" is goals allowed and Kill % = possessions stopped.';
   const cols = [
@@ -5139,7 +5135,9 @@ function renderEffDominoes(d, possList) {
 let effLineupMin = 5;
 function lineupLabel(js) { return js.slice().sort((a, b) => a - b).map(j => '#' + escapeHtml(j) + ' ' + escapeHtml(lastNameOf(nameFor(j, '2027') || ''))).join(', '); }
 function renderEffLineups(d, possList) {
-  const off = {}, def = {}, pairs = {}, onOff = {};
+  const off = {}, def = {}, pairs = {};
+  const onMemo = new Map();
+  const wluOnField = e => { if (!onMemo.has(e)) onMemo.set(e, wluOnFieldRaw(e)); return onMemo.get(e); };
   const add = (map, key, members, p, forDefense) => {
     const r = (map[key] = map[key] || { key, members, poss: 0, goals: 0, xg: 0, to: 0, dom: 0, shots: 0 });
     r.poss++; r.goals += p.goal; r.xg += p.xg; r.to += p.to; r.dom += p.dom; r.shots += p.shots.length;
@@ -5214,7 +5212,7 @@ function renderEffLineups(d, possList) {
 function renderEffFilmMetrics() {
   if (!document.getElementById('effTeamTiles')) return;
   const d = buildEffData();
-  const possList = teamPossessions(d);
+  const possList = d.possList;
   renderEffTeamTiles(d, possList);
   renderEffPlayers(d);
   renderEffPossession(d, possList);
@@ -5226,6 +5224,8 @@ function renderEffFilmMetrics() {
 
 function renderEfficiencyView() {
   if (!document.getElementById('effXgModelWrap')) return;
+  // Heavy: only while the tab is on screen (switchTab re-runs this on entry).
+  if (!document.getElementById('efficiencyView').classList.contains('active')) return;
   const shots = effShots2027().filter(s => s.shooterJersey);
   const model = xgModelFor2027();
   renderXgModelPanel(shots, model);
@@ -5290,8 +5290,8 @@ function renderPlayerHeat() {
     const goalCells = buildGoalGrid(subset);
     const heatSub = `${n} shot(s)` + (small ? ' \u2014 small sample' : '') + filterSummary(filters) + ' \u2014 hover a zone for detail, click for the shot list';
     renderHeatPanel('playerHeatWrap', [
-      {svg: fieldSVG(zones, {metric:'score'}), caption: title + ' (Field Position)', sub: heatSub, hotspots: zones, metric: 'score', unitLabel: 'shot(s)'},
-      {svg: goalSVG(goalCells, {metric:'score'}), caption: title + ' (Goal Placement)', sub: heatSub, hotspots: goalCells, metric: 'score', unitLabel: 'shot(s)'},
+      {svg: fieldSVG(zones, {metric:'score'}), shots: subset, caption: title + ' (Field Position)', sub: heatSub, hotspots: zones, metric: 'score', unitLabel: 'shot(s)'},
+      {svg: goalSVG(goalCells, {metric:'score'}), shots: subset, caption: title + ' (Goal Placement)', sub: heatSub, hotspots: goalCells, metric: 'score', unitLabel: 'shot(s)'},
     ]);
   } else if (sel.startsWith('NAME:')) {
     const key = sel.slice(5);
@@ -5310,8 +5310,8 @@ function renderPlayerHeat() {
     const goalCells = buildGoalGrid(subset);
     const heatSub = `${n} shot(s)` + (small ? ' \u2014 small sample' : '') + filterSummary(filters) + ' \u2014 hover a zone for detail, click for the shot list';
     renderHeatPanel('playerHeatWrap', [
-      {svg: fieldSVG(zones, {metric:'score'}), caption: title + ' (Field Position)', sub: heatSub, hotspots: zones, metric: 'score', unitLabel: 'shot(s)'},
-      {svg: goalSVG(goalCells, {metric:'score'}), caption: title + ' (Goal Placement)', sub: heatSub, hotspots: goalCells, metric: 'score', unitLabel: 'shot(s)'},
+      {svg: fieldSVG(zones, {metric:'score'}), shots: subset, caption: title + ' (Field Position)', sub: heatSub, hotspots: zones, metric: 'score', unitLabel: 'shot(s)'},
+      {svg: goalSVG(goalCells, {metric:'score'}), shots: subset, caption: title + ' (Goal Placement)', sub: heatSub, hotspots: goalCells, metric: 'score', unitLabel: 'shot(s)'},
     ]);
   } else {
     subset = seasonShots.filter(s => s.shooterJersey === sel && (!gradeVal || s.shotQuality === gradeVal));
@@ -5323,8 +5323,8 @@ function renderPlayerHeat() {
     const goalCells = buildGoalGrid(subset);
     const heatSub = `${n} shot(s)` + (small ? ' \u2014 small sample' : '') + filterSummary(filters) + ' \u2014 hover a zone for detail, click for the shot list';
     renderHeatPanel('playerHeatWrap', [
-      {svg: fieldSVG(zones, {metric:'score'}), caption: title + ' (Field Position)', sub: heatSub, hotspots: zones, metric: 'score', unitLabel: 'shot(s)'},
-      {svg: goalSVG(goalCells, {metric:'score'}), caption: title + ' (Goal Placement)', sub: heatSub, hotspots: goalCells, metric: 'score', unitLabel: 'shot(s)'},
+      {svg: fieldSVG(zones, {metric:'score'}), shots: subset, caption: title + ' (Field Position)', sub: heatSub, hotspots: zones, metric: 'score', unitLabel: 'shot(s)'},
+      {svg: goalSVG(goalCells, {metric:'score'}), shots: subset, caption: title + ' (Goal Placement)', sub: heatSub, hotspots: goalCells, metric: 'score', unitLabel: 'shot(s)'},
     ]);
   }
 }
@@ -5515,14 +5515,15 @@ function renderHeatPanel(containerId, items) {
   bar.querySelectorAll('button').forEach(b => b.addEventListener('click', () => {
     HEAT_MODE = b.dataset.mode;
     try { localStorage.setItem('wluHeatMode', HEAT_MODE); } catch (e) { /* storage unavailable */ }
-    Object.keys(HEAT_PANEL_ITEMS).forEach(id => { if (document.getElementById(id)) renderHeatPanel(id, HEAT_PANEL_ITEMS[id]); });
+    // Only panels still showing a chart (a cleared panel has no mode bar).
+    Object.keys(HEAT_PANEL_ITEMS).forEach(id => { const el = document.getElementById(id); if (el && el.querySelector('.heat-modebar')) renderHeatPanel(id, HEAT_PANEL_ITEMS[id]); });
   }));
   wrap.appendChild(bar);
   let model = null;
-  try { model = xgModelFor2027(); } catch (e) { model = null; }
+  if (HEAT_MODE === 'shots') { try { model = xgModelFor2027(); } catch (e) { model = null; } }
   items.forEach(it => {
     const isGoal = !!(it.hotspots && it.hotspots.length && it.hotspots[0].label);
-    const shots = it.hotspots ? [].concat(...it.hotspots.map(z => z.shots || [])) : [];
+    const shots = it.shots || (it.hotspots ? [].concat(...it.hotspots.map(z => z.shots || [])) : []);
     const shotsMode = HEAT_MODE === 'shots' && it.hotspots;
     const fig = document.createElement('figure');
     fig.className = 'heat-fig' + (isGoal ? ' is-goal' : '');
@@ -5677,8 +5678,8 @@ function renderGoalieHeat() {
   const goalCells = buildGoalGrid(subset);
   const smallTxt = (small ? ' \u2014 small sample' : '') + filterSummary(filters);
   renderHeatPanel('goalieHeatWrap', [
-    { svg: fieldSVG(zones, {metric:'save'}), caption: `${name} \u2014 ${goalieGrade} \u2014 ${seasonLabel} (Field Position)`, sub: `${n} faced${smallTxt} \u2014 hover a zone for detail, click for the shot list`, hotspots: zones, metric: 'save', unitLabel: 'faced' },
-    { svg: goalSVG(goalCells, {metric:'save'}), caption: `${name} \u2014 ${goalieGrade} \u2014 ${seasonLabel} (Goal Placement)`, sub: `${n} faced${smallTxt} \u2014 hover a zone for detail, click for the shot list`, hotspots: goalCells, metric: 'save', unitLabel: 'faced' },
+    { svg: fieldSVG(zones, {metric:'save'}), shots: subset, caption: `${name} \u2014 ${goalieGrade} \u2014 ${seasonLabel} (Field Position)`, sub: `${n} faced${smallTxt} \u2014 hover a zone for detail, click for the shot list`, hotspots: zones, metric: 'save', unitLabel: 'faced' },
+    { svg: goalSVG(goalCells, {metric:'save'}), shots: subset, caption: `${name} \u2014 ${goalieGrade} \u2014 ${seasonLabel} (Goal Placement)`, sub: `${n} faced${smallTxt} \u2014 hover a zone for detail, click for the shot list`, hotspots: goalCells, metric: 'save', unitLabel: 'faced' },
   ]);
 }
 document.getElementById('goalieSelect').addEventListener('change', renderGoalieHeat);
@@ -6138,7 +6139,7 @@ function renderOpponentReport() {
   wrap.innerHTML = html;
 
   const zones = buildZones(shots, DIST_BANDS_TEAM, LAT_BANDS_TEAM);
-  renderHeatPanel('opponentHeatWrap', [{ svg: fieldSVG(zones, {metric:'score'}), caption: `vs ${opponent}`, sub: `${n} shot(s) — hover a zone for detail, click for the shot list`, hotspots: zones, metric: 'score', unitLabel: 'shot(s)' }]);
+  renderHeatPanel('opponentHeatWrap', [{ svg: fieldSVG(zones, {metric:'score'}), shots, caption: `vs ${opponent}`, sub: `${n} shot(s) — hover a zone for detail, click for the shot list`, hotspots: zones, metric: 'score', unitLabel: 'shot(s)' }]);
 }
 
 function renderOpponent() {
