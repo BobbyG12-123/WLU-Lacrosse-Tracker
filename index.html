@@ -141,6 +141,62 @@
   .section-heading:first-child { margin-top: 0; }
   .section-heading.up { color: var(--good); }
   .section-heading.down { color: var(--critical); }
+  /* ---- Log Shot: film-logging layout ---- */
+  .log-sticky { margin-bottom: 14px; }
+  .session-bar { display: flex; flex-wrap: wrap; gap: 14px 18px; align-items: flex-end; background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 12px 16px; box-shadow: 0 1px 3px rgba(15,31,61,.06); }
+  .session-bar .sb-item input[type=date] { width: 150px; }
+  .session-bar .sb-item input[type=text] { width: 180px; }
+  .session-bar .sb-entry { margin-left: auto; }
+  .seg { display: inline-flex; border: 1.5px solid var(--navy-3); border-radius: 8px; overflow: hidden; }
+  .seg button { font-family: 'Helvetica Neue', Arial, sans-serif; font-size: 12.5px; font-weight: 700; padding: 8px 13px; border: none; background: #fff; color: var(--navy-3); cursor: pointer; }
+  .seg button + button { border-left: 1.5px solid var(--navy-3); }
+  .seg button.active { background: var(--navy-3); color: #fff; }
+  .lineup-bar { margin-top: 8px; background: linear-gradient(180deg, var(--navy) 0%, var(--navy-2) 100%); border-radius: 10px; padding: 10px 14px; color: #fff; display: grid; grid-template-columns: 1fr; gap: 6px; }
+  .lb-row { display: flex; align-items: center; gap: 10px; }
+  .lb-label { font-family: 'Helvetica Neue', Arial, sans-serif; font-size: 10.5px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: #C9D2E6; width: 128px; flex-shrink: 0; }
+  .lb-label.off { color: var(--gold); }
+  .lb-chips { display: flex; gap: 6px; flex: 1; flex-wrap: wrap; }
+  .lb-chip { display: flex; flex-direction: column; align-items: center; width: 74px; }
+  .lb-chip input { width: 74px; text-align: center; font-weight: 700; font-size: 15px; padding: 5px 4px; border-radius: 6px; border: 1.5px solid rgba(255,255,255,.18); background: rgba(255,255,255,.08); color: #fff; }
+  .lb-chip input:focus { outline: none; border-color: var(--gold); background: rgba(255,255,255,.16); }
+  .lb-chip input.bad { border-color: #F8696B; }
+  .lb-chip .nm { font-family: 'Helvetica Neue', Arial, sans-serif; font-size: 10px; color: #A9B4CC; margin-top: 2px; max-width: 74px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .lb-unit { width: 150px !important; font-size: 12px !important; padding: 5px 8px !important; background: rgba(255,255,255,.1) !important; color: #fff !important; border-color: rgba(255,255,255,.2) !important; }
+  .lb-unit option { color: var(--ink); }
+  .lb-actions { display: flex; gap: 8px; justify-content: flex-end; align-items: center; }
+  .lb-actions .btn.secondary { color: #E9DFB8; border-color: rgba(212,175,55,.45); }
+  .lb-status { font-family: 'Helvetica Neue', Arial, sans-serif; font-size: 11px; color: #A9B4CC; margin-right: auto; }
+  .log-layout { display: grid; grid-template-columns: minmax(0, 1fr) 450px; gap: 16px; align-items: start; }
+  .log-side { position: sticky; top: 12px; display: flex; flex-direction: column; gap: 12px; max-height: calc(100vh - 24px); overflow-y: auto; }
+  .goal-click svg { max-width: 330px; margin: 0 auto; }
+  .log-card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; box-shadow: 0 1px 3px rgba(15,31,61,.05); margin-bottom: 12px; }
+  .log-side .log-card { margin-bottom: 0; }
+  .log-card .field-grid { margin-bottom: 0; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); }
+  .log-card-head { font-family: 'Helvetica Neue', Arial, sans-serif; font-size: 12px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--navy-3); margin-bottom: 10px; display: flex; align-items: center; gap: 8px; }
+  .log-card-head .sub { font-weight: 400; text-transform: none; letter-spacing: 0; color: var(--muted); font-size: 11.5px; }
+  .log-card-head .step { display: inline-flex; width: 20px; height: 20px; border-radius: 50%; background: var(--navy-3); color: #fff; font-size: 11px; align-items: center; justify-content: center; letter-spacing: 0; }
+  .more-card > summary { cursor: pointer; list-style: none; margin-bottom: 0; }
+  .more-card > summary::-webkit-details-marker { display: none; }
+  .more-card > summary::after { content: '\25BE'; margin-left: auto; color: var(--muted); }
+  .more-card[open] > summary::after { content: '\25B4'; }
+  .span-2 { grid-column: span 2; }
+  .save-bar { display: flex; gap: 10px; align-items: center; }
+  .save-bar .btn:first-child { flex: 1; padding: 13px 22px; font-size: 15px; }
+  .chart-card .click-field { padding: 0; background: none; border: none; }
+  details.collapsible > summary { cursor: pointer; list-style: none; display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+  details.collapsible > summary::-webkit-details-marker { display: none; }
+  details.collapsible > summary .panel-title { margin: 0; }
+  details.collapsible > summary .panel-sub { margin: 0; }
+  details.collapsible > summary::after { content: 'Show \25BE'; margin-left: auto; font-family: 'Helvetica Neue', Arial, sans-serif; font-size: 11.5px; color: var(--muted); }
+  details.collapsible[open] > summary::after { content: 'Hide \25B4'; }
+  .recent-kind { font-family: 'Helvetica Neue', Arial, sans-serif; font-size: 10.5px; font-weight: 700; padding: 2px 7px; border-radius: 999px; background: var(--overall-bg); color: var(--overall); }
+  .recent-kind.opp { background: #FBE9E7; color: #B3261E; }
+  @media (max-width: 1000px) {
+    .log-layout { grid-template-columns: 1fr; }
+    .log-side { position: static; }
+    .session-bar .sb-entry { margin-left: 0; }
+    .lb-label { width: 90px; }
+  }
   @media print {
     header, nav.tabs, .btn, .filter-row, .controls-row, footer,
     #editingBanner, #logMsg, #tableMsg, #foMsg, .print-hide { display: none !important; }
@@ -183,166 +239,361 @@
   <div id="syncBanner" class="msg err" style="display:none;">Live sync isn&rsquo;t available in this view &mdash; open this page from its published link so changes save and share with the team.</div>
 
   <section id="logView" class="view active">
-    <div class="panel">
-      <p class="panel-title">Log a New Shot</p>
-      <p class="panel-sub">Click the field to set shot location, click the goal to set placement. Saves instantly for everyone with this link.</p>
-      <div id="logMsg"></div>
-      <div id="editingBanner" class="msg" style="display:none; background:#FBEFC9; color:#8A6D1D; font-weight:700;"></div>
+    <div id="editingBanner" class="msg" style="display:none; background:#FBEFC9; color:#8A6D1D; font-weight:700;"></div>
 
-      <div class="field-grid">
-        <div>
+    <div class="log-sticky">
+      <div class="session-bar">
+        <div class="sb-item">
           <label for="f_date">Date</label>
           <input type="date" id="f_date">
         </div>
-        <div>
-          <label>Context</label>
+        <div class="sb-item">
+          <label>Session</label>
           <div class="pill-row" id="f_context"></div>
         </div>
-        <div id="opponentFieldWrap" style="display:none;">
-          <label for="f_opponent">Which Game (Opponent)</label>
-          <input type="text" id="f_opponent" placeholder="e.g. Washington & Lee">
+        <div class="sb-item" id="opponentFieldWrap" style="display:none;">
+          <label for="f_opponent">Opponent</label>
+          <input type="text" id="f_opponent" list="opponentList" placeholder="e.g. Roanoke" maxlength="60">
+          <datalist id="opponentList"></datalist>
         </div>
-        <div>
-          <label for="f_shooter_name">Shooter</label>
-          <input type="text" id="f_shooter_name" list="shooterList" placeholder="Last name" autocomplete="off">
-          <datalist id="shooterList"></datalist>
-          <div class="readout" id="shooterResolve"></div>
+        <div class="sb-item" id="possessionToggleWrap" style="display:none;">
+          <label>Ball</label>
+          <div class="seg" id="lb_possession">
+            <button type="button" data-value="WLU" class="active">WLU ball</button>
+            <button type="button" data-value="OPP">Opponent ball</button>
+          </div>
         </div>
-        <div>
-          <label for="f_goalie">Goalie</label>
-          <select id="f_goalie"></select>
-        </div>
-        <div>
-          <label>Handedness</label>
-          <div class="pill-row" id="f_handedness"></div>
-        </div>
-        <div>
-          <label>Transition Type</label>
-          <div class="pill-row" id="f_transitiontype"></div>
-        </div>
-        <div>
-          <label for="f_assist_name">Assist &mdash; Who Passed (optional)</label>
-          <input type="text" id="f_assist_name" list="assistList" placeholder="Last name">
-          <datalist id="assistList"></datalist>
-          <div class="readout" id="assistResolve"></div>
-        </div>
-        <div>
-          <label>Shot Quality</label>
-          <div class="pill-row" id="f_quality"></div>
-        </div>
-        <div>
-          <label>Contest Level</label>
-          <div class="pill-row" id="f_contest"></div>
-        </div>
-        <div>
-          <label>Defense Scheme</label>
-          <div class="pill-row" id="f_defscheme"></div>
-        </div>
-        <div>
-          <label>Man Situation</label>
-          <div class="pill-row" id="f_mansituation"></div>
-        </div>
-        <div>
-          <label>Shot Mechanism (optional)</label>
-          <div class="pill-row" id="f_shotmechanism"></div>
-        </div>
-        <div>
-          <label>Rebound / Second-Chance (optional)</label>
-          <div class="pill-row" id="f_rebound"></div>
-        </div>
-        <div>
-          <label>Bounce Shot (optional)</label>
-          <div class="pill-row" id="f_bounceshot"></div>
-        </div>
-        <div>
-          <label for="f_trigger">Offense Trigger (optional)</label>
-          <input type="text" id="f_trigger" list="triggerList" placeholder="e.g. Rub">
-          <datalist id="triggerList"></datalist>
+        <div class="sb-item sb-entry">
+          <label>Log</label>
+          <div class="seg" id="entryTypeSeg">
+            <button type="button" data-value="shot" class="active">Shot</button>
+            <button type="button" data-value="poss">No-shot possession</button>
+            <button type="button" data-value="fo">Faceoff</button>
+          </div>
         </div>
       </div>
 
-      <div id="addPlayerPanel" class="field-grid" style="display:none; border:1px solid var(--line); border-radius:8px; padding:12px; background:#FBFAF6;">
-        <div>
-          <label for="np_name">New Player Name</label>
-          <input type="text" id="np_name" placeholder="Full name">
+      <div class="lineup-bar" id="lineupBar">
+        <div class="lb-row">
+          <div class="lb-label" id="lb_label_a">Offense</div>
+          <div class="lb-chips" id="lb_chips_a"></div>
+          <select class="lb-unit" id="lb_unit_a" title="Fill this row from a saved unit"></select>
         </div>
-        <div>
-          <label for="np_jersey">Jersey Number</label>
-          <input type="text" id="np_jersey" placeholder="e.g. 23">
+        <div class="lb-row">
+          <div class="lb-label" id="lb_label_b">Defense</div>
+          <div class="lb-chips" id="lb_chips_b"></div>
+          <select class="lb-unit" id="lb_unit_b" title="Fill this row from a saved unit"></select>
         </div>
-        <div style="display:flex; align-items:flex-end; gap:8px;">
-          <button class="btn secondary" id="np_add" type="button">Add Player</button>
-          <button class="btn secondary" id="np_cancel" type="button">Cancel</button>
-        </div>
-      </div>
-
-      <div class="field-grid" style="grid-template-columns: repeat(3, 1fr);">
-        <div>
-          <label>Shot Outcome</label>
-          <div class="pill-row" id="f_outcome"></div>
-        </div>
-        <div id="cleanSaveWrap" style="display:none;">
-          <label>Clean Save?</label>
-          <div class="pill-row" id="f_cleansave"></div>
-        </div>
-        <div>
-          <label>Off the Catch / Off the Dodge</label>
-          <div class="pill-row" id="f_catchdodge"></div>
+        <div class="lb-actions">
+          <span class="lb-status" id="lb_status"></span>
+          <button type="button" class="btn secondary" id="lb_flip" title="Change of possession: swap which row is on offense">Flip possession</button>
+          <button type="button" class="btn secondary" id="lb_clear">Clear lineup</button>
         </div>
       </div>
+    </div>
 
-      <div class="field-grid" style="grid-template-columns: 1fr 1fr;">
-        <div>
-          <label>Shot Location (click the field)</label>
+    <div id="logMsg"></div>
+
+    <!-- ============ SHOT ============ -->
+    <div class="log-layout" id="shotEntry">
+      <div class="log-form">
+        <div class="log-card">
+          <div class="log-card-head"><span class="step">1</span> Who</div>
+          <div class="field-grid">
+            <div id="shooterWluWrap">
+              <label for="f_shooter_name">Shooter</label>
+              <input type="text" id="f_shooter_name" list="shooterList" placeholder="Last name" autocomplete="off">
+              <datalist id="shooterList"></datalist>
+              <div class="readout" id="shooterResolve"></div>
+            </div>
+            <div id="shooterOppWrap" style="display:none;">
+              <label for="f_opp_shooter">Opponent Shooter #</label>
+              <input type="text" id="f_opp_shooter" inputmode="numeric" maxlength="3" placeholder="e.g. 12" list="oppJerseyList">
+              <datalist id="oppJerseyList"></datalist>
+            </div>
+            <div id="assistWluWrap">
+              <label for="f_assist_name">Passer (optional)</label>
+              <input type="text" id="f_assist_name" list="assistList" placeholder="Last name" autocomplete="off">
+              <datalist id="assistList"></datalist>
+              <div class="readout" id="assistResolve"></div>
+            </div>
+            <div id="assistOppWrap" style="display:none;">
+              <label for="f_opp_passer">Opponent Passer # (optional)</label>
+              <input type="text" id="f_opp_passer" inputmode="numeric" maxlength="3" placeholder="e.g. 7" list="oppJerseyList">
+            </div>
+            <div>
+              <label for="f_goalie" id="f_goalie_label">Goalie</label>
+              <select id="f_goalie"></select>
+            </div>
+            <div>
+              <label>Handedness</label>
+              <div class="pill-row" id="f_handedness"></div>
+            </div>
+          </div>
+          <div id="addPlayerPanel" class="field-grid" style="display:none; border:1px solid var(--line); border-radius:8px; padding:12px; background:#FBFAF6;">
+            <div>
+              <label for="np_name">New Player Name</label>
+              <input type="text" id="np_name" placeholder="Full name" maxlength="60">
+            </div>
+            <div>
+              <label for="np_jersey">Jersey Number</label>
+              <input type="text" id="np_jersey" placeholder="e.g. 23" maxlength="3" inputmode="numeric">
+            </div>
+            <div style="display:flex; align-items:flex-end; gap:8px;">
+              <button class="btn secondary" id="np_add" type="button">Add Player</button>
+              <button class="btn secondary" id="np_cancel" type="button">Cancel</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="log-card">
+          <div class="log-card-head"><span class="step">2</span> Result</div>
+          <div class="field-grid">
+            <div class="span-2">
+              <label>Shot Outcome</label>
+              <div class="pill-row" id="f_outcome"></div>
+            </div>
+            <div id="cleanSaveWrap" style="display:none;">
+              <label>Clean Save?</label>
+              <div class="pill-row" id="f_cleansave"></div>
+            </div>
+            <div id="screenedWrap" style="display:none;">
+              <label>Screened?</label>
+              <div class="pill-row" id="f_screened"></div>
+            </div>
+            <div id="goalieSetWrap" style="display:none;">
+              <label>Goalie Set?</label>
+              <div class="pill-row" id="f_goalieset"></div>
+            </div>
+            <div id="outletWrap" style="display:none;">
+              <label>Outlet After Save</label>
+              <div class="pill-row" id="f_outlet"></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="log-card">
+          <div class="log-card-head"><span class="step">3</span> How</div>
+          <div class="field-grid">
+            <div>
+              <label>Shot Quality</label>
+              <div class="pill-row" id="f_quality"></div>
+            </div>
+            <div>
+              <label>Contest Level</label>
+              <div class="pill-row" id="f_contest"></div>
+            </div>
+            <div>
+              <label>Off the Catch / Dodge</label>
+              <div class="pill-row" id="f_catchdodge"></div>
+            </div>
+            <div>
+              <label>Defense Scheme</label>
+              <div class="pill-row" id="f_defscheme"></div>
+            </div>
+            <div>
+              <label>Man Situation</label>
+              <div class="pill-row" id="f_mansituation"></div>
+            </div>
+            <div>
+              <label>Transition Type</label>
+              <div class="pill-row" id="f_transitiontype"></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="log-card">
+          <div class="log-card-head"><span class="step">4</span> Dominoes &amp; possession</div>
+          <div class="field-grid">
+            <div>
+              <label>Created Dominoes?</label>
+              <div class="pill-row" id="f_dominoes"></div>
+            </div>
+            <div id="advCreatorWrap" style="display:none;">
+              <label for="f_adv_creator">Who Started It (#)</label>
+              <input type="text" id="f_adv_creator" inputmode="numeric" maxlength="3" placeholder="Jersey #">
+              <div class="readout" id="advCreatorResolve"></div>
+            </div>
+            <div class="span-2">
+              <label>Possession Started By (optional)</label>
+              <div class="pill-row" id="f_possstart"></div>
+            </div>
+            <div id="possStartJerseyWrap" style="display:none;">
+              <label for="f_possstart_jersey">Who (#, optional)</label>
+              <input type="text" id="f_possstart_jersey" inputmode="numeric" maxlength="3" placeholder="Jersey #">
+              <div class="readout" id="possStartResolve"></div>
+            </div>
+          </div>
+        </div>
+
+        <details class="log-card more-card">
+          <summary class="log-card-head"><span class="step">5</span> More detail <span class="sub">advantage type, mechanism, rebound, bounce, trigger</span></summary>
+          <div class="field-grid" style="margin-top:12px;">
+            <div class="span-2" id="advTypeWrap">
+              <label>Advantage Type</label>
+              <div class="pill-row" id="f_advtype"></div>
+            </div>
+            <div>
+              <label>Shot Mechanism</label>
+              <div class="pill-row" id="f_shotmechanism"></div>
+            </div>
+            <div>
+              <label>Rebound / Second-Chance</label>
+              <div class="pill-row" id="f_rebound"></div>
+            </div>
+            <div>
+              <label>Bounce Shot</label>
+              <div class="pill-row" id="f_bounceshot"></div>
+            </div>
+            <div>
+              <label for="f_trigger">Offense Trigger</label>
+              <input type="text" id="f_trigger" list="triggerList" placeholder="e.g. Rub" maxlength="60">
+              <datalist id="triggerList"></datalist>
+            </div>
+          </div>
+        </details>
+      </div>
+
+      <div class="log-side">
+        <div class="log-card chart-card">
+          <div class="log-card-head">Shot location <span class="sub">click the field</span></div>
           <div class="click-field" id="fieldClickWrap"></div>
           <div class="readout" id="fieldReadout">Not set</div>
         </div>
-        <div>
-          <label>Goal Placement (required for Goal/Saved outcomes)</label>
-          <div class="click-field" id="goalClickWrap"></div>
+        <div class="log-card chart-card">
+          <div class="log-card-head">Goal placement <span class="sub">required for Goal / Saved</span></div>
+          <div class="click-field goal-click" id="goalClickWrap"></div>
           <div class="readout" id="goalReadout">Not set</div>
         </div>
+        <div class="save-bar">
+          <button class="btn" id="submitShotBtn">Save Shot</button>
+          <button class="btn secondary" id="cancelEditBtn" style="display:none;" type="button">Cancel Edit</button>
+        </div>
       </div>
+    </div>
 
-      <button class="btn" id="submitShotBtn">Save Shot</button>
-      <button class="btn secondary" id="cancelEditBtn" style="display:none;" type="button">Cancel Edit</button>
-    </div>
-    <div class="panel">
-      <p class="panel-title">Log a Faceoff</p>
-      <p class="panel-sub">A separate event from shots &mdash; a faceoff win doesn't always lead to a shot. Saves instantly, same as shots.</p>
-      <div id="foMsg"></div>
-      <div class="field-grid">
-        <div>
-          <label for="fo_date">Date</label>
-          <input type="date" id="fo_date">
+    <!-- ============ NO-SHOT POSSESSION ============ -->
+    <div class="log-layout" id="possEntry" style="display:none;">
+      <div class="log-form">
+        <div class="log-card">
+          <div class="log-card-head"><span class="step">1</span> How it ended</div>
+          <div class="field-grid">
+            <div class="span-2">
+              <label>Result</label>
+              <div class="pill-row" id="p_end"></div>
+            </div>
+            <div id="pTurnoverWrap" style="display:none;">
+              <label for="p_turnover_by">Turnover By (#)</label>
+              <input type="text" id="p_turnover_by" inputmode="numeric" maxlength="3" placeholder="Jersey #">
+              <div class="readout" id="pTurnoverResolve"></div>
+            </div>
+            <div id="pCausedWrap" style="display:none;">
+              <label for="p_caused_by">Caused By (#, optional)</label>
+              <input type="text" id="p_caused_by" inputmode="numeric" maxlength="3" placeholder="Jersey #">
+              <div class="readout" id="pCausedResolve"></div>
+            </div>
+            <div>
+              <label>Man Situation</label>
+              <div class="pill-row" id="p_mansituation"></div>
+            </div>
+          </div>
         </div>
-        <div>
-          <label for="fo_context">Context</label>
-          <select id="fo_context"><option>Practice</option><option>Game</option></select>
+        <div class="log-card">
+          <div class="log-card-head"><span class="step">2</span> Dominoes &amp; possession</div>
+          <div class="field-grid">
+            <div>
+              <label>Created Dominoes?</label>
+              <div class="pill-row" id="p_dominoes"></div>
+            </div>
+            <div id="pAdvCreatorWrap" style="display:none;">
+              <label for="p_adv_creator">Who Started It (#)</label>
+              <input type="text" id="p_adv_creator" inputmode="numeric" maxlength="3" placeholder="Jersey #">
+              <div class="readout" id="pAdvCreatorResolve"></div>
+            </div>
+            <div class="span-2">
+              <label>Possession Started By (optional)</label>
+              <div class="pill-row" id="p_possstart"></div>
+            </div>
+            <div id="pPossStartJerseyWrap" style="display:none;">
+              <label for="p_possstart_jersey">Who (#, optional)</label>
+              <input type="text" id="p_possstart_jersey" inputmode="numeric" maxlength="3" placeholder="Jersey #">
+              <div class="readout" id="pPossStartResolve"></div>
+            </div>
+          </div>
         </div>
-        <div id="foOpponentFieldWrap" style="display:none;">
-          <label for="fo_opponent">Which Game (Opponent)</label>
-          <input type="text" id="fo_opponent" placeholder="e.g. Washington & Lee">
+        <details class="log-card more-card">
+          <summary class="log-card-head"><span class="step">3</span> More detail <span class="sub">advantage type</span></summary>
+          <div class="field-grid" style="margin-top:12px;">
+            <div class="span-2">
+              <label>Advantage Type</label>
+              <div class="pill-row" id="p_advtype"></div>
+            </div>
+          </div>
+        </details>
+      </div>
+      <div class="log-side">
+        <div class="log-card">
+          <div class="log-card-head">What this is for</div>
+          <p class="sans" style="font-size:12.5px; color:var(--muted); line-height:1.55; margin:0;">Log every possession that ends <b>without</b> a shot &mdash; turnovers, failed clears, end of period. Possessions that end in a shot are counted from the shot itself. Together they let lineup, dominoes and turnover stats be measured per possession.</p>
         </div>
-        <div>
-          <label for="fo_player">Faceoff Taker</label>
-          <select id="fo_player"></select>
-        </div>
-        <div>
-          <label for="fo_vsplayer">Faceoff Opponent (optional)</label>
-          <select id="fo_vsplayer"></select>
-        </div>
-        <div>
-          <label for="fo_won">Result</label>
-          <select id="fo_won"><option value="">Select&hellip;</option><option value="Yes">Won</option><option value="No">Lost</option></select>
-        </div>
-        <div>
-          <label for="fo_notes">Notes (optional)</label>
-          <input type="text" id="fo_notes" placeholder="e.g. clamp and go">
+        <div class="save-bar">
+          <button class="btn" id="submitPossBtn">Save Possession</button>
+          <button class="btn secondary" id="cancelPossEditBtn" style="display:none;" type="button">Cancel Edit</button>
         </div>
       </div>
-      <button class="btn" id="submitFaceoffBtn">Save Faceoff</button>
     </div>
+
+    <!-- ============ FACEOFF ============ -->
+    <div class="log-layout" id="foEntry" style="display:none;">
+      <div class="log-form">
+        <div class="log-card">
+          <div class="log-card-head"><span class="step">1</span> Faceoff</div>
+          <div id="foMsg"></div>
+          <div style="display:none;">
+            <input type="date" id="fo_date">
+            <select id="fo_context"><option>Practice</option><option>Game</option></select>
+            <div id="foOpponentFieldWrap"><input type="text" id="fo_opponent"></div>
+          </div>
+          <div class="field-grid">
+            <div>
+              <label for="fo_player">Faceoff Taker</label>
+              <select id="fo_player"></select>
+            </div>
+            <div>
+              <label for="fo_vsplayer">Faceoff Opponent (optional)</label>
+              <select id="fo_vsplayer"></select>
+            </div>
+            <div>
+              <label for="fo_won">Result</label>
+              <select id="fo_won"><option value="">Select&hellip;</option><option value="Yes">Won</option><option value="No">Lost</option></select>
+            </div>
+            <div>
+              <label for="fo_notes">Notes (optional)</label>
+              <input type="text" id="fo_notes" placeholder="e.g. clamp and go" maxlength="120">
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="log-side">
+        <div class="log-card">
+          <div class="log-card-head">About faceoffs</div>
+          <p class="sans" style="font-size:12.5px; color:var(--muted); line-height:1.55; margin:0;">A separate event from shots &mdash; a win doesn&rsquo;t always lead to a shot. Uses the date and session picked above.</p>
+        </div>
+        <div class="save-bar">
+          <button class="btn" id="submitFaceoffBtn">Save Faceoff</button>
+        </div>
+      </div>
+    </div>
+
+    <details class="panel collapsible" id="recentPanel" open>
+      <summary><span class="panel-title">This session&rsquo;s entries</span> <span class="panel-sub" id="recentSub"></span></summary>
+      <div class="table-wrap" id="recentWrap" style="max-height:340px; margin-top:12px;"></div>
+    </details>
+
+    <details class="panel collapsible" id="unitsPanel">
+      <summary><span class="panel-title">Units</span> <span class="panel-sub">Saved groups (Mid Line 1, Man-up A&hellip;) that fill a lineup row in one tap</span></summary>
+      <div id="unitsWrap" style="margin-top:12px;"></div>
+    </details>
   </section>
 
   <section id="playerView" class="view">
@@ -828,7 +1079,21 @@ firebase.auth().onAuthStateChanged(user => {
 });
 </script>
 <script>
-const COLS =["id","date","practiceId","context","shooterJersey","goalieJersey","onGoal","onKeeper","goal","blocked","defScheme","transition","offDodge","rightHanded","shotQuality","cleanSave","fieldX","fieldY","distanceYds","lateralYds","goalX","goalY","customTags","contestLevel","assistJersey","opponent","passType","trigger","outcome","manSituation","shotMechanism","rebound","bounceShot"];
+const COLS =["id","date","practiceId","context","shooterJersey","goalieJersey","onGoal","onKeeper","goal","blocked","defScheme","transition","offDodge","rightHanded","shotQuality","cleanSave","fieldX","fieldY","distanceYds","lateralYds","goalX","goalY","customTags","contestLevel","assistJersey","opponent","passType","trigger","outcome","manSituation","shotMechanism","rebound","bounceShot",
+  // Added for film logging (2027+). Older tuples simply lack these trailing
+  // columns, which tupleToObj reads back as undefined -> treated as unset.
+  "team","oppShooter","oppPasser","dominoes","advCreator","advType","screened","goalieSet","outlet","possStart","possStartJersey","stintId"];
+// team: 'OPP' marks an opponent shot on a WLU goalie (games). Those never go
+// into SHOTS (every shooting stat assumes a WLU shooter); they live in
+// OPP_SHOTS and feed only the goalie views. Opponent jerseys are stored as
+// 'o' + number (e.g. 'o12') anywhere a jersey can be either team's.
+const ADV_TYPE_OPTIONS = ["Beat his man","Forced approach/slide","Matchup advantage","Numbers/unsettled","Pick/2-man","Off-ball cut"];
+const POSS_START_OPTIONS = ["FO win","Ground ball","Clear","Save","Caused TO"];
+const OUTLET_OPTIONS = ["Completed","Turnover","Held"];
+const POSS_END_OPTIONS = ["Turnover","Failed clear","End of period"];
+// A no-shot possession (turnover, failed clear, end of period). Kept apart
+// from shots so no shot math changes; lineup/turnover/dominoes stats read both.
+const POSS_COLS = ["id","date","context","opponent","team","possStart","possStartJersey","dominoes","advCreator","advType","manSituation","end","turnoverBy","causedBy","stintId"];
 // Shot Outcome (one required pill pick) replaces the old On Goal/On
 // Keeper/Goal Scored/Blocked checkboxes. Rather than rewriting every
 // existing analytics function that reads onGoal/onKeeper/goal/blocked
@@ -909,8 +1174,10 @@ function objToTuple(o, cols) {
 // without overwriting each other, and still queues offline like before.
 // app/shots_live is now only an inbox: anything an older cached copy of the
 // app writes there is moved into sessions by migrateShotsInbox().
-let LIVE_SESSIONS = {}; // { sessionDocId: { date, context, opponent, shots: [obj], ... } }
-const SESSION_ENTRY_PREFIX = { shot: 's_' };
+let LIVE_SESSIONS = {}; // { sessionDocId: { date, context, opponent, shots:[obj], poss:[obj], stints:[obj] } }
+let OPP_SHOTS = [];      // opponent shots on WLU goalies (team === 'OPP')
+let POSSESSIONS = [];    // no-shot possessions
+const SESSION_ENTRY_PREFIX = { shot: 's_', poss: 'p_', stint: 't_' };
 
 function sessionSlug(s) {
   return String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 60);
@@ -922,12 +1189,19 @@ function sessionIdFor(entry) {
   return date + '_' + ctx + (opp ? '_' + opp : '');
 }
 function parseSessionDoc(id, data) {
-  const sess = { id, date: data.date || null, context: data.context || null, opponent: data.opponent || null, shots: [] };
+  const sess = { id, date: data.date || null, context: data.context || null, opponent: data.opponent || null, shots: [], poss: [], stints: [] };
   Object.keys(data).forEach(k => {
-    if (k.startsWith(SESSION_ENTRY_PREFIX.shot) && typeof data[k] === 'string') {
-      try { const o = tupleToObj(JSON.parse(data[k])); o._sid = id; sess.shots.push(o); } catch (e) { console.error('bad shot entry', id, k, e); }
-    }
+    if (typeof data[k] !== 'string') return;
+    try {
+      if (k.startsWith(SESSION_ENTRY_PREFIX.shot)) { const o = tupleToObj(JSON.parse(data[k])); o._sid = id; sess.shots.push(o); }
+      else if (k.startsWith(SESSION_ENTRY_PREFIX.poss)) { const o = tupleToObj(JSON.parse(data[k]), POSS_COLS); o._sid = id; sess.poss.push(o); }
+      else if (k.startsWith(SESSION_ENTRY_PREFIX.stint)) {
+        const o = JSON.parse(data[k]);
+        if (o && Array.isArray(o.offense) && Array.isArray(o.defense)) { o.id = k.slice(SESSION_ENTRY_PREFIX.stint.length); sess.stints.push(o); }
+      }
+    } catch (e) { console.error('bad session entry', id, k, e); }
   });
+  sess.stints.sort((x, y) => (x.seq || 0) - (y.seq || 0) || String(x.id).localeCompare(String(y.id)));
   return sess;
 }
 function rebuildShots() {
@@ -937,10 +1211,25 @@ function rebuildShots() {
   Object.keys(LIVE_SESSIONS).sort().forEach(sid => LIVE_SESSIONS[sid].shots.forEach(s => { live.push(s); seen.add(s.id); }));
   // Inbox tuples not yet moved into a session still show up right away.
   LIVE_SHOTS_TUPLES.forEach(t => { const o = tupleToObj(t); if (!seen.has(o.id)) live.push(o); });
-  SHOTS = seed.concat(live);
+  SHOTS = seed.concat(live.filter(s => s.team !== 'OPP'));
+  OPP_SHOTS = live.filter(s => s.team === 'OPP');
+  POSSESSIONS = [];
+  Object.keys(LIVE_SESSIONS).sort().forEach(sid => LIVE_SESSIONS[sid].poss.forEach(p => POSSESSIONS.push(p)));
 }
+// Every logged shot regardless of shooting team (id lookups, Shot Log, export).
+function allShotEntries() { return SHOTS.concat(OPP_SHOTS); }
+// Shots a WLU goalie faced: practice shots carry a WLU goalie, and in games
+// the opponent's shots (team 'OPP') do. WLU game shots have no WLU goalie.
+function goalieShotsForSeason(season) {
+  const pool = allShotEntries().filter(s => s.goalieJersey);
+  return season === 'All Seasons' ? pool : pool.filter(s => seasonForDate(s.date) === season);
+}
+function goalieShots2027() { return goalieShotsForSeason('2027'); }
 function nextShotId() {
-  return SHOTS.reduce((m, s) => Math.max(m, Number(s.id) || 0), 0) + 1;
+  return allShotEntries().reduce((m, s) => Math.max(m, Number(s.id) || 0), 0) + 1;
+}
+function nextPossId() {
+  return POSSESSIONS.reduce((m, p) => Math.max(m, Number(p.id) || 0), 0) + 1;
 }
 function sessionMeta(entry) {
   return { date: entry.date || null, context: entry.context === 'Game' ? 'Game' : 'Practice', opponent: entry.context === 'Game' ? (entry.opponent || null) : null };
@@ -954,27 +1243,76 @@ function settleWrite(promise, ms) {
     new Promise(res => setTimeout(() => res('queued'), ms || 4000)),
   ]);
 }
-// Writes one shot into its session doc; if an edit moved it to a different
-// session (date/context/opponent changed), removes it from the old one in
-// the same batch.
-function persistShot(shot) {
+
+// ---- Lineup stints ----
+// A stint is one lineup (6 on offense, 6 on defense, who has the ball) in
+// one session. Entries point at a stint by its seq, so a lineup is stored
+// once per substitution instead of on every shot. An identical lineup
+// already in the session is reused rather than duplicated.
+function lineupKey(l) {
+  return (l.offTeam || 'WLU') + '|' + l.offense.slice().sort().join(',') + '|' + l.defense.slice().sort().join(',');
+}
+// Stint ids are random (not max+1) so two devices adding lineups to the
+// same session at once can't claim the same id and overwrite each other;
+// seq is only for display order.
+function newStintId() {
+  const r = (window.crypto && crypto.getRandomValues) ? crypto.getRandomValues(new Uint32Array(2)) : [Math.random() * 4294967296, Math.random() * 4294967296];
+  return Date.now().toString(36) + (r[0] >>> 0).toString(36) + (r[1] >>> 0).toString(36);
+}
+function stintFor(sid, lineup) {
+  if (!lineup || (!lineup.offense.length && !lineup.defense.length)) return { id: null, isNew: false };
+  const sess = LIVE_SESSIONS[sid];
+  const stints = sess ? sess.stints : [];
+  const key = lineupKey(lineup);
+  const hit = stints.find(t => lineupKey(t) === key);
+  if (hit) return { id: hit.id, isNew: false };
+  const seq = stints.reduce((m, t) => Math.max(m, t.seq || 0), 0) + 1;
+  const id = newStintId();
+  return { id, isNew: true, stint: { id, seq, offense: lineup.offense.slice(), defense: lineup.defense.slice(), offTeam: lineup.offTeam || 'WLU' } };
+}
+function stintById(sid, id) {
+  const sess = LIVE_SESSIONS[sid];
+  return sess && id ? (sess.stints.find(t => t.id === id) || null) : null;
+}
+
+// Writes one entry into its session doc (plus a new stint when the lineup
+// changed); if an edit moved it to a different session (date/context/
+// opponent changed), removes it from the old one in the same batch.
+function persistSessionEntry(kind, entry, cols, lineup) {
   if (!DB) return Promise.resolve('error');
-  const sid = sessionIdFor(shot);
-  const key = SESSION_ENTRY_PREFIX.shot + shot.id;
-  const clean = Object.assign({}, shot); delete clean._sid; delete clean.seed;
-  const batch = DB.batch();
-  batch.set(DB.collection('sessions').doc(sid), Object.assign(sessionMeta(shot), { [key]: JSON.stringify(objToTuple(clean)) }), { merge: true });
-  if (shot._sid && shot._sid !== sid) {
-    batch.set(DB.collection('sessions').doc(shot._sid), { [key]: firebase.firestore.FieldValue.delete() }, { merge: true });
+  const sid = sessionIdFor(entry);
+  const key = SESSION_ENTRY_PREFIX[kind] + entry.id;
+  const clean = Object.assign({}, entry); delete clean._sid; delete clean.seed;
+  const fields = sessionMeta(entry);
+  if (lineup !== undefined) {
+    const st = stintFor(sid, lineup);
+    clean.stintId = st.id;
+    if (st.isNew) {
+      fields[SESSION_ENTRY_PREFIX.stint + st.id] = JSON.stringify(st.stint);
+      if (LIVE_SESSIONS[sid]) LIVE_SESSIONS[sid].stints.push(st.stint);
+    }
+  } else if (entry._sid && entry._sid !== sid) {
+    clean.stintId = null; // its stint belonged to the old session
   }
-  shot._sid = sid;
+  fields[key] = JSON.stringify(objToTuple(clean, cols));
+  const batch = DB.batch();
+  batch.set(DB.collection('sessions').doc(sid), fields, { merge: true });
+  if (entry._sid && entry._sid !== sid) {
+    batch.set(DB.collection('sessions').doc(entry._sid), { [key]: firebase.firestore.FieldValue.delete() }, { merge: true });
+  }
+  entry.stintId = clean.stintId === undefined ? null : clean.stintId;
+  entry._sid = sid;
   return settleWrite(batch.commit());
 }
-function deleteShotEntry(shot) {
-  if (!DB || !shot || shot.seed) return Promise.resolve('error');
-  const sid = shot._sid || sessionIdFor(shot);
-  return settleWrite(DB.collection('sessions').doc(sid).set({ [SESSION_ENTRY_PREFIX.shot + shot.id]: firebase.firestore.FieldValue.delete() }, { merge: true }));
+function persistShot(shot, lineup) { return persistSessionEntry('shot', shot, COLS, lineup); }
+function persistPossession(p, lineup) { return persistSessionEntry('poss', p, POSS_COLS, lineup); }
+function deleteSessionEntry(kind, entry) {
+  if (!DB || !entry || entry.seed) return Promise.resolve('error');
+  const sid = entry._sid || sessionIdFor(entry);
+  return settleWrite(DB.collection('sessions').doc(sid).set({ [SESSION_ENTRY_PREFIX[kind] + entry.id]: firebase.firestore.FieldValue.delete() }, { merge: true }));
 }
+function deleteShotEntry(shot) { return deleteSessionEntry('shot', shot); }
+function deletePossessionEntry(p) { return deleteSessionEntry('poss', p); }
 
 // Moves anything sitting in the legacy app/shots_live doc into session docs.
 // A copy of every tuple ever moved is kept in app/shots_live_backup. The
@@ -1009,7 +1347,7 @@ async function migrateShotsInbox(tuples) {
 
     const existing = {};
     Object.values(LIVE_SESSIONS).forEach(sess => sess.shots.forEach(s => { existing[s.id] = s; }));
-    let maxId = SHOTS.reduce((m, s) => Math.max(m, Number(s.id) || 0), 0);
+    let maxId = allShotEntries().reduce((m, s) => Math.max(m, Number(s.id) || 0), 0);
     tuples.forEach(t => maxId = Math.max(maxId, Number(tupleToObj(t).id) || 0));
     const batch = DB.batch();
     pending.forEach(t => {
@@ -1017,7 +1355,9 @@ async function migrateShotsInbox(tuples) {
       const prior = existing[o.id];
       if (prior) {
         const a = Object.assign({}, prior); delete a._sid;
-        if (JSON.stringify(objToTuple(a)) === JSON.stringify(t)) return; // already moved
+        // Compare at full COLS width: inbox tuples from older app copies
+        // are shorter than today's COLS.
+        if (JSON.stringify(objToTuple(a)) === JSON.stringify(objToTuple(o))) return; // already moved
         o.id = ++maxId; // same id, different shot: keep both
       }
       const sid = sessionIdFor(o);
@@ -1137,6 +1477,7 @@ async function loadAll() {
     qs.docs.forEach(d => { LIVE_SESSIONS[d.id] = parseSessionDoc(d.id, d.data()); });
     rebuildShots();
     rerenderAfterShotsChange();
+    if (window.__appReady) { renderRecentEntries(); refreshOpponentLists(); }
   }, e => console.error('sessions sync error', e));
   shotsRef.onSnapshot(snap => {
     if (!snap.exists || typeof snap.data().json !== 'string') return;
@@ -1158,6 +1499,11 @@ async function loadAll() {
     rebuildFaceoffs();
     renderFaceoffs();
   }, e => console.error('faceoffs sync error', e));
+  const unitsRef = DB.doc('app/units');
+  unitsRef.onSnapshot(snap => {
+    UNITS = snap.exists ? parseUnits(snap.data().json) : [];
+    if (window.__appReady) refreshUnitsUi();
+  }, e => console.error('units sync error', e));
   loadEvalListeners();
 }
 
@@ -1355,7 +1701,7 @@ function calibration2026Shots() { return SHOTS.filter(s => seasonForDate(s.date)
 // trends metric, the Efficiency tab and the goalie table never disagree
 // with each other about the same shot's expected value.
 function xgModelFor2027() { return buildXgModel(calibration2026Shots(), shots2027()); }
-function facedXgModelFor2027() { return buildFacedXgModel(calibration2026Shots(), shots2027()); }
+function facedXgModelFor2027() { return buildFacedXgModel(calibration2026Shots(), goalieShots2027()); }
 
 const DIST_BANDS_PLAYER = [[0,5],[5,10],[10,15],[15,20]];
 const LAT_BANDS_PLAYER = [[-19,-11],[-11,-3],[-3,3],[3,11],[11,19]];
@@ -1667,9 +2013,25 @@ function refreshFormRosterOptions() {
 function toggleOpponentField() {
   const isGame = document.getElementById('f_context').dataset.value === 'Game';
   document.getElementById('opponentFieldWrap').style.display = isGame ? '' : 'none';
+  document.getElementById('possessionToggleWrap').style.display = isGame ? '' : 'none';
   if (!isGame) document.getElementById('f_opponent').value = '';
+  onSessionChanged();
 }
-document.getElementById('f_date').addEventListener('change', refreshFormRosterOptions);
+// The date / Practice-Game / opponent picked at the top of Log Shot is the
+// session for every entry type, faceoffs included.
+function onSessionChanged() {
+  if (!window.__appReady) return;
+  document.getElementById('fo_date').value = document.getElementById('f_date').value;
+  document.getElementById('fo_context').value = isGameSession() ? 'Game' : 'Practice';
+  document.getElementById('fo_opponent').value = isGameSession() ? document.getElementById('f_opponent').value.trim() : '';
+  refreshFoRosterOptions();
+  refreshOpponentLists();
+  loadLineupForSession();
+  applyTeamToForm();
+  renderRecentEntries();
+}
+document.getElementById('f_date').addEventListener('change', () => { refreshFormRosterOptions(); onSessionChanged(); });
+document.getElementById('f_opponent').addEventListener('change', onSessionChanged);
 
 // ---------------- Shooter / Assist: type a last name, resolve to a roster jersey ----------------
 // No fuzzy/last-name matcher existed anywhere in the app before this — the
@@ -1678,7 +2040,10 @@ document.getElementById('f_date').addEventListener('change', refreshFormRosterOp
 // resolves to "Andrew Keller" without picking from a dropdown.
 let resolvedShooterJersey = null;
 let resolvedAssistJersey = null;
-function escapeHtml(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+// Safe for element text AND quoted attribute values.
+function escapeHtml(s) {
+  return String(s === null || s === undefined ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
 function lastNameOf(name) { const parts = name.trim().split(/\s+/); return parts[parts.length - 1]; }
 function resolveByLastName(text, season) {
   const key = text.trim().toLowerCase();
@@ -1766,13 +2131,14 @@ document.getElementById('fo_context').addEventListener('change', toggleFoOpponen
 document.getElementById('fo_date').addEventListener('change', refreshFoRosterOptions);
 document.getElementById('fo_player').addEventListener('change', () => refreshFoRosterOptions());
 
-function showFoMsg(text, ok) {
-  const box = document.getElementById('foMsg');
-  box.innerHTML = `<div class="msg ${ok?'ok':'err'}">${text}</div>`;
-  if (ok) setTimeout(()=>{ box.innerHTML=''; }, 4000);
-}
+function showFoMsg(text, ok) { flashMsg('foMsg', text, ok); }
 
 document.getElementById('submitFaceoffBtn').addEventListener('click', async () => {
+  const sess = readSessionFields();
+  if (sess.error) { showFoMsg(escapeHtml(sess.error), false); return; }
+  document.getElementById('fo_date').value = sess.date;
+  document.getElementById('fo_context').value = sess.context;
+  document.getElementById('fo_opponent').value = sess.opponent || '';
   const player = document.getElementById('fo_player').value;
   const won = document.getElementById('fo_won').value;
   if (!player) { showFoMsg('Pick who took the faceoff.', false); return; }
@@ -1781,19 +2147,19 @@ document.getElementById('submitFaceoffBtn').addEventListener('click', async () =
   const maxId = FACEOFFS.reduce((m,f)=>Math.max(m, f.id||0), 0);
   const faceoff = {
     id: maxId + 1,
-    date: document.getElementById('fo_date').value || new Date().toISOString().slice(0,10),
-    context: document.getElementById('fo_context').value,
-    opponent: document.getElementById('fo_opponent').value || null,
+    date: sess.date,
+    context: sess.context,
+    opponent: sess.opponent,
     playerJersey: player,
     won: won === 'Yes' ? 1 : 0,
-    notes: document.getElementById('fo_notes').value || null,
+    notes: document.getElementById('fo_notes').value.trim().slice(0, 120) || null,
     vsPlayerJersey: document.getElementById('fo_vsplayer').value || null,
   };
   FACEOFFS.push(faceoff);
   const okSave = await persistFaceoffs();
   if (!okSave) { FACEOFFS.pop(); showFoMsg('Save failed — please try again.', false); return; }
 
-  showFoMsg(`Saved faceoff #${faceoff.id} for #${player} ${nameFor(player, currentFoSeason())}.`, true);
+  showFoMsg(`Saved faceoff #${faceoff.id} for #${escapeHtml(player)} ${escapeHtml(nameFor(player, currentFoSeason()))}.`, true);
   document.getElementById('fo_won').value = '';
   document.getElementById('fo_notes').value = '';
   document.getElementById('fo_vsplayer').value = '';
@@ -1854,21 +2220,376 @@ setupPillGroup('f_rebound', REBOUND_OPTIONS, null);
 setupPillGroup('f_bounceshot', BOUNCE_SHOT_OPTIONS, null);
 setupPillGroup('f_catchdodge', CATCH_DODGE_OPTIONS, null);
 setupPillGroup('f_cleansave', ['Yes','No'], null);
-setupPillGroup('f_outcome', OUTCOME_OPTIONS, null, (val) => {
-  document.getElementById('cleanSaveWrap').style.display = val === 'Saved' ? '' : 'none';
-  if (val !== 'Saved') setPillGroupValue('f_cleansave', null);
-});
+setupPillGroup('f_screened', ['Yes','No'], null);
+setupPillGroup('f_goalieset', ['Yes','No'], null);
+setupPillGroup('f_outlet', OUTLET_OPTIONS, null);
+setupPillGroup('f_dominoes', ['Yes','No'], null, v => toggleJerseyWrap('advCreatorWrap', 'f_adv_creator', v === 'Yes'));
+setupPillGroup('f_advtype', ADV_TYPE_OPTIONS, null);
+setupPillGroup('f_possstart', POSS_START_OPTIONS, null, v => toggleJerseyWrap('possStartJerseyWrap', 'f_possstart_jersey', !!v));
+setupPillGroup('f_outcome', OUTCOME_OPTIONS, null, () => updateResultFields());
 
-function showMsg(text, ok) {
-  const box = document.getElementById('logMsg');
-  box.innerHTML = `<div class="msg ${ok?'ok':'err'}">${text}</div>`;
-  if (ok) setTimeout(()=>{ box.innerHTML=''; }, 4000);
+setupPillGroup('p_end', POSS_END_OPTIONS, null, v => {
+  toggleJerseyWrap('pTurnoverWrap', 'p_turnover_by', v === 'Turnover');
+  toggleJerseyWrap('pCausedWrap', 'p_caused_by', v === 'Turnover');
+});
+setupPillGroup('p_mansituation', MAN_SITUATION_OPTIONS, 'Even');
+setupPillGroup('p_dominoes', ['Yes','No'], null, v => toggleJerseyWrap('pAdvCreatorWrap', 'p_adv_creator', v === 'Yes'));
+setupPillGroup('p_possstart', POSS_START_OPTIONS, null, v => toggleJerseyWrap('pPossStartJerseyWrap', 'p_possstart_jersey', !!v));
+setupPillGroup('p_advtype', ADV_TYPE_OPTIONS, null);
+
+function toggleJerseyWrap(wrapId, inputId, show) {
+  document.getElementById(wrapId).style.display = show ? '' : 'none';
+  if (!show) { const el = document.getElementById(inputId); el.value = ''; el.dispatchEvent(new Event('input')); }
 }
-function showTableMsg(text) {
-  const box = document.getElementById('tableMsg');
+
+// Segmented controls (Ball: WLU/Opponent, Log: Shot/Possession/Faceoff).
+function setupSeg(id, onChange) {
+  const el = document.getElementById(id);
+  el.querySelectorAll('button').forEach(b => b.addEventListener('click', () => {
+    setSegValue(id, b.dataset.value);
+    if (onChange) onChange(b.dataset.value);
+  }));
+}
+function setSegValue(id, value) {
+  document.getElementById(id).querySelectorAll('button').forEach(b => b.classList.toggle('active', b.dataset.value === value));
+}
+function segValue(id) {
+  const b = document.getElementById(id).querySelector('button.active');
+  return b ? b.dataset.value : null;
+}
+setupSeg('entryTypeSeg', showEntryType);
+setupSeg('lb_possession', () => { onPossessionChanged(); saveLineupLocal(); });
+
+function showEntryType(kind) {
+  document.getElementById('shotEntry').style.display = kind === 'shot' ? '' : 'none';
+  document.getElementById('possEntry').style.display = kind === 'poss' ? '' : 'none';
+  document.getElementById('foEntry').style.display = kind === 'fo' ? '' : 'none';
+  document.getElementById('lineupBar').style.display = kind === 'fo' ? 'none' : '';
+}
+
+function isGameSession() { return document.getElementById('f_context').dataset.value === 'Game'; }
+// Which team has the ball for the entry being logged. Practice is always
+// WLU (both sides are WLU players); in a game it's the Ball toggle.
+function currentTeam() { return isGameSession() ? (segValue('lb_possession') || 'WLU') : 'WLU'; }
+function otherTeam(t) { return t === 'OPP' ? 'WLU' : 'OPP'; }
+
+// ---- Jersey fields: typed numbers for either team ----
+// A WLU number must be on that season's roster; an opponent number is any
+// 1-3 digits and is stored as 'o<number>' so it can never be mistaken for
+// the WLU player wearing the same number.
+function normJerseyText(v) { return String(v || '').trim().replace(/^#/, ''); }
+function validJerseyText(v) { return /^\d{1,3}$/.test(v); }
+function encodeJersey(num, team) { return (team === 'OPP' && isGameSession()) ? 'o' + num : num; }
+function isOppJersey(j) { return typeof j === 'string' && /^o\d{1,3}$/.test(j); }
+function jerseyLabel(j, season) {
+  if (!j) return '';
+  if (isOppJersey(j)) return 'Opp #' + j.slice(1);
+  const nm = nameFor(j, season);
+  return '#' + j + (nm ? ' ' + nm : '');
+}
+// Returns { ok, value } — value is the stored jersey (or null when blank).
+function readJerseyField(inputId, team) {
+  const v = normJerseyText(document.getElementById(inputId).value);
+  if (!v) return { ok: true, value: null };
+  if (!validJerseyText(v)) return { ok: false, value: null, why: 'Jersey numbers are 1–3 digits.' };
+  if (team === 'WLU' || !isGameSession()) {
+    if (!(ROSTERS[currentLogSeason()] || []).some(r => r.jersey === v)) return { ok: false, value: null, why: `#${v} isn’t on the ${currentLogSeason()} roster.` };
+  }
+  return { ok: true, value: encodeJersey(v, team) };
+}
+// Live readout under a jersey input: the player's name, "Opp #12", or why
+// it won't save. teamFn says which team's player this field is for.
+function bindJerseyReadout(inputId, readoutId, teamFn) {
+  const input = document.getElementById(inputId);
+  const update = () => {
+    const out = document.getElementById(readoutId);
+    const r = readJerseyField(inputId, teamFn());
+    if (!input.value.trim()) { out.textContent = ''; out.style.color = ''; return; }
+    out.textContent = r.ok ? jerseyLabel(r.value, currentLogSeason()) + ' ✓' : r.why;
+    out.style.color = r.ok ? '' : 'var(--critical)';
+  };
+  input.addEventListener('input', update);
+  input.__updateReadout = update;
+}
+bindJerseyReadout('f_adv_creator', 'advCreatorResolve', () => currentTeam());
+bindJerseyReadout('f_possstart_jersey', 'possStartResolve', () => currentTeam());
+bindJerseyReadout('p_adv_creator', 'pAdvCreatorResolve', () => currentTeam());
+bindJerseyReadout('p_possstart_jersey', 'pPossStartResolve', () => currentTeam());
+bindJerseyReadout('p_turnover_by', 'pTurnoverResolve', () => currentTeam());
+bindJerseyReadout('p_caused_by', 'pCausedResolve', () => otherTeam(currentTeam()));
+function refreshJerseyReadouts() {
+  ['f_adv_creator','f_possstart_jersey','p_adv_creator','p_possstart_jersey','p_turnover_by','p_caused_by'].forEach(id => {
+    const el = document.getElementById(id); if (el.__updateReadout) el.__updateReadout();
+  });
+}
+
+// Show/hide the fields that depend on the outcome and who is shooting.
+function updateResultFields() {
+  const outcome = document.getElementById('f_outcome').dataset.value || null;
+  const onCage = outcome === 'Goal' || outcome === 'Saved';
+  // A WLU goalie is in net for every practice shot and for opponent shots.
+  const wluGoalieInNet = !isGameSession() || currentTeam() === 'OPP';
+  const show = (id, pill, on) => { document.getElementById(id).style.display = on ? '' : 'none'; if (!on) setPillGroupValue(pill, null); };
+  show('cleanSaveWrap', 'f_cleansave', outcome === 'Saved');
+  show('screenedWrap', 'f_screened', onCage);
+  show('goalieSetWrap', 'f_goalieset', onCage);
+  show('outletWrap', 'f_outlet', outcome === 'Saved' && wluGoalieInNet);
+}
+
+// Swap the Who card between a WLU shooter (name lookup) and an opponent
+// shooter (typed number) as the Ball toggle changes.
+function applyTeamToForm() {
+  const opp = currentTeam() === 'OPP';
+  document.getElementById('shooterWluWrap').style.display = opp ? 'none' : '';
+  document.getElementById('assistWluWrap').style.display = opp ? 'none' : '';
+  document.getElementById('shooterOppWrap').style.display = opp ? '' : 'none';
+  document.getElementById('assistOppWrap').style.display = opp ? '' : 'none';
+  document.getElementById('f_goalie_label').textContent = opp ? 'WLU Goalie (in net)' : (isGameSession() ? 'Goalie (leave blank for theirs)' : 'Goalie');
+  document.getElementById('submitShotBtn').textContent = editingShotId !== null ? `Update Shot #${editingShotId}` : (opp ? 'Save Opponent Shot' : 'Save Shot');
+  updateResultFields();
+  refreshJerseyReadouts();
+}
+function onPossessionChanged() {
+  applyTeamToForm();
+  renderLineupBar();
+}
+
+// Each new message cancels the previous one's auto-hide, so an earlier
+// timer can't wipe a newer message early.
+const msgTimers = {};
+function flashMsg(boxId, text, ok) {
+  const box = document.getElementById(boxId);
   if (!box) return;
-  box.innerHTML = `<div class="msg ok">${text}</div>`;
-  setTimeout(() => { box.innerHTML = ''; }, 4000);
+  clearTimeout(msgTimers[boxId]);
+  box.innerHTML = `<div class="msg ${ok?'ok':'err'}">${text}</div>`;
+  if (ok) msgTimers[boxId] = setTimeout(()=>{ box.innerHTML=''; }, 4000);
+}
+function showMsg(text, ok) { flashMsg('logMsg', text, ok); }
+function showTableMsg(text) { flashMsg('tableMsg', text, true); }
+
+// ---------------- Lineup bar ----------------
+// Row A / Row B. In a game, A is always WLU and B is always the opponent;
+// the Ball toggle decides which row is on offense. In practice both rows are
+// WLU players, A is the offense, and Flip swaps the rows.
+const LINEUP_SIZE = 6;
+let LINEUP = { a: Array(LINEUP_SIZE).fill(''), b: Array(LINEUP_SIZE).fill('') };
+let lineupLoadedFor = null;
+let lineupContextFor = null;
+let UNITS = []; // [{ name, jerseys: ['12','7',...] }] from app/units
+
+function currentSessionId() {
+  return sessionIdFor({ date: document.getElementById('f_date').value, context: isGameSession() ? 'Game' : 'Practice', opponent: document.getElementById('f_opponent').value.trim() });
+}
+function lineupStorageKey(sid) { return 'wluLineup:' + sid; }
+function saveLineupLocal() {
+  try { localStorage.setItem(lineupStorageKey(currentSessionId()), JSON.stringify({ a: LINEUP.a, b: LINEUP.b, ball: segValue('lb_possession') })); } catch (e) { /* storage unavailable */ }
+}
+// When the session changes, pick up where this device left off in it, or
+// else from the session's most recent saved lineup.
+function loadLineupForSession() {
+  const sid = currentSessionId();
+  if (lineupLoadedFor === sid) return;
+  lineupLoadedFor = sid;
+  let stored = null;
+  try { stored = JSON.parse(localStorage.getItem(lineupStorageKey(sid)) || 'null'); } catch (e) { stored = null; }
+  const clean = arr => Array.from({ length: LINEUP_SIZE }, (_, i) => (Array.isArray(arr) && typeof arr[i] === 'string' && validJerseyText(arr[i])) ? arr[i] : '');
+  if (stored) {
+    LINEUP = { a: clean(stored.a), b: clean(stored.b) };
+    if (stored.ball === 'WLU' || stored.ball === 'OPP') setSegValue('lb_possession', stored.ball);
+  } else {
+    const sess = LIVE_SESSIONS[sid];
+    const last = sess && sess.stints.length ? sess.stints[sess.stints.length - 1] : null;
+    if (last) {
+      const strip = arr => arr.map(j => isOppJersey(j) ? j.slice(1) : j);
+      const game = sess.context === 'Game';
+      const wluRow = game ? (last.offTeam === 'OPP' ? last.defense : last.offense) : last.offense;
+      const bRow = game ? (last.offTeam === 'OPP' ? last.offense : last.defense) : last.defense;
+      LINEUP = { a: clean(strip(wluRow)), b: clean(strip(bRow)) };
+      if (game) setSegValue('lb_possession', last.offTeam === 'OPP' ? 'OPP' : 'WLU');
+    } else if (lineupContextFor !== (isGameSession() ? 'Game' : 'Practice')) {
+      // Practice <-> Game: WLU row carries over; row B changes meaning
+      // (WLU defense vs opponent numbers), so it starts empty.
+      LINEUP = { a: LINEUP.a.slice(), b: Array(LINEUP_SIZE).fill('') };
+    }
+    // Same kind of session (e.g. just fixing the date or opponent while
+    // typing): keep the lineup already in the bar.
+  }
+  lineupContextFor = isGameSession() ? 'Game' : 'Practice';
+  applyTeamToForm();
+  renderLineupBar();
+}
+function rowTeam(row) { return isGameSession() ? (row === 'a' ? 'WLU' : 'OPP') : 'WLU'; }
+function renderLineupBar() {
+  const game = isGameSession();
+  const ball = currentTeam();
+  const aOff = game ? ball === 'WLU' : true;
+  const la = document.getElementById('lb_label_a'), lbl = document.getElementById('lb_label_b');
+  la.textContent = game ? (aOff ? 'WLU · offense' : 'WLU · defense') : 'Offense';
+  lbl.textContent = game ? (aOff ? 'Opp · defense' : 'Opp · offense') : 'Defense';
+  la.classList.toggle('off', aOff); lbl.classList.toggle('off', !aOff);
+  document.getElementById('lb_flip').textContent = game ? 'Flip possession' : 'Swap rows';
+  ['a','b'].forEach(row => {
+    const wrap = document.getElementById('lb_chips_' + row);
+    const team = rowTeam(row);
+    wrap.innerHTML = LINEUP[row].map((j, i) => `<div class="lb-chip"><input type="text" inputmode="numeric" maxlength="3" data-row="${row}" data-i="${i}" value="${escapeHtml(j)}" placeholder="#" aria-label="${row === 'a' ? 'Row 1' : 'Row 2'} player ${i + 1}"><span class="nm"></span></div>`).join('');
+    wrap.querySelectorAll('input').forEach(inp => {
+      inp.addEventListener('input', () => { LINEUP[row][+inp.dataset.i] = normJerseyText(inp.value); saveLineupLocal(); decorateChips(); });
+    });
+  });
+  renderUnitSelects();
+  decorateChips();
+}
+function renderUnitSelects() {
+  ['a','b'].forEach(row => {
+    const unitSel = document.getElementById('lb_unit_' + row);
+    unitSel.style.display = rowTeam(row) === 'WLU' && UNITS.length ? '' : 'none';
+    unitSel.innerHTML = '<option value="">Fill from unit\u2026</option>' + UNITS.map((u, i) => `<option value="${i}">${escapeHtml(u.name)}</option>`).join('');
+  });
+}
+// A units change from another device only touches the unit pickers and the
+// units table, never inputs someone may be typing in.
+function refreshUnitsUi() { renderUnitSelects(); renderUnitsPanel(); }
+// Names under each chip, red outline on anything that won't save.
+function decorateChips() {
+  const season = currentLogSeason();
+  const problems = [];
+  ['a','b'].forEach(row => {
+    const team = rowTeam(row);
+    const seen = {};
+    document.querySelectorAll(`#lb_chips_${row} .lb-chip`).forEach((chip, i) => {
+      const v = LINEUP[row][i];
+      const inp = chip.querySelector('input'), nm = chip.querySelector('.nm');
+      let bad = false, label = '';
+      if (v) {
+        if (!validJerseyText(v)) { bad = true; label = 'digits only'; }
+        else if (seen[v]) { bad = true; label = 'duplicate'; }
+        else if (team === 'WLU') {
+          const on = (ROSTERS[season] || []).find(r => r.jersey === v);
+          if (!on) { bad = true; label = 'not on roster'; } else label = lastNameOf(on.name);
+        } else label = 'Opp #' + v;
+        seen[v] = true;
+      }
+      if (bad) problems.push(`${row === 'a' ? 'Row 1' : 'Row 2'} #${v}: ${label}`);
+      inp.classList.toggle('bad', bad);
+      nm.textContent = label;
+    });
+  });
+  const lu = currentLineup();
+  const status = document.getElementById('lb_status');
+  if (problems.length) status.textContent = 'Fix: ' + problems.join(' · ');
+  else if (!lu.offense.length && !lu.defense.length) status.textContent = 'No lineup set — entries still save, just without lineup stats.';
+  else status.textContent = `Lineup: ${lu.offense.length} on offense, ${lu.defense.length} on defense`;
+  status.style.color = problems.length ? '#F8A5A6' : '';
+  return problems;
+}
+// The lineup to attach to a saved entry: { offense, defense, offTeam }.
+function currentLineup() {
+  const game = isGameSession();
+  const ball = currentTeam();
+  const pick = row => LINEUP[row].filter(v => validJerseyText(v)).map(v => encodeJersey(v, rowTeam(row)));
+  const a = pick('a'), b = pick('b');
+  if (!game) return { offense: a, defense: b, offTeam: 'WLU' };
+  return ball === 'WLU' ? { offense: a, defense: b, offTeam: 'WLU' } : { offense: b, defense: a, offTeam: 'OPP' };
+}
+document.getElementById('lb_flip').addEventListener('click', () => {
+  if (isGameSession()) {
+    setSegValue('lb_possession', currentTeam() === 'WLU' ? 'OPP' : 'WLU');
+    onPossessionChanged();
+  } else {
+    LINEUP = { a: LINEUP.b, b: LINEUP.a };
+    renderLineupBar();
+  }
+  saveLineupLocal();
+});
+document.getElementById('lb_clear').addEventListener('click', () => {
+  LINEUP = { a: Array(LINEUP_SIZE).fill(''), b: Array(LINEUP_SIZE).fill('') };
+  saveLineupLocal();
+  renderLineupBar();
+});
+['a','b'].forEach(row => document.getElementById('lb_unit_' + row).addEventListener('change', e => {
+  const u = UNITS[+e.target.value];
+  if (u) {
+    LINEUP[row] = Array.from({ length: LINEUP_SIZE }, (_, i) => u.jerseys[i] || '');
+    saveLineupLocal();
+    renderLineupBar();
+  }
+  e.target.value = '';
+}));
+
+// ---------------- Units (saved lineup groups) ----------------
+async function persistUnits() {
+  if (!DB) return false;
+  try { await DB.doc('app/units').set({ json: JSON.stringify(UNITS) }); } catch (e) { console.error(e); return false; }
+  return true;
+}
+function renderUnitsPanel() {
+  const wrap = document.getElementById('unitsWrap');
+  if (!wrap) return;
+  if (!document.getElementById('unitsTable')) {
+    wrap.innerHTML = `
+      <div id="unitsTable"></div>
+      <div class="field-grid" style="grid-template-columns: 1fr 2fr auto; align-items:flex-end; margin-bottom:0;">
+        <div><label for="unit_name">Unit Name</label><input type="text" id="unit_name" maxlength="40" placeholder="e.g. Mid Line 1"></div>
+        <div><label for="unit_jerseys">Jersey Numbers (up to 6, comma separated)</label><input type="text" id="unit_jerseys" maxlength="40" placeholder="e.g. 2, 7, 11"></div>
+        <div><button class="btn secondary" id="unit_add" type="button">Save Unit</button></div>
+      </div>
+      <div id="unitMsg" style="margin-top:10px;"></div>`;
+    document.getElementById('unit_add').addEventListener('click', async () => {
+      const season = currentLogSeason();
+      const name = document.getElementById('unit_name').value.trim();
+      const nums = document.getElementById('unit_jerseys').value.split(/[\s,]+/).map(normJerseyText).filter(Boolean);
+      const msg = t => { document.getElementById('unitMsg').innerHTML = `<div class="msg err">${escapeHtml(t)}</div>`; };
+      if (!name) return msg('Give the unit a name.');
+      if (!nums.length || nums.length > LINEUP_SIZE) return msg(`List 1\u2013${LINEUP_SIZE} jersey numbers.`);
+      const bad = nums.filter(n => !validJerseyText(n) || !(ROSTERS[season] || []).some(r => r.jersey === n));
+      if (bad.length) return msg(`Not on the ${season} roster: ${bad.join(', ')}`);
+      if (new Set(nums).size !== nums.length) return msg('A jersey is listed twice.');
+      const prev = UNITS;
+      UNITS = UNITS.filter(u => u.name.toLowerCase() !== name.toLowerCase()).concat([{ name, jerseys: nums }]);
+      if (!(await persistUnits())) { UNITS = prev; return msg('Save failed \u2014 try again.'); }
+      document.getElementById('unit_name').value = '';
+      document.getElementById('unit_jerseys').value = '';
+      document.getElementById('unitMsg').innerHTML = '';
+      refreshUnitsUi();
+    });
+  }
+  const season = currentLogSeason();
+  const rows = UNITS.map((u, i) => `<tr><td><b>${escapeHtml(u.name)}</b></td><td>${u.jerseys.map(j => escapeHtml(jerseyLabel(j, season))).join(', ')}</td><td><button class="btn danger" type="button" data-unit-del="${i}">Delete</button></td></tr>`).join('');
+  const table = document.getElementById('unitsTable');
+  table.innerHTML = UNITS.length
+    ? `<div class="table-wrap" style="margin-bottom:12px;"><table class="shotlog"><thead><tr><th>Unit</th><th>Players</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>`
+    : '<p class="sans" style="color:var(--muted); font-size:12.5px;">No units yet.</p>';
+  table.querySelectorAll('[data-unit-del]').forEach(b => b.addEventListener('click', async () => {
+    const prev = UNITS;
+    UNITS = UNITS.filter((_, i) => i !== +b.dataset.unitDel);
+    if (!(await persistUnits())) UNITS = prev;
+    refreshUnitsUi();
+  }));
+}
+function parseUnits(json) {
+  try {
+    const list = JSON.parse(json || '[]');
+    return Array.isArray(list) ? list.filter(u => u && typeof u.name === 'string' && Array.isArray(u.jerseys))
+      .map(u => ({ name: u.name.slice(0, 40), jerseys: u.jerseys.filter(j => typeof j === 'string' && validJerseyText(j)).slice(0, LINEUP_SIZE) })) : [];
+  } catch (e) { return []; }
+}
+
+// Autocomplete lists: opponents already logged, and the numbers already
+// used for the current opponent (so typing "1" offers their #12, #14...).
+function refreshOpponentLists() {
+  const opps = new Set();
+  Object.values(LIVE_SESSIONS).forEach(s => { if (s.opponent) opps.add(s.opponent); });
+  SHOTS.forEach(s => { if (s.opponent) opps.add(s.opponent); });
+  document.getElementById('opponentList').innerHTML = [...opps].sort().map(o => `<option value="${escapeHtml(o)}"></option>`).join('');
+  const opp = document.getElementById('f_opponent').value.trim().toLowerCase();
+  const nums = new Set();
+  if (opp) {
+    Object.values(LIVE_SESSIONS).filter(s => (s.opponent || '').toLowerCase() === opp).forEach(s => {
+      s.shots.forEach(x => { if (x.oppShooter) nums.add(x.oppShooter); if (x.oppPasser) nums.add(x.oppPasser); });
+      s.stints.forEach(t => t.offense.concat(t.defense).forEach(j => { if (isOppJersey(j)) nums.add(j.slice(1)); }));
+    });
+  }
+  document.getElementById('oppJerseyList').innerHTML = [...nums].sort((a, b) => a - b).map(n => `<option value="${escapeHtml(n)}"></option>`).join('');
 }
 
 // ---------------- Edit an existing shot ("fix a mis-tap") ----------------
@@ -1877,6 +2598,32 @@ function showTableMsg(text) {
 // (same id) instead of creating a new one, and the coach lands back on the
 // Shot Log when done. Historical (seed) shots aren't editable.
 let editingShotId = null;
+let editReturnTo = 'tableView';
+// Editing an old entry points the session bar at that entry's session.
+// What the coach had up before is remembered and put back afterwards, so
+// the next clip doesn't land in last week's game.
+let preEditState = null;
+function captureLogState() {
+  return { date: document.getElementById('f_date').value, context: document.getElementById('f_context').dataset.value || 'Practice',
+    opponent: document.getElementById('f_opponent').value, ball: segValue('lb_possession'), entry: segValue('entryTypeSeg'), goalie: document.getElementById('f_goalie').value };
+}
+function restoreLogState() {
+  const st = preEditState;
+  preEditState = null;
+  if (!st) return;
+  document.getElementById('f_date').value = st.date;
+  setPillGroupValue('f_context', st.context);
+  document.getElementById('f_opponent').value = st.opponent;
+  document.getElementById('opponentFieldWrap').style.display = st.context === 'Game' ? '' : 'none';
+  document.getElementById('possessionToggleWrap').style.display = st.context === 'Game' ? '' : 'none';
+  if (st.ball) setSegValue('lb_possession', st.ball);
+  setSegValue('entryTypeSeg', st.entry || 'shot'); showEntryType(st.entry || 'shot');
+  refreshFormRosterOptions();
+  document.getElementById('f_goalie').value = st.goalie;
+  lineupLoadedFor = null;
+  onSessionChanged();
+  if (st.ball) { setSegValue('lb_possession', st.ball); onPossessionChanged(); }
+}
 
 // Historical shots predate the `outcome` field, so editing one has to
 // reconstruct a best-guess outcome from the legacy booleans it does have.
@@ -1890,32 +2637,33 @@ function outcomeFor(shot) {
   return 'Miss';
 }
 
-function fullResetLogForm() {
-  document.getElementById('f_date').value = new Date().toISOString().slice(0,10);
-  setPillGroupValue('f_context', 'Practice');
-  toggleOpponentField();
-  refreshFormRosterOptions();
-  document.getElementById('f_shooter_name').value = '';
-  document.getElementById('f_assist_name').value = '';
+// Clears the per-shot fields. Session, lineup, Ball and goalie stay put —
+// they usually carry over to the next clip when logging film.
+// Sets the session bar (and Ball) to an existing entry's session, without
+// touching this device's saved lineup for the session being left.
+function pointSessionBarAt(entry) {
+  document.getElementById('f_date').value = entry.date || '';
+  setPillGroupValue('f_context', entry.context === 'Game' ? 'Game' : 'Practice');
+  document.getElementById('opponentFieldWrap').style.display = entry.context === 'Game' ? '' : 'none';
+  document.getElementById('possessionToggleWrap').style.display = entry.context === 'Game' ? '' : 'none';
+  document.getElementById('f_opponent').value = entry.context === 'Game' ? (entry.opponent || '') : '';
+  lineupLoadedFor = null;
+  onSessionChanged();
+  if (entry.context === 'Game') { setSegValue('lb_possession', entry.team === 'OPP' ? 'OPP' : 'WLU'); onPossessionChanged(); }
+}
+function resetShotFields() {
+  ['f_outcome','f_cleansave','f_screened','f_goalieset','f_outlet','f_catchdodge','f_quality','f_contest','f_defscheme','f_handedness',
+   'f_transitiontype','f_shotmechanism','f_rebound','f_bounceshot','f_dominoes','f_advtype','f_possstart'].forEach(id => setPillGroupValue(id, null));
+  setPillGroupValue('f_mansituation', 'Even');
+  ['f_shooter_name','f_assist_name','f_opp_shooter','f_opp_passer','f_trigger','f_adv_creator','f_possstart_jersey'].forEach(id => { document.getElementById(id).value = ''; });
   resolvedShooterJersey = null;
   resolvedAssistJersey = null;
   document.getElementById('shooterResolve').innerHTML = '';
   document.getElementById('assistResolve').innerHTML = '';
-  document.getElementById('f_goalie').value = '';
-  setPillGroupValue('f_outcome', null);
-  document.getElementById('cleanSaveWrap').style.display = 'none';
-  setPillGroupValue('f_cleansave', null);
-  setPillGroupValue('f_catchdodge', null);
-  setPillGroupValue('f_quality', null);
-  setPillGroupValue('f_contest', null);
-  setPillGroupValue('f_defscheme', null);
-  setPillGroupValue('f_handedness', null);
-  setPillGroupValue('f_transitiontype', null);
-  setPillGroupValue('f_mansituation', 'Even');
-  setPillGroupValue('f_shotmechanism', null);
-  setPillGroupValue('f_rebound', null);
-  setPillGroupValue('f_bounceshot', null);
-  document.getElementById('f_trigger').value = '';
+  document.getElementById('advCreatorWrap').style.display = 'none';
+  document.getElementById('possStartJerseyWrap').style.display = 'none';
+  refreshJerseyReadouts();
+  updateResultFields();
   pendingField = { distanceYds: null, lateralYds: null };
   pendingGoal = { goalX: null, goalY: null };
   buildFieldClickWidget();
@@ -1923,29 +2671,44 @@ function fullResetLogForm() {
   document.getElementById('fieldReadout').textContent = 'Not set';
   document.getElementById('goalReadout').textContent = 'Not set';
 }
-
-function exitEditMode() {
-  editingShotId = null;
-  document.getElementById('submitShotBtn').textContent = 'Save Shot';
-  document.getElementById('cancelEditBtn').style.display = 'none';
-  document.getElementById('editingBanner').style.display = 'none';
+function fullResetLogForm() {
+  document.getElementById('f_date').value = localDateStr();
+  setPillGroupValue('f_context', 'Practice');
+  toggleOpponentField();
+  refreshFormRosterOptions();
+  document.getElementById('f_goalie').value = '';
+  resetShotFields();
 }
 
-function startEditShot(id) {
-  const shot = SHOTS.find(s => s.id === id);
+function exitEditMode() {
+  const wasEditing = editingShotId !== null;
+  editingShotId = null;
+  document.getElementById('cancelEditBtn').style.display = 'none';
+  document.getElementById('editingBanner').style.display = 'none';
+  if (wasEditing) restoreLogState();
+  applyTeamToForm();
+}
+
+function startEditShot(id, returnTo) {
+  const shot = allShotEntries().find(s => s.id === id);
   if (!shot || shot.seed) return;
+  exitPossEditMode();
+  if (editingShotId === null) preEditState = captureLogState();
   editingShotId = id;
-  document.getElementById('f_date').value = shot.date || '';
-  setPillGroupValue('f_context', shot.context || 'Practice');
-  toggleOpponentField();
-  document.getElementById('f_opponent').value = shot.opponent || '';
+  editReturnTo = returnTo || 'tableView';
+  pointSessionBarAt(shot);
+  setSegValue('entryTypeSeg', 'shot'); showEntryType('shot');
   refreshFormRosterOptions();
-  document.getElementById('f_shooter_name').value = shot.shooterJersey ? nameFor(shot.shooterJersey, seasonForDate(shot.date)) : '';
+  resetShotFields();
+  const season = seasonForDate(shot.date);
+  document.getElementById('f_shooter_name').value = shot.shooterJersey ? nameFor(shot.shooterJersey, season) : '';
   resolvedShooterJersey = shot.shooterJersey || null;
-  document.getElementById('shooterResolve').innerHTML = resolvedShooterJersey ? `#${resolvedShooterJersey} ${escapeHtml(nameFor(resolvedShooterJersey, seasonForDate(shot.date)))} ✓` : '';
-  document.getElementById('f_assist_name').value = shot.assistJersey ? nameFor(shot.assistJersey, seasonForDate(shot.date)) : '';
+  document.getElementById('shooterResolve').innerHTML = resolvedShooterJersey ? `#${escapeHtml(resolvedShooterJersey)} ${escapeHtml(nameFor(resolvedShooterJersey, season))} ✓` : '';
+  document.getElementById('f_assist_name').value = shot.assistJersey ? nameFor(shot.assistJersey, season) : '';
   resolvedAssistJersey = shot.assistJersey || null;
-  document.getElementById('assistResolve').innerHTML = resolvedAssistJersey ? `#${resolvedAssistJersey} ${escapeHtml(nameFor(resolvedAssistJersey, seasonForDate(shot.date)))} ✓` : '';
+  document.getElementById('assistResolve').innerHTML = resolvedAssistJersey ? `#${escapeHtml(resolvedAssistJersey)} ${escapeHtml(nameFor(resolvedAssistJersey, season))} ✓` : '';
+  document.getElementById('f_opp_shooter').value = shot.oppShooter || '';
+  document.getElementById('f_opp_passer').value = shot.oppPasser || '';
   document.getElementById('f_goalie').value = shot.goalieJersey || '';
   setPillGroupValue('f_handedness', getHandedness(shot) || null);
   setPillGroupValue('f_transitiontype', (shot.transition === 'FO' || shot.transition === 'OTOD') ? shot.transition : null);
@@ -1959,49 +2722,93 @@ function startEditShot(id) {
   setPillGroupValue('f_bounceshot', shot.bounceShot || null);
   const editOutcome = outcomeFor(shot);
   setPillGroupValue('f_outcome', editOutcome);
-  document.getElementById('cleanSaveWrap').style.display = editOutcome === 'Saved' ? '' : 'none';
+  applyTeamToForm();
   setPillGroupValue('f_cleansave', shot.cleanSave === 1 ? 'Yes' : (editOutcome === 'Saved' ? 'No' : null));
+  setPillGroupValue('f_screened', shot.screened || null);
+  setPillGroupValue('f_goalieset', shot.goalieSet || null);
+  setPillGroupValue('f_outlet', shot.outlet || null);
   setPillGroupValue('f_catchdodge', shot.offDodge === 1 ? 'Off the Dodge' : 'Off the Catch');
+  setPillGroupValue('f_dominoes', shot.dominoes || null);
+  toggleJerseyWrap('advCreatorWrap', 'f_adv_creator', shot.dominoes === 'Yes');
+  document.getElementById('f_adv_creator').value = shot.advCreator ? shot.advCreator.replace(/^o/, '') : '';
+  setPillGroupValue('f_advtype', shot.advType || null);
+  setPillGroupValue('f_possstart', shot.possStart || null);
+  toggleJerseyWrap('possStartJerseyWrap', 'f_possstart_jersey', !!shot.possStart);
+  document.getElementById('f_possstart_jersey').value = shot.possStartJersey ? shot.possStartJersey.replace(/^o/, '') : '';
+  refreshJerseyReadouts();
   buildFieldClickWidget({ distanceYds: shot.distanceYds, lateralYds: shot.lateralYds });
   buildGoalClickWidget({ goalX: shot.goalX, goalY: shot.goalY });
   document.getElementById('submitShotBtn').textContent = `Update Shot #${id}`;
   document.getElementById('cancelEditBtn').style.display = '';
   const banner = document.getElementById('editingBanner');
-  banner.textContent = `Editing shot #${id} \u2014 fix whatever's wrong and hit Update, or Cancel to leave it as-is.`;
+  banner.textContent = `Editing shot #${id} — fix whatever's wrong and hit Update, or Cancel to leave it as-is. Its saved lineup is kept.`;
   banner.style.display = '';
   switchTab('logView');
   window.scrollTo(0, 0);
 }
 
 document.getElementById('cancelEditBtn').addEventListener('click', () => {
+  const back = editReturnTo;
   exitEditMode();
-  fullResetLogForm();
-  switchTab('tableView');
+  resetShotFields();
+  if (back !== 'logView') switchTab(back);
 });
 
+// Date in the coach's own timezone (toISOString is UTC, which rolls over to
+// tomorrow on evening film sessions).
+function localDateStr(d) {
+  d = d || new Date();
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+}
+function readSessionFields() {
+  const date = document.getElementById('f_date').value;
+  const context = isGameSession() ? 'Game' : 'Practice';
+  const opponent = context === 'Game' ? document.getElementById('f_opponent').value.trim().slice(0, 60) : '';
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return { error: 'Pick a date.' };
+  if (context === 'Game' && !opponent) return { error: 'Type the opponent for this game.' };
+  return { date, context, opponent: opponent || null };
+}
+
 document.getElementById('submitShotBtn').addEventListener('click', async () => {
-  const shooter = resolvedShooterJersey;
+  const sess = readSessionFields();
+  if (sess.error) { showMsg(sess.error, false); return; }
+  const team = currentTeam();
+  const opp = team === 'OPP';
   const quality = document.getElementById('f_quality').dataset.value;
   const contest = document.getElementById('f_contest').dataset.value;
   const outcome = document.getElementById('f_outcome').dataset.value;
   const catchDodge = document.getElementById('f_catchdodge').dataset.value;
   const assistText = document.getElementById('f_assist_name').value.trim();
-  if (!shooter) { showMsg('Type the shooter’s last name and resolve it to a player first.', false); return; }
-  if (assistText && !resolvedAssistJersey) { showMsg('That assist name didn’t resolve to a player — fix it or clear the field.', false); return; }
+  const shooter = opp ? null : resolvedShooterJersey;
+  const oppShooter = normJerseyText(document.getElementById('f_opp_shooter').value);
+  const oppPasser = normJerseyText(document.getElementById('f_opp_passer').value);
+  if (!opp && !shooter) { showMsg('Type the shooter’s last name and resolve it to a player first.', false); return; }
+  if (!opp && assistText && !resolvedAssistJersey) { showMsg('That passer name didn’t resolve to a player — fix it or clear the field.', false); return; }
+  if (opp && oppShooter && !validJerseyText(oppShooter)) { showMsg('Opponent shooter # should be 1–3 digits.', false); return; }
+  if (opp && oppPasser && !validJerseyText(oppPasser)) { showMsg('Opponent passer # should be 1–3 digits.', false); return; }
   if (!quality) { showMsg('Pick a shot quality grade.', false); return; }
   if (!contest) { showMsg('Pick a contest level.', false); return; }
   if (!outcome) { showMsg('Pick a shot outcome.', false); return; }
   if (!catchDodge) { showMsg('Pick Off the Catch or Off the Dodge.', false); return; }
   if (pendingField.distanceYds === null) { showMsg('Click the field to set shot location.', false); return; }
   if ((outcome === 'Goal' || outcome === 'Saved') && pendingGoal.goalX === null) { showMsg('Click the goal to set placement for this shot.', false); return; }
+  const dominoes = document.getElementById('f_dominoes').dataset.value || null;
+  const adv = readJerseyField('f_adv_creator', team);
+  if (!adv.ok) { showMsg('Who started it: ' + adv.why, false); return; }
+  if (dominoes === 'Yes' && !adv.value) { showMsg('Type who started the dominoes, or set Created Dominoes to No.', false); return; }
+  const possStart = document.getElementById('f_possstart').dataset.value || null;
+  const ps = readJerseyField('f_possstart_jersey', team);
+  if (!ps.ok) { showMsg('Possession started by: ' + ps.why, false); return; }
+  const isEdit = editingShotId !== null;
+  if (!isEdit && decorateChips().length) { showMsg('Fix the lineup bar first (marked in red), or clear it.', false); return; }
 
   const goalieVal = document.getElementById('f_goalie').value;
   const derived = OUTCOME_DERIVED[outcome];
 
   const shotData = {
-    date: document.getElementById('f_date').value || new Date().toISOString().slice(0,10),
+    date: sess.date,
     practiceId: null,
-    context: document.getElementById('f_context').dataset.value || 'Practice',
+    context: sess.context,
     shooterJersey: shooter,
     goalieJersey: (goalieVal && goalieVal !== 'EMPTY_NET' && goalieVal !== '__ADD_NEW__') ? goalieVal : null,
     onGoal: derived.onGoal, onKeeper: derived.onKeeper, goal: derived.goal, blocked: derived.blocked,
@@ -2017,74 +2824,189 @@ document.getElementById('submitShotBtn').addEventListener('click', async () => {
     goalX: pendingGoal.goalX, goalY: pendingGoal.goalY,
     customTags: null,
     contestLevel: contest,
-    assistJersey: resolvedAssistJersey || null,
-    opponent: document.getElementById('f_opponent').value || null,
+    assistJersey: opp ? null : (resolvedAssistJersey || null),
+    opponent: sess.opponent,
     passType: null,
-    trigger: document.getElementById('f_trigger').value || null,
+    trigger: document.getElementById('f_trigger').value.trim().slice(0, 60) || null,
     manSituation: document.getElementById('f_mansituation').dataset.value || null,
     shotMechanism: document.getElementById('f_shotmechanism').dataset.value || null,
     rebound: document.getElementById('f_rebound').dataset.value || null,
     bounceShot: document.getElementById('f_bounceshot').dataset.value || null,
+    team: opp ? 'OPP' : 'WLU',
+    oppShooter: opp ? (oppShooter || null) : null,
+    oppPasser: opp ? (oppPasser || null) : null,
+    dominoes,
+    advCreator: dominoes === 'Yes' ? adv.value : null,
+    advType: dominoes === 'Yes' ? (document.getElementById('f_advtype').dataset.value || null) : null,
+    screened: document.getElementById('f_screened').dataset.value || null,
+    goalieSet: document.getElementById('f_goalieset').dataset.value || null,
+    outlet: document.getElementById('f_outlet').dataset.value || null,
+    possStart,
+    possStartJersey: possStart ? ps.value : null,
   };
 
-  const isEdit = editingShotId !== null;
   let savedId, saveResult;
   if (isEdit) {
-    const idx = SHOTS.findIndex(s => s.id === editingShotId);
-    if (idx === -1) { showMsg('That shot no longer exists.', false); exitEditMode(); return; }
-    const original = SHOTS[idx];
+    const original = allShotEntries().find(s => s.id === editingShotId && !s.seed);
+    if (!original) { showMsg('That shot no longer exists.', false); exitEditMode(); return; }
     savedId = editingShotId;
-    const updated = Object.assign({ id: savedId, _sid: original._sid }, shotData);
-    SHOTS[idx] = updated;
+    const updated = Object.assign({ id: savedId, _sid: original._sid, stintId: original.stintId === undefined ? null : original.stintId }, shotData);
     saveResult = await persistShot(updated);
-    if (saveResult === 'error') { SHOTS[idx] = original; showMsg('Save failed \u2014 please try again.', false); return; }
+    if (saveResult === 'error') { showMsg('Save failed — please try again.', false); return; }
   } else {
     savedId = nextShotId();
     const shot = Object.assign({ id: savedId }, shotData);
-    SHOTS.push(shot);
-    saveResult = await persistShot(shot);
-    if (saveResult === 'error') { SHOTS = SHOTS.filter(s => s !== shot); showMsg('Save failed \u2014 please try again.', false); return; }
+    saveResult = await persistShot(shot, currentLineup());
+    if (saveResult === 'error') { showMsg('Save failed — please try again.', false); return; }
   }
 
   if (isEdit) {
+    const back = editReturnTo;
     exitEditMode();
-    fullResetLogForm();
-    switchTab('tableView');
-    showTableMsg(`Updated shot #${savedId}.`);
+    resetShotFields();
+    if (back !== 'logView') { switchTab(back); showTableMsg(`Updated shot #${savedId}.`); }
+    else showMsg(`Updated shot #${savedId}.`, true);
+    renderRecentEntries();
     return;
   }
 
-  showMsg(`Saved shot #${savedId} for #${escapeHtml(shooter)} ${escapeHtml(nameFor(shooter, currentLogSeason()))}.` + (saveResult === 'queued' ? ' (Offline — it will sync when you reconnect.)' : ''), true);
-  setPillGroupValue('f_outcome', null);
-  document.getElementById('cleanSaveWrap').style.display = 'none';
-  setPillGroupValue('f_cleansave', null);
-  setPillGroupValue('f_catchdodge', null);
-  setPillGroupValue('f_quality', null);
-  setPillGroupValue('f_contest', null);
-  setPillGroupValue('f_defscheme', null);
-  setPillGroupValue('f_handedness', null);
-  setPillGroupValue('f_transitiontype', null);
-  setPillGroupValue('f_mansituation', 'Even');
-  setPillGroupValue('f_shotmechanism', null);
-  setPillGroupValue('f_rebound', null);
-  setPillGroupValue('f_bounceshot', null);
-  document.getElementById('f_shooter_name').value = '';
-  document.getElementById('f_assist_name').value = '';
-  resolvedShooterJersey = null;
-  resolvedAssistJersey = null;
-  document.getElementById('shooterResolve').innerHTML = '';
-  document.getElementById('assistResolve').innerHTML = '';
-  document.getElementById('f_trigger').value = '';
-  pendingField = { distanceYds: null, lateralYds: null };
-  pendingGoal = { goalX: null, goalY: null };
-  buildFieldClickWidget();
-  buildGoalClickWidget();
-  document.getElementById('fieldReadout').textContent = 'Not set';
-  document.getElementById('goalReadout').textContent = 'Not set';
+  const who = opp ? (oppShooter ? 'Opp #' + escapeHtml(oppShooter) : 'opponent') : `#${escapeHtml(shooter)} ${escapeHtml(nameFor(shooter, currentLogSeason()))}`;
+  showMsg(`Saved shot #${savedId} for ${who}.` + (saveResult === 'queued' ? ' (Offline — it will sync when you reconnect.)' : ''), true);
+  resetShotFields();
+  renderRecentEntries();
   populatePlayerGoalieDropdowns();
   populatePlayerSelectForSeason(heatSeason);
   populateGoalieSelectForSeason(goalieHeatSeason);
 });
+
+// ---------------- No-shot possession ----------------
+let editingPossId = null;
+function resetPossFields() {
+  ['p_end','p_dominoes','p_possstart','p_advtype'].forEach(id => setPillGroupValue(id, null));
+  setPillGroupValue('p_mansituation', 'Even');
+  ['p_turnover_by','p_caused_by','p_adv_creator','p_possstart_jersey'].forEach(id => { document.getElementById(id).value = ''; });
+  ['pTurnoverWrap','pCausedWrap','pAdvCreatorWrap','pPossStartJerseyWrap'].forEach(id => { document.getElementById(id).style.display = 'none'; });
+  refreshJerseyReadouts();
+}
+function exitPossEditMode() {
+  const wasEditing = editingPossId !== null;
+  editingPossId = null;
+  if (wasEditing) restoreLogState();
+  document.getElementById('submitPossBtn').textContent = 'Save Possession';
+  document.getElementById('cancelPossEditBtn').style.display = 'none';
+  document.getElementById('editingBanner').style.display = 'none';
+}
+function startEditPoss(id) {
+  const p = POSSESSIONS.find(x => x.id === id);
+  if (!p) return;
+  exitEditMode();
+  if (editingPossId === null) preEditState = captureLogState();
+  editingPossId = id;
+  pointSessionBarAt(p);
+  setSegValue('entryTypeSeg', 'poss'); showEntryType('poss');
+  resetPossFields();
+  const strip = j => j ? String(j).replace(/^o/, '') : '';
+  setPillGroupValue('p_end', p.end || null);
+  toggleJerseyWrap('pTurnoverWrap', 'p_turnover_by', p.end === 'Turnover');
+  toggleJerseyWrap('pCausedWrap', 'p_caused_by', p.end === 'Turnover');
+  document.getElementById('p_turnover_by').value = strip(p.turnoverBy);
+  document.getElementById('p_caused_by').value = strip(p.causedBy);
+  setPillGroupValue('p_mansituation', p.manSituation || 'Even');
+  setPillGroupValue('p_dominoes', p.dominoes || null);
+  toggleJerseyWrap('pAdvCreatorWrap', 'p_adv_creator', p.dominoes === 'Yes');
+  document.getElementById('p_adv_creator').value = strip(p.advCreator);
+  setPillGroupValue('p_advtype', p.advType || null);
+  setPillGroupValue('p_possstart', p.possStart || null);
+  toggleJerseyWrap('pPossStartJerseyWrap', 'p_possstart_jersey', !!p.possStart);
+  document.getElementById('p_possstart_jersey').value = strip(p.possStartJersey);
+  refreshJerseyReadouts();
+  document.getElementById('submitPossBtn').textContent = `Update Possession #${id}`;
+  document.getElementById('cancelPossEditBtn').style.display = '';
+  const banner = document.getElementById('editingBanner');
+  banner.textContent = `Editing possession #${id} — its saved lineup is kept.`;
+  banner.style.display = '';
+  switchTab('logView');
+  window.scrollTo(0, 0);
+}
+document.getElementById('cancelPossEditBtn').addEventListener('click', () => { exitPossEditMode(); resetPossFields(); });
+document.getElementById('submitPossBtn').addEventListener('click', async () => {
+  const sess = readSessionFields();
+  if (sess.error) { showMsg(sess.error, false); return; }
+  const team = currentTeam();
+  const end = document.getElementById('p_end').dataset.value || null;
+  if (!end) { showMsg('Pick how the possession ended.', false); return; }
+  const tob = readJerseyField('p_turnover_by', team);
+  const cb = readJerseyField('p_caused_by', otherTeam(team));
+  const adv = readJerseyField('p_adv_creator', team);
+  const ps = readJerseyField('p_possstart_jersey', team);
+  for (const [r, what] of [[tob, 'Turnover by'], [cb, 'Caused by'], [adv, 'Who started it'], [ps, 'Possession started by']]) {
+    if (!r.ok) { showMsg(what + ': ' + r.why, false); return; }
+  }
+  const dominoes = document.getElementById('p_dominoes').dataset.value || null;
+  if (dominoes === 'Yes' && !adv.value) { showMsg('Type who started the dominoes, or set Created Dominoes to No.', false); return; }
+  const isEdit = editingPossId !== null;
+  if (!isEdit && decorateChips().length) { showMsg('Fix the lineup bar first (marked in red), or clear it.', false); return; }
+  const possStart = document.getElementById('p_possstart').dataset.value || null;
+  const data = {
+    date: sess.date, context: sess.context, opponent: sess.opponent, team,
+    possStart, possStartJersey: possStart ? ps.value : null,
+    dominoes, advCreator: dominoes === 'Yes' ? adv.value : null,
+    advType: dominoes === 'Yes' ? (document.getElementById('p_advtype').dataset.value || null) : null,
+    manSituation: document.getElementById('p_mansituation').dataset.value || null,
+    end, turnoverBy: end === 'Turnover' ? tob.value : null, causedBy: end === 'Turnover' ? cb.value : null,
+  };
+  let res, id;
+  if (isEdit) {
+    const original = POSSESSIONS.find(x => x.id === editingPossId);
+    if (!original) { showMsg('That possession no longer exists.', false); exitPossEditMode(); return; }
+    id = editingPossId;
+    res = await persistPossession(Object.assign({ id, _sid: original._sid, stintId: original.stintId === undefined ? null : original.stintId }, data));
+  } else {
+    id = nextPossId();
+    res = await persistPossession(Object.assign({ id }, data), currentLineup());
+  }
+  if (res === 'error') { showMsg('Save failed — please try again.', false); return; }
+  showMsg(`${isEdit ? 'Updated' : 'Saved'} possession #${id} (${escapeHtml(end)}).` + (res === 'queued' ? ' (Offline — it will sync when you reconnect.)' : ''), true);
+  exitPossEditMode();
+  resetPossFields();
+  renderRecentEntries();
+});
+
+// ---------------- This session's entries ----------------
+let recentDeleteArmed = null; // 'shot:12' / 'poss:3'
+function renderRecentEntries() {
+  const wrap = document.getElementById('recentWrap');
+  if (!wrap) return;
+  const sid = currentSessionId();
+  const sess = LIVE_SESSIONS[sid];
+  const season = currentLogSeason();
+  const shots = allShotEntries().filter(s => !s.seed && (s._sid || sessionIdFor(s)) === sid).sort((a, b) => b.id - a.id);
+  const poss = POSSESSIONS.filter(p => p._sid === sid).sort((a, b) => b.id - a.id);
+  document.getElementById('recentSub').textContent = `${shots.length} shot(s), ${poss.length} no-shot possession(s)` + (sess && sess.stints.length ? `, ${sess.stints.length} lineup(s)` : '');
+  if (!shots.length && !poss.length) { wrap.innerHTML = '<p class="sans" style="color:var(--muted); font-size:12.5px; padding:10px 12px; margin:0;">Nothing logged for this date and session yet.</p>'; return; }
+  const lineupText = e => { const t = stintById(e._sid, e.stintId); return t ? `${t.offense.length}v${t.defense.length} · L${escapeHtml(String(t.seq || '?'))}` : '—'; };
+  const actions = (kind, id) => recentDeleteArmed === kind + ':' + id
+    ? `<button class="btn danger" data-rconfirm="${kind}:${id}">Confirm delete</button> <button class="btn secondary" data-rcancel="1">Cancel</button>`
+    : `<button class="btn secondary" data-redit="${kind}:${id}">Edit</button> <button class="btn danger" data-rdel="${kind}:${id}">Delete</button>`;
+  const shotRows = shots.map(s => {
+    const who = s.team === 'OPP' ? (s.oppShooter ? 'Opp #' + escapeHtml(s.oppShooter) : 'Opponent') : escapeHtml(jerseyLabel(s.shooterJersey, season));
+    return `<tr><td><span class="recent-kind${s.team === 'OPP' ? ' opp' : ''}">${s.team === 'OPP' ? 'Opp shot' : 'Shot'}</span></td><td>#${s.id}</td><td>${who}</td><td>${escapeHtml(outcomeFor(s))}</td><td>${escapeHtml((s.shotQuality || '').replace(/^\d-/, ''))}</td><td>${s.dominoes === 'Yes' ? 'Dominoes: ' + escapeHtml(jerseyLabel(s.advCreator, season)) : ''}</td><td>${lineupText(s)}</td><td style="white-space:nowrap;">${actions('shot', s.id)}</td></tr>`;
+  });
+  const possRows = poss.map(p => `<tr><td><span class="recent-kind${p.team === 'OPP' ? ' opp' : ''}">${p.team === 'OPP' ? 'Opp poss.' : 'Possession'}</span></td><td>#${p.id}</td><td>${p.turnoverBy ? escapeHtml(jerseyLabel(p.turnoverBy, season)) : ''}</td><td>${escapeHtml(p.end || '')}</td><td></td><td>${p.dominoes === 'Yes' ? 'Dominoes: ' + escapeHtml(jerseyLabel(p.advCreator, season)) : ''}</td><td>${lineupText(p)}</td><td style="white-space:nowrap;">${actions('poss', p.id)}</td></tr>`);
+  wrap.innerHTML = `<table class="shotlog dense"><thead><tr><th>Type</th><th>ID</th><th>Player</th><th>Result</th><th>Quality</th><th>Dominoes</th><th>Lineup</th><th></th></tr></thead><tbody>${shotRows.concat(possRows).join('')}</tbody></table>`;
+  const parse = v => { const [k, i] = v.split(':'); return [k, parseInt(i, 10)]; };
+  wrap.querySelectorAll('[data-redit]').forEach(b => b.addEventListener('click', () => { const [k, i] = parse(b.dataset.redit); if (k === 'shot') startEditShot(i, 'logView'); else startEditPoss(i); }));
+  wrap.querySelectorAll('[data-rdel]').forEach(b => b.addEventListener('click', () => { recentDeleteArmed = b.dataset.rdel; renderRecentEntries(); }));
+  wrap.querySelectorAll('[data-rcancel]').forEach(b => b.addEventListener('click', () => { recentDeleteArmed = null; renderRecentEntries(); }));
+  wrap.querySelectorAll('[data-rconfirm]').forEach(b => b.addEventListener('click', async () => {
+    const [k, i] = parse(b.dataset.rconfirm);
+    recentDeleteArmed = null;
+    const target = k === 'shot' ? allShotEntries().find(s => s.id === i && !s.seed) : POSSESSIONS.find(p => p.id === i);
+    const res = target ? await (k === 'shot' ? deleteShotEntry(target) : deletePossessionEntry(target)) : 'error';
+    if (res === 'error') showMsg('Delete failed — please try again.', false);
+    renderRecentEntries();
+  }));
+}
 
 // ---------------- Player Heat Maps ----------------
 let playerGrade = 'Overall';
@@ -2277,7 +3199,7 @@ function populateGoalieSelectForSeason(season) {
   goalieSel.innerHTML = '';
   if (season === 'All Seasons') {
     combinedRoster('goalie').forEach(g => {
-      const faced = SHOTS.filter(s => s.onKeeper===1 && g.seasons[seasonForDate(s.date)] === s.goalieJersey).length;
+      const faced = allShotEntries().filter(s => s.onKeeper===1 && g.seasons[seasonForDate(s.date)] === s.goalieJersey).length;
       const opt = document.createElement('option');
       opt.value = 'NAME:' + g.name.trim().toLowerCase();
       opt.textContent = `${g.name} \u2014 ${faced} faced`;
@@ -2285,7 +3207,7 @@ function populateGoalieSelectForSeason(season) {
     });
   } else {
     rosterGoalies(season).forEach(g => {
-      const faced = SHOTS.filter(s => s.onKeeper===1 && seasonForDate(s.date) === season && s.goalieJersey === g.jersey).length;
+      const faced = allShotEntries().filter(s => s.onKeeper===1 && seasonForDate(s.date) === season && s.goalieJersey === g.jersey).length;
       const opt = document.createElement('option'); opt.value = g.jersey; opt.textContent = `${g.name} (#${g.jersey}) \u2014 ${faced} faced`;
       goalieSel.appendChild(opt);
     });
@@ -2973,7 +3895,7 @@ function renderGoalieSummary() {
   if (goalieHeatSeason !== '2027') {
     if (noteEl) noteEl.textContent = 'Faced = shots where OnKeeper = 1.';
     if (xgNoteEl) xgNoteEl.style.display = 'none';
-    const rows = computeGoalieSummary(shotsForSeason(goalieHeatSeason));
+    const rows = computeGoalieSummary(goalieShotsForSeason(goalieHeatSeason));
     let html = '<table class="shotlog"><thead><tr><th>Jersey</th><th>Name</th><th>Faced</th><th>Saves</th><th>Goals Allowed</th><th>Save %</th></tr></thead><tbody>';
     rows.forEach(r => {
       html += `<tr><td>${r.jersey}</td><td>${r.name}</td><td>${r.faced}</td><td>${r.saves}</td><td>${r.goalsAllowed}</td><td>${pct(r.savePct)}</td></tr>`;
@@ -2984,8 +3906,8 @@ function renderGoalieSummary() {
   }
 
   // 2027: tiered breakdown + GSAx, live as new shots are logged.
-  const shots = shots2027();
-  const facedTotal = shots.filter(s => s.onKeeper === 1).length;
+  const shots = goalieShots2027();
+  const facedTotal = shots.filter(s => s.onKeeper === 1 && s.goalieJersey).length;
   if (noteEl) noteEl.textContent = `Faced = 2027 shots where OnKeeper = 1 (${facedTotal} so far). Save % by tier shows whether a goalie is stopping the shots he should and stealing the ones he shouldn't.`;
 
   if (facedTotal < 60) {
@@ -3762,7 +4684,7 @@ function renderGoalieHeat() {
   const gradeVal = GRADE_MAP[goalieGrade];
   const season = goalieHeatSeason;
   const seasonLabel = season === 'All Seasons' ? 'All Seasons' : season;
-  const seasonShots = shotsForSeason(season);
+  const seasonShots = goalieShotsForSeason(season);
 
   let facedAll, name;
   if (sel.startsWith('NAME:')) {
@@ -3811,15 +4733,17 @@ let deleteShotArmed = null;
 // falls through to the raw value when it can't resolve a jersey, so this
 // renders old free-text assists unchanged and new ones as "#12 Name".
 function assistDisplay(shot) {
+  if (shot.team === 'OPP') return shot.oppPasser ? 'Opp #' + escapeHtml(shot.oppPasser) : '';
   const val = shot.assistJersey;
   if (!val) return '';
   const resolved = nameFor(val, seasonForDate(shot.date));
-  return resolved !== val ? `#${val} ${resolved}` : val;
+  return escapeHtml(resolved !== val ? `#${val} ${resolved}` : val);
 }
 
 function renderTable() {
   const sf = document.getElementById('tf_season').value;
-  const seasonShots = sf ? shotsForSeason(sf) : SHOTS;
+  const allEntries = allShotEntries();
+  const seasonShots = sf ? allEntries.filter(s => seasonForDate(s.date) === sf) : allEntries;
   document.getElementById('shotCountSub').textContent = sf
     ? `${seasonShots.length} shots logged — ${sf} season`
     : `${seasonShots.length} shots logged`;
@@ -3837,19 +4761,19 @@ function renderTable() {
   rows.forEach(r => {
     const tr = document.createElement('tr');
     tr.innerHTML = `
-      <td>${r.id}</td>
-      <td>${r.date||''}</td>
-      <td>${r.context||''}</td>
-      <td>#${r.shooterJersey||''} ${nameFor(r.shooterJersey, seasonForDate(r.date))||''}</td>
-      <td>${r.goalieJersey ? '#'+r.goalieJersey+' '+nameFor(r.goalieJersey, seasonForDate(r.date)) : '\u2014'}</td>
-      <td class="${gradeClass[r.shotQuality]||''}">${(r.shotQuality||'').replace(/^\\d-/,'')}</td>
+      <td>${escapeHtml(String(r.id))}</td>
+      <td>${escapeHtml(r.date||'')}</td>
+      <td>${escapeHtml(r.context||'')}${r.opponent ? ' <span style="color:var(--muted);">vs ' + escapeHtml(r.opponent) + '</span>' : ''}</td>
+      <td>${r.team === 'OPP' ? '<span class="recent-kind opp">Opp</span> ' + (r.oppShooter ? '#' + escapeHtml(r.oppShooter) : '') : '#' + escapeHtml(r.shooterJersey||'') + ' ' + escapeHtml(nameFor(r.shooterJersey, seasonForDate(r.date))||'')}</td>
+      <td>${r.goalieJersey ? '#'+escapeHtml(r.goalieJersey)+' '+escapeHtml(nameFor(r.goalieJersey, seasonForDate(r.date))) : '\u2014'}</td>
+      <td class="${gradeClass[r.shotQuality]||''}">${escapeHtml((r.shotQuality||'').replace(/^\\d-/,''))}</td>
       <td>${r.goal ? 'Yes':'No'}</td>
       <td>${r.onKeeper ? 'Yes':'No'}</td>
-      <td>${r.contestLevel||''}</td>
+      <td>${escapeHtml(r.contestLevel||'')}</td>
       <td>${assistDisplay(r)}</td>
-      <td>${r.passType||''}</td>
-      <td>${r.customTags||''}</td>
-      <td>${r.trigger||''}</td>
+      <td>${escapeHtml(r.passType||'')}</td>
+      <td>${escapeHtml(r.customTags||'')}</td>
+      <td>${escapeHtml(r.trigger||'')}</td>
       <td>${r.seed ? '<span class="sans" style="color:var(--muted); font-size:11px;">Historical</span>' : (deleteShotArmed === r.id
         ? `<button class="btn danger" data-confirm-id="${r.id}">Confirm delete</button> <button class="btn secondary" data-cancel-id="${r.id}">Cancel</button>`
         : `<button class="btn secondary" data-edit-id="${r.id}">Edit</button> <button class="btn danger" data-id="${r.id}">Delete</button>`)}</td>
@@ -3871,12 +4795,11 @@ function renderTable() {
   tbody.querySelectorAll('button[data-confirm-id]').forEach(b => {
     b.addEventListener('click', async () => {
       const id = parseInt(b.dataset.confirmId, 10);
-      const target = SHOTS.find(s => s.id === id && !s.seed);
+      const target = allShotEntries().find(s => s.id === id && !s.seed);
       deleteShotArmed = null;
       if (!target) { renderTable(); return; }
-      SHOTS = SHOTS.filter(s => s !== target);
       const res = await deleteShotEntry(target);
-      if (res === 'error') { SHOTS.push(target); showTableMsg('Delete failed — please try again.'); }
+      if (res === 'error') flashMsg('tableMsg', 'Delete failed \u2014 please try again.', false);
       renderTable();
       populatePlayerGoalieDropdowns();
       populatePlayerSelectForSeason(heatSeason);
@@ -4732,7 +5655,7 @@ function renderShootingTrends() {
 
 function renderGoalieTrends() {
   if (!document.getElementById('goalieTrendsUpGrid')) return;
-  const trends = computeGoalieTrends(shotsForSeason(goalieHeatSeason));
+  const trends = computeGoalieTrends(goalieShotsForSeason(goalieHeatSeason));
   const up = trends.filter(t => t.delta > 0).sort((a, b) => b.delta - a.delta).slice(0, 5);
   const down = trends.filter(t => t.delta < 0).sort((a, b) => a.delta - b.delta).slice(0, 3);
   renderTrendGroup('goalieTrendsUpGrid', up, 'up', 'goalies');
@@ -5062,7 +5985,7 @@ async function exportCsv(filename, rows, headers) {
   if (!DOWNLOADS) { alert('CSV export isn’t available in this view.'); return; }
   try { await DOWNLOADS.save({ filename, data: toCsv(rows, headers) }); } catch (e) { /* declined or unavailable */ }
 }
-document.getElementById('exportShotsBtn').addEventListener('click', () => exportCsv('shot-log.csv', SHOTS, COLS));
+document.getElementById('exportShotsBtn').addEventListener('click', () => exportCsv('shot-log.csv', allShotEntries(), COLS));
 document.getElementById('exportRecruitsBtn').addEventListener('click', () => {
   const rows = [];
   PLAYERS.forEach(p => {
@@ -5084,12 +6007,12 @@ async function init() {
   await loadAll();
   document.getElementById('loadingBox').style.display = 'none';
   if (!DB) document.getElementById('syncBanner').style.display = '';
-  document.getElementById('f_date').value = new Date().toISOString().slice(0,10);
+  document.getElementById('f_date').value = localDateStr();
   refreshFormRosterOptions();
   toggleOpponentField();
   buildFieldClickWidget();
   buildGoalClickWidget();
-  document.getElementById('fo_date').value = new Date().toISOString().slice(0,10);
+  document.getElementById('fo_date').value = localDateStr();
   refreshFoRosterOptions();
   toggleFoOpponentField();
   populatePlayerGoalieDropdowns();
@@ -5110,6 +6033,8 @@ async function init() {
   renderEfficiencyView();
   renderOpponent();
   window.__appReady = true;
+  onSessionChanged();
+  renderUnitsPanel();
   if (LIVE_SHOTS_TUPLES.length) migrateShotsInbox(LIVE_SHOTS_TUPLES);
 }
 </script>
