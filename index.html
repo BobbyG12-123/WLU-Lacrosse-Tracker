@@ -826,11 +826,17 @@
     </div>
     <div class="panel">
       <p class="panel-title">Where &amp; When</p>
-      <p class="panel-sub">Save % against expected by goal zone (near/far pipe from the shooter&rsquo;s side of the field), shot type, situation and distance.</p>
+      <p class="panel-sub">Save % against expected by goal zone (near/far pipe from the shooter&rsquo;s side of the field), shot mechanism, shooter&rsquo;s hand, look quality, contest, shot type, situation and distance.</p>
       <div class="controls-row" style="margin-bottom:10px;">
         <div class="control-group"><label for="goalieAdvSelect">Goalie</label><select id="goalieAdvSelect"></select></div>
       </div>
+      <div class="controls-row" style="margin-bottom:8px;">
+        <div class="control-group"><label>Show</label><div class="pill-row" id="goalieSitTypePills"></div></div>
+      </div>
       <div class="table-wrap" id="goalieSitWrap"></div>
+      <p class="panel-title" style="margin-top:18px;">Shot Profiles</p>
+      <p class="panel-sub">Every shot he faced, described as exactly as it was logged: mechanism &middot; catch or dodge &middot; shooter&rsquo;s hand &middot; height &middot; near/far pipe. Profiles with 3+ shots, worst first &mdash; the top rows are the shots beating him.</p>
+      <div class="table-wrap" id="goalieProfileWrap"></div>
     </div>
     </div>
     <div class="subpage" data-label="Trends">
@@ -879,6 +885,16 @@
       <p class="panel-title">Man-Up / Man-Down</p>
       <p class="panel-sub" id="effManSub"></p>
       <div class="table-wrap" id="effManWrap"></div>
+    </div>
+    </div>
+    <div class="subpage" data-label="Per Touch">
+    <div class="panel">
+      <p class="panel-title">Per Touch</p>
+      <p class="panel-sub" id="effTouchSub"></p>
+      <div class="controls-row" style="margin-bottom:8px;">
+        <div class="control-group"><label>Minimum touches</label><div class="pill-row" id="effTouchMinPills"></div></div>
+      </div>
+      <div class="table-wrap" id="effTouchWrap"></div>
     </div>
     </div>
     <div class="subpage" data-label="Per Session">
@@ -5341,12 +5357,52 @@ function renderEffLineups(d, possList) {
 }
 
 // Renders every film-logging section of the Efficiency tab.
+// Per touch: the same expected/actual output as Player Efficiency, divided by
+// how often he had the ball, so volume alone doesn't top the list. A touch is
+// any logged shot he took, shot he fed (potential assist), or turnover.
+let effTouchMin = 10;
+function renderEffPerTouch(d) {
+  const teamShots = d.shots.length;
+  const rows = Object.values(d.players).map(p => {
+    const touches = p.shots + p.potAst + p.to;
+    const xp = p.xg + p.xa, pts = p.goals + p.assists;
+    return {
+      jersey: p.jersey, name: nameFor(p.jersey, EFF_SEASON), touches, shots: p.shots, potAst: p.potAst, to: p.to,
+      xgT: ratio(p.xg, touches), xaT: ratio(p.xa, touches), xpT: ratio(xp, touches),
+      gT: ratio(p.goals, touches), aT: ratio(p.assists, touches), pT: ratio(pts, touches),
+      pmxT: ratio(pts - xp, touches), toT: ratio(p.to, touches),
+      usage: ratio(p.shots + p.potAst, teamShots),
+    };
+  }).filter(r => r.touches >= effTouchMin);
+  document.getElementById('effTouchSub').textContent = `${EFF_SEASON} ${EFF_CTX_WORD()}. A touch is any logged shot he took, shot he fed, or turnover he committed, so a player who does a lot with a few touches ranks next to one who has the ball all the time. Players need ${effTouchMin}+ touches; gray italic rows have under ${effTouchMin * 2}, so treat them as early reads.`;
+  const d2 = v => num(v, 2);
+  const small = (v, r) => smallCellStyle(r.touches, effTouchMin * 2);
+  const cols = [
+    { key: 'jersey', label: '#', type: 'text', value: r => r.jersey },
+    { key: 'name', label: 'Name', type: 'text', value: r => r.name, format: nameCell },
+    { key: 'touches', label: 'Touches', type: 'num', value: r => r.touches, cellStyle: small, group: 'Volume', title: 'Shots + shots he fed + turnovers.' },
+    { key: 'shots', label: 'Sh', type: 'num', value: r => r.shots, group: 'Volume' },
+    { key: 'potAst', label: 'Feeds', type: 'num', value: r => r.potAst, group: 'Volume', title: 'Shots taken off his pass (potential assists).' },
+    { key: 'to', label: 'TO', type: 'num', value: r => r.to, group: 'Volume' },
+    { key: 'xgT', label: 'xG/T', type: 'num', value: r => r.xgT, format: d2, cellStyle: small, group: 'Expected per touch', title: 'Expected goals per touch: how dangerous his own shots are, spread over every time he had the ball.' },
+    { key: 'xaT', label: 'xA/T', type: 'num', value: r => r.xaT, format: d2, cellStyle: small, group: 'Expected per touch', title: 'Expected assists per touch: the quality of the looks he creates for others.' },
+    { key: 'xpT', label: 'xP/T', type: 'num', value: r => r.xpT, format: d2, cellStyle: small, group: 'Expected per touch', title: 'Expected points per touch (xG + xA per touch). The best single number for value per touch.' },
+    { key: 'gT', label: 'G/T', type: 'num', value: r => r.gT, format: d2, cellStyle: small, group: 'Actual per touch' },
+    { key: 'aT', label: 'A/T', type: 'num', value: r => r.aT, format: d2, cellStyle: small, group: 'Actual per touch' },
+    { key: 'pT', label: 'P/T', type: 'num', value: r => r.pT, format: d2, cellStyle: small, group: 'Actual per touch' },
+    { key: 'pmxT', label: 'P−xP/T', type: 'num', value: r => r.pmxT, format: v => signed(v, 2), cellStyle: small, group: 'Actual per touch', title: 'Points above (+) or below (−) expected, per touch.' },
+    { key: 'toT', label: 'TO/T', type: 'num', value: r => r.toT, format: v => pct(v), cellStyle: small, group: 'Role', title: 'Share of his touches that ended in a turnover.' },
+    { key: 'usage', label: 'Usage', type: 'num', value: r => r.usage, format: v => pct(v), group: 'Role', title: 'Share of team shots he took or set up — shown for context, not used in the per-touch numbers.' },
+  ];
+  renderSortableTable('effTouchWrap', cols, rows, { dense: true, defaultSort: { key: 'xpT', dir: 'desc' }, emptyMsg: `No player has ${effTouchMin}+ ${EFF_SEASON} ${EFF_CTX_WORD()} touches yet.` });
+}
 function renderEffFilmMetrics() {
   if (!document.getElementById('effTeamTiles')) return;
   const d = buildEffData();
   const possList = d.possList;
   renderEffTeamTiles(d, possList);
   renderEffPlayers(d);
+  renderEffPerTouch(d);
   renderEffPossession(d, possList);
   renderEffManUp(possList);
   renderEffRates(d);
@@ -5455,6 +5511,12 @@ function renderGoalieAdvanced() {
   addRow('Distance', 'Inside 8 yds', list.filter(s => s.distanceYds !== null && s.distanceYds !== undefined && s.distanceYds < 8));
   addRow('Distance', '8–12 yds', list.filter(s => s.distanceYds >= 8 && s.distanceYds < 12));
   addRow('Distance', '12+ yds', list.filter(s => s.distanceYds >= 12));
+  SHOT_MECHANISM_OPTIONS.forEach(m => addRow('Mechanism', m, list.filter(s => s.shotMechanism === m)));
+  addRow('Hand', 'Righty shooter', list.filter(s => getHandedness(s) === 'Right'));
+  addRow('Hand', 'Lefty shooter', list.filter(s => getHandedness(s) === 'Left'));
+  [['1-Gold', 'Gold look'], ['2-Silver', 'Silver look'], ['3-Bronze', 'Bronze look']].forEach(([q, l]) => addRow('Quality', l, list.filter(s => s.shotQuality === q)));
+  ['Open', 'Light', 'Heavy'].forEach(c => addRow('Contest', c + ' contest', list.filter(s => s.contestLevel === c)));
+  const shownSit = goalieSitType === 'All' ? sitRows : sitRows.filter(r => r.group === goalieSitType);
   renderSortableTable('goalieSitWrap', [
     { key: 'group', label: 'Type', type: 'text', value: r => r.group },
     { key: 'label', label: 'Shots', type: 'text', value: r => r.label },
@@ -5463,8 +5525,36 @@ function renderGoalieAdvanced() {
     { key: 'xsv', label: 'Expected Sv%', type: 'num', value: r => r.xsv, format: v => pct(v), title: 'Save % the shot quality alone predicts.' },
     { key: 'gsax', label: 'GSAx', type: 'num', value: r => r.gsax, format: v => signed(v) },
     { key: 'per100', label: 'Above Expected /100', type: 'num', value: r => r.per100, format: v => signed(v), title: 'Saves above expected per 100 shots of this kind. Italic gray rows have fewer than 5 shots.' },
-  ], sitRows, { dense: true, defaultSort: { key: 'group', dir: 'asc' }, emptyMsg: 'No shots on cage for this selection yet.' });
+  ], shownSit, { dense: true, defaultSort: { key: 'group', dir: 'asc' }, emptyMsg: 'No shots on cage for this selection yet.' });
+
+  // Shot profiles: the logged parts of each shot joined into one description.
+  const byProfile = {};
+  list.forEach(s => {
+    const hand = getHandedness(s);
+    const parts = [s.shotMechanism || null, s.offDodge === 1 ? 'Off the dodge' : (s.offDodge === 0 ? 'Off the catch' : null),
+      hand ? hand + 'y' : null, goalHeight(s), pipeSide(s)].filter(Boolean);
+    if (parts.length < 2) return;
+    (byProfile[parts.join(' · ')] = byProfile[parts.join(' · ')] || []).push(s);
+  });
+  const profRows = Object.keys(byProfile).filter(k => byProfile[k].length >= 3).map(k => {
+    const st = saveStats(byProfile[k], model);
+    return { label: k, n: st.n, sv: st.svPct, xsv: st.xSvPct, gsax: st.gsax, per100: st.gsax / st.n * 100 };
+  });
+  renderSortableTable('goalieProfileWrap', [
+    { key: 'label', label: 'Shot profile', type: 'text', value: r => r.label },
+    { key: 'n', label: 'Faced', type: 'num', value: r => r.n },
+    { key: 'sv', label: 'Sv%', type: 'num', value: r => r.sv, format: v => pct(v), cellStyle: (v, r) => small(r.n, 5) },
+    { key: 'xsv', label: 'Expected Sv%', type: 'num', value: r => r.xsv, format: v => pct(v), title: 'Save % the shot quality alone predicts.' },
+    { key: 'gsax', label: 'GSAx', type: 'num', value: r => r.gsax, format: v => signed(v) },
+    { key: 'per100', label: 'Above Expected /100', type: 'num', value: r => r.per100, format: v => signed(v), title: 'Saves above expected per 100 shots of this profile. Italic gray rows have fewer than 5 shots.' },
+  ], profRows, { dense: true, defaultSort: { key: 'per100', dir: 'asc' }, emptyMsg: 'No shot profile has 3+ shots for this selection yet. Profiles fill in as shots are logged with mechanism, catch/dodge, hand and placement.' });
 }
+let goalieSitType = 'All';
+setupPillGroup('goalieSitTypePills', ['All', 'Goal zone', 'Height', 'Mechanism', 'Hand', 'Quality', 'Contest', 'Shot type', 'Situation', 'Distance'], 'All', v => {
+  goalieSitType = v || 'All';
+  if (!v) setPillGroupValue('goalieSitTypePills', 'All');
+  renderGoalieAdvanced();
+});
 setupPillGroup('goalieAdvContextPills', ['All', 'Practice', 'Game'], 'All', v => {
   goalieAdvContext = v || 'All';
   if (!v) setPillGroupValue('goalieAdvContextPills', 'All');
@@ -5494,6 +5584,11 @@ setupPillGroup('effContextPills', ['All', 'Practice', 'Scrimmage', 'Game'], 'All
   EFF_CONTEXT = v || 'All';
   if (!v) setPillGroupValue('effContextPills', 'All');
   renderEfficiencyView();
+});
+setupPillGroup('effTouchMinPills', [{ value: '5', label: '5+' }, { value: '10', label: '10+' }, { value: '20', label: '20+' }, { value: '40', label: '40+' }], '10', v => {
+  effTouchMin = Number(v) || 10;
+  if (!v) setPillGroupValue('effTouchMinPills', '10');
+  renderEffFilmMetrics();
 });
 setupPillGroup('effLineupMinPills', [{ value: '1', label: '1+' }, { value: '5', label: '5+' }, { value: '10', label: '10+' }, { value: '20', label: '20+' }], '5', v => {
   effLineupMin = Number(v) || 5;
