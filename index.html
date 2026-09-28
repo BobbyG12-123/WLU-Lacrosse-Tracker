@@ -275,6 +275,7 @@
 
 <main id="mainRoot">
   <div id="loadingBox" class="loading">Loading shot data&hellip;</div>
+  <div id="accessBanner" class="msg err" style="display:none;"></div>
   <div id="syncBanner" class="msg err" style="display:none;">Live sync isn&rsquo;t available in this view &mdash; open this page from its published link so changes save and share with the team.</div>
 
   <section id="logView" class="view active">
@@ -1339,6 +1340,20 @@ function defaultSeason() {
   const now = String(d.getMonth() >= 7 ? d.getFullYear() + 1 : d.getFullYear());
   return SEASONS.includes(now) ? now : SEASONS[SEASONS.length - 1];
 }
+// History tabs (heat maps, faceoffs, compare) open on the season we're in
+// once it has a real sample; until then on the latest earlier season with
+// data, so a coach opening the tracker early in a season sees the history
+// instead of a near-empty page. Needs shots loaded, so init() applies it.
+const VIEW_SEASON_MIN_SHOTS = 50;
+function defaultViewSeason() {
+  const now = defaultSeason();
+  if (shotsForSeason(now).length >= VIEW_SEASON_MIN_SHOTS) return now;
+  for (let i = SEASONS.indexOf(now) - 1; i >= 0; i--) if (shotsForSeason(SEASONS[i]).length) return SEASONS[i];
+  return now;
+}
+function setSeasonPillActive(containerId, season) {
+  document.querySelectorAll('#' + containerId + ' .pill').forEach(b => b.classList.toggle('active', b.textContent === season));
+}
 let SEED_ROSTER = [];
 let SEED_SHOTS_TUPLES = [];
 
@@ -1614,6 +1629,14 @@ function rebuildFaceoffs() {
   FACEOFFS = LIVE_FACEOFFS_TUPLES.map(t => tupleToObj(t, FACEOFF_COLS));
 }
 
+// Reads the database refused (Firestore rules) during load. A coach who
+// passes the app's sign-in list but not the rules would otherwise just see
+// an empty app with the error only in the browser console.
+const DB_DENIED = [];
+function noteDbError(what, e) {
+  console.error(what, e);
+  if (e && e.code === 'permission-denied') DB_DENIED.push(what);
+}
 async function loadAll() {
   // Offline persistence: reads come from a local cache and writes (like
   // logging a shot) queue locally and sync automatically once the
@@ -1637,11 +1660,11 @@ async function loadAll() {
     try {
       const sr = await DB.doc('app/seed_roster').get();
       if (sr.exists && Array.isArray(sr.data().list)) SEED_ROSTER = cleanRoster(sr.data().list);
-    } catch (e) { console.error(e); }
+    } catch (e) { noteDbError('seed roster load failed', e); }
     try {
       const ss = await DB.doc('app/seed_shots').get();
       if (ss.exists && typeof ss.data().json === 'string') SEED_SHOTS_TUPLES = JSON.parse(ss.data().json);
-    } catch (e) { console.error(e); }
+    } catch (e) { noteDbError('seed shots load failed', e); }
   }
 
   SEASONS.forEach(s => { ROSTERS[s] = SEED_ROSTER; });
@@ -1663,7 +1686,7 @@ async function loadAll() {
     try {
       const snap = await ref.get();
       if (snap.exists && Array.isArray(snap.data().list)) list = cleanRoster(snap.data().list);
-    } catch (e) { console.error('roster load failed', season, e); }
+    } catch (e) { noteDbError('roster load failed ' + season, e); }
     if (list === null) {
       if (season === SEASONS[0]) {
         try {
@@ -1693,7 +1716,7 @@ async function loadAll() {
     const qs = await DB.collection('sessions').get();
     LIVE_SESSIONS = {};
     qs.docs.forEach(d => { LIVE_SESSIONS[d.id] = parseSessionDoc(d.id, d.data()); });
-  } catch (e) { console.error('sessions load failed', e); }
+  } catch (e) { noteDbError('sessions load failed', e); }
   try {
     const bs = await DB.doc('app/shots_live_backup').get();
     if (bs.exists) MOVED_HASHES = new Set(JSON.parse(bs.data().moved || '[]'));
@@ -1702,7 +1725,7 @@ async function loadAll() {
   try {
     const snap = await shotsRef.get();
     if (snap.exists && typeof snap.data().json === 'string') LIVE_SHOTS_TUPLES = JSON.parse(snap.data().json);
-  } catch (e) { console.error('shots load failed', e); }
+  } catch (e) { noteDbError('shots load failed', e); }
   rebuildShots();
   DB.collection('sessions').onSnapshot(qs => {
     LIVE_SESSIONS = {};
@@ -7246,6 +7269,15 @@ async function init() {
   await loadAll();
   document.getElementById('loadingBox').style.display = 'none';
   if (!DB) document.getElementById('syncBanner').style.display = '';
+  if (DB_DENIED.length) {
+    const who = (firebase.auth().currentUser || {}).email || 'this account';
+    const el = document.getElementById('accessBanner');
+    el.textContent = `Signed in as ${who}, but the database refused access, so no data could load. Ask Bobby to add this email in Firebase \u2192 Firestore \u2192 Rules.`;
+    el.style.display = '';
+  }
+  const viewSeason = defaultViewSeason();
+  heatSeason = goalieHeatSeason = faceoffSeason = cpSeason = viewSeason;
+  ['playerSeasonPills', 'goalieSeasonPills', 'faceoffSeasonPills', 'cpSeasonPills'].forEach(id => setSeasonPillActive(id, viewSeason));
   document.getElementById('f_date').value = localDateStr();
   refreshFormRosterOptions();
   toggleOpponentField();
