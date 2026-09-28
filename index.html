@@ -360,7 +360,7 @@
               <label for="f_opp_passer">Opponent Passer # (optional)</label>
               <input type="text" id="f_opp_passer" inputmode="numeric" maxlength="3" placeholder="e.g. 7" list="oppJerseyList">
             </div>
-            <div>
+            <div id="goalieWrap">
               <label for="f_goalie" id="f_goalie_label">Goalie</label>
               <select id="f_goalie"></select>
             </div>
@@ -590,7 +590,7 @@
           <div id="foMsg"></div>
           <div style="display:none;">
             <input type="date" id="fo_date">
-            <select id="fo_context"><option>Practice</option><option>Game</option></select>
+            <select id="fo_context"><option>Practice</option><option>Scrimmage</option><option>Game</option></select>
             <div id="foOpponentFieldWrap"><input type="text" id="fo_opponent"></div>
           </div>
           <div class="field-grid">
@@ -658,7 +658,7 @@
       </div>
       <details class="filters-box" id="playerFilterRowBox"><summary>Filters <span class="filter-count" id="pfCount"></span></summary>
       <div class="filter-row" id="playerFilterRow">
-        <select id="pf_context"><option value="">Any context</option><option value="Practice">Practice</option><option value="Game">Game</option></select>
+        <select id="pf_context"><option value="">Any context</option><option value="Practice">Practice</option><option value="Scrimmage">Scrimmage</option><option value="Game">Game</option></select>
         <select id="pf_defscheme"><option value="">Any defense</option><option value="Man">Man</option><option value="Zone">Zone</option></select>
         <select id="pf_transitiontype"><option value="">Any transition</option><option value="None">No transition</option><option value="FO">FO</option><option value="OTOD">OTOD</option></select>
         <select id="pf_handedness"><option value="">Any handedness</option><option value="Right">Right</option><option value="Left">Left</option></select>
@@ -785,7 +785,7 @@
       </div>
       <details class="filters-box" id="goalieFilterRowBox"><summary>Filters <span class="filter-count" id="gfCount"></span></summary>
       <div class="filter-row" id="goalieFilterRow">
-        <select id="gf_context"><option value="">Any context</option><option value="Practice">Practice</option><option value="Game">Game</option></select>
+        <select id="gf_context"><option value="">Any context</option><option value="Practice">Practice</option><option value="Scrimmage">Scrimmage</option><option value="Game">Game</option></select>
         <select id="gf_defscheme"><option value="">Any defense</option><option value="Man">Man</option><option value="Zone">Zone</option></select>
         <select id="gf_transitiontype"><option value="">Any transition</option><option value="None">No transition</option><option value="FO">FO</option><option value="OTOD">OTOD</option></select>
         <select id="gf_handedness"><option value="">Any handedness</option><option value="Right">Right</option><option value="Left">Left</option></select>
@@ -1006,7 +1006,7 @@
       <p class="panel-sub" id="faceoffCountSub"></p>
       <div class="filter-row">
         <select id="foTf_player"><option value="">All players</option></select>
-        <select id="foTf_context"><option value="">All contexts</option><option value="Practice">Practice</option><option value="Game">Game</option></select>
+        <select id="foTf_context"><option value="">All contexts</option><option value="Practice">Practice</option><option value="Scrimmage">Scrimmage</option><option value="Game">Game</option></select>
       </div>
       <div class="table-wrap">
         <table class="shotlog">
@@ -1027,7 +1027,7 @@
         <select id="tf_season"><option value="">All seasons</option></select>
         <select id="tf_player"><option value="">All shooters</option></select>
         <select id="tf_grade"><option value="">All grades</option><option value="1-Gold">Gold</option><option value="2-Silver">Silver</option><option value="3-Bronze">Bronze</option></select>
-        <select id="tf_context"><option value="">All contexts</option><option value="Practice">Practice</option><option value="Game">Game</option></select>
+        <select id="tf_context"><option value="">All contexts</option><option value="Practice">Practice</option><option value="Scrimmage">Scrimmage</option><option value="Game">Game</option></select>
         <button class="btn secondary" id="exportShotsBtn">Export CSV</button>
         <button class="btn secondary" id="resetDataBtn" title="Erases every season's roster, newly logged shots, and all player evaluations for everyone. The historical season (2,285 shots) is untouched.">Reset all data&hellip;</button>
       </div>
@@ -1409,7 +1409,7 @@ function sessionSlug(s) {
 }
 function sessionIdFor(entry) {
   const date = /^\d{4}-\d{2}-\d{2}$/.test(entry.date || '') ? entry.date : 'nodate';
-  const ctx = entry.context === 'Game' ? 'game' : 'practice';
+  const ctx = entry.context === 'Game' ? 'game' : (entry.context === 'Scrimmage' ? 'scrimmage' : 'practice');
   const opp = ctx === 'game' ? (sessionSlug(cleanText(entry.opponent)) || 'unknown') : '';
   return date + '_' + ctx + (opp ? '_' + opp : '');
 }
@@ -1457,8 +1457,10 @@ function nextShotId() {
 function nextPossId() {
   return POSSESSIONS.reduce((m, p) => Math.max(m, Number(p.id) || 0), 0) + 1;
 }
+// Practice, Scrimmage (intra-squad, no goalie) or Game.
+const SESSION_CONTEXTS = ['Practice', 'Scrimmage', 'Game'];
 function sessionMeta(entry) {
-  return { date: entry.date || null, context: entry.context === 'Game' ? 'Game' : 'Practice', opponent: entry.context === 'Game' ? (entry.opponent || null) : null };
+  return { date: entry.date || null, context: SESSION_CONTEXTS.includes(entry.context) ? entry.context : 'Practice', opponent: entry.context === 'Game' ? (entry.opponent || null) : null };
 }
 // Resolves 'ok' once the server confirms, or 'queued' if it hasn't within a
 // few seconds (offline: Firestore keeps the write locally and syncs later),
@@ -2254,6 +2256,18 @@ function goalSVG(cells, opts) {
       s += `<text x="${cx}" y="${cy + 1}" font-size="2.6" ${tstyle} opacity="0.55">${escapeHtml(cell.label)}</text>`;
     }
   });
+  if (opts.grid) {
+    // Log Shot: the original tracker's 3x3 grid, drawn inside the mouth.
+    s += `<g stroke="#5E6B85" stroke-width="0.35" opacity="0.7" style="pointer-events:none;">`;
+    [1, 2].forEach(k => {
+      s += `<line x1="${mx + k * mw / 3}" y1="${my}" x2="${mx + k * mw / 3}" y2="${my + mh}"/>`;
+      s += `<line x1="${mx}" y1="${my + k * mh / 3}" x2="${mx + mw}" y2="${my + k * mh / 3}"/>`;
+    });
+    s += `</g>`;
+    GOAL_GRID_LABELS.forEach((row, r) => row.forEach((label, c) => {
+      s += `<text x="${mx + (c + 0.5) * mw / 3}" y="${my + (r + 0.5) * mh / 3 + 1}" font-size="3" font-family="Helvetica Neue, Arial, sans-serif" text-anchor="middle" fill="#1A1A1A" opacity="0.55" style="pointer-events:none;">${escapeHtml(label)}</text>`;
+    }));
+  }
   s += goalPipes(uid);
   s += `</svg>`;
   return s;
@@ -2488,11 +2502,20 @@ function buildFieldClickWidget(initial) {
 
 function buildGoalClickWidget(initial) {
   const wrap = document.getElementById('goalClickWrap');
-  wrap.innerHTML = goalSVG(buildGoalGrid([]), {metric:'score', interactive:false, labels:false});
+  wrap.innerHTML = goalSVG(buildGoalGrid([]), {metric:'score', interactive:false, labels:false, grid:true});
   const svgEl = wrap.querySelector('svg');
+  // Light gold fill on the grid cell the tap landed in.
+  const { mx, my, mw, mh } = GOAL_VIEW;
+  const cellHi = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+  cellHi.setAttribute('width', mw / 3); cellHi.setAttribute('height', mh / 3);
+  cellHi.setAttribute('fill', '#D4AF37'); cellHi.setAttribute('opacity', '0.25');
+  cellHi.style.pointerEvents = 'none'; cellHi.style.display = 'none';
+  svgEl.appendChild(cellHi);
   const marker = makeMarker(svgEl, 1.6, 0.5);
   const show = (gx, gy) => {
     const [x, y] = goalMouthPoint(gx, gy);
+    const col = Math.min(2, Math.floor(gx * 3)), row = 2 - Math.min(2, Math.floor(gy * 3));
+    cellHi.setAttribute('x', mx + col * mw / 3); cellHi.setAttribute('y', my + row * mh / 3); cellHi.style.display = '';
     marker.place(x, y);
     document.getElementById('goalReadout').textContent = `${goalZoneName(gx, gy)} (x=${gx}, y=${gy})`;
   };
@@ -2541,7 +2564,7 @@ function toggleOpponentField() {
 function onSessionChanged() {
   if (!window.__appReady) return;
   document.getElementById('fo_date').value = document.getElementById('f_date').value;
-  document.getElementById('fo_context').value = isGameSession() ? 'Game' : 'Practice';
+  document.getElementById('fo_context').value = currentContext();
   document.getElementById('fo_opponent').value = isGameSession() ? document.getElementById('f_opponent').value.trim() : '';
   refreshFoRosterOptions();
   refreshOpponentLists();
@@ -2728,7 +2751,7 @@ document.getElementById('f_goalie').addEventListener('change', (e) => {
 });
 
 // ---------------- Log Shot form: pill groups ----------------
-setupPillGroup('f_context', ['Practice','Game'], 'Practice', toggleOpponentField);
+setupPillGroup('f_context', SESSION_CONTEXTS, 'Practice', toggleOpponentField);
 setupPillGroup('f_handedness', ['Right','Left'], null);
 setupPillGroup('f_transitiontype', ['FO','OTOD'], null);
 setupPillGroup('f_quality', [{value:'1-Gold',label:'Gold'},{value:'2-Silver',label:'Silver'},{value:'3-Bronze',label:'Bronze'}], null);
@@ -2788,6 +2811,10 @@ function showEntryType(kind) {
 }
 
 function isGameSession() { return document.getElementById('f_context').dataset.value === 'Game'; }
+// Scrimmage is intra-squad like practice (both lineup rows WLU, no
+// opponent) but logged with no goalie.
+function isScrimmageSession() { return document.getElementById('f_context').dataset.value === 'Scrimmage'; }
+function currentContext() { const v = document.getElementById('f_context').dataset.value; return SESSION_CONTEXTS.includes(v) ? v : 'Practice'; }
 // Which team has the ball for the entry being logged. Practice is always
 // WLU (both sides are WLU players); in a game it's the Ball toggle.
 function currentTeam() { return isGameSession() ? (segValue('lb_possession') || 'WLU') : 'WLU'; }
@@ -2849,11 +2876,13 @@ function updateResultFields() {
   const onCage = outcome === 'Goal' || outcome === 'Saved';
   // A WLU goalie is in net for every practice shot and for opponent shots.
   const wluGoalieInNet = !isGameSession() || currentTeam() === 'OPP';
+  // Scrimmage shots are logged with no goalie, so the goalie-only fields hide.
+  const goalie = !isScrimmageSession();
   const show = (id, pill, on) => { document.getElementById(id).style.display = on ? '' : 'none'; if (!on) setPillGroupValue(pill, null); };
-  show('cleanSaveWrap', 'f_cleansave', outcome === 'Saved');
-  show('screenedWrap', 'f_screened', onCage);
-  show('goalieSetWrap', 'f_goalieset', onCage);
-  show('outletWrap', 'f_outlet', outcome === 'Saved' && wluGoalieInNet);
+  show('cleanSaveWrap', 'f_cleansave', goalie && outcome === 'Saved');
+  show('screenedWrap', 'f_screened', goalie && onCage);
+  show('goalieSetWrap', 'f_goalieset', goalie && onCage);
+  show('outletWrap', 'f_outlet', goalie && outcome === 'Saved' && wluGoalieInNet);
 }
 
 // Swap the Who card between a WLU shooter (name lookup) and an opponent
@@ -2864,6 +2893,7 @@ function applyTeamToForm() {
   document.getElementById('assistWluWrap').style.display = opp ? 'none' : '';
   document.getElementById('shooterOppWrap').style.display = opp ? '' : 'none';
   document.getElementById('assistOppWrap').style.display = opp ? '' : 'none';
+  document.getElementById('goalieWrap').style.display = isScrimmageSession() ? 'none' : '';
   document.getElementById('f_goalie_label').textContent = opp ? 'WLU Goalie (in net)' : (isGameSession() ? 'Goalie (leave blank for theirs)' : 'Goalie');
   document.getElementById('submitShotBtn').textContent = editingShotId !== null ? `Update Shot #${editingShotId}` : (opp ? 'Save Opponent Shot' : 'Save Shot');
   updateResultFields();
@@ -2898,7 +2928,7 @@ let lineupContextFor = null;
 let UNITS = []; // [{ name, jerseys: ['12','7',...] }] from app/units
 
 function currentSessionId() {
-  return sessionIdFor({ date: document.getElementById('f_date').value, context: isGameSession() ? 'Game' : 'Practice', opponent: document.getElementById('f_opponent').value.trim() });
+  return sessionIdFor({ date: document.getElementById('f_date').value, context: currentContext(), opponent: document.getElementById('f_opponent').value.trim() });
 }
 function lineupStorageKey(sid) { return 'wluLineup:' + sid; }
 function saveLineupLocal() {
@@ -3163,7 +3193,7 @@ function outcomeFor(shot) {
 // touching this device's saved lineup for the session being left.
 function pointSessionBarAt(entry) {
   document.getElementById('f_date').value = entry.date || '';
-  setPillGroupValue('f_context', entry.context === 'Game' ? 'Game' : 'Practice');
+  setPillGroupValue('f_context', SESSION_CONTEXTS.includes(entry.context) ? entry.context : 'Practice');
   document.getElementById('opponentFieldWrap').style.display = entry.context === 'Game' ? '' : 'none';
   document.getElementById('possessionToggleWrap').style.display = entry.context === 'Game' ? '' : 'none';
   document.getElementById('f_opponent').value = entry.context === 'Game' ? (entry.opponent || '') : '';
@@ -3282,7 +3312,7 @@ function localDateStr(d) {
 }
 function readSessionFields() {
   const date = document.getElementById('f_date').value;
-  const context = isGameSession() ? 'Game' : 'Practice';
+  const context = currentContext();
   const opponent = context === 'Game' ? cleanText(document.getElementById('f_opponent').value).trim().slice(0, 60) : '';
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return { error: 'Pick a date.' };
   if (context === 'Game' && !opponent) return { error: 'Type the opponent for this game.' };
@@ -3322,7 +3352,7 @@ document.getElementById('submitShotBtn').addEventListener('click', async () => {
   const isEdit = editingShotId !== null;
   if (!isEdit && decorateChips().length) { showMsg('Fix the lineup bar first (marked in red), or clear it.', false); return; }
 
-  const goalieVal = document.getElementById('f_goalie').value;
+  const goalieVal = sess.context === 'Scrimmage' ? '' : document.getElementById('f_goalie').value;
   const derived = OUTCOME_DERIVED[outcome];
 
   const shotData = {
@@ -3760,6 +3790,7 @@ const DEEP_DIVE_SLICES = [
   { label: 'Bronze %', filter: s => s.shotQuality === '3-Bronze' },
   { label: 'Game %', filter: s => s.context === 'Game' },
   { label: 'Practice %', filter: s => s.context === 'Practice' },
+  { label: 'Scrimmage %', filter: s => s.context === 'Scrimmage' },
   { label: 'Man %', filter: s => s.defScheme === 'Man' },
   { label: 'Zone %', filter: s => s.defScheme === 'Zone' },
   { label: 'Settled %', filter: s => s.transition !== 1 },
@@ -4492,7 +4523,7 @@ function renderXgModelPanel(shots, model) {
   const subEl = document.getElementById('effModelSub');
   const noteEl = document.getElementById('effModelNote');
   const wrap = document.getElementById('effXgModelWrap');
-  subEl.textContent = 'Calibrated on the 2026 season (2,285 shots, split by practice/game) as a starting prior, shifting toward ' + EFF_SEASON + '\'s own rate as ' + EFF_SEASON + ' volume grows — by roughly 200 shots in a tier, the rate is almost entirely ' + EFF_SEASON + '\'s own.';
+  subEl.textContent = 'Calibrated on the 2026 season (2,285 shots, split by practice/game) as a starting prior, shifting toward ' + EFF_SEASON + '\'s own rate as ' + EFF_SEASON + ' volume grows — by roughly 200 shots in a tier, the rate is almost entirely ' + EFF_SEASON + '\'s own. Scrimmage shots use the practice rates (there is no scrimmage history to calibrate on).';
   const tierTiles = SHOT_QUALITY_GRADES.map(([q, key, label]) => {
     const totals = model.subjectTotals[q] || { n: 0, g: 0 };
     const rate = (model.rate.Practice[q] + model.rate.Game[q]) / 2;
@@ -4829,7 +4860,7 @@ function effContextOk(e) { return EFF_CONTEXT === 'All' || e.context === EFF_CON
 function effShots() { return advShots(EFF_SEASON).filter(effContextOk); }
 function effOppShots() { return OPP_SHOTS.filter(s => seasonForDate(s.date) === EFF_SEASON && effContextOk(s)); }
 function effPoss() { return POSSESSIONS.filter(p => seasonForDate(p.date) === EFF_SEASON && effContextOk(p)); }
-const EFF_CTX_WORD = () => EFF_CONTEXT === 'All' ? 'practice + game' : EFF_CONTEXT.toLowerCase();
+const EFF_CTX_WORD = () => EFF_CONTEXT === 'All' ? 'all sessions' : EFF_CONTEXT.toLowerCase();
 
 function nameCell(v) { return `<span style="white-space:nowrap;">${escapeHtml(v || '')}</span>`; }
 function num(v, d) { return (v === null || v === undefined || !isFinite(v)) ? '—' : v.toFixed(d === undefined ? 1 : d); }
@@ -5115,7 +5146,7 @@ function renderEffRates(d) {
   });
   const withStints = Object.values(d.bySession).filter(s => s.hasStints).length;
   const totalSess = Object.keys(d.bySession).length;
-  sub.textContent = `${EFF_SEASON} ${EFF_CTX_WORD()}, per ${EFF_CONTEXT === 'Game' ? 'game' : EFF_CONTEXT === 'Practice' ? 'practice' : 'session (practice or game)'} played. An appearance is any session a player was in a logged lineup; in sessions without lineups (${totalSess - withStints} of ${totalSess}) it falls back to sessions where he shot, passed or was tagged — which misses sessions he played quietly. Apps marked * include fallback sessions.`;
+  sub.textContent = `${EFF_SEASON} ${EFF_CTX_WORD()}, per ${EFF_CONTEXT === 'All' ? 'session (practice, scrimmage or game)' : EFF_CONTEXT.toLowerCase()} played. An appearance is any session a player was in a logged lineup; in sessions without lineups (${totalSess - withStints} of ${totalSess}) it falls back to sessions where he shot, passed or was tagged — which misses sessions he played quietly. Apps marked * include fallback sessions.`;
   const d2 = v => num(v, 2);
   const cols = [
     { key: 'jersey', label: '#', type: 'text', value: r => r.jersey },
@@ -5436,7 +5467,7 @@ setupPillGroup('effSeasonPills', ADV_SEASONS, EFF_SEASON, v => {
   else setPillGroupValue('effSeasonPills', EFF_SEASON);
   renderEfficiencyView();
 });
-setupPillGroup('effContextPills', ['All', 'Practice', 'Game'], 'All', v => {
+setupPillGroup('effContextPills', ['All', 'Practice', 'Scrimmage', 'Game'], 'All', v => {
   EFF_CONTEXT = v || 'All';
   if (!v) setPillGroupValue('effContextPills', 'All');
   renderEfficiencyView();
