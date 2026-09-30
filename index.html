@@ -467,11 +467,15 @@
         </div>
 
         <div class="log-card">
-          <div class="log-card-head"><span class="step">5</span> Pick <span class="sub">how the defense played it</span></div>
+          <div class="log-card-head"><span class="step">5</span> Pick / Get <span class="sub">how the defense played it</span></div>
           <div class="field-grid">
             <div class="span-2">
-              <label>Pick on this possession?</label>
+              <label>Pick or get on this possession?</label>
               <div class="pill-row" id="f_pick"></div>
+            </div>
+            <div class="span-2" id="fPickActionWrap" style="display:none;">
+              <label>Which?</label>
+              <div class="pill-row" id="f_pickaction"></div>
             </div>
           </div>
           <div class="field-grid" id="fPickBody" style="display:none; margin-top:10px;">
@@ -480,14 +484,14 @@
               <div class="pill-row" id="f_pickcoverage"></div>
             </div>
             <div style="grid-column:1/-1;">
-              <label>What the Pick Got</label>
+              <label>What It Got</label>
               <div class="pill-row" id="f_pickresult"></div>
             </div>
             <div id="fPickMismatchWrap" style="display:none; grid-column:1/-1;">
               <label>Mismatch</label>
               <div class="pill-row" id="f_pickmismatch"></div>
             </div>
-            <div>
+            <div id="fPickTypeWrap">
               <label>Pick Type</label>
               <div class="pill-row" id="f_picktype"></div>
             </div>
@@ -496,10 +500,10 @@
               <div class="pill-row" id="f_pickspot"></div>
             </div>
             <div>
-              <label for="f_pick_screener">Screener (#)</label>
+              <label for="f_pick_screener" id="fPickScreenerLabel">Screener (#)</label>
               <input type="text" id="f_pick_screener" inputmode="numeric" maxlength="3" placeholder="Jersey #">
               <div class="readout" id="fPickScreenerResolve"></div>
-              <label for="f_pick_user" style="margin-top:8px;">Used By (#)</label>
+              <label for="f_pick_user" id="fPickUserLabel" style="margin-top:8px;">Used By (#)</label>
               <input type="text" id="f_pick_user" inputmode="numeric" maxlength="3" placeholder="Jersey #">
               <div class="readout" id="fPickUserResolve"></div>
             </div>
@@ -602,11 +606,15 @@
           </div>
         </div>
         <div class="log-card">
-          <div class="log-card-head"><span class="step">3</span> Pick <span class="sub">how the defense played it</span></div>
+          <div class="log-card-head"><span class="step">3</span> Pick / Get <span class="sub">how the defense played it</span></div>
           <div class="field-grid">
             <div class="span-2">
-              <label>Pick on this possession?</label>
+              <label>Pick or get on this possession?</label>
               <div class="pill-row" id="p_pick"></div>
+            </div>
+            <div class="span-2" id="pPickActionWrap" style="display:none;">
+              <label>Which?</label>
+              <div class="pill-row" id="p_pickaction"></div>
             </div>
           </div>
           <div class="field-grid" id="pPickBody" style="display:none; margin-top:10px;">
@@ -615,14 +623,14 @@
               <div class="pill-row" id="p_pickcoverage"></div>
             </div>
             <div style="grid-column:1/-1;">
-              <label>What the Pick Got</label>
+              <label>What It Got</label>
               <div class="pill-row" id="p_pickresult"></div>
             </div>
             <div id="pPickMismatchWrap" style="display:none; grid-column:1/-1;">
               <label>Mismatch</label>
               <div class="pill-row" id="p_pickmismatch"></div>
             </div>
-            <div>
+            <div id="pPickTypeWrap">
               <label>Pick Type</label>
               <div class="pill-row" id="p_picktype"></div>
             </div>
@@ -631,10 +639,10 @@
               <div class="pill-row" id="p_pickspot"></div>
             </div>
             <div>
-              <label for="p_pick_screener">Screener (#)</label>
+              <label for="p_pick_screener" id="pPickScreenerLabel">Screener (#)</label>
               <input type="text" id="p_pick_screener" inputmode="numeric" maxlength="3" placeholder="Jersey #">
               <div class="readout" id="pPickScreenerResolve"></div>
-              <label for="p_pick_user" style="margin-top:8px;">Used By (#)</label>
+              <label for="p_pick_user" id="pPickUserLabel" style="margin-top:8px;">Used By (#)</label>
               <input type="text" id="p_pick_user" inputmode="numeric" maxlength="3" placeholder="Jersey #">
               <div class="readout" id="pPickUserResolve"></div>
             </div>
@@ -1035,6 +1043,7 @@
     <div class="panel">
       <p class="panel-sub" id="effPickSub"></p>
       <div class="controls-row" style="margin-bottom:4px;">
+        <div class="control-group"><label>Show</label><div class="pill-row" id="effPickActionPills"></div></div>
         <div class="control-group"><label>Minimum picks</label><div class="pill-row" id="effPickMinPills"></div></div>
       </div>
     </div>
@@ -1411,7 +1420,7 @@ const COLS =["id","date","practiceId","context","shooterJersey","goalieJersey","
   // columns, which tupleToObj reads back as undefined -> treated as unset.
   "team","oppShooter","oppPasser","dominoes","advCreator","advType","screened","goalieSet","outlet","possStart","possStartJersey","stintId",
   // Pick coverage (2027+): how the defense played a pick on this possession.
-  "pick","pickType","pickSpot","pickScreener","pickUser","pickCoverage","pickResult","pickMismatch"];
+  "pick","pickType","pickSpot","pickScreener","pickUser","pickCoverage","pickResult","pickMismatch","pickAction"];
 // team: 'OPP' marks an opponent shot on a WLU goalie (games). Those never go
 // into SHOTS (every shooting stat assumes a WLU shooter); they live in
 // OPP_SHOTS and feed only the goalie views. Opponent jerseys are stored as
@@ -1423,7 +1432,7 @@ const POSS_END_OPTIONS = ["Turnover","Failed clear","End of period"];
 // A no-shot possession (turnover, failed clear, end of period). Kept apart
 // from shots so no shot math changes; lineup/turnover/dominoes stats read both.
 const POSS_COLS = ["id","date","context","opponent","team","possStart","possStartJersey","dominoes","advCreator","advType","manSituation","end","turnoverBy","causedBy","stintId",
-  "pick","pickType","pickSpot","pickScreener","pickUser","pickCoverage","pickResult","pickMismatch"];
+  "pick","pickType","pickSpot","pickScreener","pickUser","pickCoverage","pickResult","pickMismatch","pickAction"];
 // Shot Outcome (one required pill pick) replaces the old On Goal/On
 // Keeper/Goal Scored/Blocked checkboxes. Rather than rewriting every
 // existing analytics function that reads onGoal/onKeeper/goal/blocked
@@ -2955,18 +2964,30 @@ setupPillGroup('p_advtype', ADV_TYPE_OPTIONS, null);
 const PICK_TYPE_OPTIONS = ['On-ball', 'Off-ball', 'Double', 'Re-pick'];
 const PICK_SPOT_OPTIONS = ['Top', 'Wing', 'X/GLE', 'Crease'];
 const PICK_COVERAGE_OPTIONS = ['Switch', 'Fight over', 'Go under', 'Show/hedge', 'Jump', 'Double/trap', 'Blown'];
-const PICK_RESULT_OPTIONS = ['Freed ball carrier', 'Screener open', 'Mismatch created', 'Forced slide', 'Covered', 'Turnover'];
+const PICK_RESULT_OPTIONS = ['Freed ball carrier', 'Screener open', 'Shooter open', 'Mismatch created', 'Forced slide', 'Covered', 'Turnover'];
+// A Get is a handoff; it uses the same tags as a pick except Pick Type.
+const PICK_ACTION_OPTIONS = ['Pick', 'Get'];
 const PICK_MISMATCH_OPTIONS = ['Short stick on ball', 'Pole off', 'Big on small'];
 const pillVal = id => document.getElementById(id).dataset.value || null;
 function updatePickCard(x) {
-  const on = pillVal(x + '_pick') === 'Yes';
+  const yes = pillVal(x + '_pick') === 'Yes';
+  document.getElementById(x + 'PickActionWrap').style.display = yes ? '' : 'none';
+  if (!yes) setPillGroupValue(x + '_pickaction', null);
+  const action = pillVal(x + '_pickaction');
+  const on = yes && !!action;
   document.getElementById(x + 'PickBody').style.display = on ? '' : 'none';
+  const get = action === 'Get';
+  document.getElementById(x + 'PickTypeWrap').style.display = get ? 'none' : '';
+  if (get) setPillGroupValue(x + '_picktype', null);
+  document.getElementById(x + 'PickScreenerLabel').textContent = get ? 'Handed Off By (#)' : 'Screener (#)';
+  document.getElementById(x + 'PickUserLabel').textContent = get ? 'Received By (#)' : 'Used By (#)';
   const mm = on && (pillVal(x + '_pickcoverage') === 'Switch' || pillVal(x + '_pickresult') === 'Mismatch created');
   document.getElementById(x + 'PickMismatchWrap').style.display = mm ? '' : 'none';
   if (!mm) setPillGroupValue(x + '_pickmismatch', null);
 }
 function setupPickCard(x) {
   setupPillGroup(x + '_pick', ['Yes', 'No'], null, () => updatePickCard(x));
+  setupPillGroup(x + '_pickaction', PICK_ACTION_OPTIONS, null, () => updatePickCard(x));
   setupPillGroup(x + '_picktype', PICK_TYPE_OPTIONS, null);
   setupPillGroup(x + '_pickspot', PICK_SPOT_OPTIONS, null);
   setupPillGroup(x + '_pickcoverage', PICK_COVERAGE_OPTIONS, null, () => updatePickCard(x));
@@ -2974,13 +2995,15 @@ function setupPickCard(x) {
   setupPillGroup(x + '_pickmismatch', PICK_MISMATCH_OPTIONS, null);
 }
 function resetPickFields(x) {
-  ['_pick', '_picktype', '_pickspot', '_pickcoverage', '_pickresult', '_pickmismatch'].forEach(k => setPillGroupValue(x + k, null));
+  ['_pick', '_pickaction', '_picktype', '_pickspot', '_pickcoverage', '_pickresult', '_pickmismatch'].forEach(k => setPillGroupValue(x + k, null));
   [x + '_pick_screener', x + '_pick_user'].forEach(id => { const el = document.getElementById(id); el.value = ''; if (el.__updateReadout) el.__updateReadout(); });
   updatePickCard(x);
 }
 function fillPickFields(x, e) {
   const strip = j => j ? String(j).replace(/^o/, '') : '';
   setPillGroupValue(x + '_pick', e.pick || null);
+  setPillGroupValue(x + '_pickaction', e.pick === 'Yes' ? (e.pickAction || 'Pick') : null);
+  updatePickCard(x);
   setPillGroupValue(x + '_picktype', e.pickType || null);
   setPillGroupValue(x + '_pickspot', e.pickSpot || null);
   setPillGroupValue(x + '_pickcoverage', e.pickCoverage || null);
@@ -2992,15 +3015,17 @@ function fillPickFields(x, e) {
 }
 // Returns { ok, why, data } with every pick column set (all null unless Pick = Yes).
 function readPickFields(x, team) {
-  const data = { pick: pillVal(x + '_pick'), pickType: null, pickSpot: null, pickScreener: null, pickUser: null, pickCoverage: null, pickResult: null, pickMismatch: null };
+  const data = { pick: pillVal(x + '_pick'), pickAction: null, pickType: null, pickSpot: null, pickScreener: null, pickUser: null, pickCoverage: null, pickResult: null, pickMismatch: null };
   if (data.pick !== 'Yes') return { ok: true, data };
+  data.pickAction = pillVal(x + '_pickaction');
+  if (!data.pickAction) return { ok: false, why: 'Pick or get: tap Pick or Get, or set it to No.' };
   data.pickCoverage = pillVal(x + '_pickcoverage');
-  if (!data.pickCoverage) return { ok: false, why: 'Pick: tap how the defense covered it (Coverage), or set Pick to No.' };
+  if (!data.pickCoverage) return { ok: false, why: 'Pick or get: tap how the defense covered it (Coverage), or set it to No.' };
   const sc = readJerseyField(x + '_pick_screener', team);
   if (!sc.ok) return { ok: false, why: 'Pick screener: ' + sc.why };
   const us = readJerseyField(x + '_pick_user', team);
   if (!us.ok) return { ok: false, why: 'Pick used by: ' + us.why };
-  Object.assign(data, { pickType: pillVal(x + '_picktype'), pickSpot: pillVal(x + '_pickspot'), pickScreener: sc.value, pickUser: us.value,
+  Object.assign(data, { pickType: data.pickAction === 'Get' ? null : pillVal(x + '_picktype'), pickSpot: pillVal(x + '_pickspot'), pickScreener: sc.value, pickUser: us.value,
     pickResult: pillVal(x + '_pickresult'), pickMismatch: pillVal(x + '_pickmismatch') });
   return { ok: true, data };
 }
@@ -5213,7 +5238,7 @@ const REGRESS_K = 25; // pseudo-shots at the team rate blended into a player's s
 // The pick logged on a shot or no-shot possession, or null.
 function pickInfo(e) {
   if (e.pick !== 'Yes' || !e.pickCoverage) return null;
-  return { type: e.pickType || null, spot: e.pickSpot || null, screener: e.pickScreener || null, user: e.pickUser || null,
+  return { action: e.pickAction === 'Get' ? 'Get' : 'Pick', type: e.pickType || null, spot: e.pickSpot || null, screener: e.pickScreener || null, user: e.pickUser || null,
     coverage: e.pickCoverage, result: e.pickResult || null, mismatch: e.pickMismatch || null, trigger: e.trigger || null };
 }
 // ---- Team possessions (used by Overview, Man-up, Dominoes, Lineups, Picks) ----
@@ -5612,6 +5637,9 @@ function renderEffPerTouch(d) {
 // counts once even if a rebound shot follows (teamPossessions).
 let effPickMin = 3;
 let effPickSplit = 'Pick type';
+let effPickAction = 'All';
+const pickActionOk = (pp, a) => a === 'All' || (a === 'Picks' ? pp.pick.action === 'Pick' : pp.pick.action === 'Get');
+const pickActionWord = a => a === 'Picks' ? 'picks' : a === 'Gets' ? 'gets' : 'picks and gets';
 // Points for one possession, WLU-side: goals + assisted goals, and the
 // matching expected value (xG + the xG of shots that had a passer).
 function possPoints(pp, xgOf) {
@@ -5629,28 +5657,30 @@ function pickPossStats(list, xgOf) {
     shotRate: ratio(has(pp => pp.shots.length > 0), n),
     gsRate: ratio(has(pp => pp.shots.some(x => x.shotQuality === '1-Gold' || x.shotQuality === '2-Silver')), n),
     goalRate: ratio(has(pp => pp.goal > 0), n), toRate: ratio(has(pp => pp.to > 0), n),
-    freed: res('Freed ball carrier'), open: res('Screener open'), mm: res('Mismatch created'), slide: res('Forced slide'), covered: res('Covered') };
+    freed: res('Freed ball carrier'), open: res('Screener open'), shooterOpen: res('Shooter open'), mm: res('Mismatch created'), slide: res('Forced slide'), covered: res('Covered') };
 }
 const PICK_SPLITS = {
   'Pick type': { values: PICK_TYPE_OPTIONS, of: pp => pp.pick.type },
   'Spot': { values: PICK_SPOT_OPTIONS, of: pp => pp.pick.spot },
   'Situation': { values: MAN_SITUATION_OPTIONS, of: pp => pp.man || 'Even' },
   'Session': { values: SESSION_CONTEXTS, of: pp => pp.e.context },
+  'Pick vs Get': { values: PICK_ACTION_OPTIONS, of: pp => pp.pick.action },
 };
 function renderEffPicks(d, possList) {
   if (!document.getElementById('effPickTiles')) return;
   const wp = possList.filter(pp => pp.team === 'WLU');
-  const picks = wp.filter(pp => pp.pick);
+  const picks = wp.filter(pp => pp.pick && pickActionOk(pp, effPickAction));
+  const word = pickActionWord(effPickAction);
   const noPick = wp.filter(pp => !pp.pick);
   const all = pickPossStats(picks, d.xgOf), without = pickPossStats(noPick, d.xgOf);
   const blown = picks.filter(pp => pp.pick.coverage === 'Blown').length;
   document.getElementById('effPickTiles').innerHTML = [
-    statTile('Pick Possessions', picks.length.toLocaleString(), `${pct(ratio(picks.length, wp.length))} of ${wp.length} WLU possessions`),
+    statTile(effPickAction === 'Gets' ? 'Get Possessions' : effPickAction === 'Picks' ? 'Pick Possessions' : 'Pick/Get Possessions', picks.length.toLocaleString(), `${pct(ratio(picks.length, wp.length))} of ${wp.length} WLU possessions`),
     statTile('xP per Pick Poss.', num(all.xp, 2), `${num(all.pts, 2)} actual points per pick possession`, 'Expected points (xG + xA) per possession that had a logged pick.'),
     statTile('xP Without a Pick', num(without.xp, 2), all.xp !== null && without.xp !== null ? `Picks are ${all.xp >= without.xp ? '+' : ''}${num(all.xp - without.xp, 2)} per possession` : 'Needs both kinds logged', 'Expected points per WLU possession with no logged pick. The gap is what running picks is worth.'),
     statTile('Blown Coverage', pct(ratio(blown, picks.length)), `${blown} pick(s) where no one covered`, 'Share of pick possessions where the defense lost the pick entirely.'),
   ].join('');
-  document.getElementById('effPickSub').textContent = `${EFF_SEASON} ${EFF_CTX_WORD()}: possessions where WLU had the ball and a pick was logged on the shot or no-shot possession, so the coverage is the opponent's in games and the scout team's in practice. Rows under ${effPickMin} picks are hidden or grayed.`;
+  document.getElementById('effPickSub').textContent = `${EFF_SEASON} ${EFF_CTX_WORD()}: possessions where WLU had the ball and ${word === 'picks and gets' ? 'a pick or get' : 'a ' + word.slice(0, -1)} was logged on the shot or no-shot possession, so the coverage is the opponent's in games and the scout team's in practice. Rows under ${effPickMin} picks are hidden or grayed.`;
   const small = n => smallCellStyle(n, effPickMin);
   const d2 = v => num(v, 2);
 
@@ -5685,6 +5715,7 @@ function renderEffPicks(d, possList) {
     Object.assign({ key: 'toRate', label: 'TO %', group: 'Looks' }, pc('toRate')),
     Object.assign({ key: 'freed', label: 'Freed', group: 'What the pick got', title: 'Pick freed the ball carrier.' }, pc('freed')),
     Object.assign({ key: 'open', label: 'Screener Open', group: 'What the pick got' }, pc('open')),
+    Object.assign({ key: 'shooterOpen', label: 'Shooter Open', group: 'What the pick got' }, pc('shooterOpen')),
     Object.assign({ key: 'mm', label: 'Mismatch', group: 'What the pick got' }, pc('mm')),
     Object.assign({ key: 'slide', label: 'Forced Slide', group: 'What the pick got' }, pc('slide')),
     Object.assign({ key: 'covered', label: 'Covered', group: 'What the pick got' }, pc('covered')),
@@ -5746,6 +5777,7 @@ function renderEffPicks(d, possList) {
     { key: 'n', label: 'Picks Set', type: 'num', value: r => r.n },
     { key: 'freed', label: 'Freed %', type: 'num', value: r => r.freed, format: v => pct(v), title: 'His pick freed the ball carrier.' },
     { key: 'open', label: 'Got Open %', type: 'num', value: r => r.open, format: v => pct(v), title: 'He came open off his own pick (slip/roll).' },
+    { key: 'shooterOpen', label: 'Shooter Open %', type: 'num', value: r => r.shooterOpen, format: v => pct(v), title: 'His pick or handoff left the shooter open.' },
     { key: 'mm', label: 'Mismatch %', type: 'num', value: r => r.mm, format: v => pct(v) },
     { key: 'xp', label: 'xP/Poss', type: 'num', value: r => r.xp, format: d2 },
     { key: 'pts', label: 'P/Poss', type: 'num', value: r => r.pts, format: d2 },
@@ -5993,6 +6025,11 @@ setupPillGroup('effTouchMinPills', [{ value: '5', label: '5+' }, { value: '10', 
 setupPillGroup('effPickMinPills', [{ value: '1', label: '1+' }, { value: '3', label: '3+' }, { value: '5', label: '5+' }, { value: '10', label: '10+' }], '3', v => {
   effPickMin = Number(v) || 3;
   if (!v) setPillGroupValue('effPickMinPills', '3');
+  renderEffFilmMetrics();
+});
+setupPillGroup('effPickActionPills', ['All', 'Picks', 'Gets'], 'All', v => {
+  effPickAction = v || 'All';
+  if (!v) setPillGroupValue('effPickActionPills', 'All');
   renderEffFilmMetrics();
 });
 setupPillGroup('effPickSplitPills', Object.keys(PICK_SPLITS), 'Pick type', v => {
@@ -6888,15 +6925,20 @@ function populateOpponentSelect() {
 }
 
 // Coverage mix and what beat it, from game pick possessions vs one opponent.
+let oppPickAction = 'All';
 function renderOpponentPicks(opponent) {
+  setupPillGroup('oppPickActionPills', ['All', 'Picks', 'Gets'], oppPickAction, v => {
+    oppPickAction = v || 'All';
+    renderOpponentPicks(opponent);
+  });
   const season = isAdvSeason(oppSeason) ? oppSeason : currentAdvSeason();
   const model = xgModelFor(season);
   const inSeason = e => oppSeason === 'All Seasons' || seasonForDate(e.date) === oppSeason;
   const vsThem = e => e.context === 'Game' && e.opponent === opponent && inSeason(e);
   const d = { shots: SHOTS.filter(vsThem), oppShots: [], poss: POSSESSIONS.filter(p => vsThem(p) && p.team !== 'OPP'), xgOf: s => xgForShot(s, model) };
-  const picks = teamPossessions(d).filter(pp => pp.team === 'WLU' && pp.pick);
+  const picks = teamPossessions(d).filter(pp => pp.team === 'WLU' && pp.pick && pickActionOk(pp, oppPickAction));
   document.getElementById('oppPickSub').textContent = picks.length
-    ? `${picks.length} pick possession(s) logged vs ${opponent}. Share = how often they played each coverage; the rest is what WLU got against it.`
+    ? `${picks.length} ${pickActionWord(oppPickAction)} possession(s) logged vs ${opponent}. Share = how often they played each coverage; the rest is what WLU got against it.`
     : `No picks logged vs ${opponent} yet. Tap Pick: Yes on a game shot or no-shot possession to build this.`;
   const rows = PICK_COVERAGE_OPTIONS.map(c => {
     const list = picks.filter(pp => pp.pick.coverage === c);
@@ -6912,6 +6954,7 @@ function renderOpponentPicks(opponent) {
     { key: 'goalRate', label: 'Goal %', type: 'num', value: r => r.goalRate, format: v => pct(v) },
     { key: 'freed', label: 'Freed %', type: 'num', value: r => r.freed, format: v => pct(v) },
     { key: 'open', label: 'Screener Open %', type: 'num', value: r => r.open, format: v => pct(v) },
+    { key: 'shooterOpen', label: 'Shooter Open %', type: 'num', value: r => r.shooterOpen, format: v => pct(v) },
     { key: 'mm', label: 'Mismatch %', type: 'num', value: r => r.mm, format: v => pct(v) },
   ], rows, { dense: true, defaultSort: { key: 'n', dir: 'desc' }, emptyMsg: 'No picks logged vs this opponent yet.' });
 }
@@ -6964,8 +7007,9 @@ function renderOpponentReport() {
     </tbody></table></div>
   </div>`;
   html += `<div class="panel">
-    <p class="panel-title">How They Defend Picks</p>
+    <p class="panel-title">How They Defend Picks &amp; Gets</p>
     <p class="panel-sub" id="oppPickSub"></p>
+    <div class="controls-row" style="margin-bottom:8px;"><div class="control-group"><label>Show</label><div class="pill-row" id="oppPickActionPills"></div></div></div>
     <div class="table-wrap" id="oppPickWrap"></div>
   </div>`;
   wrap.innerHTML = html;
