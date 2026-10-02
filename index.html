@@ -1132,13 +1132,16 @@
     </div>
     <div class="panel">
       <p class="panel-title">Shot Recipes</p>
-      <p class="panel-sub">The shots that score most, and least, for us so far: where from, what angle, which stick plane, and where they went in. Each needs 6+ shots. Tap a card to focus everything below on it.</p>
+      <p class="panel-sub">The shots that score most, and least, for us so far: which zone, which stick plane, and where they went in. Each needs 6+ shots. Tap a card to focus everything below on it.</p>
       <div id="angSummary"></div>
     </div>
     <div class="panel">
-      <p class="panel-title">Angle Fan</p>
+      <p class="panel-title">Zone Map</p>
       <p class="panel-sub" id="angFanSub"></p>
-      <div class="image-row"><div id="angFanWrap" style="width:100%; max-width:760px;"></div></div>
+      <div style="display:flex; gap:14px; flex-wrap:wrap; align-items:flex-start;">
+        <div id="angFanWrap" style="flex:1 1 460px; max-width:660px;"></div>
+        <div class="table-wrap" id="angZoneTable" style="flex:1 1 280px;"></div>
+      </div>
     </div>
     <div class="panel">
       <p class="panel-title">Where to Aim</p>
@@ -1156,8 +1159,9 @@
     </div>
     <div class="panel">
       <p class="panel-title">3D Shot Map</p>
-      <p class="panel-sub">Every shot as it happened: a figure at the spot it was taken, stick angled by plane, and the ball&rsquo;s path into its exact spot on the cage. Uses the Player and Stick plane pickers at the top. <b>Tap a shot</b> for its details. <b>Tap the turf</b> to drop a pin and see where shots score more (green) or less (red) than that spot. Tap the pin again to clear.</p>
+      <p class="panel-sub">Every shot on a real field (defensive end, men&rsquo;s dimensions). <b>Tap a shot</b> to pull it out on its own. Then <b>tap anywhere on the field</b> to see how its chance of going in would change from there, and flip catch/dodge, hand, stick plane, quality or contest. Chances come from a team model of how we&rsquo;ve been shooting this season.</p>
       <div class="controls-row" style="margin-bottom:8px;">
+        <div class="control-group"><label for="ang3dPlayer">Player</label><select id="ang3dPlayer"></select></div>
         <div class="control-group"><label>View</label><div class="pill-row" id="ang3dViewPills"></div></div>
         <div class="control-group"><label>Result</label><div class="pill-row" id="ang3dOutcomePills"></div></div>
         <div class="control-group"><label>Hand</label><div class="pill-row" id="ang3dHandPills"></div></div>
@@ -6479,7 +6483,7 @@ function renderExactModel(shots, xgOf) {
     { key: 'rate', label: 'Scores', type: 'num', value: r => r.rate, format: v => pct(v) },
     { key: 'n', label: 'Nearby Shots', type: 'num', value: r => r.n, format: v => '≈' + Math.round(v) },
     { key: 'go', label: '', type: 'text', sortable: false, value: r => r.rank, format: (v, r) => `<button type="button" class="btn secondary" data-angtarget="${r.gx},${r.gy}" style="padding:3px 8px; font-size:11.5px;">Where to shoot from</button>` },
-  ], targets.map((g, i) => ({ rank: i + 1, aim: aimWords(g.x, g.y, angSel ? angSel.side : null), target: targetLabel(g.x, g.y), rate: g.rate, n: g.n, gx: g.x, gy: g.y })), { dense: true, defaultSort: { key: 'rank', dir: 'asc' }, emptyMsg: `No goal area has ${angSel ? 3 : 5}+ nearby on-cage shots and an above-average rate yet.` });
+  ], targets.map((g, i) => ({ rank: i + 1, aim: aimWords(g.x, g.y, angSel ? zoneSide(angSel.zone) : null), target: targetLabel(g.x, g.y), rate: g.rate, n: g.n, gx: g.x, gy: g.y })), { dense: true, defaultSort: { key: 'rank', dir: 'asc' }, emptyMsg: `No goal area has ${angSel ? 3 : 5}+ nearby on-cage shots and an above-average rate yet.` });
   document.querySelectorAll('#angBestTargetsWrap [data-angtarget]').forEach(b => b.addEventListener('click', () => {
     const [gx, gy] = b.dataset.angtarget.split(',').map(Number);
     angTarget = { gx, gy }; renderEfficiencyView();
@@ -6509,7 +6513,7 @@ function renderExactModel(shots, xgOf) {
     { key: 'target', label: 'Best target', type: 'text', value: r => r.target },
   ], planeRows, { dense: true, defaultSort: { key: 'n', dir: 'desc' }, emptyMsg: 'No shots with a Shot Mechanism and location yet.' });
 
-  renderAngle3D(planeShots, spots, targets, xgOf);
+  renderAngle3D(xgOf);
 }
 
 // ---- 3D shot map (three.js from jsDelivr, loaded on first use) ----
@@ -6523,15 +6527,115 @@ function loadThree() {
     .catch(e => { THREE_LOADING = null; throw e; });
   return THREE_LOADING;
 }
+
+// ---- Named field zones (looking out from the goal; yds out x yds wide) ----
+// Every spot falls into the first rule it matches.
+const ZONE_ORDER = ['Doorstep', 'GLE Left', 'GLE Right', 'Low Left', 'Low Right', 'Slot', 'Alley Left', 'Alley Right', 'Wing Left', 'Wing Right', 'Top Left', 'Top Center', 'Top Right'];
+function zoneAt(L, D) {
+  const a = Math.abs(L), s = L < 0 ? 'Left' : 'Right';
+  if (Math.hypot(L, D) < 5 || (D < 6 && a < 3)) return 'Doorstep';
+  if (D < 3 && a >= 5) return 'GLE ' + s;
+  if (D < 6 && a >= 3 && a < 12) return 'Low ' + s;
+  if (a >= 12) return 'Wing ' + s;
+  if (D < 11 && a < 4) return 'Slot';
+  if (D >= 11 && a < 5) return 'Top Center';
+  if (D < 12 && a < 12) return 'Alley ' + s;
+  return 'Top ' + s;
+}
+function shotZone(x) {
+  if (x.lateralYds === null || x.lateralYds === undefined || x.distanceYds === null || x.distanceYds === undefined) return null;
+  return zoneAt(x.lateralYds, x.distanceYds);
+}
+const zoneSide = z => /Left$/.test(z) ? 'L' : (/Right$/.test(z) ? 'R' : null);
+
+// ---- Team shot model: regularized logistic regression on 2027+ shots ----
+// Learns P(goal) from distance, angle, catch/dodge, hand, stick plane, shot
+// quality and contest. The L2 penalty pulls every effect toward zero, so with
+// few shots predictions stay near our team average and sharpen as shots pile up.
+const SM_PLANES = ['Sidearm', 'Underhand', 'BTB', 'Twister'];  // vs Overhand
+const SM_QUAL = ['1-Gold', '3-Bronze'];                          // vs Silver
+const SM_CONTEST = ['Light', 'Heavy'];                           // vs Open
+const SM_LAMBDA = 3;
+function shotProfile(x) {
+  return { lat: x.lateralYds, dist: x.distanceYds, dodge: x.offDodge === 1 ? 1 : (x.offDodge === 0 ? 0 : null),
+    hand: getHandedness(x) || null, plane: x.shotMechanism || null, quality: x.shotQuality || null, contest: x.contestLevel || null };
+}
+function shotFeatures(p, means) {
+  const ang = Math.atan2(Math.abs(p.lat), Math.max(0, p.dist)) / (Math.PI / 2), d = p.dist / 20;
+  const f = [1, d, d * d, ang, ang * ang];
+  f.push(p.dodge === null ? means.dodge : p.dodge);
+  f.push(p.hand === null ? means.lefty : (p.hand === 'Left' ? 1 : 0));
+  SM_PLANES.forEach((k, i) => f.push(p.plane === null ? means.plane[i] : (p.plane === k ? 1 : 0)));
+  SM_QUAL.forEach((k, i) => f.push(p.quality === null ? means.qual[i] : (p.quality === k ? 1 : 0)));
+  SM_CONTEST.forEach((k, i) => f.push(p.contest === null ? means.contest[i] : (p.contest === k ? 1 : 0)));
+  return f;
+}
+function solveLinear(A, b) {
+  const n = b.length, M = A.map((r, i) => r.concat([b[i]]));
+  for (let c = 0; c < n; c++) {
+    let piv = c; for (let r = c + 1; r < n; r++) if (Math.abs(M[r][c]) > Math.abs(M[piv][c])) piv = r;
+    [M[c], M[piv]] = [M[piv], M[c]];
+    const v = M[c][c] || 1e-9;
+    for (let r = 0; r < n; r++) if (r !== c) { const k = M[r][c] / v; for (let j = c; j <= n; j++) M[r][j] -= k * M[c][j]; }
+  }
+  return M.map((r, i) => r[n] / (r[i] || 1e-9));
+}
+function fitShotModel(shots) {
+  const rows = shots.filter(x => shotAngleDeg(x) !== null).map(shotProfile);
+  const goals = shots.filter(x => shotAngleDeg(x) !== null).map(x => x.goal === 1 ? 1 : 0);
+  const n = rows.length;
+  const base = n ? goals.reduce((a, b) => a + b, 0) / n : 0;
+  const avgOf = vals => { const v = vals.filter(x => x !== null); return v.length ? v.reduce((a, b) => a + b, 0) / v.length : 0; };
+  const means = {
+    dodge: avgOf(rows.map(r => r.dodge)), lefty: avgOf(rows.map(r => r.hand === null ? null : (r.hand === 'Left' ? 1 : 0))),
+    plane: SM_PLANES.map(k => avgOf(rows.map(r => r.plane === null ? null : (r.plane === k ? 1 : 0)))),
+    qual: SM_QUAL.map(k => avgOf(rows.map(r => r.quality === null ? null : (r.quality === k ? 1 : 0)))),
+    contest: SM_CONTEST.map(k => avgOf(rows.map(r => r.contest === null ? null : (r.contest === k ? 1 : 0)))),
+  };
+  const counts = {
+    dodge: { 1: rows.filter(r => r.dodge === 1).length, 0: rows.filter(r => r.dodge === 0).length },
+    hand: { Right: rows.filter(r => r.hand === 'Right').length, Left: rows.filter(r => r.hand === 'Left').length },
+    plane: Object.fromEntries(SHOT_MECHANISM_OPTIONS.map(k => [k, rows.filter(r => r.plane === k).length])),
+    quality: Object.fromEntries(SA_TIERS.map(k => [k, rows.filter(r => r.quality === k).length])),
+    contest: Object.fromEntries(['Open', 'Light', 'Heavy'].map(k => [k, rows.filter(r => r.contest === k).length])),
+  };
+  const X = rows.map(r => shotFeatures(r, means));
+  const k = 5 + 2 + SM_PLANES.length + SM_QUAL.length + SM_CONTEST.length;
+  let w = Array(k).fill(0);
+  w[0] = Math.log(Math.max(0.02, Math.min(0.98, base)) / (1 - Math.max(0.02, Math.min(0.98, base))));
+  for (let it = 0; it < 30 && n; it++) {
+    const g = Array(k).fill(0), H = Array.from({ length: k }, () => Array(k).fill(0));
+    X.forEach((f, i) => {
+      const z = f.reduce((a, v, j) => a + v * w[j], 0), pr = 1 / (1 + Math.exp(-z)), e = goals[i] - pr, wt = pr * (1 - pr);
+      for (let a = 0; a < k; a++) { g[a] += e * f[a]; for (let b = a; b < k; b++) H[a][b] += wt * f[a] * f[b]; }
+    });
+    for (let a = 0; a < k; a++) { for (let b = 0; b < a; b++) H[a][b] = H[b][a]; if (a > 0) { g[a] -= SM_LAMBDA * w[a]; H[a][a] += SM_LAMBDA; } H[a][a] += 1e-6; }
+    const step = solveLinear(H, g);
+    w = w.map((v, j) => v + step[j]);
+    if (Math.max(...step.map(Math.abs)) < 1e-6) break;
+  }
+  return { w, means, base, n, counts };
+}
+function predictShot(model, p) {
+  const f = shotFeatures(p, model.means);
+  const z = f.reduce((a, v, j) => a + v * model.w[j], 0);
+  return 1 / (1 + Math.exp(-z));
+}
+
+// ---- 3D field, shots and what-if ----
 let ANG3D = null;
-let ang3dView = "Shooter's view", ang3dQuality = 'All', ang3dPin = null, ang3dPicked = null;
+let ang3dView = "Shooter's view", ang3dQuality = 'All', ang3dPlayer = '';
+let ang3dFocus = null;   // a logged shot, or { blank: true }
+let ang3dWhatIf = null;  // { dodge, hand, plane, quality, contest } being tested
+let ang3dGhost = null;   // { lat, dist } clicked spot
 const ANG3D_VIEWS = {
-  "Shooter's view": [[0, 3.4, 23], [0, 1, 3]],
+  "Shooter's view": [[0, 4.2, 27], [0, 1, 4]],
   "Goalie's view": [[0, 1.5, -2.6], [0, 1, 10]],
-  'Side': [[27, 8, 9], [0, 1, 8]],
-  'Overhead': [[0, 33, 9.01], [0, 0, 9]],
+  'Side': [[34, 10, 10], [0, 1, 8]],
+  'Overhead': [[0, 58, 8.01], [0, 0, 8]],
 };
 const ANG3D_FIGURE_MAX = 25;
+const BLANK_SHOT = { lat: 0, dist: 10, dodge: 0, hand: 'Right', plane: 'Overhand', quality: '2-Silver', contest: 'Open' };
 // Where the stick head is at release, by stick plane (yards; x = lateral,
 // y = height, z = distance out). The ball path starts here.
 function releasePoint(x) {
@@ -6546,12 +6650,12 @@ function releasePoint(x) {
     default: return [L + hand * 0.3, 1.5, D];
   }
 }
-function threeLabel(T, text, h) {
+function threeLabel(T, text, h, color) {
   const c = document.createElement('canvas'); c.width = 256; c.height = 64;
   const g = c.getContext('2d');
   g.font = 'bold 34px Helvetica Neue, Arial, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle';
   g.lineWidth = 6; g.strokeStyle = 'rgba(15,31,61,0.75)'; g.strokeText(text, 128, 32);
-  g.fillStyle = '#FFFFFF'; g.fillText(text, 128, 32);
+  g.fillStyle = color || '#FFFFFF'; g.fillText(text, 128, 32);
   const sp = new T.Sprite(new T.SpriteMaterial({ map: new T.CanvasTexture(c), depthTest: false }));
   sp.scale.set(h * 4, h, 1);
   return sp;
@@ -6568,6 +6672,15 @@ function shooterFigure(T, x, mat) {
   const sh = new T.Mesh(new T.SphereGeometry(0.07, 8, 8), new T.MeshBasicMaterial({ color: 0x1A1A1A })); sh.position.set(r[0], r[1], r[2]); g.add(sh);
   return g;
 }
+function shotPathObject(T, x, mat, tube) {
+  const r = releasePoint(x);
+  const from = new T.Vector3(r[0], r[1], r[2]);
+  const placed = x.goalX !== null && x.goalX !== undefined && x.goalY !== null && x.goalY !== undefined;
+  const to = placed ? new T.Vector3((x.goalX - 0.5) * 2, x.goalY * 2, 0) : new T.Vector3(0, 1, 0);
+  const mid = from.clone().add(to).multiplyScalar(0.5); mid.y += 0.15 + from.distanceTo(to) * 0.025;
+  const curve = new T.QuadraticBezierCurve3(from, mid, to);
+  return tube ? new T.Mesh(new T.TubeGeometry(curve, 24, tube, 6), mat) : new T.Line(new T.BufferGeometry().setFromPoints(curve.getPoints(24)), mat);
+}
 function buildAng3D(T, wrap) {
   wrap.innerHTML = '';
   const renderer = new T.WebGLRenderer({ antialias: true });
@@ -6576,39 +6689,47 @@ function buildAng3D(T, wrap) {
   const legend = document.createElement('div');
   legend.className = 'sans';
   legend.style.cssText = 'position:absolute; top:8px; left:8px; background:rgba(255,255,255,0.88); border-radius:8px; padding:6px 9px; font-size:11.5px; line-height:1.6; pointer-events:none;';
-  legend.innerHTML = '<span style="display:inline-block;width:14px;height:4px;background:#1E9E48;vertical-align:middle;margin-right:5px;"></span>Goal<br><span style="display:inline-block;width:14px;height:2px;background:#1F3864;opacity:.6;vertical-align:middle;margin-right:5px;"></span>Save<br><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#8C8C8C;vertical-align:middle;margin:0 8px 0 3px;"></span>Miss / block<br><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#D4AF37;vertical-align:middle;margin:0 6px 0 2px;"></span>Best spot / selected';
+  legend.innerHTML = '<span style="display:inline-block;width:14px;height:4px;background:#1E9E48;vertical-align:middle;margin-right:5px;"></span>Goal<br><span style="display:inline-block;width:14px;height:2px;background:#1F3864;opacity:.6;vertical-align:middle;margin-right:5px;"></span>Save<br><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#8C8C8C;vertical-align:middle;margin:0 8px 0 3px;"></span>Miss / block<br><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#D4AF37;vertical-align:middle;margin:0 6px 0 2px;"></span>What-if spot';
   wrap.appendChild(legend);
   const scene = new T.Scene(); scene.background = new T.Color(0xEEF1EA);
-  const camera = new T.PerspectiveCamera(45, 1, 0.1, 200);
+  const camera = new T.PerspectiveCamera(45, 1, 0.1, 300);
   const controls = new T.OrbitControls(camera, renderer.domElement);
   controls.maxPolarAngle = Math.PI / 2 - 0.02;
   scene.add(new T.AmbientLight(0xffffff, 0.85));
-  const sun = new T.DirectionalLight(0xffffff, 0.5); sun.position.set(5, 15, 10); scene.add(sun);
-  const turf = new T.Mesh(new T.PlaneGeometry(42, 24), new T.MeshLambertMaterial({ color: 0x6E9B58 }));
-  turf.rotation.x = -Math.PI / 2; turf.position.set(0, 0, 9); scene.add(turf);
+  const sun = new T.DirectionalLight(0xffffff, 0.5); sun.position.set(5, 20, 10); scene.add(sun);
+  // Men's defensive end (yards): end line 15 behind the goal, sidelines 30 out
+  // from center, restraining line 20 up, box 20 each side of center.
+  const turf = new T.Mesh(new T.PlaneGeometry(66, 62), new T.MeshLambertMaterial({ color: 0x6E9B58 }));
+  turf.rotation.x = -Math.PI / 2; turf.position.set(0, 0, 13); scene.add(turf);
   const white = new T.LineBasicMaterial({ color: 0xffffff });
-  const faint = new T.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.55 });
+  const faint = new T.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.45 });
   const ln = (pts, m) => scene.add(new T.Line(new T.BufferGeometry().setFromPoints(pts.map(([x, z]) => new T.Vector3(x, 0.012, z))), m || white));
-  ln([[-21, 0], [21, 0]]);
+  ln([[-30, -15], [30, -15], [30, 40], [-30, 40], [-30, -15]]);          // end line, sidelines (to midfield)
+  ln([[-30, 20], [30, 20]]);                                              // restraining line
+  ln([[-20, -15], [-20, 20]]); ln([[20, -15], [20, 20]]);                 // box sidelines
+  ln([[-30, 0], [-1, 0]], faint); ln([[1, 0], [30, 0]], faint);           // goal line extended
+  ln([[-1, 0], [1, 0]]);                                                  // goal line
   const crease = []; for (let a = 0; a <= 64; a++) { const t = a / 64 * Math.PI * 2; crease.push([3 * Math.cos(t), 3 * Math.sin(t)]); } ln(crease);
-  // Yard lines and angle lines on the turf.
-  [5, 10, 15, 20].forEach(d => { ln([[-19, d], [19, d]], faint); const lb = threeLabel(T, d + ' yds', 0.7); lb.position.set(-20.5, 0.4, d); scene.add(lb); });
-  [15, 30, 45, 60].forEach(deg => {
-    const t = Math.tan(deg * Math.PI / 180), dist = Math.min(20, 19 / t);
-    [-1, 1].forEach(side => { ln([[0, 0], [side * dist * t, dist]], faint); const lb = threeLabel(T, deg + '°', 0.7); lb.position.set(side * dist * t * 1.04, 0.4, dist * 1.04); scene.add(lb); });
+  // Yard hash marks every 5 yds along the box sidelines and up the middle.
+  [5, 10, 15].forEach(d => {
+    [-20, 20].forEach(x => ln([[x - 0.7, d], [x + 0.7, d]]));
+    ln([[-0.7, d], [0.7, d]]);
+    const lb = threeLabel(T, d + ' yds', 0.8); lb.position.set(0, 0.5, d + 0.9); scene.add(lb);
   });
+  const rl = threeLabel(T, 'Restraining line', 0.9); rl.position.set(-24, 0.5, 21.2); scene.add(rl);
   const pipe = new T.MeshLambertMaterial({ color: 0xE0712E });
   const bar = (w, h, d, x, y, z) => { const m = new T.Mesh(new T.BoxGeometry(w, h, d), pipe); m.position.set(x, y, z); scene.add(m); };
   bar(0.07, 2, 0.07, -1, 1, 0); bar(0.07, 2, 0.07, 1, 1, 0); bar(2.07, 0.07, 0.07, 0, 2, 0);
   const net = new T.Mesh(new T.PlaneGeometry(2, 2), new T.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.2, side: T.DoubleSide }));
   net.position.set(0, 1, -0.02); scene.add(net);
-  const shotsG = new T.Group(), deltaG = new T.Group();
-  scene.add(deltaG); scene.add(shotsG);
-  ANG3D = { T, renderer, scene, camera, controls, turf, shotsG, deltaG, wrap };
+  const shotsG = new T.Group(), overlayG = new T.Group();
+  scene.add(overlayG); scene.add(shotsG);
+  ANG3D = { T, renderer, scene, camera, controls, turf, shotsG, overlayG, wrap };
   const size = () => { const w = wrap.clientWidth || 700, h = wrap.clientHeight || 460; renderer.setSize(w, h); camera.aspect = w / h; camera.updateProjectionMatrix(); };
   ANG3D.size = size; size(); window.addEventListener('resize', size);
   setAng3dView(ang3dView);
-  // Tap (not drag): pick a shot, else drop / clear a pin on the turf.
+  // Tap (not drag): with no shot picked, tapping a shot isolates it; with a
+  // shot picked, tapping the field moves the what-if spot there.
   let down = null;
   renderer.domElement.addEventListener('pointerdown', e => { down = [e.clientX, e.clientY]; });
   renderer.domElement.addEventListener('pointerup', e => {
@@ -6616,12 +6737,14 @@ function buildAng3D(T, wrap) {
     const rect = renderer.domElement.getBoundingClientRect();
     const v = new T.Vector2(((e.clientX - rect.left) / rect.width) * 2 - 1, -((e.clientY - rect.top) / rect.height) * 2 + 1);
     const ray = new T.Raycaster(); ray.params.Line.threshold = 0.18; ray.setFromCamera(v, camera);
-    const hit = ray.intersectObjects(shotsG.children, true).find(h => { let o = h.object; while (o && !o.userData.shot) o = o.parent; return !!o; });
-    if (hit) { let o = hit.object; while (!o.userData.shot) o = o.parent; ang3dPicked = ang3dPicked === o.userData.shot ? null : o.userData.shot; refreshAng3D(); return; }
+    if (!ang3dFocus) {
+      const hit = ray.intersectObjects(shotsG.children, true).find(h => { let o = h.object; while (o && !o.userData.shot) o = o.parent; return !!o; });
+      if (hit) { let o = hit.object; while (!o.userData.shot) o = o.parent; focusAng3dShot(o.userData.shot); }
+      return;
+    }
     const t = ray.intersectObject(turf)[0];
     if (!t) return;
-    const lat = Math.max(-19, Math.min(19, t.point.x)), dist = Math.max(0, Math.min(20, t.point.z));
-    ang3dPin = (ang3dPin && Math.hypot(ang3dPin.lat - lat, ang3dPin.dist - dist) < 1.2) ? null : { lat, dist };
+    ang3dGhost = { lat: Math.max(-19, Math.min(19, t.point.x)), dist: Math.max(0, Math.min(20, t.point.z)) };
     refreshAng3D();
   });
   const loop = () => { if (!document.body.contains(renderer.domElement)) return; controls.update(); renderer.render(scene, camera); requestAnimationFrame(loop); };
@@ -6632,126 +6755,141 @@ function setAng3dView(name) {
   const v = ANG3D_VIEWS[name] || ANG3D_VIEWS["Shooter's view"];
   ANG3D.camera.position.set(...v[0]); ANG3D.controls.target.set(...v[1]); ANG3D.controls.update();
 }
+function focusAng3dShot(x) {
+  ang3dFocus = x; ang3dGhost = null;
+  const p = x.blank ? BLANK_SHOT : shotProfile(x);
+  ang3dWhatIf = { dodge: p.dodge === null ? 0 : p.dodge, hand: p.hand || 'Right', plane: p.plane || 'Overhand', quality: p.quality || '2-Silver', contest: p.contest || 'Open' };
+  refreshAng3D();
+}
 function refreshAng3D() { if (ANG3D && ANG3D.last) drawAng3D(ANG3D.last); }
-function renderAngle3D(shots, spots, targets, xgOf) {
+function renderAngle3D(xgOf) {
   const wrap = document.getElementById('ang3dWrap');
   if (!wrap) return;
+  const all = effShots().filter(x => x.shooterJersey && shotAngleDeg(x) !== null);
+  // Player picker for the 3D map.
+  const sel = document.getElementById('ang3dPlayer');
+  if (sel) {
+    const counts = {}; all.forEach(x => { counts[x.shooterJersey] = (counts[x.shooterJersey] || 0) + 1; });
+    const opts = [{ v: '', t: 'All players' }].concat(Object.keys(counts).sort((a, b) => counts[b] - counts[a]).map(j => ({ v: j, t: `#${j} ${nameFor(j, EFF_SEASON) || ''} (${counts[j]})` })));
+    sel.innerHTML = opts.map(o => `<option value="${escapeHtml(o.v)}">${escapeHtml(o.t)}</option>`).join('');
+    sel.value = opts.some(o => o.v === ang3dPlayer) ? ang3dPlayer : '';
+  }
+  const model = fitShotModel(all);  // team model: every 2027+ shot, all players
   loadThree().then(() => {
     if (!ANG3D || !wrap.contains(ANG3D.renderer.domElement)) buildAng3D(window.THREE, wrap);
     ANG3D.size();
-    ANG3D.last = { shots, spots, targets, xgOf };
+    ANG3D.last = { all, model, xgOf };
     drawAng3D(ANG3D.last);
   }).catch(() => { wrap.innerHTML = '<p class="sans" style="color:var(--muted); font-size:13px; padding:14px;">The 3D view couldn&rsquo;t load (no internet connection?). Everything above still works.</p>'; });
 }
-function drawAng3D({ shots, spots, targets, xgOf }) {
+function drawAng3D({ all, model }) {
   const T = ANG3D.T;
   const clear = g => { while (g.children.length) { const c = g.children.pop(); c.traverse(o => { if (o.geometry) o.geometry.dispose(); }); } };
-  clear(ANG3D.shotsG); clear(ANG3D.deltaG);
+  clear(ANG3D.shotsG); clear(ANG3D.overlayG);
   const g = ANG3D.shotsG;
-  const handOk = x => ang3dHand === 'All' || getHandedness(x) === (ang3dHand === 'Righty' ? 'Right' : 'Left');
-  const qualOk = x => ang3dQuality === 'All' || SA_TIER_LABEL[x.shotQuality] === ang3dQuality;
-  const outOk = x => ang3dOutcome === 'All' || (ang3dOutcome === 'Goals' ? x.goal === 1 : ang3dOutcome === 'Saves' ? (x.onKeeper === 1 && x.goal !== 1) : x.onKeeper !== 1);
-  const base = shots.filter(x => shotAngleDeg(x) !== null && handOk(x) && qualOk(x));
-  const vis = base.filter(outOk);
-  if (ang3dPicked && !vis.includes(ang3dPicked)) ang3dPicked = null;
   const goldM = new T.MeshLambertMaterial({ color: 0xD4AF37 });
   const goalM = new T.MeshLambertMaterial({ color: 0x1E9E48 });
   const goalDim = new T.MeshLambertMaterial({ color: 0x1E9E48, transparent: true, opacity: 0.15 });
   const saveM = new T.LineBasicMaterial({ color: 0x1F3864, transparent: true, opacity: 0.5 });
   const saveDim = new T.LineBasicMaterial({ color: 0x1F3864, transparent: true, opacity: 0.08 });
-  const saveGold = new T.LineBasicMaterial({ color: 0xB8901E });
   const missM = new T.MeshBasicMaterial({ color: 0x8C8C8C });
   const figM = new T.MeshLambertMaterial({ color: 0x0F1F3D });
-  vis.forEach(x => {
-    const hi = angSel ? inAngSel(x) : false;
-    const dim = angSel && !hi;
-    const r = releasePoint(x);
-    const from = new T.Vector3(r[0], r[1], r[2]);
-    let obj;
-    if (x.onKeeper === 1 && x.goalX !== null && x.goalX !== undefined && x.goalY !== null && x.goalY !== undefined) {
-      const to = new T.Vector3((x.goalX - 0.5) * 2, x.goalY * 2, 0);
-      const mid = from.clone().add(to).multiplyScalar(0.5); mid.y += 0.15 + from.distanceTo(to) * 0.025;
-      const curve = new T.QuadraticBezierCurve3(from, mid, to);
-      if (x.goal === 1) obj = new T.Mesh(new T.TubeGeometry(curve, 24, (hi || x === ang3dPicked) ? 0.065 : 0.045, 6), hi || x === ang3dPicked ? goldM : (dim ? goalDim : goalM));
-      else obj = new T.Line(new T.BufferGeometry().setFromPoints(curve.getPoints(24)), hi || x === ang3dPicked ? saveGold : (dim ? saveDim : saveM));
-    } else {
-      obj = new T.Mesh(new T.SphereGeometry(0.13, 8, 8), hi || x === ang3dPicked ? goldM : missM);
-      obj.position.set(x.lateralYds, 0.13, x.distanceYds);
-    }
-    obj.userData.shot = x;
-    g.add(obj);
-  });
-  // Figures: every visible shot while few are on screen, else the tapped one.
-  const figs = vis.length <= ANG3D_FIGURE_MAX ? vis : (ang3dPicked ? [ang3dPicked] : []);
-  figs.forEach(x => { const f = shooterFigure(T, x, x === ang3dPicked ? goldM : figM); f.userData.shot = x; g.add(f); });
-  (spots || []).forEach(p => { const m = new T.Mesh(new T.CylinderGeometry(0.4, 0.4, 0.08, 20), goldM); m.position.set(p.x, 0.05, p.y); g.add(m); });
-  (targets || []).forEach(p => { const m = new T.Mesh(new T.SphereGeometry(0.1, 12, 12), goldM); m.position.set((p.x - 0.5) * 2, p.y * 2, 0.03); g.add(m); });
+  const info = document.getElementById('ang3dInfo'), panel = document.getElementById('ang3dMoves');
 
-  // Tapped shot details.
-  const info = document.getElementById('ang3dInfo');
-  if (ang3dPicked) {
-    const x = ang3dPicked, a = Math.round(shotAngleDeg(x));
-    const res = x.goal === 1 ? 'Goal' : (x.onKeeper === 1 ? 'Saved' : (x.blocked === 1 ? 'Blocked' : 'Miss'));
-    info.innerHTML = `<div style="border:1px solid var(--line); border-radius:8px; padding:8px 10px;"><b>#${escapeHtml(x.shooterJersey || '')} ${escapeHtml(nameFor(x.shooterJersey, EFF_SEASON) || '')}</b> · ${escapeHtml(x.date || '')}<br>
-      ${escapeHtml(res)} · ${escapeHtml(SA_TIER_LABEL[x.shotQuality] || 'No quality')} · ${escapeHtml(x.shotMechanism || 'No stick plane')} · ${escapeHtml(getHandedness(x) === 'Left' ? 'Lefty' : 'Righty')}<br>
-      ${escapeHtml(spotLabel(x.lateralYds, x.distanceYds))} · ${a}° off center` +
-      (x.onKeeper === 1 && x.goalX !== null && x.goalX !== undefined ? `<br>Went: ${escapeHtml(targetLabel(x.goalX, x.goalY))}` : '') + `<br><span class="n-note">Tap the shot again to clear.</span></div>`;
-  } else info.innerHTML = `<span class="n-note">${vis.length} shot(s) shown${vis.length > ANG3D_FIGURE_MAX ? ` — figures appear when ${ANG3D_FIGURE_MAX} or fewer are shown, or on the shot you tap` : ''}.</span>`;
+  if (!ang3dFocus) {
+    const handOk = x => ang3dHand === 'All' || getHandedness(x) === (ang3dHand === 'Righty' ? 'Right' : 'Left');
+    const qualOk = x => ang3dQuality === 'All' || SA_TIER_LABEL[x.shotQuality] === ang3dQuality;
+    const outOk = x => ang3dOutcome === 'All' || (ang3dOutcome === 'Goals' ? x.goal === 1 : ang3dOutcome === 'Saves' ? (x.onKeeper === 1 && x.goal !== 1) : x.onKeeper !== 1);
+    const vis = all.filter(x => (!ang3dPlayer || x.shooterJersey === ang3dPlayer) && (angPlane === 'All' || x.shotMechanism === angPlane) && handOk(x) && qualOk(x) && outOk(x));
+    vis.forEach(x => {
+      const dim = angSel && !inAngSel(x);
+      let obj;
+      if (x.onKeeper === 1 && x.goalX !== null && x.goalX !== undefined) obj = x.goal === 1 ? shotPathObject(T, x, dim ? goalDim : goalM, 0.045) : shotPathObject(T, x, dim ? saveDim : saveM);
+      else { obj = new T.Mesh(new T.SphereGeometry(0.13, 8, 8), missM); obj.position.set(x.lateralYds, 0.13, x.distanceYds); }
+      obj.userData.shot = x; g.add(obj);
+    });
+    if (vis.length <= ANG3D_FIGURE_MAX) vis.forEach(x => { const f = shooterFigure(T, x, figM); f.userData.shot = x; g.add(f); });
+    info.innerHTML = `<span class="n-note">${vis.length} shot(s) shown${ang3dPlayer ? ' for ' + escapeHtml(nameFor(ang3dPlayer, EFF_SEASON) || '#' + ang3dPlayer) : ''}. <b>Tap a shot</b> to pull it out on its own and run what-ifs on it.</span>`;
+    panel.innerHTML = `<button type="button" class="btn secondary" id="ang3dBlank" style="font-size:12px;">Try a blank shot</button>
+      <div class="n-note" style="margin-top:6px;">Starts from a typical shot (Silver, open, overhand, off the catch, righty, 10 yds out) so you can test spots and changes without picking a logged shot.</div>`;
+    document.getElementById('ang3dBlank').addEventListener('click', () => focusAng3dShot({ blank: true, lateralYds: BLANK_SHOT.lat, distanceYds: BLANK_SHOT.dist, shotMechanism: 'Overhand', rightHanded: 'Right' }));
+    return;
+  }
 
-  // Pin: gain / loss vs the pinned spot, from the same smoothing as the field surface.
-  const moves = document.getElementById('ang3dMoves');
-  if (!ang3dPin) { moves.innerHTML = '<span class="n-note">Tap the turf to drop a pin and compare other spots to it.</span>'; return; }
-  const pts = base.map(x => ({ c: [x.lateralYds, x.distanceYds], goal: x.goal === 1 ? 1 : 0, xg: xgOf(x) }));
-  const avg = ratio(base.filter(x => x.goal === 1).length, base.length) || 0;
-  const at = (lat, dist) => smoothRate(pts, [lat, dist], FIELD_BW, avg);
-  const pin = at(ang3dPin.lat, ang3dPin.dist);
+  // ---- One shot isolated: the shot, a what-if ghost, and the change overlay ----
+  const x = ang3dFocus;
+  const orig = x.blank ? Object.assign({}, BLANK_SHOT) : shotProfile(x);
+  const asLogged = predictShot(model, orig);
+  const spot = ang3dGhost || { lat: orig.lat, dist: orig.dist };
+  const wi = Object.assign({}, ang3dWhatIf, { lat: spot.lat, dist: spot.dist });
+  const now = predictShot(model, wi);
+  // The shot as it happened.
+  if (!x.blank) {
+    const path = x.onKeeper === 1 && x.goalX !== null && x.goalX !== undefined ? (x.goal === 1 ? shotPathObject(T, x, goalM, 0.06) : shotPathObject(T, x, saveM)) : null;
+    if (path) g.add(path); else { const m = new T.Mesh(new T.SphereGeometry(0.15, 10, 10), missM); m.position.set(x.lateralYds, 0.15, x.distanceYds); g.add(m); }
+  }
+  g.add(shooterFigure(T, x.blank ? { lateralYds: orig.lat, distanceYds: orig.dist, shotMechanism: 'Overhand', rightHanded: 'Right' } : x, figM));
+  // The what-if shooter.
+  if (ang3dGhost || JSON.stringify(ang3dWhatIf) !== JSON.stringify({ dodge: orig.dodge === null ? 0 : orig.dodge, hand: orig.hand || 'Right', plane: orig.plane || 'Overhand', quality: orig.quality || '2-Silver', contest: orig.contest || 'Open' })) {
+    const ghostShot = { lateralYds: spot.lat, distanceYds: spot.dist, shotMechanism: wi.plane, rightHanded: wi.hand, goalX: x.goalX, goalY: x.goalY };
+    g.add(shooterFigure(T, ghostShot, goldM));
+    g.add(shotPathObject(T, ghostShot, goldM, 0.04));
+  }
+  // Overlay: where this what-if shot goes in more (green) or less (red) than as logged.
   for (let lat = -19; lat <= 19; lat += 1) for (let dist = 0.5; dist <= 20; dist += 1) {
-    const r = at(lat, dist);
-    if (r.n < 1.5) continue;
-    const d = r.rate - pin.rate;
-    if (Math.abs(d) < 0.02) continue;
-    const q = new T.Mesh(new T.PlaneGeometry(0.96, 0.96), new T.MeshBasicMaterial({ color: d > 0 ? 0x1E9E48 : 0xD03B3B, transparent: true, opacity: Math.min(0.7, Math.abs(d) * 3) * Math.min(1, r.n / 5), depthWrite: false }));
-    q.rotation.x = -Math.PI / 2; q.position.set(lat, 0.02, dist); ANG3D.deltaG.add(q);
+    const d = predictShot(model, Object.assign({}, wi, { lat, dist })) - asLogged;
+    if (Math.abs(d) < 0.015) continue;
+    const q = new T.Mesh(new T.PlaneGeometry(0.96, 0.96), new T.MeshBasicMaterial({ color: d > 0 ? 0x1E9E48 : 0xD03B3B, transparent: true, opacity: Math.min(0.6, Math.abs(d) * 2.5), depthWrite: false }));
+    q.rotation.x = -Math.PI / 2; q.position.set(lat, 0.02, dist); ANG3D.overlayG.add(q);
   }
-  const pinM = new T.Mesh(new T.ConeGeometry(0.35, 1, 16), goldM); pinM.position.set(ang3dPin.lat, 0.5, ang3dPin.dist); pinM.rotation.x = Math.PI; ANG3D.deltaG.add(pinM);
-  const sideSign = ang3dPin.lat < 0 ? -1 : 1;
-  const opts = [
-    ['2 yds closer', ang3dPin.lat, ang3dPin.dist - 2],
-    ['2 yds farther', ang3dPin.lat, ang3dPin.dist + 2],
-    ['2 yds wider', ang3dPin.lat + sideSign * 2, ang3dPin.dist],
-    ['2 yds toward center', Math.abs(ang3dPin.lat) < 2 ? 0 : ang3dPin.lat - sideSign * 2, ang3dPin.dist],
-  ].filter(([, l, d]) => d >= 0 && d <= 20 && Math.abs(l) <= 19);
-  let best = null;
-  for (let lat = -19; lat <= 19; lat += 0.5) for (let dist = 0; dist <= 20; dist += 0.5) {
-    if (Math.hypot(lat - ang3dPin.lat, dist - ang3dPin.dist) > 5) continue;
-    const r = at(lat, dist); if (r.n >= EXACT_MIN_N && (!best || r.rate > best.r.rate)) best = { lat, dist, r };
-  }
-  const line = (label, r, extra) => r.n < 3 ? `<div>${label}: <span class="n-note">not enough nearby shots</span></div>`
-    : `<div>${label}${extra || ''}: <b style="color:${r.rate - pin.rate >= 0 ? '#1E7A3A' : '#B3261E'};">${r.rate - pin.rate >= 0 ? '+' : '−'}${Math.abs((r.rate - pin.rate) * 100).toFixed(0)}%</b> <span class="n-note">(${pct(r.rate)})</span></div>`;
-  moves.innerHTML = `<div style="border:1px solid var(--line); border-radius:8px; padding:8px 10px;"><b>Pin: ${escapeHtml(spotLabel(ang3dPin.lat, ang3dPin.dist))}</b><br>` +
-    (pin.n < 3 ? '<span class="n-note">Few shots near this spot, so treat it as a rough read.</span><br>' : '') +
-    `Goal % here: <b>${pct(pin.rate)}</b> <span class="n-note">(≈${Math.round(pin.n)} nearby shots)</span><div style="margin-top:6px;">` +
-    opts.map(([label, l, d]) => line(label, at(l, d))).join('') +
-    (best && Math.hypot(best.lat - ang3dPin.lat, best.dist - ang3dPin.dist) >= 1 ? line('Best spot within 5 yds', best.r, ` (${escapeHtml(spotLabel(best.lat, best.dist))})`) : '') +
-    `</div><span class="n-note">Green turf = scores more than the pin, red = less. Tap the pin again to clear.</span></div>`;
+  // Panel: details, toggles, movement and the change.
+  const res = x.blank ? 'Blank shot' : (x.goal === 1 ? 'Goal' : (x.onKeeper === 1 ? 'Saved' : (x.blocked === 1 ? 'Blocked' : 'Miss')));
+  info.innerHTML = `<div style="border:1px solid var(--line); border-radius:8px; padding:8px 10px;">` +
+    (x.blank ? '<b>Blank shot</b> (typical team shot)' : `<b>#${escapeHtml(x.shooterJersey || '')} ${escapeHtml(nameFor(x.shooterJersey, EFF_SEASON) || '')}</b> · ${escapeHtml(x.date || '')} · ${escapeHtml(res)}`) +
+    `<br>${escapeHtml(spotLabel(orig.lat, orig.dist))} · ${escapeHtml(zoneAt(orig.lat, orig.dist))}` +
+    `<br>Team model chance as logged: <b>${pct(asLogged)}</b></div>
+    <button type="button" class="btn secondary" id="ang3dAll" style="font-size:12px; margin-top:8px;">Show all shots</button>`;
+  const ft = v => Math.round(Math.abs(v) * 3);
+  const moved = ang3dGhost ? [Math.abs(spot.lat - orig.lat) >= 0.34 ? `${ft(spot.lat - orig.lat)} ft ${spot.lat > orig.lat ? 'right' : 'left'}` : null,
+    Math.abs(spot.dist - orig.dist) >= 0.34 ? `${ft(spot.dist - orig.dist)} ft ${spot.dist < orig.dist ? 'closer' : 'farther'}` : null].filter(Boolean).join(', ') : '';
+  const tog = (label, key, opts) => `<div style="margin-top:6px;"><span class="n-note" style="display:inline-block; width:62px;">${label}</span>` +
+    opts.map(([v, t]) => { const cnt = whatIfCount(model, key, v); return `<button type="button" class="pill${ang3dWhatIf[key] === v ? ' active' : ''}" data-wi="${key}|${v}" title="${cnt} team shot(s) logged like this" style="font-size:11px; padding:2px 8px; margin:1px;">${t}</button>`; }).join('') + `</div>`;
+  const thin = [['dodge', ang3dWhatIf.dodge], ['hand', ang3dWhatIf.hand], ['plane', ang3dWhatIf.plane], ['quality', ang3dWhatIf.quality], ['contest', ang3dWhatIf.contest]]
+    .filter(([k, v]) => whatIfCount(model, k, v) < 8).map(([k, v]) => `${whatIfCount(model, k, v)} ${whatIfName(k, v)}`);
+  const delta = now - asLogged;
+  panel.innerHTML = `<div style="border:1px solid var(--line); border-radius:8px; padding:8px 10px;"><b>What if…</b>` +
+    tog('Catch', 'dodge', [[0, 'Catch'], [1, 'Dodge']]) +
+    tog('Hand', 'hand', [['Right', 'Righty'], ['Left', 'Lefty']]) +
+    tog('Plane', 'plane', SHOT_MECHANISM_OPTIONS.map(m => [m, m])) +
+    tog('Quality', 'quality', SA_TIERS.map(q => [q, SA_TIER_LABEL[q]])) +
+    tog('Contest', 'contest', [['Open', 'Open'], ['Light', 'Light'], ['Heavy', 'Heavy']]) +
+    `<div style="margin-top:8px;">${ang3dGhost ? `Moved: <b>${escapeHtml(moved || 'same spot')}</b> → ${escapeHtml(spotLabel(spot.lat, spot.dist))} · ${escapeHtml(zoneAt(spot.lat, spot.dist))}` : '<span class="n-note">Tap anywhere on the field to move the shot there.</span>'}</div>
+    <div style="margin-top:6px; font-size:14px;">${pct(asLogged)} → <b>${pct(now)}</b> <b style="color:${delta >= 0 ? '#1E7A3A' : '#B3261E'};">${delta >= 0 ? '+' : '−'}${Math.abs(delta * 100).toFixed(1)}%</b></div>` +
+    (thin.length ? `<div class="n-note" style="margin-top:4px; color:#B3261E;">Rough read: only ${escapeHtml(thin.join(', '))} logged by the team.</div>` : '') +
+    `<div class="n-note" style="margin-top:6px;">Based on how we've been shooting as a team (${model.n} shots in ${EFF_SEASON}). Green turf = this shot would go in more often there than as logged, red = less.</div></div>`;
+  document.getElementById('ang3dAll').addEventListener('click', () => { ang3dFocus = null; ang3dGhost = null; ang3dWhatIf = null; refreshAng3D(); });
+  panel.querySelectorAll('[data-wi]').forEach(b => b.addEventListener('click', () => {
+    const [k, v] = b.dataset.wi.split('|');
+    ang3dWhatIf[k] = k === 'dodge' ? Number(v) : v;
+    refreshAng3D();
+  }));
+}
+function whatIfCount(model, key, v) { const c = model.counts[key] || {}; return c[v] || 0; }
+function whatIfName(key, v) {
+  if (key === 'dodge') return v === 1 ? 'off-the-dodge shots' : 'off-the-catch shots';
+  if (key === 'hand') return v === 'Left' ? 'lefty shots' : 'righty shots';
+  if (key === 'quality') return SA_TIER_LABEL[v] + ' shots';
+  if (key === 'contest') return v.toLowerCase() + '-contest shots';
+  return v.toLowerCase() + ' shots';
 }
 
-// ---- Recipe cards, angle fan and exact angle chart ----
-let angSel = null; // { side: 'L'|'R', wedge: 0-8 (10° steps), ring: 0-3, plane|null }
+// ---- Recipe cards, zone map and exact angle chart ----
+let angSel = null; // { zone, plane|null }
 let angCompare = 'None';
-const ANG_RINGS = [[0, 6], [6, 10], [10, 14], [14, 20.01]];
-const ANG_RING_TXT = ['0–6', '6–10', '10–14', '14–20'];
-function shotCell(x) {
-  const a = shotAngleDeg(x); if (a === null) return null;
-  const ring = ANG_RINGS.findIndex(([lo, hi]) => x.distanceYds >= lo && x.distanceYds < hi);
-  return ring < 0 ? null : { side: x.lateralYds < 0 ? 'L' : 'R', wedge: Math.min(8, Math.floor(a / 10)), ring };
-}
 function inAngSel(x) {
   if (!angSel) return true;
-  const c = shotCell(x);
-  return !!c && c.side === angSel.side && c.wedge === angSel.wedge && c.ring === angSel.ring && (!angSel.plane || x.shotMechanism === angSel.plane);
+  return shotZone(x) === angSel.zone && (!angSel.plane || x.shotMechanism === angSel.plane);
 }
-function cellWords(c) { return `${ANG_RING_TXT[c.ring]} yds out, ${c.side === 'L' ? 'left' : 'right'} side, ${c.wedge * 10}–${c.wedge * 10 + 10}° off center`; }
 // Plain-language aim point; near/far is relative to the shooter's side.
 function aimWords(gx, gy, side) {
   const v = gy >= 2 / 3 ? 'high' : (gy >= 1 / 3 ? 'mid' : 'low');
@@ -6762,14 +6900,14 @@ function aimWords(gx, gy, side) {
   return `${v}, ${near ? 'near' : 'far'} ${where}`;
 }
 function recipeCells(shots, xgOf) {
-  const located = shots.filter(x => shotCell(x));
+  const located = shots.filter(x => shotZone(x));
   const base = ratio(located.filter(x => x.goal === 1).length, located.length) || 0;
   const cells = {};
   located.forEach(x => {
-    const c = shotCell(x);
+    const z = shotZone(x);
     (x.shotMechanism ? [x.shotMechanism, null] : [null]).forEach(pl => {
-      const k = `${c.side}|${c.wedge}|${c.ring}|${pl || ''}`;
-      (cells[k] = cells[k] || Object.assign({ plane: pl, list: [] }, c)).list.push(x);
+      const k = `${z}|${pl || ''}`;
+      (cells[k] = cells[k] || { zone: z, plane: pl, list: [] }).list.push(x);
     });
   });
   const out = Object.values(cells).filter(c => c.list.length >= 6).map(c => {
@@ -6792,29 +6930,28 @@ function renderRecipeCards(shots, xgOf) {
   const wrap = document.getElementById('angSummary');
   if (!wrap) return;
   const { out, base, located } = recipeCells(shots, xgOf);
-  const sameSpot = (a, b) => a.side === b.side && a.wedge === b.wedge && a.ring === b.ring;
-  const pick = (list, k) => { const res = []; list.forEach(c => { if (res.length < k && !res.some(r => sameSpot(r, c))) res.push(c); }); return res; };
+  const pick = (list, k) => { const res = []; list.forEach(c => { if (res.length < k && !res.some(r => r.zone === c.zone)) res.push(c); }); return res; };
   // Ties go to the cell with a stick plane (more specific).
   const top = pick(out.filter(c => c.score > base).sort((a, b) => b.score - a.score || (b.plane ? 1 : 0) - (a.plane ? 1 : 0)), 3);
-  const avoid = pick(out.filter(c => c.score < base && !top.some(t => sameSpot(t, c))).sort((a, b) => a.score - b.score || (b.plane ? 1 : 0) - (a.plane ? 1 : 0)), 2);
+  const avoid = pick(out.filter(c => c.score < base && !top.some(t => t.zone === c.zone)).sort((a, b) => a.score - b.score || (b.plane ? 1 : 0) - (a.plane ? 1 : 0)), 2);
   const card = (c, kind) => {
-    const sel = angSel && sameSpot(angSel, c) && (angSel.plane || null) === (c.plane || null);
-    const aimTxt = c.aim ? ` → aim <b>${escapeHtml(aimWords(c.aim.gx, c.aim.gy, c.side))}</b>` : '';
+    const sel = angSel && angSel.zone === c.zone && (angSel.plane || null) === (c.plane || null);
+    const aimTxt = c.aim ? ` → aim <b>${escapeHtml(aimWords(c.aim.gx, c.aim.gy, zoneSide(c.zone)))}</b>` : '';
     const small = c.aim ? `<div class="n-note" style="margin-top:3px;">Its goals went in about ${escapeHtml(targetLabel(c.aim.gx, c.aim.gy))} (${c.aim.n} goal${c.aim.n === 1 ? '' : 's'} placed)</div>` : '<div class="n-note" style="margin-top:3px;">Aim: not enough goals with a placement yet</div>';
-    return `<div data-recipe="${c.side}|${c.wedge}|${c.ring}|${c.plane || ''}" style="cursor:pointer; flex:1 1 260px; border-radius:10px; padding:10px 12px; border:${sel ? '2px solid #0F1F3D' : '1px solid var(--line)'}; background:${kind === 'take' ? 'rgba(212,175,55,0.12)' : 'rgba(31,56,100,0.06)'};">
+    return `<div data-recipe="${escapeHtml(c.zone)}|${c.plane || ''}" style="cursor:pointer; flex:1 1 260px; border-radius:10px; padding:10px 12px; border:${sel ? '2px solid #0F1F3D' : '1px solid var(--line)'}; background:${kind === 'take' ? 'rgba(212,175,55,0.12)' : 'rgba(31,56,100,0.06)'};">
       <div class="sans" style="font-size:10.5px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; color:${kind === 'take' ? '#8A6D12' : '#1F3864'};">${kind === 'take' ? 'Take this shot' : 'Avoid'}</div>
-      <div class="sans" style="font-size:14px; margin-top:3px;"><b>${escapeHtml(c.plane ? c.plane + ' from ' : 'From ')}${escapeHtml(cellWords(c))}</b>${aimTxt}${c.mostly ? ` <span class="n-note">(mostly ${escapeHtml(c.mostly.plane.toLowerCase())}: ${c.mostly.k} of ${c.n})</span>` : ''}</div>
+      <div class="sans" style="font-size:14px; margin-top:3px;"><b>${escapeHtml(c.plane ? c.plane + ' from ' : 'From ')}${escapeHtml(c.zone)}</b>${aimTxt}${c.mostly ? ` <span class="n-note">(mostly ${escapeHtml(c.mostly.plane.toLowerCase())}: ${c.mostly.k} of ${c.n})</span>` : ''}</div>
       <div class="sans" style="font-size:12.5px; margin-top:4px;"><b>${pct(c.rate)}</b> goal · ${c.g}/${c.n} shots · ${c.gmx >= 0 ? '+' : '−'}${Math.abs(c.gmx).toFixed(2)} vs expected per shot</div>${small}</div>`;
   };
   wrap.innerHTML = (top.length || avoid.length)
     ? `<div style="display:flex; gap:10px; flex-wrap:wrap;">${top.map(c => card(c, 'take')).join('')}</div>` +
       (avoid.length ? `<div style="display:flex; gap:10px; flex-wrap:wrap; margin-top:10px;">${avoid.map(c => card(c, 'avoid')).join('')}</div>` : '') +
       `<p class="n-note" style="margin:8px 0 0;">Our average is ${pct(base)} across ${located} located shot(s). Cards are ranked with a small pull toward that average so a hot 4-for-6 can't top a steady 8-for-15.</p>`
-    : `<p class="panel-sub" style="margin:4px 0 0;">Cards appear once a spot (side, 10° angle, distance range) has 6+ shots. ${located} located shot(s) so far.</p>`;
+    : `<p class="panel-sub" style="margin:4px 0 0;">Cards appear once a zone (or a zone with one stick plane) has 6+ shots. ${located} located shot(s) so far.</p>`;
   wrap.querySelectorAll('[data-recipe]').forEach(el => el.addEventListener('click', () => {
-    const [side, w, r, pl] = el.dataset.recipe.split('|');
-    const next = { side, wedge: +w, ring: +r, plane: pl || null };
-    angSel = (angSel && angSel.side === next.side && angSel.wedge === next.wedge && angSel.ring === next.ring && (angSel.plane || null) === next.plane) ? null : next;
+    const [zone, pl] = el.dataset.recipe.split('|');
+    const next = { zone, plane: pl || null };
+    angSel = (angSel && angSel.zone === next.zone && (angSel.plane || null) === next.plane) ? null : next;
     renderEfficiencyView();
   }));
 }
@@ -6823,67 +6960,73 @@ function renderAngSelNote() {
   if (!el) return;
   el.style.display = angSel ? '' : 'none';
   if (!angSel) return;
-  el.innerHTML = `Focused on <b>${escapeHtml((angSel.plane ? angSel.plane + ' from ' : '') + cellWords(angSel))}</b>: the aim map, angle chart and 3D map follow it. <button type="button" class="btn secondary" id="angSelClear" style="padding:2px 8px; font-size:11.5px; margin-left:6px;">Clear</button>`;
+  el.innerHTML = `Focused on <b>${escapeHtml((angSel.plane ? angSel.plane + ' from ' : '') + angSel.zone)}</b>: the aim map, angle chart and 3D map follow it. <button type="button" class="btn secondary" id="angSelClear" style="padding:2px 8px; font-size:11.5px; margin-left:6px;">Clear</button>`;
   document.getElementById('angSelClear').addEventListener('click', () => { angSel = null; renderEfficiencyView(); });
 }
-// Top-down fan: 10° wedges each side x distance bands, goal % in each cell.
-function renderAngleFan(shots) {
+// Top-down field divided into the named zones, each showing goal % and shots.
+function renderZoneMap(shots, xgOf) {
   const wrap = document.getElementById('angFanWrap');
   if (!wrap) return;
-  const located = shots.filter(x => shotCell(x));
+  const located = shots.filter(x => shotZone(x));
   const base = ratio(located.filter(x => x.goal === 1).length, located.length) || 0;
-  const cells = {};
-  located.forEach(x => { const c = shotCell(x); const k = `${c.side}|${c.wedge}|${c.ring}`; const e = (cells[k] = cells[k] || { n: 0, g: 0 }); e.n++; if (x.goal === 1) e.g++; });
-  const spread = Math.max(0.08, ...Object.values(cells).filter(c => c.n >= 3).map(c => Math.abs(c.g / c.n - base)));
-  const K = 2.4, X = lat => 50 + lat * K, Y = d => 5 + d * K;
-  const latAt = (d, a) => a >= 90 ? 19 : Math.min(19, d * Math.tan(a * Math.PI / 180));
-  let svg = `<svg viewBox="0 0 100 56" xmlns="http://www.w3.org/2000/svg" style="width:100%; display:block; border-radius:10px;" role="img" aria-label="Goal % by angle and distance">`;
-  svg += `<rect x="0" y="0" width="100" height="56" fill="#DCE7D3"/>`;
-  ['L', 'R'].forEach(side => {
-    const sg = side === 'L' ? -1 : 1;
-    for (let w = 0; w < 9; w++) for (let r = 0; r < 4; r++) {
-      const [d0, d1] = [ANG_RINGS[r][0], Math.min(20, ANG_RINGS[r][1])];
-      const a0 = w * 10, a1 = w * 10 + 10;
-      const pts = [[latAt(d0, a0), d0], [latAt(d0, a1), d0], [latAt(d1, a1), d1], [latAt(d1, a0), d1]];
-      const width = Math.max(Math.abs(pts[1][0] - pts[0][0]), Math.abs(pts[2][0] - pts[3][0]));
-      if (width < 0.15) continue;
-      const c = cells[`${side}|${w}|${r}`];
-      const rate = c ? c.g / c.n : null;
-      const fill = c ? heatColor(rate, base, spread) : '#FFFFFF';
-      const sel = angSel && angSel.side === side && angSel.wedge === w && angSel.ring === r;
-      const poly = pts.map(([l, d]) => `${X(sg * l).toFixed(2)},${Y(d).toFixed(2)}`).join(' ');
-      svg += `<polygon points="${poly}" data-fan="${side}|${w}|${r}" fill="${fill}" fill-opacity="${c ? (c.n >= 3 ? 0.9 : 0.35) : 0.25}" stroke="${sel ? '#0F1F3D' : '#FFFFFF'}" stroke-width="${sel ? 0.7 : 0.25}" style="cursor:pointer;"/>`;
-      if (c && c.n >= 3) {
-        const cx = pts.reduce((a, p) => a + X(sg * p[0]), 0) / 4, cy = pts.reduce((a, p) => a + Y(p[1]), 0) / 4;
-        const ink = inkOn(fill), big = width * K > 5;
-        svg += `<text x="${cx.toFixed(2)}" y="${(cy + (big ? -0.2 : 0.6)).toFixed(2)}" font-size="${big ? 2.3 : 1.8}" font-weight="700" text-anchor="middle" fill="${ink}" font-family="Helvetica Neue, Arial, sans-serif" style="pointer-events:none;">${Math.round(rate * 100)}%</text>`;
-        if (big) svg += `<text x="${cx.toFixed(2)}" y="${(cy + 2.1).toFixed(2)}" font-size="1.5" text-anchor="middle" fill="${ink}" opacity="0.85" font-family="Helvetica Neue, Arial, sans-serif" style="pointer-events:none;">${c.g}/${c.n}</text>`;
-      }
-    }
-  });
-  // Markings: goal, crease, angle labels, distance labels.
+  const st = {};
+  ZONE_ORDER.forEach(z => { st[z] = { n: 0, g: 0, oc: 0, xg: 0 }; });
+  located.forEach(x => { const e = st[shotZone(x)]; e.n++; if (x.goal === 1) e.g++; if (x.onKeeper === 1) e.oc++; e.xg += xgOf(x); });
+  const spread = Math.max(0.08, ...ZONE_ORDER.filter(z => st[z].n >= 3).map(z => Math.abs(st[z].g / st[z].n - base)));
+  const fillOf = z => st[z].n ? heatColor(st[z].g / st[z].n, base, spread) : '#FFFFFF';
+  const K = 2.4, X = lat => 50 + lat * K, Y = d => 5 + d * K, step = 0.5;
+  const cellZone = (l, d) => zoneAt(l + step / 2, d + step / 2);
+  let svg = `<svg viewBox="0 0 100 55" xmlns="http://www.w3.org/2000/svg" style="width:100%; display:block; border-radius:10px;" role="img" aria-label="Goal % by field zone">`;
+  svg += `<rect x="0" y="0" width="100" height="55" fill="#DCE7D3"/>`;
+  const cent = {};
+  let cells = '', edges = '';
+  for (let l = -19; l < 19; l += step) for (let d = 0; d < 20; d += step) {
+    const z = cellZone(l, d), s = st[z];
+    cells += `<rect x="${X(l).toFixed(2)}" y="${Y(d).toFixed(2)}" width="${(step * K + 0.02).toFixed(2)}" height="${(step * K + 0.02).toFixed(2)}" fill="${fillOf(z)}" fill-opacity="${s.n >= 3 ? 0.9 : 0.35}" data-zone="${z}" style="cursor:pointer;"/>`;
+    const c = (cent[z] = cent[z] || { l: 0, d: 0, k: 0 }); c.l += l + step / 2; c.d += d + step / 2; c.k++;
+    if (l + step < 19 && cellZone(l + step, d) !== z) edges += `M${X(l + step).toFixed(2)},${Y(d).toFixed(2)}v${(step * K).toFixed(2)}`;
+    if (d + step < 20 && cellZone(l, d + step) !== z) edges += `M${X(l).toFixed(2)},${Y(d + step).toFixed(2)}h${(step * K).toFixed(2)}`;
+  }
+  svg += cells + `<path d="${edges}" stroke="#FFFFFF" stroke-width="0.45" fill="none" style="pointer-events:none;"/>`;
+  if (angSel) {
+    let sel = '';
+    for (let l = -19; l < 19; l += step) for (let d = 0; d < 20; d += step) if (cellZone(l, d) === angSel.zone) sel += `M${X(l).toFixed(2)},${Y(d).toFixed(2)}h${(step * K).toFixed(2)}v${(step * K).toFixed(2)}h-${(step * K).toFixed(2)}z`;
+    svg += `<path d="${sel}" fill="#0F1F3D" fill-opacity="0.18" stroke="none" style="pointer-events:none;"/>`;
+  }
   svg += `<circle cx="50" cy="5" r="${3 * K}" fill="none" stroke="#FFFFFF" stroke-width="0.35" style="pointer-events:none;"/>`;
   svg += `<rect x="${50 - K}" y="3.6" width="${2 * K}" height="1.4" fill="#E0712E" style="pointer-events:none;"/>`;
-  for (let a = 10; a <= 80; a += 10) [-1, 1].forEach(sg => {
-    const d = Math.min(20, 19 / Math.tan(a * Math.PI / 180)), l = latAt(d, a);
-    svg += `<text x="${X(sg * l * 1.02).toFixed(2)}" y="${(Y(d) + (d >= 20 ? 1.9 : 0)).toFixed(2)}" font-size="1.6" text-anchor="${l >= 18.9 ? (sg < 0 ? 'start' : 'end') : 'middle'}" fill="#1F3864" font-family="Helvetica Neue, Arial, sans-serif" style="pointer-events:none;">${a}°</text>`;
+  // Labels at each zone's center (Doorstep nudged out of the crease).
+  ZONE_ORDER.forEach(z => {
+    const c = cent[z]; if (!c) return;
+    const s = st[z], ink = s.n >= 3 ? inkOn(fillOf(z)) : '#1F3864';
+    const cx = X(c.l / c.k), cy = Y(z === 'Doorstep' ? Math.max(c.d / c.k, 3.6) : c.d / c.k);
+    const ts = `text-anchor="middle" font-family="Helvetica Neue, Arial, sans-serif" fill="${ink}" style="pointer-events:none;"`;
+    svg += `<text x="${cx.toFixed(2)}" y="${(cy - 1.4).toFixed(2)}" font-size="1.7" font-weight="700" ${ts}>${z}</text>`;
+    svg += `<text x="${cx.toFixed(2)}" y="${(cy + 1.0).toFixed(2)}" font-size="2.4" font-weight="700" ${ts}>${s.n ? Math.round(s.g / s.n * 100) + '%' : '—'}</text>`;
+    svg += `<text x="${cx.toFixed(2)}" y="${(cy + 2.9).toFixed(2)}" font-size="1.5" ${ts} opacity="0.85">${s.g}/${s.n}</text>`;
   });
-  [6, 10, 14, 20].forEach(d => { svg += `<text x="1" y="${(Y(d) - 0.4).toFixed(2)}" font-size="1.6" fill="#1F3864" font-family="Helvetica Neue, Arial, sans-serif" style="pointer-events:none;">${d} yds</text>`; });
   svg += `</svg>`;
   wrap.innerHTML = svg;
-  document.getElementById('angFanSub').innerHTML = `Looking down on the field from above the goal. Each cell is a 10° slice of angle and a distance range, showing its goal % and goals/shots (${located.length} located shot(s)). <b style="color:#B3261E;">Red</b> = scores more than our average (${pct(base)}), <b style="color:#2B5AA8;">blue</b> = less; faint = under 3 shots. <b>Tap a cell</b> to focus the aim map, chart and 3D map on it.`;
-  wrap.querySelectorAll('[data-fan]').forEach(el => el.addEventListener('click', () => {
-    const [side, w, r] = el.dataset.fan.split('|');
-    angSel = (angSel && angSel.side === side && angSel.wedge === +w && angSel.ring === +r && !angSel.plane) ? null : { side, wedge: +w, ring: +r, plane: null };
+  document.getElementById('angFanSub').innerHTML = `Looking down on the field from above the goal (${located.length} located shot(s)). Each zone shows its goal % and goals/shots. <b style="color:#B3261E;">Red</b> = scores more than our average (${pct(base)}), <b style="color:#2B5AA8;">blue</b> = less; faint = under 3 shots. <b>Tap a zone</b> to focus the aim map, chart and 3D map on it.`;
+  wrap.querySelectorAll('[data-zone]').forEach(el => el.addEventListener('click', () => {
+    const z = el.dataset.zone;
+    angSel = (angSel && angSel.zone === z && !angSel.plane) ? null : { zone: z, plane: null };
     renderEfficiencyView();
   }));
+  const rows = ZONE_ORDER.filter(z => st[z].n).map(z => ({ zone: z, n: st[z].n, gp: st[z].g / st[z].n, oc: st[z].oc / st[z].n, gmx: (st[z].g - st[z].xg) / st[z].n }));
+  renderSortableTable('angZoneTable', [
+    { key: 'zone', label: 'Zone', type: 'text', value: r => r.zone },
+    { key: 'n', label: 'Shots', type: 'num', value: r => r.n },
+    { key: 'gp', label: 'Goal %', type: 'num', value: r => r.gp, format: v => pct(v), cellStyle: (v, r) => smallCellStyle(r.n, 3) },
+    { key: 'oc', label: 'On Cage %', type: 'num', value: r => r.oc, format: v => pct(v) },
+    { key: 'gmx', label: 'G−xG/Shot', type: 'num', value: r => r.gmx, format: v => signed(v, 2), title: 'Goals above (+) or below (−) what the shot-quality tier predicts, per shot.' },
+  ], rows, { dense: true, defaultSort: { key: 'gp', dir: 'desc' }, emptyMsg: 'No located shots yet.' });
 }
 // Goal % vs exact angle, labeled axes, team average line, optional comparison lines.
 function renderAngleChart(allShots, planeShots, base, tw, xgOf, planeWord) {
   const wrap = document.getElementById('angCurveChart');
   if (!wrap) return;
-  const sideRing = x => !angSel || (() => { const c = shotCell(x); return c && c.side === angSel.side && c.ring === angSel.ring; })();
-  const usable = list => list.filter(x => shotAngleDeg(x) !== null && sideRing(x) && (!angTarget || (x.onKeeper === 1 && x.goalX !== null && x.goalX !== undefined)));
+  const usable = list => list.filter(x => shotAngleDeg(x) !== null && (!angSel || shotZone(x) === angSel.zone) && (!angTarget || (x.onKeeper === 1 && x.goalX !== null && x.goalX !== undefined)));
   const groupsDef = {
     'None': [['All shots', usable(planeShots)]],
     'Stick plane': SHOT_MECHANISM_OPTIONS.map(m => [m, usable(allShots.filter(x => x.shotMechanism === m))]),
@@ -6897,7 +7040,7 @@ function renderAngleChart(allShots, planeShots, base, tw, xgOf, planeWord) {
   const win = angCompare === 'None' && curves[0] ? bestAngleWindow(curves[0].curve, avg) : null;
   const wide = curves[0] ? curves[0].curve.filter(c => c.a >= 60 && c.n >= 3) : [];
   const wideRate = wide.length ? wide.reduce((a, c) => a + c.rate, 0) / wide.length : null;
-  document.getElementById('angCurveSub').innerHTML = (pool.length ? `${pool.length} shot(s), ${escapeHtml(planeWord)}${angSel ? ', selected side and distance' : ''}${angTarget ? ', toward the tapped target' : ''}. ` : '') +
+  document.getElementById('angCurveSub').innerHTML = (pool.length ? `${pool.length} shot(s), ${escapeHtml(planeWord)}${angSel ? ', ' + escapeHtml(angSel.zone) : ''}${angTarget ? ', toward the tapped target' : ''}. ` : '') +
     (angCompare === 'None'
       ? (win ? `<b>Shots ${win.lo}°–${win.hi}° off center score most for us (about ${pct(win.rate)})</b>${wideRate !== null ? `; past 60° it's about ${pct(wideRate)}` : ''}. Dashed line = our average (${pct(avg)}).` : `No angle has 5+ nearby shots and an above-average goal % yet. Dashed line = our average (${pct(avg)}).`)
       : `One line per ${angCompare === 'Hand' ? 'shooting hand' : angCompare.toLowerCase()}; a line only shows where it has enough nearby shots. Dashed line = our average (${pct(avg)}).`);
@@ -6907,7 +7050,6 @@ function renderAngleChart(allShots, planeShots, base, tw, xgOf, planeWord) {
   const ymax = Math.min(1, Math.max(0.2, Math.ceil(Math.max(...vals) * 10 + 0.5) / 10));
   const px = a => pl + a / 90 * (W - pl - pr), py = v => pt + (1 - v / ymax) * (H - pt - pb);
   let g = '';
-  if (angSel) g += `<rect x="${px(angSel.wedge * 10).toFixed(1)}" y="${pt}" width="${(px(10) - px(0)).toFixed(1)}" height="${H - pt - pb}" fill="#0F1F3D" opacity="0.07"/>`;
   if (win) g += `<rect x="${px(win.lo).toFixed(1)}" y="${pt}" width="${Math.max(2, px(win.hi) - px(win.lo)).toFixed(1)}" height="${H - pt - pb}" fill="#D4AF37" opacity="0.22"/>`;
   for (let v = 0; v <= ymax + 1e-9; v += 0.1) g += `<line x1="${pl}" y1="${py(v).toFixed(1)}" x2="${W - pr}" y2="${py(v).toFixed(1)}" stroke="var(--line)"/><text x="${pl - 6}" y="${(py(v) + 3.5).toFixed(1)}" text-anchor="end" font-size="11" fill="var(--muted)">${Math.round(v * 100)}%</text>`;
   for (let a = 0; a <= 90; a += 10) g += `<line x1="${px(a).toFixed(1)}" y1="${H - pb}" x2="${px(a).toFixed(1)}" y2="${H - pb + 4}" stroke="var(--muted)"/><text x="${px(a).toFixed(1)}" y="${H - pb + 16}" text-anchor="middle" font-size="11" fill="var(--muted)">${a}°</text>`;
@@ -6941,7 +7083,7 @@ function renderEffAngles(model) {
   const located = shots.filter(x => angleBand(x));
   const planeFiltered = angPlane === 'All' ? shots : shots.filter(x => x.shotMechanism === angPlane);
   renderRecipeCards(planeFiltered, xgOf);
-  renderAngleFan(planeFiltered);
+  renderZoneMap(planeFiltered, xgOf);
   renderAngSelNote();
   renderExactModel(shots, xgOf);
   const st = list => { const n = list.length, g = list.filter(x => x.goal === 1).length, xg = list.reduce((a, x) => a + xgOf(x), 0);
@@ -7012,6 +7154,7 @@ setupPillGroup('ang3dHandPills', ['All', 'Righty', 'Lefty'], 'All', v => { ang3d
 setupPillGroup('ang3dOutcomePills', ['All', 'Goals', 'Saves', 'Misses'], 'All', v => { ang3dOutcome = v || 'All'; if (!v) setPillGroupValue('ang3dOutcomePills', 'All'); refreshAng3D(); });
 setupPillGroup('ang3dQualityPills', ['All', 'Gold', 'Silver', 'Bronze'], 'All', v => { ang3dQuality = v || 'All'; if (!v) setPillGroupValue('ang3dQualityPills', 'All'); refreshAng3D(); });
 setupPillGroup('ang3dViewPills', Object.keys(ANG3D_VIEWS), ang3dView, v => { ang3dView = v || "Shooter's view"; if (!v) setPillGroupValue('ang3dViewPills', ang3dView); setAng3dView(ang3dView); });
+document.getElementById('ang3dPlayer').addEventListener('change', e => { ang3dPlayer = e.target.value; ang3dFocus = null; ang3dGhost = null; refreshAng3D(); });
 setupPillGroup('angComparePills', ['None', 'Stick plane', 'Hand', 'Shot quality'], 'None', v => { angCompare = v || 'None'; if (!v) setPillGroupValue('angComparePills', 'None'); renderEfficiencyView(); });
 setupPillGroup('angHeatPills', ['All'].concat(ANGLE_BANDS.map(b => b[0])), 'All', v => {
   angHeatBand = v || 'All';
