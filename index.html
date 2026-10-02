@@ -4220,9 +4220,9 @@ const DEEP_DIVE_SLICES = [
 ];
 
 function shotPctFor(list) {
-  if (!list.length) return { pct: null, n: 0 };
+  if (!list.length) return { pct: null, n: 0, goals: 0 };
   const goals = list.filter(s => s.goal === 1).length;
-  return { pct: goals / list.length, n: list.length };
+  return { pct: goals / list.length, n: list.length, goals };
 }
 
 function computePlayerDeepDive(shots) {
@@ -4234,7 +4234,7 @@ function computePlayerDeepDive(shots) {
   return Object.keys(byJersey).map(j => {
     const list = byJersey[j];
     const cols = DEEP_DIVE_SLICES.map(slice => shotPctFor(list.filter(slice.filter)));
-    return { jersey: j, name: nameFor(j), shots: list.length, cols };
+    return { jersey: j, name: nameFor(j), shots: list.length, goals: list.filter(s => s.goal === 1).length, cols };
   }).filter(r => r.shots >= 5).sort((a, b) => b.shots - a.shots);
 }
 
@@ -4310,14 +4310,17 @@ function renderPlayerDeepDive() {
     return { vmin, vmed: median(vals), vmax };
   });
   let html = '<table class="shotlog"><thead><tr><th>Jersey</th><th>Name</th><th>Shots</th>' + DEEP_DIVE_SLICES.map(s => `<th>${s.label}</th>`).join('') + '</tr></thead><tbody>';
+  // Hover = goals/shots for the season picked; none on All Seasons (combined).
+  const hover = heatSeason !== 'All Seasons';
+  const tip = (g, n) => hover && n > 0 ? ` title="${g}/${n}"` : '';
   rows.forEach(r => {
-    html += `<tr><td>${r.jersey}</td><td>${r.name}</td><td>${r.shots}</td>` +
+    html += `<tr><td>${r.jersey}</td><td>${r.name}</td><td${tip(r.goals, r.shots)}>${r.shots}</td>` +
       r.cols.map((c, i) => {
         const small = c.n > 0 && c.n < 5;
         const scale = colScales[i];
         const bg = c.n > 0 && scale ? excelColorScale(c.pct, scale.vmin, scale.vmed, scale.vmax) : null;
         const styles = [bg ? `background:${bg}` : '', small ? 'color:var(--muted); font-style:italic;' : ''].filter(Boolean).join(' ');
-        return `<td${styles ? ` style="${styles}"` : ''}>${pct(c.pct)}</td>`;
+        return `<td${styles ? ` style="${styles}"` : ''}${tip(c.goals, c.n)}>${pct(c.pct)}</td>`;
       }).join('') + '</tr>';
   });
   html += '</tbody></table>';
