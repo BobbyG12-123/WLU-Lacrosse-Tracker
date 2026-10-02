@@ -1159,7 +1159,7 @@
     </div>
     <div class="panel">
       <p class="panel-title">3D Shot Map</p>
-      <p class="panel-sub">Every shot on a real field (defensive end, men&rsquo;s dimensions). <b>Tap a shot</b> to pull it out on its own. Then <b>tap anywhere on the field</b> to see how its chance of going in would change from there, and flip catch/dodge, hand, stick plane, quality or contest. Chances come from a team model of how we&rsquo;ve been shooting this season.</p>
+      <p class="panel-sub">Every shot on the same field as the Log Shot tab. <b>Tap a shot</b> to pull it out on its own. Then <b>tap anywhere on the field</b> to see how its chance of going in would change from there, and flip catch/dodge, hand, stick plane, quality or contest. Chances come from a team model of how we&rsquo;ve been shooting this season.</p>
       <div class="controls-row" style="margin-bottom:8px;">
         <div class="control-group"><label for="ang3dPlayer">Player</label><select id="ang3dPlayer"></select></div>
         <div class="control-group"><label>View</label><div class="pill-row" id="ang3dViewPills"></div></div>
@@ -1168,7 +1168,7 @@
         <div class="control-group"><label>Quality</label><div class="pill-row" id="ang3dQualityPills"></div></div>
       </div>
       <div style="display:flex; gap:14px; flex-wrap:wrap; align-items:flex-start;">
-        <div id="ang3dWrap" style="position:relative; flex:1 1 520px; min-width:280px; height:460px; border-radius:10px; overflow:hidden; background:#EEF1EA;"></div>
+        <div id="ang3dWrap" style="position:relative; flex:1 1 520px; min-width:280px; height:460px; border-radius:10px; overflow:hidden; background:#1F4F2B;"></div>
         <div style="flex:0 1 270px; min-width:240px;">
           <div id="ang3dInfo" class="sans" style="font-size:12.5px; line-height:1.55;"></div>
           <div id="ang3dMoves" class="sans" style="font-size:12.5px; line-height:1.55; margin-top:10px;"></div>
@@ -6624,15 +6624,18 @@ function predictShot(model, p) {
 
 // ---- 3D field, shots and what-if ----
 let ANG3D = null;
-let ang3dView = "Shooter's view", ang3dQuality = 'All', ang3dPlayer = '';
+let ang3dView = 'Log Shot view', ang3dQuality = 'All', ang3dPlayer = '';
 let ang3dFocus = null;   // a logged shot, or { blank: true }
 let ang3dWhatIf = null;  // { dodge, hand, plane, quality, contest } being tested
 let ang3dGhost = null;   // { lat, dist } clicked spot
+// Log Shot view matches the Log Shot field's broadcast camera (FIELD_CAM):
+// far behind and high above the shooter, framed to the turf.
 const ANG3D_VIEWS = {
+  'Log Shot view': [[0, FIELD_CAM.h, FIELD_CAM.zc], [0, 0, 9]],
   "Shooter's view": [[0, 4.2, 27], [0, 1, 4]],
   "Goalie's view": [[0, 1.5, -2.6], [0, 1, 10]],
   'Side': [[34, 10, 10], [0, 1, 8]],
-  'Overhead': [[0, 58, 8.01], [0, 0, 8]],
+  'Overhead': [[0, 40, 9.01], [0, 0, 9]],
 };
 const ANG3D_FIGURE_MAX = 25;
 const BLANK_SHOT = { lat: 0, dist: 10, dodge: 0, hand: 'Right', plane: 'Overhand', quality: '2-Silver', contest: 'Open' };
@@ -6691,41 +6694,58 @@ function buildAng3D(T, wrap) {
   legend.style.cssText = 'position:absolute; top:8px; left:8px; background:rgba(255,255,255,0.88); border-radius:8px; padding:6px 9px; font-size:11.5px; line-height:1.6; pointer-events:none;';
   legend.innerHTML = '<span style="display:inline-block;width:14px;height:4px;background:#1E9E48;vertical-align:middle;margin-right:5px;"></span>Goal<br><span style="display:inline-block;width:14px;height:2px;background:#1F3864;opacity:.6;vertical-align:middle;margin-right:5px;"></span>Save<br><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#8C8C8C;vertical-align:middle;margin:0 8px 0 3px;"></span>Miss / block<br><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#D4AF37;vertical-align:middle;margin:0 6px 0 2px;"></span>What-if spot';
   wrap.appendChild(legend);
-  const scene = new T.Scene(); scene.background = new T.Color(0xEEF1EA);
+  const scene = new T.Scene(); scene.background = new T.Color(0x1F4F2B);
   const camera = new T.PerspectiveCamera(45, 1, 0.1, 300);
   const controls = new T.OrbitControls(camera, renderer.domElement);
   controls.maxPolarAngle = Math.PI / 2 - 0.02;
   scene.add(new T.AmbientLight(0xffffff, 0.85));
   const sun = new T.DirectionalLight(0xffffff, 0.5); sun.position.set(5, 20, 10); scene.add(sun);
-  // Men's defensive end (yards): end line 15 behind the goal, sidelines 30 out
-  // from center, restraining line 20 up, box 20 each side of center.
-  const turf = new T.Mesh(new T.PlaneGeometry(66, 62), new T.MeshLambertMaterial({ color: 0x6E9B58 }));
-  turf.rotation.x = -Math.PI / 2; turf.position.set(0, 0, 13); scene.add(turf);
+  // Field in the Log Shot look: dark surround, turf -21..21 wide x -3.5..21.5 out,
+  // mowed stripes every 2.5 yds, goal line / GLE, dashed alleys at 8 yds,
+  // shaded crease, yard numbers down the left side.
+  const ground = new T.Mesh(new T.PlaneGeometry(400, 400), new T.MeshBasicMaterial({ color: 0x1F4F2B }));
+  ground.rotation.x = -Math.PI / 2; ground.position.set(0, -0.02, 9); scene.add(ground);
+  const turf = new T.Mesh(new T.PlaneGeometry(42, 25), new T.MeshLambertMaterial({ color: 0x37724A }));
+  turf.rotation.x = -Math.PI / 2; turf.position.set(0, 0, 9); scene.add(turf);
+  for (let d = -2.5; d < 21.5; d += 5) {
+    const st = new T.Mesh(new T.PlaneGeometry(42, Math.min(2.5, 21.5 - d)), new T.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.06, depthWrite: false }));
+    st.rotation.x = -Math.PI / 2; st.position.set(0, 0.004, d + Math.min(2.5, 21.5 - d) / 2); scene.add(st);
+  }
   const white = new T.LineBasicMaterial({ color: 0xffffff });
-  const faint = new T.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.45 });
-  const ln = (pts, m) => scene.add(new T.Line(new T.BufferGeometry().setFromPoints(pts.map(([x, z]) => new T.Vector3(x, 0.012, z))), m || white));
-  ln([[-30, -15], [30, -15], [30, 40], [-30, 40], [-30, -15]]);          // end line, sidelines (to midfield)
-  ln([[-30, 20], [30, 20]]);                                              // restraining line
-  ln([[-20, -15], [-20, 20]]); ln([[20, -15], [20, 20]]);                 // box sidelines
-  ln([[-30, 0], [-1, 0]], faint); ln([[1, 0], [30, 0]], faint);           // goal line extended
-  ln([[-1, 0], [1, 0]]);                                                  // goal line
-  const crease = []; for (let a = 0; a <= 64; a++) { const t = a / 64 * Math.PI * 2; crease.push([3 * Math.cos(t), 3 * Math.sin(t)]); } ln(crease);
-  // Yard hash marks every 5 yds along the box sidelines and up the middle.
-  [5, 10, 15].forEach(d => {
-    [-20, 20].forEach(x => ln([[x - 0.7, d], [x + 0.7, d]]));
-    ln([[-0.7, d], [0.7, d]]);
-    const lb = threeLabel(T, d + ' yds', 0.8); lb.position.set(0, 0.5, d + 0.9); scene.add(lb);
-  });
-  const rl = threeLabel(T, 'Restraining line', 0.9); rl.position.set(-24, 0.5, 21.2); scene.add(rl);
-  const pipe = new T.MeshLambertMaterial({ color: 0xE0712E });
-  const bar = (w, h, d, x, y, z) => { const m = new T.Mesh(new T.BoxGeometry(w, h, d), pipe); m.position.set(x, y, z); scene.add(m); };
-  bar(0.07, 2, 0.07, -1, 1, 0); bar(0.07, 2, 0.07, 1, 1, 0); bar(2.07, 0.07, 0.07, 0, 2, 0);
-  const net = new T.Mesh(new T.PlaneGeometry(2, 2), new T.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.2, side: T.DoubleSide }));
-  net.position.set(0, 1, -0.02); scene.add(net);
+  const ln = (pts, m) => { const l = new T.Line(new T.BufferGeometry().setFromPoints(pts.map(([x, z]) => new T.Vector3(x, 0.012, z))), m || white); if (m && m.isLineDashedMaterial) l.computeLineDistances(); scene.add(l); };
+  ln([[-19.5, 0], [19.5, 0]]);
+  const dash = new T.LineDashedMaterial({ color: 0xffffff, dashSize: 1.2, gapSize: 0.9, transparent: true, opacity: 0.8 });
+  ln([[-8, 0], [-8, 21]], dash); ln([[8, 0], [8, 21]], dash);
+  const crease = []; for (let a = 0; a <= 64; a++) { const t = a / 64 * Math.PI * 2; crease.push([3 * Math.cos(t), 3 * Math.sin(t) - 0.2]); } ln(crease);
+  const creaseFill = new T.Mesh(new T.CircleGeometry(3, 48), new T.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.1, depthWrite: false }));
+  creaseFill.rotation.x = -Math.PI / 2; creaseFill.position.set(0, 0.008, -0.2); scene.add(creaseFill);
+  const flatText = (text, w, h, x, z, px, align) => {
+    const c = document.createElement('canvas'); c.width = 256; c.height = 128;
+    const g = c.getContext('2d'); g.font = `bold ${px}px Helvetica Neue, Arial, sans-serif`; g.textAlign = align || 'center'; g.textBaseline = 'middle';
+    g.fillStyle = 'rgba(255,255,255,0.78)'; g.fillText(text, align === 'right' ? 250 : 128, 64);
+    const m = new T.Mesh(new T.PlaneGeometry(w, h), new T.MeshBasicMaterial({ map: new T.CanvasTexture(c), transparent: true, depthWrite: false }));
+    m.rotation.x = -Math.PI / 2; m.position.set(x, 0.015, z); scene.add(m);
+  };
+  [5, 10, 15, 20].forEach(d => flatText(String(d), 2.4, 1.2, -20.1, d, 96));
+  flatText('GLE', 3, 1.5, 18.4, -0.9, 64, 'right');
+  // Cage like the Log Shot one: orange pipes, a net angling back to an apex, base bar.
+  const pipe = new T.MeshLambertMaterial({ color: 0xE8621F });
+  const rod = (a, b, r) => { const A = new T.Vector3(...a), B = new T.Vector3(...b); const m = new T.Mesh(new T.CylinderGeometry(r, r, A.distanceTo(B), 10), pipe); m.position.copy(A.clone().add(B).multiplyScalar(0.5)); m.quaternion.setFromUnitVectors(new T.Vector3(0, 1, 0), B.clone().sub(A).normalize()); scene.add(m); };
+  rod([-1, 0, 0], [-1, 2, 0], 0.05); rod([1, 0, 0], [1, 2, 0], 0.05); rod([-1, 2, 0], [1, 2, 0], 0.05);
+  rod([-1, 0.03, 0], [0, 0.03, -2.3], 0.03); rod([1, 0.03, 0], [0, 0.03, -2.3], 0.03);
+  const nc = document.createElement('canvas'); nc.width = 64; nc.height = 64;
+  const ng = nc.getContext('2d'); ng.strokeStyle = 'rgba(255,255,255,0.75)'; ng.lineWidth = 3;
+  ng.beginPath(); ng.moveTo(0, 0); ng.lineTo(64, 64); ng.moveTo(64, 0); ng.lineTo(0, 64); ng.stroke();
+  const netTex = new T.CanvasTexture(nc); netTex.wrapS = netTex.wrapT = T.RepeatWrapping; netTex.repeat.set(6, 6);
+  const netMat = new T.MeshBasicMaterial({ map: netTex, transparent: true, side: T.DoubleSide, depthWrite: false });
+  const tri = pts => { const geo = new T.BufferGeometry(); geo.setAttribute('position', new T.Float32BufferAttribute(pts.flat(), 3)); geo.setAttribute('uv', new T.Float32BufferAttribute([0, 0, 1, 0, 0.5, 1, 0, 0, 0.5, 1, 0, 1].slice(0, pts.length * 2), 2)); geo.computeVertexNormals(); scene.add(new T.Mesh(geo, netMat)); };
+  tri([[-1, 0, 0], [-1, 2, 0], [0, 1.1, -2.3], [-1, 0, 0], [0, 1.1, -2.3], [0, 0, -2.3]]);
+  tri([[1, 0, 0], [1, 2, 0], [0, 1.1, -2.3], [1, 0, 0], [0, 1.1, -2.3], [0, 0, -2.3]]);
+  tri([[-1, 2, 0], [1, 2, 0], [0, 1.1, -2.3]]);
   const shotsG = new T.Group(), overlayG = new T.Group();
   scene.add(overlayG); scene.add(shotsG);
   ANG3D = { T, renderer, scene, camera, controls, turf, shotsG, overlayG, wrap };
-  const size = () => { const w = wrap.clientWidth || 700, h = wrap.clientHeight || 460; renderer.setSize(w, h); camera.aspect = w / h; camera.updateProjectionMatrix(); };
+  const size = () => { const w = wrap.clientWidth || 700, h = wrap.clientHeight || 460; renderer.setSize(w, h); camera.aspect = w / h; if (ANG3D) fitAng3dFov(); else camera.updateProjectionMatrix(); };
   ANG3D.size = size; size(); window.addEventListener('resize', size);
   setAng3dView(ang3dView);
   // Tap (not drag): with no shot picked, tapping a shot isolates it; with a
@@ -6752,8 +6772,21 @@ function buildAng3D(T, wrap) {
 }
 function setAng3dView(name) {
   if (!ANG3D) return;
-  const v = ANG3D_VIEWS[name] || ANG3D_VIEWS["Shooter's view"];
-  ANG3D.camera.position.set(...v[0]); ANG3D.controls.target.set(...v[1]); ANG3D.controls.update();
+  const v = ANG3D_VIEWS[name] || ANG3D_VIEWS['Log Shot view'];
+  ANG3D.camera.position.set(...v[0]); ANG3D.controls.target.set(...v[1]);
+  fitAng3dFov();
+  ANG3D.controls.update();
+}
+// Log Shot view: narrow lens sized so the turf's width fills the frame, like
+// the Log Shot field. Every other view uses a normal 45° lens.
+function fitAng3dFov() {
+  const cam = ANG3D.camera;
+  if (ang3dView === 'Log Shot view') {
+    const dist = Math.hypot(FIELD_CAM.h, FIELD_CAM.zc - 21.5);
+    const hHalf = Math.atan(22 / dist);
+    cam.fov = 2 * Math.atan(Math.tan(hHalf) / cam.aspect) * 180 / Math.PI;
+  } else cam.fov = 45;
+  cam.updateProjectionMatrix();
 }
 function focusAng3dShot(x) {
   ang3dFocus = x; ang3dGhost = null;
@@ -6974,41 +7007,72 @@ function renderZoneMap(shots, xgOf) {
   located.forEach(x => { const e = st[shotZone(x)]; e.n++; if (x.goal === 1) e.g++; if (x.onKeeper === 1) e.oc++; e.xg += xgOf(x); });
   const spread = Math.max(0.08, ...ZONE_ORDER.filter(z => st[z].n >= 3).map(z => Math.abs(st[z].g / st[z].n - base)));
   const fillOf = z => st[z].n ? heatColor(st[z].g / st[z].n, base, spread) : '#FFFFFF';
-  const K = 2.4, X = lat => 50 + lat * K, Y = d => 5 + d * K, step = 0.5;
-  const cellZone = (l, d) => zoneAt(l + step / 2, d + step / 2);
-  let svg = `<svg viewBox="0 0 100 55" xmlns="http://www.w3.org/2000/svg" style="width:100%; display:block; border-radius:10px;" role="img" aria-label="Goal % by field zone">`;
-  svg += `<rect x="0" y="0" width="100" height="55" fill="#DCE7D3"/>`;
-  const cent = {};
-  let cells = '', edges = '';
-  for (let l = -19; l < 19; l += step) for (let d = 0; d < 20; d += step) {
-    const z = cellZone(l, d), s = st[z];
-    cells += `<rect x="${X(l).toFixed(2)}" y="${Y(d).toFixed(2)}" width="${(step * K + 0.02).toFixed(2)}" height="${(step * K + 0.02).toFixed(2)}" fill="${fillOf(z)}" fill-opacity="${s.n >= 3 ? 0.9 : 0.35}" data-zone="${z}" style="cursor:pointer;"/>`;
-    const c = (cent[z] = cent[z] || { l: 0, d: 0, k: 0 }); c.l += l + step / 2; c.d += d + step / 2; c.k++;
-    if (l + step < 19 && cellZone(l + step, d) !== z) edges += `M${X(l + step).toFixed(2)},${Y(d).toFixed(2)}v${(step * K).toFixed(2)}`;
-    if (d + step < 20 && cellZone(l, d + step) !== z) edges += `M${X(l).toFixed(2)},${Y(d + step).toFixed(2)}h${(step * K).toFixed(2)}`;
-  }
-  svg += cells + `<path d="${edges}" stroke="#FFFFFF" stroke-width="0.45" fill="none" style="pointer-events:none;"/>`;
-  if (angSel) {
-    let sel = '';
-    for (let l = -19; l < 19; l += step) for (let d = 0; d < 20; d += step) if (cellZone(l, d) === angSel.zone) sel += `M${X(l).toFixed(2)},${Y(d).toFixed(2)}h${(step * K).toFixed(2)}v${(step * K).toFixed(2)}h-${(step * K).toFixed(2)}z`;
-    svg += `<path d="${sel}" fill="#0F1F3D" fill-opacity="0.18" stroke="none" style="pointer-events:none;"/>`;
-  }
-  svg += `<circle cx="50" cy="5" r="${3 * K}" fill="none" stroke="#FFFFFF" stroke-width="0.35" style="pointer-events:none;"/>`;
-  svg += `<rect x="${50 - K}" y="3.6" width="${2 * K}" height="1.4" fill="#E0712E" style="pointer-events:none;"/>`;
-  // Labels at each zone's center (Doorstep nudged out of the crease).
+  // Top-down field in the Log Shot colors. x = yds wide (-21..21), y = yds out (-3.5..21).
+  const K = 2.3, X = l => 50 + l * K, Y = d => 1 + (d + 3.5) * K, H = Y(21) + 1;
+  const uid = 'zm' + (++svgUid) + '_';
+  const R = (l0, l1, d0, d1) => `M${X(l0).toFixed(2)},${Y(d0).toFixed(2)}H${X(l1).toFixed(2)}V${Y(d1).toFixed(2)}H${X(l0).toFixed(2)}Z`;
+  const circ = r => { const pr = r * K; return `M${(X(0) - pr).toFixed(2)},${Y(0).toFixed(2)}a${pr.toFixed(2)},${pr.toFixed(2)} 0 1,1 ${(2 * pr).toFixed(2)},0a${pr.toFixed(2)},${pr.toFixed(2)} 0 1,1 -${(2 * pr).toFixed(2)},0Z`; };
+  // Circles are drawn clockwise like the rectangles, so a circle + strip
+  // shape (the Doorstep) fills as one piece.
+  // Zone shapes in priority order, lowest first. Each one is masked by every
+  // shape after it, so what's drawn matches zoneAt() exactly.
+  const SHAPES = [
+    ['Top Left', R(-20, 0, 0, 20)], ['Top Right', R(0, 20, 0, 20)],
+    ['Alley Left', R(-12, 0, 0, 12)], ['Alley Right', R(0, 12, 0, 12)],
+    ['Top Center', R(-5, 5, 11, 20)],
+    ['Slot', R(-4, 4, 0, 11)],
+    ['Wing Left', R(-20, -12, 0, 20)], ['Wing Right', R(12, 20, 0, 20)],
+    ['Low Left', R(-12, -3, 0, 6)], ['Low Right', R(3, 12, 0, 6)],
+    ['GLE Left', R(-20, -5, 0, 3)], ['GLE Right', R(5, 20, 0, 3)],
+    ['Doorstep', circ(5) + R(-3, 3, 0, 6)],
+  ];
+  // Fixed label spots inside each zone (yds wide, yds out).
+  const LABEL_AT = { 'Doorstep': [0, 4.6], 'GLE Left': [-12.5, 1.2], 'GLE Right': [12.5, 1.2], 'Low Left': [-8, 4.4], 'Low Right': [8, 4.4],
+    'Slot': [0, 8.4], 'Alley Left': [-8, 8.6], 'Alley Right': [8, 8.6], 'Wing Left': [-16, 10.5], 'Wing Right': [16, 10.5],
+    'Top Left': [-8.5, 16.2], 'Top Center': [0, 15.6], 'Top Right': [8.5, 16.2] };
+  let svg = `<svg viewBox="0 0 100 ${H.toFixed(1)}" xmlns="http://www.w3.org/2000/svg" style="width:100%; display:block; border-radius:10px;" role="img" aria-label="Goal % by field zone"><defs>
+    <linearGradient id="${uid}turf" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#3F7A4A"/><stop offset="1" stop-color="#2F6A3C"/></linearGradient>
+    <pattern id="${uid}net" width="1.2" height="1.2" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><path d="M0 0 H1.2 M0 0 V1.2" stroke="#FFFFFF" stroke-width="0.15" stroke-opacity="0.7" fill="none"/></pattern>`;
+  SHAPES.forEach(([z], i) => {
+    svg += `<mask id="${uid}m${i}" maskUnits="userSpaceOnUse" x="0" y="0" width="100" height="${H.toFixed(1)}"><rect x="0" y="0" width="100" height="${H.toFixed(1)}" fill="#000"/><path d="${SHAPES[i][1]}" fill="#FFF"/>${SHAPES.slice(i + 1).map(sh => `<path d="${sh[1]}" fill="#000"/>`).join('')}</mask>`;
+  });
+  svg += `</defs>`;
+  svg += `<rect x="0" y="0" width="100" height="${H.toFixed(1)}" fill="#1F4F2B"/>`;
+  svg += `<rect x="${X(-21)}" y="${Y(-3.5)}" width="${(42 * K).toFixed(2)}" height="${(24.5 * K).toFixed(2)}" fill="url(#${uid}turf)"/>`;
+  for (let d = -2.5; d < 21; d += 5) svg += `<rect x="${X(-21)}" y="${Y(d).toFixed(2)}" width="${(42 * K).toFixed(2)}" height="${(Math.min(2.5, 21 - d) * K).toFixed(2)}" fill="#FFFFFF" opacity="0.045" style="pointer-events:none;"/>`;
+  // Zones: translucent heat color over the turf.
+  SHAPES.forEach(([z, d], i) => {
+    const sv = st[z], fill = sv.n ? heatColor(sv.g / sv.n, base, spread) : '#FFFFFF';
+    svg += `<path d="${d}" mask="url(#${uid}m${i})" data-zone="${z}" fill="${fill}" fill-opacity="${sv.n >= 3 ? 0.62 : (sv.n ? 0.25 : 0.06)}" stroke="#FFFFFF" stroke-opacity="0.55" stroke-width="0.35" style="cursor:pointer;"/>`;
+  });
+  if (angSel) { const i = SHAPES.findIndex(sh => sh[0] === angSel.zone); if (i >= 0) svg += `<path d="${SHAPES[i][1]}" mask="url(#${uid}m${i})" fill="none" stroke="#0F1F3D" stroke-width="1.1" style="pointer-events:none;"/>`; }
+  // Field lines.
+  const W = 'rgba(255,255,255,0.92)', np = 'style="pointer-events:none;"';
+  svg += `<line x1="${X(-20)}" y1="${Y(0)}" x2="${X(20)}" y2="${Y(0)}" stroke="#FFFFFF" stroke-opacity="0.45" stroke-width="0.3" ${np}/>`;
+  svg += `<line x1="${X(-20)}" y1="${Y(-3.5)}" x2="${X(-20)}" y2="${Y(20)}" stroke="${W}" stroke-width="0.4" ${np}/><line x1="${X(20)}" y1="${Y(-3.5)}" x2="${X(20)}" y2="${Y(20)}" stroke="${W}" stroke-width="0.4" ${np}/>`;
+  svg += `<line x1="${X(-21)}" y1="${Y(20)}" x2="${X(21)}" y2="${Y(20)}" stroke="${W}" stroke-width="0.45" ${np}/>`;
+  svg += `<path d="${circ(3)}" fill="rgba(255,255,255,0.10)" stroke="${W}" stroke-width="0.35" ${np}/>`;
+  // Goal from above: net back to the apex, posts, crossbar line, base bar.
+  svg += `<polygon points="${X(-1)},${Y(0)} ${X(1)},${Y(0)} ${X(0)},${Y(-2.3)}" fill="url(#${uid}net)" stroke="#FFFFFF" stroke-opacity="0.6" stroke-width="0.15" ${np}/>`;
+  svg += `<polyline points="${X(-1)},${Y(0)} ${X(0)},${Y(-2.3)} ${X(1)},${Y(0)}" fill="none" stroke="#E8621F" stroke-width="0.35" ${np}/>`;
+  svg += `<line x1="${X(-1)}" y1="${Y(0)}" x2="${X(1)}" y2="${Y(0)}" stroke="#FF8A3D" stroke-width="0.7" stroke-linecap="round" ${np}/>`;
+  svg += `<circle cx="${X(-1)}" cy="${Y(0)}" r="0.5" fill="#E8621F" ${np}/><circle cx="${X(1)}" cy="${Y(0)}" r="0.5" fill="#E8621F" ${np}/>`;
+  const ft = `font-family="Helvetica Neue, Arial, sans-serif"`;
+  [5, 10, 15, 20].forEach(d => { svg += `<text x="${X(-20.55)}" y="${(Y(d) + 0.7).toFixed(2)}" font-size="1.7" font-weight="700" text-anchor="middle" fill="rgba(255,255,255,0.75)" ${ft} ${np}>${d}</text>`; });
+  svg += `<text x="${X(19.6)}" y="${(Y(0) - 0.6).toFixed(2)}" font-size="1.5" text-anchor="end" fill="rgba(255,255,255,0.7)" ${ft} ${np}>GLE</text>`;
+  // Labels.
   ZONE_ORDER.forEach(z => {
-    const c = cent[z]; if (!c) return;
-    const s = st[z], ink = s.n >= 3 ? inkOn(fillOf(z)) : '#1F3864';
-    const cx = X(c.l / c.k), cy = Y(z === 'Doorstep' ? Math.max(c.d / c.k, 3.6) : c.d / c.k);
-    const ts = `text-anchor="middle" font-family="Helvetica Neue, Arial, sans-serif" fill="${ink}" style="pointer-events:none;"`;
-    svg += `<text x="${cx.toFixed(2)}" y="${(cy - 1.4).toFixed(2)}" font-size="1.7" font-weight="700" ${ts}>${z}</text>`;
-    svg += `<text x="${cx.toFixed(2)}" y="${(cy + 1.0).toFixed(2)}" font-size="2.4" font-weight="700" ${ts}>${s.n ? Math.round(s.g / s.n * 100) + '%' : '—'}</text>`;
-    svg += `<text x="${cx.toFixed(2)}" y="${(cy + 2.9).toFixed(2)}" font-size="1.5" ${ts} opacity="0.85">${s.g}/${s.n}</text>`;
+    const [l, d] = LABEL_AT[z], sv = st[z];
+    const cx = X(l), cy = Y(d);
+    const ts = `text-anchor="middle" ${ft} fill="#FFFFFF" stroke="rgba(15,31,61,0.55)" stroke-width="0.35" paint-order="stroke" ${np}`;
+    svg += `<text x="${cx.toFixed(2)}" y="${(cy - 1.3).toFixed(2)}" font-size="1.6" font-weight="700" ${ts}>${z}</text>`;
+    svg += `<text x="${cx.toFixed(2)}" y="${(cy + 0.9).toFixed(2)}" font-size="2.3" font-weight="700" ${ts}>${sv.n ? Math.round(sv.g / sv.n * 100) + '%' : '—'}</text>`;
+    svg += `<text x="${cx.toFixed(2)}" y="${(cy + 2.6).toFixed(2)}" font-size="1.4" ${ts}>${sv.g}/${sv.n}</text>`;
   });
   svg += `</svg>`;
   wrap.innerHTML = svg;
   document.getElementById('angFanSub').innerHTML = `Looking down on the field from above the goal (${located.length} located shot(s)). Each zone shows its goal % and goals/shots. <b style="color:#B3261E;">Red</b> = scores more than our average (${pct(base)}), <b style="color:#2B5AA8;">blue</b> = less; faint = under 3 shots. <b>Tap a zone</b> to focus the aim map, chart and 3D map on it.`;
-  wrap.querySelectorAll('[data-zone]').forEach(el => el.addEventListener('click', () => {
+  wrap.querySelectorAll('path[data-zone]').forEach(el => el.addEventListener('click', () => {
     const z = el.dataset.zone;
     angSel = (angSel && angSel.zone === z && !angSel.plane) ? null : { zone: z, plane: null };
     renderEfficiencyView();
