@@ -927,6 +927,35 @@
       <div class="table-wrap" id="goalieProfileWrap"></div>
     </div>
     </div>
+    <div class="subpage" data-label="Shooter-Adjusted">
+    <div class="view-tiles trend-grid" id="saTiles"></div>
+    <div class="panel">
+      <p class="panel-title">Shooter-Adjusted Saves</p>
+      <p class="panel-sub" id="saSub"></p>
+      <div class="table-wrap" id="saGoalieWrap"></div>
+    </div>
+    <div class="panel">
+      <p class="panel-title">Breakdown</p>
+      <p class="panel-sub">Same columns for every slice. SAE = saves above what these shooters&rsquo; own rates predict; /100 = per 100 shots faced. Gray italic rows have fewer than 5 shots.</p>
+      <div class="controls-row" style="margin-bottom:8px;">
+        <div class="control-group"><label for="saGoalieSelect">Goalie</label><select id="saGoalieSelect"></select></div>
+        <div class="control-group"><label>Show</label><div class="pill-row" id="saGroupPills"></div></div>
+      </div>
+      <div class="table-wrap" id="saBreakWrap"></div>
+    </div>
+    <div class="panel">
+      <p class="panel-title">Trend</p>
+      <p class="panel-sub">Running saves above expected through the season, one line per goalie, by practice day.</p>
+      <div id="saTrendChart"></div>
+      <details class="collapsible" style="margin-top:10px;"><summary><span class="panel-sub">Day by day</span></summary>
+        <div class="table-wrap" id="saDayWrap"></div>
+      </details>
+    </div>
+    <details class="panel collapsible">
+      <summary><span class="panel-title">Scored Shots</span> <span class="panel-sub">every shot behind these numbers, with the shooter rate used</span></summary>
+      <div class="collapsible-body"><div class="table-wrap" id="saShotWrap"></div></div>
+    </details>
+    </div>
     <div class="subpage" data-label="Trends">
     <div class="panel">
       <p class="panel-title">Goalie Trends</p>
@@ -1084,6 +1113,46 @@
       <p class="panel-title">Screener &ndash; User Pairs</p>
       <p class="panel-sub">Two-man pick combos, per possession.</p>
       <div class="table-wrap" id="effPickPairWrap"></div>
+    </div>
+    </div>
+    <div class="subpage" data-label="Angles">
+    <div class="panel">
+      <p class="panel-title">Shooting Angle Model</p>
+      <p class="panel-sub" id="angSub"></p>
+      <div class="controls-row" style="margin-bottom:4px;">
+        <div class="control-group"><label for="angPlayer">Player</label><select id="angPlayer"></select></div>
+      </div>
+      <div id="angSummary"></div>
+    </div>
+    <div class="panel">
+      <p class="panel-title">By Shooting Angle</p>
+      <p class="panel-sub">Degrees off straight-on to the cage, from where the shot was taken. Goal % is goals &divide; shots; G&minus;xG/Shot is goals above what the shot-quality tier predicts, per shot.</p>
+      <div class="table-wrap" id="angBandWrap"></div>
+    </div>
+    <div class="panel">
+      <p class="panel-title">Angle &times; Stick Plane</p>
+      <p class="panel-sub">Goal % (shots) for each angle and stick plane. Gray italic cells have fewer than 10 shots. Only shots with a Shot Mechanism logged.</p>
+      <div class="table-wrap" id="angPlaneWrap"></div>
+    </div>
+    <div class="panel">
+      <p class="panel-title">Side &times; Shooting Hand</p>
+      <p class="panel-sub">Field side as seen by the shooter facing the goal, and which hand he shot with.</p>
+      <div class="table-wrap" id="angSideWrap"></div>
+      <p class="panel-sub" style="margin-top:12px;">The same, split by stick plane (goal % and shots):</p>
+      <div class="table-wrap" id="angSidePlaneWrap"></div>
+    </div>
+    <div class="panel">
+      <p class="panel-title">Best Placement by Angle</p>
+      <p class="panel-sub">For each angle, the goal zone that scored most often. Placement is only logged for shots on cage, so this is goals &divide; on-cage shots placed there (min 5).</p>
+      <div class="table-wrap" id="angPlaceWrap"></div>
+    </div>
+    <div class="panel">
+      <p class="panel-title">Where on the Field &amp; Where on the Goal</p>
+      <p class="panel-sub">Dashed lines mark the 15&deg;, 30&deg;, 45&deg; and 60&deg; angle bands. Pick an angle to see its goal placement.</p>
+      <div class="controls-row" style="margin-bottom:8px;">
+        <div class="control-group"><label>Angle</label><div class="pill-row" id="angHeatPills"></div></div>
+      </div>
+      <div class="image-row" id="angHeatWrap"></div>
     </div>
     </div>
     <div class="subpage" data-label="Shot Types">
@@ -2333,6 +2402,19 @@ function fieldSVG(zones, opts) {
       s += `<text x="${cx.toFixed(2)}" y="${(cy + 0.6 * scale).toFixed(2)}" font-size="${(2 * scale).toFixed(2)}" ${style} opacity="0.45">—</text>`;
     }
   });
+  if (opts.angleGuides) {
+    // Shooting-angle band edges, from the goal out to the field edge.
+    const [gx, gy] = projectField(0, 0);
+    [15, 30, 45, 60].forEach(deg => {
+      const t = Math.tan(deg * Math.PI / 180);
+      const dist = Math.min(20, 19 / t);
+      [-1, 1].forEach(side => {
+        const [x, y] = projectField(side * dist * t, dist);
+        s += `<line x1="${gx.toFixed(2)}" y1="${gy.toFixed(2)}" x2="${x.toFixed(2)}" y2="${y.toFixed(2)}" stroke="#FFFFFF" stroke-width="0.35" stroke-dasharray="1.2,1" opacity="0.85" style="pointer-events:none;"/>`;
+        s += `<text x="${x.toFixed(2)}" y="${(y - 0.8).toFixed(2)}" font-size="2.2" font-family="Helvetica Neue, Arial, sans-serif" text-anchor="middle" fill="#FFFFFF" style="pointer-events:none;">${deg}&deg;</text>`;
+      });
+    });
+  }
   s += `<rect x="0" y="0" width="100" height="${FIELD_CAM.viewH}" fill="url(#${uid}vig)" style="pointer-events:none;"/>`;
   s += `</svg>`;
   return s;
@@ -5869,9 +5951,183 @@ function goalHeight(s) {
 }
 const ROUGH_SESSION_GSAX = -1.5;
 const GOALIE_REGRESS_K = 25;
+// ---------------- Goalies > Shooter-Adjusted ----------------
+// Every practice shot on cage with a WLU goalie, scored by that shooter's own
+// current-season rate for the shot's quality tier, once the shooter has 50+
+// shots that season. The shot being scored is left out of the shooter's rate
+// (otherwise a goal would raise his rate and make the save look easier).
+// Recomputed from all stored shots on every render, so every shot already
+// logged this season counts.
+const SA_MIN_SHOTS = 50;
+const SA_TIERS = ['1-Gold', '2-Silver', '3-Bronze'];
+const SA_TIER_LABEL = { '1-Gold': 'Gold', '2-Silver': 'Silver', '3-Bronze': 'Bronze' };
+function shooterTierTallies(season) {
+  const t = {};
+  advShots(season).forEach(x => {
+    if (!x.shooterJersey) return;
+    const p = (t[x.shooterJersey] = t[x.shooterJersey] || { n: 0, tiers: {} });
+    p.n++;
+    if (!SA_TIERS.includes(x.shotQuality)) return;
+    const k = (p.tiers[x.shotQuality] = p.tiers[x.shotQuality] || { shots: 0, onCage: 0, goals: 0 });
+    k.shots++; if (x.onKeeper === 1) k.onCage++; if (x.goal === 1) k.goals++;
+  });
+  return t;
+}
+function teamPracticeTierRates(season) {
+  const out = {};
+  SA_TIERS.forEach(q => {
+    const l = advShots(season).filter(x => x.context === 'Practice' && x.shotQuality === q);
+    const g = l.filter(x => x.goal === 1).length;
+    out[q] = { onCage: ratio(g, l.filter(x => x.onKeeper === 1).length) || 0, all: ratio(g, l.length) || 0 };
+  });
+  return out;
+}
+// { chance, chanceAll, teamRate, tierLabel } or null when the shot doesn't count.
+function scoreFacedShot(x, tallies, team) {
+  const p = tallies[x.shooterJersey];
+  if (!p || p.n < SA_MIN_SHOTS || !SA_TIERS.includes(x.shotQuality)) return null;
+  const k = p.tiers[x.shotQuality] || { shots: 0, onCage: 0, goals: 0 };
+  const g = k.goals - (x.goal === 1 ? 1 : 0), oc = k.onCage - 1, all = k.shots - 1;
+  const teamRate = oc <= 0;
+  return { chance: teamRate ? team[x.shotQuality].onCage : g / oc, chanceAll: all > 0 ? g / all : team[x.shotQuality].all, teamRate,
+    rateText: teamRate ? 'team' : `${g}/${oc}` };
+}
+function saFacedShots(season) {
+  const tallies = shooterTierTallies(season), team = teamPracticeTierRates(season);
+  const out = [];
+  goalieShotsForSeason(season).forEach(x => {
+    if (x.context !== 'Practice' || x.team === 'OPP' || x.onKeeper !== 1 || !x.goalieJersey || !x.shooterJersey) return;
+    const sc = scoreFacedShot(x, tallies, team);
+    if (sc) out.push(Object.assign({ s: x }, sc));
+  });
+  // Early vs late: first vs second half of that goalie's shots that day.
+  const byDay = {};
+  out.forEach(r => { (byDay[r.s.goalieJersey + '|' + r.s.date] = byDay[r.s.goalieJersey + '|' + r.s.date] || []).push(r); });
+  Object.values(byDay).forEach(l => { l.sort((a, b) => a.s.id - b.s.id); l.forEach((r, i) => { r.late = i >= l.length / 2; }); });
+  return { rows: out, tallies };
+}
+function saStats(list) {
+  const n = list.length;
+  const goals = list.filter(r => r.s.goal === 1).length;
+  const xg = list.reduce((a, r) => a + r.chance, 0), xgAll = list.reduce((a, r) => a + r.chanceAll, 0);
+  return { n, goals, sv: ratio(n - goals, n), xsv: n ? 1 - xg / n : null, sae: xg - goals, per100: n ? (xg - goals) / n * 100 : null,
+    saeAll: xgAll - goals, per100All: n ? (xgAll - goals) / n * 100 : null };
+}
+let saGroup = 'Quality × movement';
+let saGoalie = '';
+function saBreakRows(list, group) {
+  const rows = [];
+  const add = (label, f) => { const sub = list.filter(f); if (sub.length) rows.push(Object.assign({ label }, saStats(sub))); };
+  const move = r => r.s.offDodge === 1 ? 'on the run' : (r.s.offDodge === 0 ? 'off the catch' : null);
+  const dist = r => r.s.distanceYds === null || r.s.distanceYds === undefined ? null : (r.s.distanceYds < 8 ? 'Inside 8 yds' : r.s.distanceYds < 12 ? '8–12 yds' : '12+ yds');
+  const side = r => r.s.lateralYds === null || r.s.lateralYds === undefined ? null : (r.s.lateralYds < -1 ? 'Left side' : r.s.lateralYds > 1 ? 'Right side' : 'Middle');
+  if (group === 'Quality × movement') {
+    SA_TIERS.forEach(q => { add(SA_TIER_LABEL[q], r => r.s.shotQuality === q); ['on the run', 'off the catch'].forEach(m => add(`${SA_TIER_LABEL[q]} · ${m}`, r => r.s.shotQuality === q && move(r) === m)); });
+  } else if (group === 'Shooter') {
+    Array.from(new Set(list.map(r => r.s.shooterJersey))).forEach(j => add(`#${j} ${nameFor(j) || ''}`.trim(), r => r.s.shooterJersey === j));
+  } else if (group === 'Location') {
+    ['Inside 8 yds', '8–12 yds', '12+ yds'].forEach(b => add(b, r => dist(r) === b));
+    ['Left side', 'Middle', 'Right side'].forEach(b => add(b, r => side(r) === b));
+  } else if (group === 'Placement') {
+    ['High', 'Mid', 'Low'].forEach(h => ['Near side', 'Far side'].forEach(sd => add(`${h} · ${sd}`, r => goalHeight(r.s) === h && pipeSide(r.s) === sd)));
+  } else if (group === 'Situation') {
+    add('Transition (FO / OTOD)', r => r.s.transition === 'FO' || r.s.transition === 'OTOD');
+    add('Settled', r => !r.s.transition);
+    add('Man-down (shooter man-up)', r => r.s.manSituation === 'Man-Up');
+    add('Screened', r => r.s.screened === 'Yes');
+    add('Goalie not set', r => r.s.goalieSet === 'No');
+    SHOT_MECHANISM_OPTIONS.forEach(m => add(m, r => r.s.shotMechanism === m));
+  } else if (group === 'Difficulty') {
+    add('Routine (under 20%)', r => r.chance < 0.2);
+    add('Medium (20–40%)', r => r.chance >= 0.2 && r.chance < 0.4);
+    add('Hard (40%+)', r => r.chance >= 0.4);
+  } else if (group === 'Hand × pipe') {
+    ['Right', 'Left'].forEach(h => ['Near side', 'Far side'].forEach(sd => add(`${h === 'Right' ? 'Righty' : 'Lefty'} · ${sd}`, r => getHandedness(r.s) === h && pipeSide(r.s) === sd)));
+  } else if (group === 'Contest') {
+    ['Open', 'Light', 'Heavy'].forEach(c => add(c + ' contest', r => r.s.contestLevel === c));
+  } else if (group === 'Rebound / bounce') {
+    add('Rebound / second chance', r => r.s.rebound === 'Yes');
+    add('Bounce shot', r => r.s.bounceShot === 'Yes');
+  } else if (group === 'Early vs late') {
+    add('First half of his shots that day', r => !r.late);
+    add('Second half of his shots that day', r => r.late);
+  }
+  return rows;
+}
+const SA_COLS = (labelKey, labelName) => {
+  const small = (v, r) => smallCellStyle(r.n, 5);
+  return [
+    { key: labelKey, label: labelName, type: 'text', value: r => r[labelKey] },
+    { key: 'n', label: 'Faced', type: 'num', value: r => r.n },
+    { key: 'sv', label: 'Sv%', type: 'num', value: r => r.sv, format: v => pct(v), cellStyle: small, group: 'On-cage rates' },
+    { key: 'xsv', label: 'Expected Sv%', type: 'num', value: r => r.xsv, format: v => pct(v), group: 'On-cage rates', title: 'Save % these shooters’ own on-cage rates predict for these shots.' },
+    { key: 'sae', label: 'SAE', type: 'num', value: r => r.sae, format: v => signed(v), cellStyle: small, group: 'On-cage rates', title: 'Saves above expected: the shooters’ chances of scoring added up, minus goals allowed.' },
+    { key: 'per100', label: '/100', type: 'num', value: r => r.per100, format: v => signed(v), cellStyle: small, group: 'On-cage rates', title: 'Saves above expected per 100 shots faced.' },
+    { key: 'saeAll', label: 'SAE', type: 'num', value: r => r.saeAll, format: v => signed(v), group: 'All-shots rates', title: 'The same, using each shooter’s goals ÷ all shots (misses included) as his chance.' },
+    { key: 'per100All', label: '/100', type: 'num', value: r => r.per100All, format: v => signed(v), group: 'All-shots rates' },
+  ];
+};
+function renderGoalieShooterAdj() {
+  if (!document.getElementById('saGoalieWrap')) return;
+  const season = goalieAdvSeason();
+  const { rows, tallies } = saFacedShots(season);
+  const qualified = Object.keys(tallies).filter(j => tallies[j].n >= SA_MIN_SHOTS);
+  const team = saStats(rows);
+  document.getElementById('saTiles').innerHTML = [
+    statTile('Saves Above Expected', signed(team.sae), `${num(team.per100)} per 100 shots, all WLU goalies`, 'Saves above what these shooters’ own on-cage rates predict.'),
+    statTile('Adjusted Save %', pct(team.sv), `vs ${pct(team.xsv)} expected`),
+    statTile('Shots Scored', team.n.toLocaleString(), `${season} practice shots on cage`),
+    statTile('Qualified Shooters', qualified.length.toLocaleString(), `${SA_MIN_SHOTS}+ shots in ${season}`),
+  ].join('');
+  document.getElementById('saSub').textContent = `${season} practice shots on cage with a WLU goalie in net. Each shot is scored by that shooter's own ${season} rate for its quality tier (goals ÷ his on-cage shots in that tier, leaving this shot out), once he has ${SA_MIN_SHOTS}+ shots this season. All of his shots then count, including earlier ones, and everything re-scores as new shots are logged. If he has no other on-cage shots in that tier, the team's practice rate for the tier is used. Games aren't included yet.`;
+  const byG = {};
+  rows.forEach(r => { (byG[r.s.goalieJersey] = byG[r.s.goalieJersey] || []).push(r); });
+  const gRows = Object.keys(byG).map(j => Object.assign({ name: `#${j} ${nameFor(j, season) || ''}`.trim(), jersey: j }, saStats(byG[j])));
+  renderSortableTable('saGoalieWrap', SA_COLS('name', 'Goalie'), gRows, { dense: true, defaultSort: { key: 'sae', dir: 'desc' },
+    emptyMsg: qualified.length ? 'No practice shots on cage from qualified shooters yet.' : `No shooter has ${SA_MIN_SHOTS}+ ${season} shots yet. This fills in as soon as one does.` });
+
+  const sel = document.getElementById('saGoalieSelect');
+  const opts = [{ v: '', t: 'All WLU goalies' }].concat(gRows.sort((a, b) => b.n - a.n).map(r => ({ v: r.jersey, t: `${r.name} (${r.n})` })));
+  sel.innerHTML = opts.map(o => `<option value="${escapeHtml(o.v)}">${escapeHtml(o.t)}</option>`).join('');
+  sel.value = opts.some(o => o.v === saGoalie) ? saGoalie : '';
+  const list = sel.value ? (byG[sel.value] || []) : rows;
+  renderSortableTable('saBreakWrap', SA_COLS('label', saGroup), saBreakRows(list, saGroup), { dense: true, defaultSort: { key: 'n', dir: 'desc' }, emptyMsg: 'No scored shots for this selection yet.' });
+
+  // Trend: running SAE per goalie by practice day.
+  const days = Array.from(new Set(rows.map(r => r.s.date))).sort();
+  const series = Object.keys(byG).map(j => {
+    let run = 0; const pts = [];
+    days.forEach((d, i) => { const dl = byG[j].filter(r => r.s.date === d); if (!dl.length) return; run += saStats(dl).sae; pts.push({ x: i, value: run }); });
+    return { name: `#${j} ${nameFor(j, season) || ''}`.trim(), count: byG[j].length, series: pts };
+  }).sort((a, b) => b.count - a.count).slice(0, 6);
+  renderRollingTrendChart('saTrendChart', series, { format: 'decimal', emptyMsg: 'Needs at least two practice days of scored shots for a goalie.' });
+  const dayRows = [];
+  Object.keys(byG).forEach(j => days.forEach(d => { const dl = byG[j].filter(r => r.s.date === d); if (dl.length) dayRows.push(Object.assign({ date: d, name: `#${j} ${nameFor(j, season) || ''}`.trim() }, saStats(dl))); }));
+  renderSortableTable('saDayWrap', [{ key: 'date', label: 'Date', type: 'text', value: r => r.date }].concat(SA_COLS('name', 'Goalie')), dayRows, { dense: true, defaultSort: { key: 'date', dir: 'desc' }, emptyMsg: 'No scored shots yet.' });
+
+  // Every scored shot, for auditing.
+  renderSortableTable('saShotWrap', [
+    { key: 'date', label: 'Date', type: 'text', value: r => r.s.date },
+    { key: 'goalie', label: 'Goalie', type: 'text', value: r => '#' + r.s.goalieJersey },
+    { key: 'shooter', label: 'Shooter', type: 'text', value: r => `#${r.s.shooterJersey} ${nameFor(r.s.shooterJersey, season) || ''}`.trim() },
+    { key: 'tier', label: 'Tier', type: 'text', value: r => SA_TIER_LABEL[r.s.shotQuality] },
+    { key: 'rate', label: 'His Rate Used', type: 'text', value: r => r.rateText === 'team' ? 'Team rate' : r.rateText, title: 'Goals / on-cage shots for this shooter in this tier, not counting this shot.' },
+    { key: 'chance', label: 'Chance', type: 'num', value: r => r.chance, format: v => pct(v) },
+    { key: 'result', label: 'Result', type: 'text', value: r => r.s.goal === 1 ? 'Goal' : 'Save' },
+    { key: 'credit', label: 'Credit', type: 'num', value: r => r.chance - (r.s.goal === 1 ? 1 : 0), format: v => signed(v, 2), title: 'Chance − goal: what this shot added to his saves above expected.' },
+  ], sel.value ? list : rows, { dense: true, defaultSort: { key: 'date', dir: 'desc' }, emptyMsg: 'No scored shots yet.' });
+}
+setupPillGroup('saGroupPills', ['Quality × movement', 'Shooter', 'Location', 'Placement', 'Situation', 'Difficulty', 'Hand × pipe', 'Contest', 'Rebound / bounce', 'Early vs late'], saGroup, v => {
+  saGroup = v || 'Quality × movement';
+  if (!v) setPillGroupValue('saGroupPills', saGroup);
+  renderGoalieShooterAdj();
+});
+document.getElementById('saGoalieSelect').addEventListener('change', e => { saGoalie = e.target.value; renderGoalieShooterAdj(); });
+
 function renderGoalieAdvanced() {
   const wrap = document.getElementById('goalieAdvWrap');
   if (!wrap) return;
+  renderGoalieShooterAdj();
   const season = goalieAdvSeason();
   const model = facedXgModelFor(season);
   const faced = goalieAdvShots(season);
@@ -5994,6 +6250,107 @@ setupPillGroup('goalieAdvContextPills', ['All', 'Practice', 'Game'], 'All', v =>
 });
 document.getElementById('goalieAdvSelect').addEventListener('change', e => { goalieAdvSelected = e.target.value; renderGoalieAdvanced(); });
 
+// ---------------- Efficiency > Angles (descriptive shooting model) ----------------
+// Angle = degrees off straight-on to the cage, from logged distance/lateral.
+const ANGLE_BANDS = [['Straight on (0–15°)', 0, 15], ['Slight (15–30°)', 15, 30], ['Wide (30–45°)', 30, 45], ['Sharp (45–60°)', 45, 60], ['Extreme / GLE (60°+)', 60, 91]];
+function shotAngleDeg(x) {
+  if (x.distanceYds === null || x.distanceYds === undefined || x.lateralYds === null || x.lateralYds === undefined) return null;
+  return Math.atan2(Math.abs(x.lateralYds), Math.max(0, x.distanceYds)) * 180 / Math.PI;
+}
+function angleBand(x) { const a = shotAngleDeg(x); if (a === null) return null; const b = ANGLE_BANDS.find(([, lo, hi]) => a >= lo && a < hi); return b ? b[0] : null; }
+function fieldSide(x) { if (x.lateralYds === null || x.lateralYds === undefined) return null; return x.lateralYds < -1 ? 'Left side' : (x.lateralYds > 1 ? 'Right side' : 'Middle'); }
+function sideHand(x) { const sd = fieldSide(x), h = getHandedness(x); return sd && h ? `${h === 'Right' ? 'Righty' : 'Lefty'} · ${sd.toLowerCase()}` : null; }
+let angHeatBand = 'All';
+let angPlayerSel = '';
+function renderEffAngles(model) {
+  if (!document.getElementById('angBandWrap')) return;
+  const xgOf = x => xgForShot(x, model);
+  const seasonShots = effShots().filter(x => x.shooterJersey);
+  const sel = document.getElementById('angPlayer');
+  const counts = {};
+  seasonShots.forEach(x => { counts[x.shooterJersey] = (counts[x.shooterJersey] || 0) + 1; });
+  const pOpts = [{ v: '', t: 'Whole team' }].concat(Object.keys(counts).sort((a, b) => counts[b] - counts[a]).map(j => ({ v: j, t: `#${j} ${nameFor(j, EFF_SEASON) || ''} (${counts[j]})` })));
+  sel.innerHTML = pOpts.map(o => `<option value="${escapeHtml(o.v)}">${escapeHtml(o.t)}</option>`).join('');
+  sel.value = pOpts.some(o => o.v === angPlayerSel) ? angPlayerSel : '';
+  const shots = sel.value ? seasonShots.filter(x => x.shooterJersey === sel.value) : seasonShots;
+  const located = shots.filter(x => angleBand(x));
+  const st = list => { const n = list.length, g = list.filter(x => x.goal === 1).length, xg = list.reduce((a, x) => a + xgOf(x), 0);
+    return { n, goals: g, gp: ratio(g, n), oc: ratio(list.filter(x => x.onKeeper === 1).length, n), gmx: n ? (g - xg) / n : null }; };
+  document.getElementById('angSub').textContent = `${EFF_SEASON} ${EFF_CTX_WORD()}, ${sel.value ? 'one player' : 'whole team'}: ${located.length} shot(s) with a field location. Descriptive, not predictive: it shows what has gone in so far, and gets steadier as shots are logged. Stick plane only counts shots with a Shot Mechanism logged.`;
+  const small10 = n => smallCellStyle(n, 10);
+
+  // 1. Angle bands.
+  const bandRows = ANGLE_BANDS.map(([b], i) => Object.assign({ band: b, order: i }, st(located.filter(x => angleBand(x) === b)))).filter(r => r.n);
+  const statCols = [
+    { key: 'n', label: 'Shots', type: 'num', value: r => r.n },
+    { key: 'goals', label: 'G', type: 'num', value: r => r.goals },
+    { key: 'gp', label: 'Goal %', type: 'num', value: r => r.gp, format: v => pct(v), cellStyle: (v, r) => small10(r.n) },
+    { key: 'oc', label: 'On Cage %', type: 'num', value: r => r.oc, format: v => pct(v) },
+    { key: 'gmx', label: 'G−xG/Shot', type: 'num', value: r => r.gmx, format: v => signed(v, 2), title: 'Goals above (+) or below (−) what the shot-quality tier predicts, per shot. Separates the angle from how open the look was.' },
+  ];
+  renderSortableTable('angBandWrap', [{ key: 'band', label: 'Angle', type: 'num', value: r => r.order, format: (v, r) => escapeHtml(r.band) }].concat(statCols), bandRows, { dense: true, defaultSort: { key: 'band', dir: 'asc' }, emptyMsg: 'No located shots yet.' });
+
+  // 2. Angle x stick plane.
+  const cell = list => { const n = list.length; return n ? { gp: ratio(list.filter(x => x.goal === 1).length, n), n } : null; };
+  const cellFmt = c => c ? `${pct(c.gp)} <span class="n-note">(${c.n})</span>` : '<span class="n-note">—</span>';
+  const planeCols = SHOT_MECHANISM_OPTIONS.map(m => ({ key: m, label: m, type: 'num', value: r => r[m] ? r[m].gp : null, format: (v, r) => cellFmt(r[m]), cellStyle: (v, r) => r[m] ? small10(r[m].n) : '' }));
+  const planeRows = ANGLE_BANDS.map(([b], i) => { const r = { band: b, order: i }; SHOT_MECHANISM_OPTIONS.forEach(m => { r[m] = cell(located.filter(x => angleBand(x) === b && x.shotMechanism === m)); }); return r; })
+    .filter(r => SHOT_MECHANISM_OPTIONS.some(m => r[m]));
+  renderSortableTable('angPlaneWrap', [{ key: 'band', label: 'Angle', type: 'num', value: r => r.order, format: (v, r) => escapeHtml(r.band) }].concat(planeCols), planeRows, { dense: true, defaultSort: { key: 'band', dir: 'asc' }, emptyMsg: 'No shots with both a location and a Shot Mechanism yet.' });
+
+  // 3. Side x hand (+ plane).
+  const combos = ['Righty · left side', 'Righty · middle', 'Righty · right side', 'Lefty · left side', 'Lefty · middle', 'Lefty · right side'];
+  const sideRows = combos.map((c, i) => Object.assign({ combo: c, order: i }, st(located.filter(x => sideHand(x) === c)))).filter(r => r.n);
+  renderSortableTable('angSideWrap', [{ key: 'combo', label: 'Hand · Side', type: 'num', value: r => r.order, format: (v, r) => escapeHtml(r.combo) }].concat(statCols), sideRows, { dense: true, defaultSort: { key: 'combo', dir: 'asc' }, emptyMsg: 'No shots with a hand and location yet.' });
+  const spRows = combos.map((c, i) => { const r = { combo: c, order: i }; SHOT_MECHANISM_OPTIONS.forEach(m => { r[m] = cell(located.filter(x => sideHand(x) === c && x.shotMechanism === m)); }); return r; })
+    .filter(r => SHOT_MECHANISM_OPTIONS.some(m => r[m]));
+  renderSortableTable('angSidePlaneWrap', [{ key: 'combo', label: 'Hand · Side', type: 'num', value: r => r.order, format: (v, r) => escapeHtml(r.combo) }].concat(planeCols), spRows, { dense: true, defaultSort: { key: 'combo', dir: 'asc' }, emptyMsg: 'No shots with a hand, location and Shot Mechanism yet.' });
+
+  // 4. Best placement by angle (on-cage shots with a goal placement).
+  const placed = located.filter(x => x.onKeeper === 1 && x.goalX !== null && x.goalX !== undefined && x.goalY !== null && x.goalY !== undefined);
+  const zoneOf = x => goalZoneName(Math.max(0, Math.min(1, x.goalX)), Math.max(0, Math.min(1, x.goalY)));
+  const bestZone = list => {
+    const by = {}; list.forEach(x => { (by[zoneOf(x)] = by[zoneOf(x)] || []).push(x); });
+    let best = null;
+    Object.keys(by).forEach(z => { const l = by[z]; if (l.length < 5) return; const r = ratio(l.filter(x => x.goal === 1).length, l.length); if (!best || r > best.rate) best = { zone: z, rate: r, n: l.length }; });
+    return best;
+  };
+  const placeRows = ANGLE_BANDS.map(([b], i) => { const l = placed.filter(x => angleBand(x) === b); return { band: b, order: i, n: l.length, best: bestZone(l) }; }).filter(r => r.n);
+  renderSortableTable('angPlaceWrap', [
+    { key: 'band', label: 'Angle', type: 'num', value: r => r.order, format: (v, r) => escapeHtml(r.band) },
+    { key: 'n', label: 'On-Cage Shots', type: 'num', value: r => r.n },
+    { key: 'best', label: 'Best Zone', type: 'text', value: r => r.best ? r.best.zone : '—' },
+    { key: 'rate', label: 'Scores', type: 'num', value: r => r.best ? r.best.rate : null, format: (v, r) => r.best ? `${pct(v)} <span class="n-note">(${r.best.n})</span>` : '<span class="n-note">needs 5+ in a zone</span>' },
+  ], placeRows, { dense: true, defaultSort: { key: 'band', dir: 'asc' }, emptyMsg: 'No on-cage shots with a location and placement yet.' });
+
+  // 5. Heat maps.
+  const heatList = angHeatBand === 'All' ? located : located.filter(x => angleBand(x) === angHeatBand);
+  const zones = buildZones(heatList, DIST_BANDS_TEAM, LAT_BANDS_TEAM);
+  const cells = buildGoalGrid(heatList);
+  renderHeatPanel('angHeatWrap', [
+    { svg: fieldSVG(zones, { metric: 'score', angleGuides: true }), shots: heatList, caption: 'Where shots came from', sub: `${heatList.length} shot(s) — goal % by zone`, hotspots: zones, metric: 'score', unitLabel: 'shot(s)' },
+    { svg: goalSVG(cells, { metric: 'score' }), shots: heatList, caption: angHeatBand === 'All' ? 'Where they went on goal' : `Goal placement · ${angHeatBand}`, sub: `${heatList.length} shot(s)`, hotspots: cells, metric: 'score', unitLabel: 'shot(s)' },
+  ]);
+
+  // 6. Most efficient shots: angle · hand/side · plane combos (8+ shots).
+  const comboOf = x => { const b = angleBand(x), sh = sideHand(x); return b && sh && x.shotMechanism ? `${b.split(' (')[0]} angle · ${sh} · ${x.shotMechanism}` : null; };
+  const byCombo = {};
+  located.forEach(x => { const k = comboOf(x); if (k) (byCombo[k] = byCombo[k] || []).push(x); });
+  const top = Object.keys(byCombo).filter(k => byCombo[k].length >= 8).map(k => {
+    const l = byCombo[k], g = l.filter(x => x.goal === 1).length, bz = bestZone(l.filter(x => placed.includes(x)));
+    return { k, n: l.length, g, rate: g / l.length, bz };
+  }).sort((a, b) => b.rate - a.rate).slice(0, 5);
+  document.getElementById('angSummary').innerHTML = top.length
+    ? `<p class="panel-sub" style="margin:8px 0 6px;"><b>Most efficient shots so far</b> (angle · hand and side · stick plane, 8+ shots):</p><ol class="sans" style="font-size:13px; margin:0; padding-left:20px; line-height:1.7;">${top.map(t => `<li>${escapeHtml(t.k)}: <b>${pct(t.rate)}</b> (${t.g}/${t.n})${t.bz ? ` — best placed ${escapeHtml(t.bz.zone)}` : ''}</li>`).join('')}</ol>`
+    : '<p class="panel-sub" style="margin:8px 0 0;">The "most efficient shots" list appears once an angle · hand/side · stick plane combination has 8+ shots.</p>';
+}
+setupPillGroup('angHeatPills', ['All'].concat(ANGLE_BANDS.map(b => b[0])), 'All', v => {
+  angHeatBand = v || 'All';
+  if (!v) setPillGroupValue('angHeatPills', 'All');
+  renderEfficiencyView();
+});
+document.getElementById('angPlayer').addEventListener('change', e => { angPlayerSel = e.target.value; renderEfficiencyView(); });
+
 function renderEfficiencyView() {
   if (!document.getElementById('effXgModelWrap')) return;
   // Heavy: only while the tab is on screen (switchTab re-runs this on entry).
@@ -6006,6 +6363,7 @@ function renderEfficiencyView() {
   renderTriggerLeaders(shots);
   renderPlayerBestTriggers(shots);
   renderEffFilmMetrics();
+  renderEffAngles(model);
 }
 setupPillGroup('effSeasonPills', ADV_SEASONS, EFF_SEASON, v => {
   if (v) EFF_SEASON = v;
