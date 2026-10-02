@@ -934,6 +934,10 @@
       <p class="panel-sub" id="saSub"></p>
       <div class="table-wrap" id="saGoalieWrap"></div>
     </div>
+    <details class="panel collapsible" open>
+      <summary><span class="panel-title">Progress to 50</span> <span class="panel-sub">which shooters count yet, and how close the rest are</span></summary>
+      <div class="collapsible-body"><div class="table-wrap" id="saProgressWrap"></div></div>
+    </details>
     <div class="panel">
       <p class="panel-title">Breakdown</p>
       <p class="panel-sub">Same columns for every slice. SAE = saves above what these shooters&rsquo; own rates predict; /100 = per 100 shots faced. Gray italic rows have fewer than 5 shots.</p>
@@ -1123,6 +1127,45 @@
         <div class="control-group"><label for="angPlayer">Player</label><select id="angPlayer"></select></div>
       </div>
       <div id="angSummary"></div>
+    </div>
+    <div class="panel">
+      <p class="panel-title">Exact Shooting Model</p>
+      <p class="panel-sub">Uses every shot&rsquo;s exact spot on the field and exact spot on the goal. Each estimate is a weighted goal rate over nearby shots (closer shots count more), pulled slightly toward the overall rate where few shots are nearby, so one lucky shot can&rsquo;t top the list. A spot, angle or target is only listed with at least 5 shots&rsquo; worth of nearby data.</p>
+      <div class="controls-row" style="margin-bottom:4px;">
+        <div class="control-group"><label>Stick plane</label><div class="pill-row" id="angPlanePills"></div></div>
+      </div>
+      <div id="angTargetNote" class="model-note" style="display:none;"></div>
+    </div>
+    <div class="panel">
+      <p class="panel-title">Exact Angle</p>
+      <p class="panel-sub" id="angCurveSub"></p>
+      <div id="angCurveChart"></div>
+    </div>
+    <div class="panel">
+      <p class="panel-title">Field Scoring Surface &amp; Best Spots</p>
+      <p class="panel-sub" id="angFieldSub"></p>
+      <div class="image-row"><div id="angFieldSurface" style="width:100%; max-width:640px;"></div></div>
+      <div class="table-wrap" id="angBestSpotsWrap" style="margin-top:10px;"></div>
+    </div>
+    <div class="panel">
+      <p class="panel-title">Goal Scoring Surface &amp; Best Targets</p>
+      <p class="panel-sub">Goals &divide; on-cage shots (placement is only logged for shots on cage). <b>Tap anywhere on the cage, or a target below,</b> to see the best spots, angles and stick planes for hitting that target. Tap it again to clear.</p>
+      <div class="image-row"><div id="angGoalSurface" style="width:100%; max-width:380px; cursor:crosshair;"></div></div>
+      <div class="table-wrap" id="angBestTargetsWrap" style="margin-top:10px;"></div>
+    </div>
+    <div class="panel">
+      <p class="panel-title">By Stick Plane</p>
+      <p class="panel-sub">For each stick plane: its best exact spot, best angle window and best target.</p>
+      <div class="table-wrap" id="angPlaneBestWrap"></div>
+    </div>
+    <div class="panel">
+      <p class="panel-title">3D Shot Map</p>
+      <p class="panel-sub">Drag to spin, scroll or pinch to zoom. Each line runs from where the shot was taken to where it went on the cage (green = goal, navy = save). Misses and blocks show as gray dots. Gold markers = best spots and targets. Release height follows the stick plane.</p>
+      <div class="controls-row" style="margin-bottom:8px;">
+        <div class="control-group"><label>Hand</label><div class="pill-row" id="ang3dHandPills"></div></div>
+        <div class="control-group"><label>Show</label><div class="pill-row" id="ang3dOutcomePills"></div></div>
+      </div>
+      <div id="ang3dWrap" style="width:100%; height:440px; border-radius:10px; overflow:hidden; background:#EEF1EA;"></div>
     </div>
     <div class="panel">
       <p class="panel-title">By Shooting Angle</p>
@@ -6080,6 +6123,19 @@ function renderGoalieShooterAdj() {
     statTile('Qualified Shooters', qualified.length.toLocaleString(), `${SA_MIN_SHOTS}+ shots in ${season}`),
   ].join('');
   document.getElementById('saSub').textContent = `${season} practice shots on cage with a WLU goalie in net. Each shot is scored by that shooter's own ${season} rate for its quality tier (goals ÷ his on-cage shots in that tier, leaving this shot out), once he has ${SA_MIN_SHOTS}+ shots this season. All of his shots then count, including earlier ones, and everything re-scores as new shots are logged. If he has no other on-cage shots in that tier, the team's practice rate for the tier is used. Games aren't included yet.`;
+  // Progress to 50: every shooter's season count, and shots on cage waiting.
+  const waiting = {};
+  goalieShotsForSeason(season).forEach(x => {
+    if (x.context === 'Practice' && x.team !== 'OPP' && x.onKeeper === 1 && x.goalieJersey && x.shooterJersey) waiting[x.shooterJersey] = (waiting[x.shooterJersey] || 0) + 1;
+  });
+  const progRows = Object.keys(tallies).map(j => ({ name: `#${j} ${nameFor(j, season) || ''}`.trim(), n: tallies[j].n, need: Math.max(0, SA_MIN_SHOTS - tallies[j].n), onCage: waiting[j] || 0 }));
+  renderSortableTable('saProgressWrap', [
+    { key: 'name', label: 'Shooter', type: 'text', value: r => r.name },
+    { key: 'n', label: `${season} Shots`, type: 'num', value: r => r.n },
+    { key: 'need', label: 'Needs', type: 'num', value: r => r.need, format: (v) => v ? `${v} more` : '<b>Counts ✓</b>' },
+    { key: 'onCage', label: 'Practice Shots on Goalies', type: 'num', value: r => r.onCage, title: 'Practice shots on cage with a goalie logged. These are scored once he reaches 50.' },
+  ], progRows, { dense: true, defaultSort: { key: 'n', dir: 'desc' }, emptyMsg: 'No shots logged this season yet.' });
+
   const byG = {};
   rows.forEach(r => { (byG[r.s.goalieJersey] = byG[r.s.goalieJersey] || []).push(r); });
   const gRows = Object.keys(byG).map(j => Object.assign({ name: `#${j} ${nameFor(j, season) || ''}`.trim(), jersey: j }, saStats(byG[j])));
@@ -6260,6 +6316,258 @@ function shotAngleDeg(x) {
 function angleBand(x) { const a = shotAngleDeg(x); if (a === null) return null; const b = ANGLE_BANDS.find(([, lo, hi]) => a >= lo && a < hi); return b ? b[0] : null; }
 function fieldSide(x) { if (x.lateralYds === null || x.lateralYds === undefined) return null; return x.lateralYds < -1 ? 'Left side' : (x.lateralYds > 1 ? 'Right side' : 'Middle'); }
 function sideHand(x) { const sd = fieldSide(x), h = getHandedness(x); return sd && h ? `${h === 'Right' ? 'Righty' : 'Lefty'} · ${sd.toLowerCase()}` : null; }
+// ---- Exact shooting model: smoothed surfaces over exact spots ----
+// A Gaussian-weighted goal rate around a point, pulled toward `base` by k
+// pseudo-shots. pts: [{ c: [..coords], goal, xg, w }]. Returns rate, n
+// (effective nearby shots) and G-xG per shot.
+const EXACT_K = 2, EXACT_MIN_N = 5;
+function smoothRate(pts, at, bw, base) {
+  let sw = 0, sg = 0, sgx = 0;
+  const inv = 1 / (2 * bw * bw);
+  for (const pt of pts) {
+    let d2 = 0;
+    for (let i = 0; i < at.length; i++) { const dd = pt.c[i] - at[i]; d2 += dd * dd; }
+    if (d2 > 9 * bw * bw) continue;
+    const w = Math.exp(-d2 * inv) * (pt.w === undefined ? 1 : pt.w);
+    sw += w; sg += w * pt.goal; sgx += w * (pt.goal - pt.xg);
+  }
+  return { rate: (sg + EXACT_K * base) / (sw + EXACT_K), n: sw, gmx: sw ? sgx / sw : null };
+}
+const FIELD_BW = 1.5, ANGLE_BW = 4, GOAL_BW = 9; // yards, degrees, inches
+const fmtYd = v => (Math.round(v * 10) / 10).toFixed(1);
+function spotLabel(lat, dist) {
+  const side = Math.abs(lat) < 0.5 ? 'center' : `${fmtYd(Math.abs(lat))} ${lat < 0 ? 'left' : 'right'}`;
+  const ang = Math.round(Math.atan2(Math.abs(lat), Math.max(0, dist)) * 180 / Math.PI);
+  return `${fmtYd(dist)} yds out, ${side} (${ang}°)`;
+}
+function targetLabel(gx, gy) {
+  const fromTop = Math.round((1 - gy) * 72), fromBottom = Math.round(gy * 72);
+  const v = gy >= 0.5 ? `${fromTop} in below the crossbar` : `${fromBottom} in off the ground`;
+  const h = Math.abs(gx - 0.5) * 72 < 4 ? 'middle of the cage' : (gx < 0.5 ? `${Math.round(gx * 72)} in inside the left pipe` : `${Math.round((1 - gx) * 72)} in inside the right pipe`);
+  return `${v}, ${h}`;
+}
+// Greedy top-N peaks above the map's average (`base`), skipping points
+// within `sep` of a pick already made.
+function pickPeaks(grid, n, sep, base) {
+  const out = [];
+  grid.filter(g => g.n >= EXACT_MIN_N && g.rate > (base || 0)).sort((a, b) => b.rate - a.rate).forEach(g => {
+    if (out.length >= n) return;
+    if (out.some(o => Math.hypot(o.x - g.x, o.y - g.y) < sep)) return;
+    out.push(g);
+  });
+  return out;
+}
+function fieldSurface(pts, base) {
+  const grid = [];
+  for (let lat = -19; lat <= 19.001; lat += 0.5) for (let dist = 0; dist <= 20.001; dist += 0.5) {
+    const r = smoothRate(pts, [lat, dist], FIELD_BW, base);
+    grid.push(Object.assign({ x: lat, y: dist }, r));
+  }
+  return grid;
+}
+function goalSurface(pts, base) {
+  const grid = [];
+  for (let gx = 0; gx <= 1.0001; gx += 1 / 24) for (let gy = 0; gy <= 1.0001; gy += 1 / 24) {
+    const r = smoothRate(pts, [gx * 72, gy * 72], GOAL_BW, base);
+    grid.push(Object.assign({ x: gx, y: gy }, r));
+  }
+  return grid;
+}
+function angleCurve(pts, base) {
+  const out = [];
+  for (let a = 0; a <= 90; a++) out.push(Object.assign({ a }, smoothRate(pts, [a], ANGLE_BW, base)));
+  return out;
+}
+function bestAngleWindow(curve, base) {
+  const ok = curve.filter(c => c.n >= EXACT_MIN_N && c.rate > (base || 0));
+  if (!ok.length) return null;
+  const best = ok.reduce((m, c) => c.rate > m.rate ? c : m, ok[0]);
+  let lo = best.a, hi = best.a;
+  const near = c => c && c.n >= EXACT_MIN_N && c.rate >= best.rate - 0.05;
+  while (near(curve[lo - 1])) lo--;
+  while (near(curve[hi + 1])) hi++;
+  return { lo, hi, rate: best.rate, n: best.n, peak: best.a };
+}
+const PLANE_RELEASE_YDS = { Overhand: 2.1, Sidearm: 1.2, Underhand: 0.5, BTB: 0.9, Twister: 1.0 };
+let angPlane = 'All', angTarget = null, ang3dHand = 'All', ang3dOutcome = 'All';
+function renderExactModel(shots, xgOf) {
+  if (!document.getElementById('angCurveChart')) return;
+  const planeShots = angPlane === 'All' ? shots : shots.filter(x => x.shotMechanism === angPlane);
+  const located = planeShots.filter(x => shotAngleDeg(x) !== null);
+  const placed = located.filter(x => x.onKeeper === 1 && x.goalX !== null && x.goalX !== undefined && x.goalY !== null && x.goalY !== undefined);
+  // Target mode: weight every placed shot by how close it went to the target.
+  const tw = x => angTarget ? Math.exp(-((x.goalX - angTarget.gx) ** 2 + (x.goalY - angTarget.gy) ** 2) * 5184 / (2 * GOAL_BW * GOAL_BW)) : 1;
+  const pool = angTarget ? placed : located;
+  const base = ratio(pool.filter(x => x.goal === 1).length, pool.length) || 0;
+  const mk = (x, c) => ({ c, goal: x.goal === 1 ? 1 : 0, xg: xgOf(x), w: tw(x) });
+  const note = document.getElementById('angTargetNote');
+  note.style.display = angTarget ? '' : 'none';
+  if (angTarget) note.innerHTML = `Showing where to shoot from to hit <b>${escapeHtml(targetLabel(angTarget.gx, angTarget.gy))}</b> (shots placed near it count more). Tap the target again to clear.`;
+  const planeWord = angPlane === 'All' ? 'all stick planes' : angPlane.toLowerCase();
+
+  // Exact angle curve.
+  const curve = angleCurve(pool.map(x => mk(x, [shotAngleDeg(x)])), base);
+  const win = bestAngleWindow(curve, base);
+  document.getElementById('angCurveSub').innerHTML = `Smoothed goal % at every degree off straight-on (${planeWord}${angTarget ? ', toward the target' : ''}). ` +
+    (win ? `<b>Best: ${win.lo}°–${win.hi}° off center, about ${pct(win.rate)} (peak at ${win.peak}°, about ${Math.round(win.n)} nearby shots).</b>` : 'No angle has 5+ nearby shots and an above-average goal % yet.');
+  renderRollingTrendChart('angCurveChart', [{ name: 'Goal % by exact angle (degrees →)', series: curve.filter(c => c.n >= 2).map(c => ({ x: c.a, value: c.rate })) }],
+    { format: 'pct', emptyMsg: 'Not enough located shots for an angle curve yet.' });
+
+  // Field surface + best spots.
+  const fGrid = fieldSurface(pool.map(x => mk(x, [x.lateralYds, x.distanceYds])), base);
+  const spots = pickPeaks(fGrid, 6, 2, base);
+  const shown = fGrid.filter(g => g.n >= 1);
+  const spread = Math.max(0.08, ...shown.filter(g => g.n >= EXACT_MIN_N).map(g => Math.abs(g.rate - base)));
+  let fs = fieldSVG(buildZones([], DIST_BANDS_TEAM, LAT_BANDS_TEAM), { metric: 'score', interactive: false, showEmpty: false, angleGuides: true });
+  let quads = '';
+  shown.forEach(g => {
+    const c = [[g.x - 0.25, g.y - 0.25], [g.x + 0.25, g.y - 0.25], [g.x + 0.25, g.y + 0.25], [g.x - 0.25, g.y + 0.25]].map(([a, b]) => projectField(a, b).map(v => v.toFixed(2)).join(',')).join(' ');
+    quads += `<polygon points="${c}" fill="${heatColor(g.rate, base, spread)}" opacity="${Math.min(0.85, 0.25 + g.n / 8).toFixed(2)}" style="pointer-events:none;"/>`;
+  });
+  spots.forEach((g, i) => { const [x, y] = projectField(g.x, g.y); quads += `<circle cx="${x.toFixed(2)}" cy="${y.toFixed(2)}" r="1.6" fill="#D4AF37" stroke="#1A1A1A" stroke-width="0.3"/><text x="${x.toFixed(2)}" y="${(y + 0.9).toFixed(2)}" font-size="2.2" font-weight="700" text-anchor="middle" fill="#1A1A1A" style="pointer-events:none;">${i + 1}</text>`; });
+  document.getElementById('angFieldSurface').innerHTML = fs.replace(/<\/svg>$/, quads + '</svg>');
+  document.getElementById('angFieldSub').textContent = `${pool.length} located shot(s), ${planeWord}. Red = scores more than this map's average (${pct(base)}), blue = less; faint = few nearby shots. Gold numbers = best spots.`;
+  renderSortableTable('angBestSpotsWrap', [
+    { key: 'rank', label: '#', type: 'num', value: r => r.rank },
+    { key: 'spot', label: 'Exact spot', type: 'text', value: r => r.spot },
+    { key: 'rate', label: 'Goal %', type: 'num', value: r => r.rate, format: v => pct(v) },
+    { key: 'gmx', label: 'G−xG/Shot', type: 'num', value: r => r.gmx, format: v => signed(v, 2), title: 'Goals above what the shot-quality tier predicts, per shot, nearby.' },
+    { key: 'n', label: 'Nearby Shots', type: 'num', value: r => r.n, format: v => '≈' + Math.round(v) },
+  ], spots.map((g, i) => ({ rank: i + 1, spot: spotLabel(g.x, g.y), rate: g.rate, gmx: g.gmx, n: g.n })), { dense: true, defaultSort: { key: 'rank', dir: 'asc' }, emptyMsg: 'No spot has 5+ nearby shots and an above-average goal % yet.' });
+
+  // Goal surface + best targets (always from placed shots of this plane).
+  const gBase = ratio(placed.filter(x => x.goal === 1).length, placed.length) || 0;
+  const gGrid = goalSurface(placed.map(x => ({ c: [x.goalX * 72, x.goalY * 72], goal: x.goal === 1 ? 1 : 0, xg: xgOf(x) })), gBase);
+  const targets = pickPeaks(gGrid, 5, 0.17, gBase);
+  const gShown = gGrid.filter(g => g.n >= 1);
+  const gSpread = Math.max(0.08, ...gShown.filter(g => g.n >= EXACT_MIN_N).map(g => Math.abs(g.rate - gBase)));
+  let gs = goalSVG(buildGoalGrid([]), { metric: 'score', interactive: false, labels: false, grid: true });
+  let gq = '';
+  const cw = GOAL_VIEW.mw / 24, ch = GOAL_VIEW.mh / 24;
+  gShown.forEach(g => { const [x, y] = goalMouthPoint(g.x, g.y); gq += `<rect x="${(x - cw / 2).toFixed(2)}" y="${(y - ch / 2).toFixed(2)}" width="${cw.toFixed(2)}" height="${ch.toFixed(2)}" fill="${heatColor(g.rate, gBase, gSpread)}" opacity="${Math.min(0.8, 0.2 + g.n / 6).toFixed(2)}" style="pointer-events:none;"/>`; });
+  targets.forEach((g, i) => { const [x, y] = goalMouthPoint(g.x, g.y); gq += `<circle cx="${x.toFixed(2)}" cy="${y.toFixed(2)}" r="2.4" fill="#D4AF37" stroke="#1A1A1A" stroke-width="0.4"/><text x="${x.toFixed(2)}" y="${(y + 1.2).toFixed(2)}" font-size="3" font-weight="700" text-anchor="middle" fill="#1A1A1A" style="pointer-events:none;">${i + 1}</text>`; });
+  if (angTarget) { const [x, y] = goalMouthPoint(angTarget.gx, angTarget.gy); gq += `<circle cx="${x.toFixed(2)}" cy="${y.toFixed(2)}" r="4" fill="none" stroke="#0F1F3D" stroke-width="0.9" stroke-dasharray="1.5,1"/>`; }
+  const gWrap = document.getElementById('angGoalSurface');
+  gWrap.innerHTML = gs.replace(/<\/svg>$/, gq + '</svg>');
+  const gSvg = gWrap.querySelector('svg');
+  gSvg.addEventListener('click', evt => {
+    const pnt = svgPoint(gSvg, evt), t = goalFromPoint(pnt.x, pnt.y);
+    if (t.gx < 0 || t.gx > 1 || t.gy < 0 || t.gy > 1) return;
+    angTarget = (angTarget && Math.hypot(angTarget.gx - t.gx, angTarget.gy - t.gy) < 0.08) ? null : { gx: t.gx, gy: t.gy };
+    renderEfficiencyView();
+  });
+  renderSortableTable('angBestTargetsWrap', [
+    { key: 'rank', label: '#', type: 'num', value: r => r.rank },
+    { key: 'target', label: 'Exact target', type: 'text', value: r => r.target },
+    { key: 'rate', label: 'Scores', type: 'num', value: r => r.rate, format: v => pct(v) },
+    { key: 'n', label: 'Nearby Shots', type: 'num', value: r => r.n, format: v => '≈' + Math.round(v) },
+    { key: 'go', label: '', type: 'text', sortable: false, value: r => r.rank, format: (v, r) => `<button type="button" class="btn secondary" data-angtarget="${r.gx},${r.gy}" style="padding:3px 8px; font-size:11.5px;">Where to shoot from</button>` },
+  ], targets.map((g, i) => ({ rank: i + 1, target: targetLabel(g.x, g.y), rate: g.rate, n: g.n, gx: g.x, gy: g.y })), { dense: true, defaultSort: { key: 'rank', dir: 'asc' }, emptyMsg: 'No goal area has 5+ nearby on-cage shots and an above-average rate yet.' });
+  document.querySelectorAll('#angBestTargetsWrap [data-angtarget]').forEach(b => b.addEventListener('click', () => {
+    const [gx, gy] = b.dataset.angtarget.split(',').map(Number);
+    angTarget = { gx, gy }; renderEfficiencyView();
+    document.getElementById('angCurveChart').scrollIntoView({ block: 'center', behavior: 'smooth' });
+  }));
+
+  // By stick plane (ignores the plane filter, honors the target).
+  const planeRows = SHOT_MECHANISM_OPTIONS.map(m => {
+    const l = shots.filter(x => x.shotMechanism === m && shotAngleDeg(x) !== null);
+    const pl = l.filter(x => x.onKeeper === 1 && x.goalX !== null && x.goalX !== undefined && x.goalY !== null && x.goalY !== undefined);
+    const pPool = angTarget ? pl : l;
+    if (!pPool.length) return null;
+    const b = ratio(pPool.filter(x => x.goal === 1).length, pPool.length) || 0;
+    const spot = pickPeaks(fieldSurface(pPool.map(x => mk(x, [x.lateralYds, x.distanceYds])), b), 1, 2, b)[0];
+    const w = bestAngleWindow(angleCurve(pPool.map(x => mk(x, [shotAngleDeg(x)])), b), b);
+    const gb = ratio(pl.filter(x => x.goal === 1).length, pl.length) || 0;
+    const tgt = pickPeaks(goalSurface(pl.map(x => ({ c: [x.goalX * 72, x.goalY * 72], goal: x.goal === 1 ? 1 : 0, xg: xgOf(x) })), gb), 1, 0.17, gb)[0];
+    return { plane: m, n: l.length, gp: ratio(l.filter(x => x.goal === 1).length, l.length),
+      spot: spot ? `${spotLabel(spot.x, spot.y)} · ${pct(spot.rate)}` : '—', angle: w ? `${w.lo}°–${w.hi}° · ${pct(w.rate)}` : '—', target: tgt ? `${targetLabel(tgt.x, tgt.y)} · ${pct(tgt.rate)}` : '—' };
+  }).filter(Boolean);
+  renderSortableTable('angPlaneBestWrap', [
+    { key: 'plane', label: 'Stick plane', type: 'text', value: r => r.plane },
+    { key: 'n', label: 'Shots', type: 'num', value: r => r.n },
+    { key: 'gp', label: 'Goal %', type: 'num', value: r => r.gp, format: v => pct(v) },
+    { key: 'spot', label: 'Best exact spot', type: 'text', value: r => r.spot },
+    { key: 'angle', label: 'Best angle window', type: 'text', value: r => r.angle },
+    { key: 'target', label: 'Best target', type: 'text', value: r => r.target },
+  ], planeRows, { dense: true, defaultSort: { key: 'n', dir: 'desc' }, emptyMsg: 'No shots with a Shot Mechanism and location yet.' });
+
+  renderAngle3D(planeShots, spots, targets);
+}
+
+// ---- 3D shot map (three.js from jsDelivr, loaded on first use) ----
+let THREE_LOADING = null;
+function loadThree() {
+  if (window.THREE && window.THREE.OrbitControls) return Promise.resolve();
+  if (THREE_LOADING) return THREE_LOADING;
+  const add = src => new Promise((res, rej) => { const el = document.createElement('script'); el.src = src; el.onload = res; el.onerror = rej; document.head.appendChild(el); });
+  THREE_LOADING = add('https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js')
+    .then(() => add('https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js'))
+    .catch(e => { THREE_LOADING = null; throw e; });
+  return THREE_LOADING;
+}
+let ANG3D = null; // { renderer, scene, camera, controls, group }
+function renderAngle3D(shots, spots, targets) {
+  const wrap = document.getElementById('ang3dWrap');
+  if (!wrap) return;
+  loadThree().then(() => {
+    const T = window.THREE;
+    if (!ANG3D || !wrap.contains(ANG3D.renderer.domElement)) {
+      wrap.innerHTML = '';
+      const renderer = new T.WebGLRenderer({ antialias: true });
+      renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
+      wrap.appendChild(renderer.domElement);
+      const scene = new T.Scene();
+      scene.background = new T.Color(0xEEF1EA);
+      const camera = new T.PerspectiveCamera(45, 1, 0.1, 200);
+      camera.position.set(0, 6.5, 17);
+      const controls = new T.OrbitControls(camera, renderer.domElement);
+      controls.target.set(0, 1, 5);
+      controls.maxPolarAngle = Math.PI / 2 - 0.02;
+      scene.add(new T.AmbientLight(0xffffff, 0.85));
+      const sun = new T.DirectionalLight(0xffffff, 0.5); sun.position.set(5, 15, 10); scene.add(sun);
+      // Field (yards): x = lateral, z = distance out from the goal line, y = height.
+      const turf = new T.Mesh(new T.PlaneGeometry(40, 24), new T.MeshLambertMaterial({ color: 0x6E9B58 }));
+      turf.rotation.x = -Math.PI / 2; turf.position.set(0, 0, 9); scene.add(turf);
+      const lineMat = new T.LineBasicMaterial({ color: 0xffffff });
+      const ln = pts => scene.add(new T.Line(new T.BufferGeometry().setFromPoints(pts.map(([x, z]) => new T.Vector3(x, 0.01, z))), lineMat));
+      ln([[-20, 0], [20, 0]]);
+      const crease = []; for (let a = 0; a <= 64; a++) { const t = a / 64 * Math.PI * 2; crease.push([3 * Math.cos(t), 3 * Math.sin(t)]); } ln(crease);
+      // Cage: 6 ft x 6 ft = 2 x 2 yds, pipes orange.
+      const pipe = new T.MeshLambertMaterial({ color: 0xE0712E });
+      const bar = (w, h, d, x, y, z) => { const m = new T.Mesh(new T.BoxGeometry(w, h, d), pipe); m.position.set(x, y, z); scene.add(m); };
+      bar(0.06, 2, 0.06, -1, 1, 0); bar(0.06, 2, 0.06, 1, 1, 0); bar(2.06, 0.06, 0.06, 0, 2, 0);
+      const net = new T.Mesh(new T.PlaneGeometry(2, 2), new T.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.18, side: T.DoubleSide }));
+      net.position.set(0, 1, -0.02); scene.add(net);
+      const group = new T.Group(); scene.add(group);
+      ANG3D = { renderer, scene, camera, controls, group };
+      const size = () => { const w = wrap.clientWidth || 700, h = wrap.clientHeight || 440; renderer.setSize(w, h); camera.aspect = w / h; camera.updateProjectionMatrix(); };
+      size(); window.addEventListener('resize', size); ANG3D.size = size;
+      const loop = () => { if (!document.body.contains(renderer.domElement)) return; controls.update(); renderer.render(scene, camera); requestAnimationFrame(loop); };
+      loop();
+    }
+    ANG3D.size();
+    const g = ANG3D.group;
+    while (g.children.length) { const c = g.children.pop(); if (c.geometry) c.geometry.dispose(); }
+    const handOk = x => ang3dHand === 'All' || getHandedness(x) === (ang3dHand === 'Righty' ? 'Right' : 'Left');
+    const outOk = x => ang3dOutcome === 'All' || (ang3dOutcome === 'Goals' ? x.goal === 1 : ang3dOutcome === 'Saves' ? (x.onKeeper === 1 && x.goal !== 1) : x.onKeeper !== 1);
+    const mats = { goal: new T.LineBasicMaterial({ color: 0x1E9E48 }), save: new T.LineBasicMaterial({ color: 0x1F3864, transparent: true, opacity: 0.6 }) };
+    const missMat = new T.MeshBasicMaterial({ color: 0x8C8C8C });
+    shots.filter(x => shotAngleDeg(x) !== null && handOk(x) && outOk(x)).forEach(x => {
+      const from = new T.Vector3(x.lateralYds, PLANE_RELEASE_YDS[x.shotMechanism] || 1.5, x.distanceYds);
+      if (x.onKeeper === 1 && x.goalX !== null && x.goalX !== undefined && x.goalY !== null && x.goalY !== undefined) {
+        const to = new T.Vector3((x.goalX - 0.5) * 2, x.goalY * 2, 0);
+        g.add(new T.Line(new T.BufferGeometry().setFromPoints([from, to]), x.goal === 1 ? mats.goal : mats.save));
+      } else {
+        const dot = new T.Mesh(new T.SphereGeometry(0.12, 8, 8), missMat); dot.position.set(x.lateralYds, 0.12, x.distanceYds); g.add(dot);
+      }
+    });
+    const gold = new T.MeshLambertMaterial({ color: 0xD4AF37 });
+    (spots || []).forEach(p => { const m = new T.Mesh(new T.CylinderGeometry(0.35, 0.35, 0.08, 20), gold); m.position.set(p.x, 0.05, p.y); g.add(m); });
+    (targets || []).forEach(p => { const m = new T.Mesh(new T.SphereGeometry(0.1, 12, 12), gold); m.position.set((p.x - 0.5) * 2, p.y * 2, 0.02); g.add(m); });
+  }).catch(() => { wrap.innerHTML = '<p class="sans" style="color:var(--muted); font-size:13px; padding:14px;">The 3D view couldn&rsquo;t load (no internet connection?). The 2D surfaces above still work.</p>'; });
+}
+
 let angHeatBand = 'All';
 let angPlayerSel = '';
 function renderEffAngles(model) {
@@ -6274,6 +6582,7 @@ function renderEffAngles(model) {
   sel.value = pOpts.some(o => o.v === angPlayerSel) ? angPlayerSel : '';
   const shots = sel.value ? seasonShots.filter(x => x.shooterJersey === sel.value) : seasonShots;
   const located = shots.filter(x => angleBand(x));
+  renderExactModel(shots, xgOf);
   const st = list => { const n = list.length, g = list.filter(x => x.goal === 1).length, xg = list.reduce((a, x) => a + xgOf(x), 0);
     return { n, goals: g, gp: ratio(g, n), oc: ratio(list.filter(x => x.onKeeper === 1).length, n), gmx: n ? (g - xg) / n : null }; };
   document.getElementById('angSub').textContent = `${EFF_SEASON} ${EFF_CTX_WORD()}, ${sel.value ? 'one player' : 'whole team'}: ${located.length} shot(s) with a field location. Descriptive, not predictive: it shows what has gone in so far, and gets steadier as shots are logged. Stick plane only counts shots with a Shot Mechanism logged.`;
@@ -6344,6 +6653,13 @@ function renderEffAngles(model) {
     ? `<p class="panel-sub" style="margin:8px 0 6px;"><b>Most efficient shots so far</b> (angle · hand and side · stick plane, 8+ shots):</p><ol class="sans" style="font-size:13px; margin:0; padding-left:20px; line-height:1.7;">${top.map(t => `<li>${escapeHtml(t.k)}: <b>${pct(t.rate)}</b> (${t.g}/${t.n})${t.bz ? ` — best placed ${escapeHtml(t.bz.zone)}` : ''}</li>`).join('')}</ol>`
     : '<p class="panel-sub" style="margin:8px 0 0;">The "most efficient shots" list appears once an angle · hand/side · stick plane combination has 8+ shots.</p>';
 }
+setupPillGroup('angPlanePills', ['All'].concat(SHOT_MECHANISM_OPTIONS), 'All', v => {
+  angPlane = v || 'All';
+  if (!v) setPillGroupValue('angPlanePills', 'All');
+  renderEfficiencyView();
+});
+setupPillGroup('ang3dHandPills', ['All', 'Righty', 'Lefty'], 'All', v => { ang3dHand = v || 'All'; if (!v) setPillGroupValue('ang3dHandPills', 'All'); renderEfficiencyView(); });
+setupPillGroup('ang3dOutcomePills', ['All', 'Goals', 'Saves', 'Misses'], 'All', v => { ang3dOutcome = v || 'All'; if (!v) setPillGroupValue('ang3dOutcomePills', 'All'); renderEfficiencyView(); });
 setupPillGroup('angHeatPills', ['All'].concat(ANGLE_BANDS.map(b => b[0])), 'All', v => {
   angHeatBand = v || 'All';
   if (!v) setPillGroupValue('angHeatPills', 'All');
