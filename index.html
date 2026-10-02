@@ -6530,14 +6530,14 @@ function loadThree() {
 
 // ---- Named field zones (looking out from the goal; yds out x yds wide) ----
 // Every spot falls into the first rule it matches.
-const ZONE_ORDER = ['Doorstep', 'GLE Left', 'GLE Right', 'Low Left', 'Low Right', 'Slot', 'Alley Left', 'Alley Right', 'Wing Left', 'Wing Right', 'Top Left', 'Top Center', 'Top Right'];
+const ZONE_ORDER = ['Doorstep', 'GLE Left', 'GLE Right', 'Low Left', 'Low Right', 'Crease', 'Alley Left', 'Alley Right', 'Wing Left', 'Wing Right', 'Top Left', 'Top Center', 'Top Right'];
 function zoneAt(L, D) {
   const a = Math.abs(L), s = L < 0 ? 'Left' : 'Right';
   if (Math.hypot(L, D) < 5 || (D < 6 && a < 3)) return 'Doorstep';
   if (D < 3 && a >= 5) return 'GLE ' + s;
   if (D < 6 && a >= 3 && a < 12) return 'Low ' + s;
   if (a >= 12) return 'Wing ' + s;
-  if (D < 11 && a < 4) return 'Slot';
+  if (D < 11 && a < 4) return 'Crease';
   if (D >= 11 && a < 5) return 'Top Center';
   if (D < 12 && a < 12) return 'Alley ' + s;
   return 'Top ' + s;
@@ -7020,7 +7020,7 @@ function renderZoneMap(shots, xgOf) {
     ['Top Left', R(-20, 0, 0, 20)], ['Top Right', R(0, 20, 0, 20)],
     ['Alley Left', R(-12, 0, 0, 12)], ['Alley Right', R(0, 12, 0, 12)],
     ['Top Center', R(-5, 5, 11, 20)],
-    ['Slot', R(-4, 4, 0, 11)],
+    ['Crease', R(-4, 4, 0, 11)],
     ['Wing Left', R(-20, -12, 0, 20)], ['Wing Right', R(12, 20, 0, 20)],
     ['Low Left', R(-12, -3, 0, 6)], ['Low Right', R(3, 12, 0, 6)],
     ['GLE Left', R(-20, -5, 0, 3)], ['GLE Right', R(5, 20, 0, 3)],
@@ -7028,7 +7028,7 @@ function renderZoneMap(shots, xgOf) {
   ];
   // Fixed label spots inside each zone (yds wide, yds out).
   const LABEL_AT = { 'Doorstep': [0, 4.6], 'GLE Left': [-12.5, 1.2], 'GLE Right': [12.5, 1.2], 'Low Left': [-8, 4.4], 'Low Right': [8, 4.4],
-    'Slot': [0, 8.4], 'Alley Left': [-8, 8.6], 'Alley Right': [8, 8.6], 'Wing Left': [-16, 10.5], 'Wing Right': [16, 10.5],
+    'Crease': [0, 8.4], 'Alley Left': [-8, 8.6], 'Alley Right': [8, 8.6], 'Wing Left': [-16, 10.5], 'Wing Right': [16, 10.5],
     'Top Left': [-8.5, 16.2], 'Top Center': [0, 15.6], 'Top Right': [8.5, 16.2] };
   let svg = `<svg viewBox="0 0 100 ${H.toFixed(1)}" xmlns="http://www.w3.org/2000/svg" style="width:100%; display:block; border-radius:10px;" role="img" aria-label="Goal % by field zone"><defs>
     <linearGradient id="${uid}turf" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#3F7A4A"/><stop offset="1" stop-color="#2F6A3C"/></linearGradient>
