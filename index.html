@@ -609,6 +609,15 @@
               <label>Was He Beaten?</label>
               <div class="pill-row" id="f_defbeaten"></div>
             </div>
+            <div class="span-2" id="beatenHowWrap" style="display:none;">
+              <label>How Was He Beaten?</label>
+              <div class="pill-row" id="f_beatenhow"></div>
+            </div>
+            <div class="span-2">
+              <label for="f_offball_fault">Off-Ball Breakdown &mdash; Whose Fault (#)</label>
+              <input type="text" id="f_offball_fault" inputmode="numeric" maxlength="3" placeholder="Jersey # (blank = none)" style="max-width:200px;">
+              <div class="readout" id="offBallResolve"></div>
+            </div>
           </div>
         </details>
       </div>
@@ -1095,6 +1104,16 @@
       <p class="panel-title">Slides</p>
       <p class="panel-sub">Shots taken after he slid: how often the slide still gave up a goal, and the quality of the look it allowed.</p>
       <div class="table-wrap" id="defSlideWrap"></div>
+    </div>
+    <div class="panel">
+      <p class="panel-title">How They&rsquo;re Beaten</p>
+      <p class="panel-sub">Shots where the on-ball defender was logged as beaten, by how the dodger got past him, and how many of those went in.</p>
+      <div class="table-wrap" id="defBeatenWrap"></div>
+    </div>
+    <div class="panel">
+      <p class="panel-title">Off-Ball Breakdowns</p>
+      <p class="panel-sub">Shots blamed on an off-ball defender who lost his man (the Off-Ball Breakdown box on Log Shot).</p>
+      <div class="table-wrap" id="defOffBallWrap"></div>
     </div>
     <details class="panel collapsible">
       <summary><span class="panel-title">Matchups</span> <span class="panel-sub">defender vs shooter, practice reps with 3+ shots</span></summary>
@@ -1686,7 +1705,7 @@ const COLS =["id","date","practiceId","context","shooterJersey","goalieJersey","
   // Pick coverage (2027+): how the defense played a pick on this possession.
   "pick","pickType","pickSpot","pickScreener","pickUser","pickCoverage","pickResult","pickMismatch","pickAction",
   // Individual defense (2027+): who guarded the shooter, who slid, beaten.
-  "defender","slideDefender","defBeaten"];
+  "defender","slideDefender","defBeaten","beatenHow","offBallFault"];
 // team: 'OPP' marks an opponent shot on a WLU goalie (games). Those never go
 // into SHOTS (every shooting stat assumes a WLU shooter); they live in
 // OPP_SHOTS and feed only the goalie views. Opponent jerseys are stored as
@@ -2970,7 +2989,7 @@ function pmEnter(p) {
   document.body.classList.add('player-mode');
   const isPlayer = p.roles.includes('player'), isGoalie = p.roles.includes('goalie');
   const mine = s => s && Object.keys(p.seasons).some(ss => p.seasons[ss] === s);
-  const isDefender = allShotEntries().some(s => (mine(s.defender) && s.defender === p.seasons[seasonForDate(s.date)]) || (mine(s.slideDefender) && s.slideDefender === p.seasons[seasonForDate(s.date)]));
+  const isDefender = allShotEntries().some(s => (mine(s.defender) && s.defender === p.seasons[seasonForDate(s.date)]) || (mine(s.slideDefender) && s.slideDefender === p.seasons[seasonForDate(s.date)]) || (mine(s.offBallFault) && s.offBallFault === p.seasons[seasonForDate(s.date)]));
   const show = { logView: false, playerView: isPlayer, goalieView: isGoalie, defenseView: isDefender, efficiencyView: isPlayer, faceoffView: PLAYER_MODE.fogo,
     tableView: true, compareView: isPlayer, opponentView: false, recruitsView: false, boardView: false };
   Object.keys(show).forEach(id => {
@@ -3587,11 +3606,20 @@ function renderDefenderPills() {
   });
 }
 ['f_defender', 'f_slide_defender'].forEach(id => document.getElementById(id).addEventListener('input', renderDefenderPills));
-setupPillGroup('f_defbeaten', ['Yes','No'], null);
+const BEATEN_HOW_OPTIONS = ['Topside', 'Underneath', 'Roll back', 'Split', 'Speed'];
+// "How was he beaten?" only applies once Beaten = Yes.
+function updateBeatenHow() {
+  const on = document.getElementById('f_defbeaten').dataset.value === 'Yes';
+  document.getElementById('beatenHowWrap').style.display = on ? '' : 'none';
+  if (!on) setPillGroupValue('f_beatenhow', null);
+}
+setupPillGroup('f_defbeaten', ['Yes','No'], null, updateBeatenHow);
+setupPillGroup('f_beatenhow', BEATEN_HOW_OPTIONS, null);
+bindJerseyReadout('f_offball_fault', 'offBallResolve', () => otherTeam(currentTeam()));
 function refreshJerseyReadouts() {
   renderDefenderPills();
   ['f_adv_creator','f_possstart_jersey','p_adv_creator','p_possstart_jersey','p_turnover_by','p_caused_by',
-   'f_pick_screener','f_pick_user','p_pick_screener','p_pick_user','f_defender','f_slide_defender'].forEach(id => {
+   'f_pick_screener','f_pick_user','p_pick_screener','p_pick_user','f_defender','f_slide_defender','f_offball_fault'].forEach(id => {
     const el = document.getElementById(id); if (el.__updateReadout) el.__updateReadout();
   });
 }
@@ -3930,9 +3958,10 @@ function pointSessionBarAt(entry) {
 }
 function resetShotFields() {
   ['f_outcome','f_cleansave','f_screened','f_goalieset','f_outlet','f_catchdodge','f_quality','f_contest','f_defscheme','f_handedness',
-   'f_transitiontype','f_shotmechanism','f_rebound','f_bounceshot','f_dominoes','f_advtype','f_possstart','f_defbeaten'].forEach(id => setPillGroupValue(id, null));
+   'f_transitiontype','f_shotmechanism','f_rebound','f_bounceshot','f_dominoes','f_advtype','f_possstart','f_defbeaten','f_beatenhow'].forEach(id => setPillGroupValue(id, null));
+  updateBeatenHow();
   setPillGroupValue('f_mansituation', 'Even');
-  ['f_shooter_name','f_assist_name','f_opp_shooter','f_opp_passer','f_trigger','f_adv_creator','f_possstart_jersey','f_defender','f_slide_defender'].forEach(id => { document.getElementById(id).value = ''; });
+  ['f_shooter_name','f_assist_name','f_opp_shooter','f_opp_passer','f_trigger','f_adv_creator','f_possstart_jersey','f_defender','f_slide_defender','f_offball_fault'].forEach(id => { document.getElementById(id).value = ''; });
   resolvedShooterJersey = null;
   resolvedAssistJersey = null;
   document.getElementById('shooterResolve').innerHTML = '';
@@ -4017,6 +4046,9 @@ function startEditShot(id, returnTo) {
   document.getElementById('f_defender').value = shot.defender ? shot.defender.replace(/^o/, '') : '';
   document.getElementById('f_slide_defender').value = shot.slideDefender ? shot.slideDefender.replace(/^o/, '') : '';
   setPillGroupValue('f_defbeaten', shot.defBeaten || null);
+  updateBeatenHow();
+  setPillGroupValue('f_beatenhow', shot.beatenHow || null);
+  document.getElementById('f_offball_fault').value = shot.offBallFault ? shot.offBallFault.replace(/^o/, '') : '';
   refreshJerseyReadouts();
   buildFieldClickWidget({ distanceYds: shot.distanceYds, lateralYds: shot.lateralYds });
   buildGoalClickWidget({ goalX: shot.goalX, goalY: shot.goalY });
@@ -4088,6 +4120,9 @@ document.getElementById('submitShotBtn').addEventListener('click', async () => {
   const defSlide = readJerseyField('f_slide_defender', otherTeam(team));
   if (!defSlide.ok) { showMsg('Slide defender: ' + defSlide.why, false); return; }
   if (defOn.value && defOn.value === defSlide.value) { showMsg('The slide defender can’t be the on-ball defender.', false); return; }
+  const offFault = readJerseyField('f_offball_fault', otherTeam(team));
+  if (!offFault.ok) { showMsg('Off-ball breakdown: ' + offFault.why, false); return; }
+  if (offFault.value && offFault.value === defOn.value) { showMsg('The off-ball breakdown can’t be the on-ball defender.', false); return; }
   const isEdit = editingShotId !== null;
   if (!isEdit && decorateChips().length) { showMsg('Fix the lineup bar first (marked in red), or clear it.', false); return; }
 
@@ -4135,6 +4170,8 @@ document.getElementById('submitShotBtn').addEventListener('click', async () => {
     defender: defOn.value,
     slideDefender: defSlide.value,
     defBeaten: document.getElementById('f_defbeaten').dataset.value || null,
+    beatenHow: document.getElementById('f_defbeaten').dataset.value === 'Yes' ? (document.getElementById('f_beatenhow').dataset.value || null) : null,
+    offBallFault: offFault.value,
   };
   Object.assign(shotData, pk.data);
 
@@ -6985,6 +7022,15 @@ function defChip(v, d) {
   const cls = v > 0.05 ? 'down' : (v < -0.05 ? 'up' : 'flat');
   return `<span class="delta-chip ${cls}">${v >= 0 ? '+' : ''}${v.toFixed(d === undefined ? 1 : d)}</span>`;
 }
+// His most common way of getting beaten: { label, share, n } or null.
+function beatenMostOf(list) {
+  const tagged = list.filter(s => s.beatenHow);
+  if (!tagged.length) return null;
+  const counts = {};
+  tagged.forEach(s => { counts[s.beatenHow] = (counts[s.beatenHow] || 0) + 1; });
+  const top = Object.keys(counts).sort((a, b) => counts[b] - counts[a])[0];
+  return { label: top, share: counts[top] / tagged.length, n: tagged.length };
+}
 function renderDefense() {
   const wrap = document.getElementById('defPlayerWrap');
   if (!wrap) return;
@@ -6998,6 +7044,7 @@ function renderDefense() {
   const beatenLogged = logged.filter(s => s.defBeaten === 'Yes' || s.defBeaten === 'No');
   const beaten = beatenLogged.filter(s => s.defBeaten === 'Yes'), held = beatenLogged.filter(s => s.defBeaten === 'No');
   const slides = shots.filter(s => wlu(s.slideDefender));
+  const offBall = shots.filter(s => wlu(s.offBallFault));
   const tXg = ratio(xgSum(logged, model), logged.length), tG = ratio(goalsOf(logged), logged.length);
   document.getElementById('defTiles').innerHTML = logged.length ? [
     statTile('Shots With a Defender', logged.length.toLocaleString(), `of ${shots.length} ${season} shots logged`),
@@ -7005,12 +7052,15 @@ function renderDefense() {
     statTile('Beaten', pct(ratio(beaten.length, beatenLogged.length)), `of ${beatenLogged.length} shots with Beaten logged`),
     statTile('Beaten vs Not', `${pct(ratio(goalsOf(beaten), beaten.length))} / ${pct(ratio(goalsOf(held), held.length))}`, 'Goal % when he was beaten / when he wasn’t'),
     statTile('After a Slide', pct(ratio(goalsOf(slides), slides.length)), `${slides.length} shots after a WLU slide`),
+    statTile('Off-Ball Breakdowns', offBall.length.toLocaleString(), offBall.length ? `${pct(ratio(goalsOf(offBall), offBall.length))} of those shots scored` : 'None logged yet'),
   ].join('') : '';
   document.getElementById('defSub').textContent = `${season} ${defContext === 'All' ? 'practice + game' : defContext.toLowerCase()} shots with a WLU on-ball defender logged (${logged.length} of ${shots.length}). In games these are opponent shots. xG allowed is the expected-goal value of the looks he gave up; G−xG /100 is goals allowed above (+, worse) or below (−, better) what those looks predict. Gray italic rows have fewer than 5 shots.`;
   const eff = effDataFor(season);
   const byD = {}, byS = {};
+  const byO = {};
   logged.forEach(s => { (byD[s.defender] = byD[s.defender] || []).push(s); });
   slides.forEach(s => { (byS[s.slideDefender] = byS[s.slideDefender] || []).push(s); });
+  offBall.forEach(s => { (byO[s.offBallFault] = byO[s.offBallFault] || []).push(s); });
   const rows = Object.keys(byD).map(j => {
     const l = byD[j], n = l.length, g = goalsOf(l), xg = xgSum(l, model);
     const bl = l.filter(s => s.defBeaten === 'Yes' || s.defBeaten === 'No');
@@ -7018,7 +7068,8 @@ function renderDefense() {
     return { jersey: j, name: nameFor(j, season), n, g, xgPer: xg / n, gmx100: (g - xg) / n * 100,
       beat: ratio(bl.filter(s => s.defBeaten === 'Yes').length, bl.length), beatN: bl.length,
       heavy: ratio(l.filter(s => s.contestLevel === 'Heavy').length, n), open: ratio(l.filter(s => s.contestLevel === 'Open').length, n),
-      slides: (byS[j] || []).length, ct: p ? p.ct : 0, gb: p ? p.gb : 0 };
+      slides: (byS[j] || []).length, ct: p ? p.ct : 0, gb: p ? p.gb : 0,
+      beatenMost: beatenMostOf(l.filter(s => s.defBeaten === 'Yes')), offFaults: (byO[j] || []).length };
   });
   renderSortableTable('defPlayerWrap', [
     { key: 'jersey', label: '#', type: 'text', value: r => r.jersey },
@@ -7030,7 +7081,9 @@ function renderDefense() {
     { key: 'beat', label: 'Beaten %', type: 'num', value: r => r.beat, format: (v, r) => v === null ? '—' : `${pct(v)} <span class="n-note">(${r.beatN})</span>`, cellStyle: (v, r) => small(r.beatN) },
     { key: 'heavy', label: 'Heavy Contest', type: 'num', value: r => r.heavy, format: v => pct(v) },
     { key: 'open', label: 'Open Look', type: 'num', value: r => r.open, format: v => pct(v), title: 'Share of shots he allowed that were logged as Open (uncontested).' },
+    { key: 'beatenMost', label: 'Beaten Most', type: 'text', value: r => r.beatenMost ? r.beatenMost.label : null, format: (v, r) => r.beatenMost ? `<span style="white-space:nowrap;">${escapeHtml(v)} ${pct(r.beatenMost.share)} <span class="n-note">(${r.beatenMost.n})</span></span>` : '—', title: 'His most common way of getting beaten, among beaten shots with How Was He Beaten logged.' },
     { key: 'slides', label: 'Slides', type: 'num', value: r => r.slides },
+    { key: 'offFaults', label: 'Off-Ball Faults', type: 'num', value: r => r.offFaults, title: 'Shots blamed on him for losing his man off the ball.' },
     { key: 'ct', label: 'Caused TO', type: 'num', value: r => r.ct },
     { key: 'gb', label: 'GB', type: 'num', value: r => r.gb, title: 'Ground balls that started a possession.' },
   ], rows, { dense: true, defaultSort: { key: 'n', dir: 'desc' }, emptyMsg: `No ${season} shots with an on-ball defender logged yet. Open the Defense card on the Log Shot form to add one.` });
@@ -7043,6 +7096,32 @@ function renderDefense() {
     { key: 'gPct', label: 'Goal %', type: 'num', value: r => r.gPct, format: v => pct(v), cellStyle: (v, r) => small(r.n) },
     { key: 'xgPer', label: 'xG / Shot', type: 'num', value: r => r.xgPer, format: v => num(v, 2), cellStyle: (v, r) => small(r.n), title: 'Quality of the look the offense still got after his slide.' },
   ], slideRows, { dense: true, defaultSort: { key: 'n', dir: 'desc' }, emptyMsg: 'No slides logged yet.' });
+  // How they're beaten: one row per defender with beaten reps.
+  const beatenRows = Object.keys(byD).map(j => {
+    const b = byD[j].filter(s => s.defBeaten === 'Yes');
+    if (!b.length) return null;
+    const row = { jersey: j, name: nameFor(j, season), n: b.length, g: goalsOf(b), untagged: b.filter(s => !s.beatenHow).length };
+    BEATEN_HOW_OPTIONS.forEach(o => { row[o] = b.filter(s => s.beatenHow === o).length; });
+    return row;
+  }).filter(Boolean);
+  renderSortableTable('defBeatenWrap', [
+    { key: 'jersey', label: '#', type: 'text', value: r => r.jersey },
+    { key: 'name', label: 'Name', type: 'text', value: r => r.name, format: nameCell },
+    { key: 'n', label: 'Times Beaten', type: 'num', value: r => r.n },
+    { key: 'g', label: 'Goals', type: 'num', value: r => r.g, format: (v, r) => `${v} <span class="n-note">(${pct(ratio(v, r.n))})</span>`, cellStyle: (v, r) => small(r.n) },
+  ].concat(BEATEN_HOW_OPTIONS.map(o => ({ key: o, label: o, type: 'num', value: r => r[o], group: 'How he was beaten' })),
+    [{ key: 'untagged', label: 'Not tagged', type: 'num', value: r => r.untagged, group: 'How he was beaten', title: 'Beaten, but How Was He Beaten wasn’t logged.' }]),
+    beatenRows, { dense: true, defaultSort: { key: 'n', dir: 'desc' }, emptyMsg: 'No beaten reps logged yet.' });
+  // Off-ball breakdowns: who lost his man away from the ball.
+  const offRows = Object.keys(byO).map(j => { const l = byO[j]; return { jersey: j, name: nameFor(j, season), n: l.length, g: goalsOf(l), gPct: ratio(goalsOf(l), l.length), xg: xgSum(l, model) }; });
+  renderSortableTable('defOffBallWrap', [
+    { key: 'jersey', label: '#', type: 'text', value: r => r.jersey },
+    { key: 'name', label: 'Name', type: 'text', value: r => r.name, format: nameCell },
+    { key: 'n', label: 'Faults', type: 'num', value: r => r.n },
+    { key: 'g', label: 'Goals', type: 'num', value: r => r.g, cellStyle: (v, r) => small(r.n) },
+    { key: 'gPct', label: 'Goal %', type: 'num', value: r => r.gPct, format: v => pct(v), cellStyle: (v, r) => small(r.n) },
+    { key: 'xg', label: 'xG Given Up', type: 'num', value: r => r.xg, format: v => num(v, 1), title: 'Expected goals of the shots that came from his breakdowns.' },
+  ], offRows, { dense: true, defaultSort: { key: 'n', dir: 'desc' }, emptyMsg: 'No off-ball breakdowns logged yet.' });
   const mm = {};
   logged.filter(s => s.context === 'Practice' && s.team !== 'OPP' && s.shooterJersey).forEach(s => { const k = s.defender + '|' + s.shooterJersey; (mm[k] = mm[k] || []).push(s); });
   const mRows = Object.keys(mm).filter(k => mm[k].length >= 3).map(k => {
