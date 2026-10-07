@@ -561,6 +561,14 @@
               <input type="text" id="f_pick_user" inputmode="numeric" maxlength="3" placeholder="Jersey #">
               <div class="readout" id="fPickUserResolve"></div>
             </div>
+            <div>
+              <label for="f_pick_screener_def" id="fPickScreenerDefLabel">Screener&rsquo;s Defender (#)</label>
+              <input type="text" id="f_pick_screener_def" inputmode="numeric" maxlength="3" placeholder="Jersey #">
+              <div class="readout" id="fPickScreenerDefResolve"></div>
+              <label for="f_pick_user_def" id="fPickUserDefLabel" style="margin-top:8px;">Ball Carrier&rsquo;s Defender (#)</label>
+              <input type="text" id="f_pick_user_def" inputmode="numeric" maxlength="3" placeholder="Jersey #">
+              <div class="readout" id="fPickUserDefResolve"></div>
+            </div>
           </div>
         </div>
 
@@ -729,6 +737,14 @@
               <label for="p_pick_user" id="pPickUserLabel" style="margin-top:8px;">Used By (#)</label>
               <input type="text" id="p_pick_user" inputmode="numeric" maxlength="3" placeholder="Jersey #">
               <div class="readout" id="pPickUserResolve"></div>
+            </div>
+            <div>
+              <label for="p_pick_screener_def" id="pPickScreenerDefLabel">Screener&rsquo;s Defender (#)</label>
+              <input type="text" id="p_pick_screener_def" inputmode="numeric" maxlength="3" placeholder="Jersey #">
+              <div class="readout" id="pPickScreenerDefResolve"></div>
+              <label for="p_pick_user_def" id="pPickUserDefLabel" style="margin-top:8px;">Ball Carrier&rsquo;s Defender (#)</label>
+              <input type="text" id="p_pick_user_def" inputmode="numeric" maxlength="3" placeholder="Jersey #">
+              <div class="readout" id="pPickUserDefResolve"></div>
             </div>
           </div>
         </div>
@@ -1115,6 +1131,11 @@
       <p class="panel-sub">Shots blamed on an off-ball defender who lost his man (the Off-Ball Breakdown box on Log Shot).</p>
       <div class="table-wrap" id="defOffBallWrap"></div>
     </div>
+    <div class="panel">
+      <p class="panel-title">Pick Defense</p>
+      <p class="panel-sub" id="defPickSub"></p>
+      <div class="table-wrap" id="defPickWrap"></div>
+    </div>
     <details class="panel collapsible">
       <summary><span class="panel-title">Matchups</span> <span class="panel-sub">defender vs shooter, practice reps with 3+ shots</span></summary>
       <div class="collapsible-body"><div class="table-wrap" id="defMatchWrap"></div></div>
@@ -1266,6 +1287,11 @@
       <p class="panel-title">Screener &ndash; User Pairs</p>
       <p class="panel-sub">Two-man pick combos, per possession.</p>
       <div class="table-wrap" id="effPickPairWrap"></div>
+    </div>
+    <div class="panel">
+      <p class="panel-title">Pick Defenders</p>
+      <p class="panel-sub">Who was defending these picks (the screener&rsquo;s man or the ball carrier&rsquo;s man), from the defender boxes on the Pick / Get card. The Defense tab has the full breakdown.</p>
+      <div class="table-wrap" id="effPickDefWrap"></div>
     </div>
     </div>
     <div class="subpage" data-label="Angles">
@@ -1705,7 +1731,9 @@ const COLS =["id","date","practiceId","context","shooterJersey","goalieJersey","
   // Pick coverage (2027+): how the defense played a pick on this possession.
   "pick","pickType","pickSpot","pickScreener","pickUser","pickCoverage","pickResult","pickMismatch","pickAction",
   // Individual defense (2027+): who guarded the shooter, who slid, beaten.
-  "defender","slideDefender","defBeaten","beatenHow","offBallFault"];
+  "defender","slideDefender","defBeaten","beatenHow","offBallFault",
+  // Who defended the pick / get (2027+).
+  "pickScreenerDef","pickUserDef"];
 // team: 'OPP' marks an opponent shot on a WLU goalie (games). Those never go
 // into SHOTS (every shooting stat assumes a WLU shooter); they live in
 // OPP_SHOTS and feed only the goalie views. Opponent jerseys are stored as
@@ -1717,7 +1745,8 @@ const POSS_END_OPTIONS = ["Turnover","Failed clear","End of period"];
 // A no-shot possession (turnover, failed clear, end of period). Kept apart
 // from shots so no shot math changes; lineup/turnover/dominoes stats read both.
 const POSS_COLS = ["id","date","context","opponent","team","possStart","possStartJersey","dominoes","advCreator","advType","manSituation","end","turnoverBy","causedBy","stintId",
-  "pick","pickType","pickSpot","pickScreener","pickUser","pickCoverage","pickResult","pickMismatch","pickAction"];
+  "pick","pickType","pickSpot","pickScreener","pickUser","pickCoverage","pickResult","pickMismatch","pickAction",
+  "pickScreenerDef","pickUserDef"];
 // Shot Outcome (one required pill pick) replaces the old On Goal/On
 // Keeper/Goal Scored/Blocked checkboxes. Rather than rewriting every
 // existing analytics function that reads onGoal/onKeeper/goal/blocked
@@ -2989,7 +3018,8 @@ function pmEnter(p) {
   document.body.classList.add('player-mode');
   const isPlayer = p.roles.includes('player'), isGoalie = p.roles.includes('goalie');
   const mine = s => s && Object.keys(p.seasons).some(ss => p.seasons[ss] === s);
-  const isDefender = allShotEntries().some(s => (mine(s.defender) && s.defender === p.seasons[seasonForDate(s.date)]) || (mine(s.slideDefender) && s.slideDefender === p.seasons[seasonForDate(s.date)]) || (mine(s.offBallFault) && s.offBallFault === p.seasons[seasonForDate(s.date)]));
+  const isDefender = allShotEntries().some(s => (mine(s.defender) && s.defender === p.seasons[seasonForDate(s.date)]) || (mine(s.slideDefender) && s.slideDefender === p.seasons[seasonForDate(s.date)]) || (mine(s.offBallFault) && s.offBallFault === p.seasons[seasonForDate(s.date)]))
+    || allShotEntries().concat(POSSESSIONS).some(e => [e.pickScreenerDef, e.pickUserDef].some(j => j && j === p.seasons[seasonForDate(e.date)]));
   const show = { logView: false, playerView: isPlayer, goalieView: isGoalie, defenseView: isDefender, efficiencyView: isPlayer, faceoffView: PLAYER_MODE.fogo,
     tableView: true, compareView: isPlayer, opponentView: false, recruitsView: false, boardView: false };
   Object.keys(show).forEach(id => {
@@ -3442,6 +3472,8 @@ function updatePickCard(x) {
   if (get) setPillGroupValue(x + '_picktype', null);
   document.getElementById(x + 'PickScreenerLabel').textContent = get ? 'Handed Off By (#)' : 'Screener (#)';
   document.getElementById(x + 'PickUserLabel').textContent = get ? 'Received By (#)' : 'Used By (#)';
+  document.getElementById(x + 'PickScreenerDefLabel').textContent = get ? 'Handoff Man’s Defender (#)' : 'Screener’s Defender (#)';
+  document.getElementById(x + 'PickUserDefLabel').textContent = get ? 'Receiver’s Defender (#)' : 'Ball Carrier’s Defender (#)';
   const mm = on && (pillVal(x + '_pickcoverage') === 'Switch' || pillVal(x + '_pickresult') === 'Mismatch created');
   document.getElementById(x + 'PickMismatchWrap').style.display = mm ? '' : 'none';
   if (!mm) setPillGroupValue(x + '_pickmismatch', null);
@@ -3457,7 +3489,7 @@ function setupPickCard(x) {
 }
 function resetPickFields(x) {
   ['_pick', '_pickaction', '_picktype', '_pickspot', '_pickcoverage', '_pickresult', '_pickmismatch'].forEach(k => setPillGroupValue(x + k, null));
-  [x + '_pick_screener', x + '_pick_user'].forEach(id => { const el = document.getElementById(id); el.value = ''; if (el.__updateReadout) el.__updateReadout(); });
+  [x + '_pick_screener', x + '_pick_user', x + '_pick_screener_def', x + '_pick_user_def'].forEach(id => { const el = document.getElementById(id); el.value = ''; if (el.__updateReadout) el.__updateReadout(); });
   updatePickCard(x);
 }
 function fillPickFields(x, e) {
@@ -3473,10 +3505,12 @@ function fillPickFields(x, e) {
   setPillGroupValue(x + '_pickmismatch', e.pickMismatch || null);
   document.getElementById(x + '_pick_screener').value = strip(e.pickScreener);
   document.getElementById(x + '_pick_user').value = strip(e.pickUser);
+  document.getElementById(x + '_pick_screener_def').value = strip(e.pickScreenerDef);
+  document.getElementById(x + '_pick_user_def').value = strip(e.pickUserDef);
 }
 // Returns { ok, why, data } with every pick column set (all null unless Pick = Yes).
 function readPickFields(x, team) {
-  const data = { pick: pillVal(x + '_pick'), pickAction: null, pickType: null, pickSpot: null, pickScreener: null, pickUser: null, pickCoverage: null, pickResult: null, pickMismatch: null };
+  const data = { pick: pillVal(x + '_pick'), pickAction: null, pickType: null, pickSpot: null, pickScreener: null, pickUser: null, pickCoverage: null, pickResult: null, pickMismatch: null, pickScreenerDef: null, pickUserDef: null };
   if (data.pick !== 'Yes') return { ok: true, data };
   data.pickAction = pillVal(x + '_pickaction');
   if (!data.pickAction) return { ok: false, why: 'Pick or get: tap Pick or Get, or set it to No.' };
@@ -3486,6 +3520,12 @@ function readPickFields(x, team) {
   if (!sc.ok) return { ok: false, why: 'Pick screener: ' + sc.why };
   const us = readJerseyField(x + '_pick_user', team);
   if (!us.ok) return { ok: false, why: 'Pick used by: ' + us.why };
+  // The defenders belong to the team without the ball.
+  const sd = readJerseyField(x + '_pick_screener_def', otherTeam(team));
+  if (!sd.ok) return { ok: false, why: 'Screener’s defender: ' + sd.why };
+  const ud = readJerseyField(x + '_pick_user_def', otherTeam(team));
+  if (!ud.ok) return { ok: false, why: 'Ball carrier’s defender: ' + ud.why };
+  data.pickScreenerDef = sd.value; data.pickUserDef = ud.value;
   Object.assign(data, { pickType: data.pickAction === 'Get' ? null : pillVal(x + '_picktype'), pickSpot: pillVal(x + '_pickspot'), pickScreener: sc.value, pickUser: us.value,
     pickResult: pillVal(x + '_pickresult'), pickMismatch: pillVal(x + '_pickmismatch') });
   return { ok: true, data };
@@ -3581,6 +3621,8 @@ bindJerseyReadout('p_caused_by', 'pCausedResolve', () => otherTeam(currentTeam()
 ['f', 'p'].forEach(x => {
   bindJerseyReadout(x + '_pick_screener', x + 'PickScreenerResolve', () => currentTeam());
   bindJerseyReadout(x + '_pick_user', x + 'PickUserResolve', () => currentTeam());
+  bindJerseyReadout(x + '_pick_screener_def', x + 'PickScreenerDefResolve', () => otherTeam(currentTeam()));
+  bindJerseyReadout(x + '_pick_user_def', x + 'PickUserDefResolve', () => otherTeam(currentTeam()));
 });
 // Defenders belong to the team without the ball (in practice, WLU).
 bindJerseyReadout('f_defender', 'defenderResolve', () => otherTeam(currentTeam()));
@@ -3619,7 +3661,8 @@ bindJerseyReadout('f_offball_fault', 'offBallResolve', () => otherTeam(currentTe
 function refreshJerseyReadouts() {
   renderDefenderPills();
   ['f_adv_creator','f_possstart_jersey','p_adv_creator','p_possstart_jersey','p_turnover_by','p_caused_by',
-   'f_pick_screener','f_pick_user','p_pick_screener','p_pick_user','f_defender','f_slide_defender','f_offball_fault'].forEach(id => {
+   'f_pick_screener','f_pick_user','p_pick_screener','p_pick_user','f_defender','f_slide_defender','f_offball_fault',
+   'f_pick_screener_def','f_pick_user_def','p_pick_screener_def','p_pick_user_def'].forEach(id => {
     const el = document.getElementById(id); if (el.__updateReadout) el.__updateReadout();
   });
 }
@@ -5764,7 +5807,8 @@ const REGRESS_K = 25; // pseudo-shots at the team rate blended into a player's s
 function pickInfo(e) {
   if (e.pick !== 'Yes' || !e.pickCoverage) return null;
   return { action: e.pickAction === 'Get' ? 'Get' : 'Pick', type: e.pickType || null, spot: e.pickSpot || null, screener: e.pickScreener || null, user: e.pickUser || null,
-    coverage: e.pickCoverage, result: e.pickResult || null, mismatch: e.pickMismatch || null, trigger: e.trigger || null };
+    coverage: e.pickCoverage, result: e.pickResult || null, mismatch: e.pickMismatch || null, trigger: e.trigger || null,
+    screenerDef: e.pickScreenerDef || null, userDef: e.pickUserDef || null };
 }
 // ---- Team possessions (used by Overview, Man-up, Dominoes, Lineups, Picks) ----
 function teamPossessions(d) {
@@ -6203,6 +6247,28 @@ const PICK_SPLITS = {
   'Session': { values: SESSION_CONTEXTS, of: pp => pp.e.context },
   'Pick vs Get': { values: PICK_ACTION_OPTIONS, of: pp => pp.pick.action },
 };
+// One row per WLU player logged as a pick's screener's or ball carrier's
+// defender, with what those picks got against him (pickPossStats).
+function pickDefenderRows(picks, xgOf, season) {
+  const by = {};
+  picks.forEach(pp => {
+    [['scr', pp.pick.screenerDef], ['ball', pp.pick.userDef]].forEach(([role, j]) => {
+      if (!j || isOppJersey(j)) return;
+      const r = (by[j] = by[j] || { list: [], scr: 0, ball: 0 });
+      if (!r.list.includes(pp)) r.list.push(pp);
+      r[role]++;
+    });
+  });
+  return Object.keys(by).map(j => {
+    const r = by[j], n = r.list.length;
+    const cov = {};
+    r.list.forEach(pp => { cov[pp.pick.coverage] = (cov[pp.pick.coverage] || 0) + 1; });
+    const top = Object.keys(cov).sort((a, b) => cov[b] - cov[a])[0];
+    return Object.assign({ jersey: j, name: nameFor(j, season), scr: r.scr, ball: r.ball,
+      topCov: top ? { label: top, share: cov[top] / n } : null,
+      switchPct: ratio(cov['Switch'] || 0, n), blownPct: ratio(cov['Blown'] || 0, n) }, pickPossStats(r.list, xgOf));
+  });
+}
 function renderEffPicks(d, possList) {
   if (!document.getElementById('effPickTiles')) return;
   const wp = possList.filter(pp => pp.team === 'WLU');
@@ -6363,6 +6429,16 @@ function renderEffPicks(d, possList) {
     { key: 'open', label: 'Screener Open %', type: 'num', value: r => r.open, format: v => pct(v) },
     { key: 'gsRate', label: 'Gold/Silver %', type: 'num', value: r => r.gsRate, format: v => pct(v) },
   ], pairRows, { dense: true, defaultSort: { key: 'xp', dir: 'desc' }, emptyMsg: `No pair has ${effPickMin}+ picks yet.` });
+
+  // Pick defenders (short version; the Defense tab has the full table).
+  renderSortableTable('effPickDefWrap', [
+    { key: 'jersey', label: '#', type: 'text', value: r => r.jersey },
+    { key: 'name', label: 'Name', type: 'text', value: r => r.name, format: nameCell },
+    { key: 'n', label: 'Picks Defended', type: 'num', value: r => r.n },
+    { key: 'blownPct', label: 'Blown %', type: 'num', value: r => r.blownPct, format: v => pct(v), cellStyle: (v, r) => small(r.n) },
+    { key: 'freed', label: 'Freed %', type: 'num', value: r => r.freed, format: v => pct(v), cellStyle: (v, r) => small(r.n), title: 'Share of these picks that freed the ball carrier.' },
+    { key: 'xp', label: 'xP Allowed / Poss', type: 'num', value: r => r.xp, format: d2, cellStyle: (v, r) => small(r.n), title: 'Expected points (xG + xA) the offense got per possession on picks he defended.' },
+  ], pickDefenderRows(picks, d.xgOf, EFF_SEASON), { dense: true, defaultSort: { key: 'n', dir: 'desc' }, emptyMsg: 'No pick defenders logged yet. Fill in Screener’s Defender / Ball Carrier’s Defender on the Pick / Get card.' });
 }
 function renderEffFilmMetrics() {
   if (!document.getElementById('effTeamTiles')) return;
@@ -7122,6 +7198,29 @@ function renderDefense() {
     { key: 'gPct', label: 'Goal %', type: 'num', value: r => r.gPct, format: v => pct(v), cellStyle: (v, r) => small(r.n) },
     { key: 'xg', label: 'xG Given Up', type: 'num', value: r => r.xg, format: v => num(v, 1), title: 'Expected goals of the shots that came from his breakdowns.' },
   ], offRows, { dense: true, defaultSort: { key: 'n', dir: 'desc' }, emptyMsg: 'No off-ball breakdowns logged yet.' });
+  // Pick defense: every possession with a pick where a WLU player was
+  // logged as the screener's or ball carrier's defender (practice reps, and
+  // opponent possessions in games).
+  const pickList = eff.possList.filter(pp => pp.pick && (defContext === 'All' || pp.e.context === defContext));
+  const pdRows = pickDefenderRows(pickList, eff.xgOf, season);
+  const pdLogged = pickList.filter(pp => (pp.pick.screenerDef && !isOppJersey(pp.pick.screenerDef)) || (pp.pick.userDef && !isOppJersey(pp.pick.userDef))).length;
+  document.getElementById('defPickSub').textContent = `${season} ${defContext === 'All' ? 'practice + game' : defContext.toLowerCase()} pick and get possessions with a WLU defender logged on the screener or ball carrier (${pdLogged} of ${pickList.length}). Freed % and xP allowed are what the offense got; lower is better. Gray italic rows have fewer than 5 picks.`;
+  const pd2 = v => num(v, 2);
+  renderSortableTable('defPickWrap', [
+    { key: 'jersey', label: '#', type: 'text', value: r => r.jersey },
+    { key: 'name', label: 'Name', type: 'text', value: r => r.name, format: nameCell },
+    { key: 'n', label: 'Picks Defended', type: 'num', value: r => r.n },
+    { key: 'scr', label: 'On Screener', type: 'num', value: r => r.scr, group: 'His man', title: 'Picks where he was guarding the screener (or the handoff man on a get).' },
+    { key: 'ball', label: 'On Ball', type: 'num', value: r => r.ball, group: 'His man', title: 'Picks where he was guarding the ball carrier using the pick (or the receiver on a get).' },
+    { key: 'topCov', label: 'Most Used', type: 'text', value: r => r.topCov ? r.topCov.label : null, format: (v, r) => r.topCov ? `<span style="white-space:nowrap;">${escapeHtml(v)} ${pct(r.topCov.share)}</span>` : '—', group: 'Coverage' },
+    { key: 'switchPct', label: 'Switch %', type: 'num', value: r => r.switchPct, format: v => pct(v), cellStyle: (v, r) => small(r.n), group: 'Coverage' },
+    { key: 'blownPct', label: 'Blown %', type: 'num', value: r => r.blownPct, format: v => pct(v), cellStyle: (v, r) => small(r.n), group: 'Coverage' },
+    { key: 'freed', label: 'Freed %', type: 'num', value: r => r.freed, format: v => pct(v), cellStyle: (v, r) => small(r.n), group: 'What it allowed', title: 'Share of these picks that freed the ball carrier.' },
+    { key: 'xp', label: 'xP / Poss', type: 'num', value: r => r.xp, format: pd2, cellStyle: (v, r) => small(r.n), group: 'What it allowed', title: 'Expected points (xG + xA) the offense got per possession on picks he defended.' },
+    { key: 'goalRate', label: 'Goal %', type: 'num', value: r => r.goalRate, format: v => pct(v), cellStyle: (v, r) => small(r.n), group: 'What it allowed' },
+    { key: 'toRate', label: 'TO Forced %', type: 'num', value: r => r.toRate, format: v => pct(v), cellStyle: (v, r) => small(r.n), group: 'What it allowed' },
+  ], pdRows, { dense: true, defaultSort: { key: 'n', dir: 'desc' }, emptyMsg: 'No pick defenders logged yet. Fill in Screener’s Defender / Ball Carrier’s Defender on the Pick / Get card.' });
+
   const mm = {};
   logged.filter(s => s.context === 'Practice' && s.team !== 'OPP' && s.shooterJersey).forEach(s => { const k = s.defender + '|' + s.shooterJersey; (mm[k] = mm[k] || []).push(s); });
   const mRows = Object.keys(mm).filter(k => mm[k].length >= 3).map(k => {
