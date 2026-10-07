@@ -5796,6 +5796,7 @@ function renderEffPlayers(d) {
       xg: p.xg, gmx: p.goals - p.xg, potAst: p.potAst, xa: p.xa, chance: lookFed, amx: p.assists - p.xa, xp, pmx: pts - xp,
       usage: ratio(p.shots + p.potAst, teamShots), assistedPct: ratio(assistedGoals, p.goals),
       onKeeperPct: ratio(p.onGoal, p.shots),
+      to: p.to, ato: atoValue(p.assists, p.to), pato: atoValue(p.potAst, p.to),
     };
   });
   const goalsWithAssist = d.shots.filter(s => s.goal === 1 && s.assistJersey).length;
@@ -5817,6 +5818,8 @@ function renderEffPlayers(d) {
     { key: 'xa', label: 'xA', type: 'num', value: r => r.xa, format: d1, group: 'Passing', title: 'Expected assists: the expected-goal value of every shot taken off his passes.' },
     { key: 'amx', label: 'A−xA', type: 'num', value: r => r.amx, format: v => signed(v), group: 'Passing', title: 'Assists above (+) or below (−) expected. Mostly about his teammates’ finishing.' },
     { key: 'chance', label: 'Feed Quality', type: 'num', value: r => r.chance, format: v => num(v, 0), group: 'Passing', title: 'Chance quality per potential assist, on the 0–100 Look scale (xA ÷ potential assists vs a Gold look).' },
+    { key: 'ato', label: 'A/TO', type: 'num', value: r => r.ato, format: (v, r) => atoCell(v, r.assists, r.to), group: 'Passing', title: 'Assists (passes that led to goals) per turnover. Turnovers come from no-shot possessions logged with Turnover By. "6 / 0" = 6 assists, no turnovers; those sort to the top.' },
+    { key: 'pato', label: 'Pot. A/TO', type: 'num', value: r => r.pato, format: (v, r) => atoCell(v, r.potAst, r.to), group: 'Passing', title: 'Potential assists (passes that led to any shot, goal or not) per turnover. Steadier than A/TO with small samples. "6 / 0" = 6, no turnovers; those sort to the top.' },
     { key: 'points', label: 'P', type: 'num', value: r => r.points, group: 'Points' },
     { key: 'xp', label: 'xP', type: 'num', value: r => r.xp, format: d1, group: 'Points', title: 'Expected points = xG + xA.' },
     { key: 'pmx', label: 'P−xP', type: 'num', value: r => r.pmx, format: v => signed(v), group: 'Points', title: 'Points above (+) or below (−) expected.' },
@@ -5827,6 +5830,15 @@ function renderEffPlayers(d) {
   renderSortableTable('effPlayerWrap', cols, rows, { dense: true, defaultSort: { key: 'xp', dir: 'desc' }, emptyMsg: `No player has 5+ ${EFF_SEASON} ${EFF_CTX_WORD()} shots or potential assists yet.` });
 }
 
+// Assist-to-turnover: a plain ratio, except with no turnovers there's
+// nothing to divide by, so it shows the counts ("6 / 0") and sorts above
+// every real ratio, more assists first.
+function atoValue(a, to) { return to ? a / to : (a ? 1e6 + a : null); }
+function atoCell(v, a, to) {
+  if (v === null) return '—';
+  if (!to) return `<b>${a} / 0</b>`;
+  return `<span style="white-space:nowrap;">${num(v, 2)} <span class="n-note">(${a}/${to})</span></span>`;
+}
 function renderEffPossession(d, possList) {
   const sub = document.getElementById('effPossSub');
   const rows = Object.values(d.players).filter(p => p.gb || p.to || p.ct || p.foWins || p.dominoes).map(p => ({
