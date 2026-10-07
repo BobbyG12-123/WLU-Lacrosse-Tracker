@@ -261,7 +261,9 @@
   .gs-head { display: flex; align-items: baseline; gap: 10px; }
   .gs-rank { font-size: 12px; font-weight: 700; color: var(--muted); }
   .gs-name { font-weight: 700; color: var(--navy-3); font-size: 15px; }
-  .gs-score { margin-left: auto; font-size: 30px; font-weight: 700; color: var(--ink); }
+  .gs-score { margin-left: auto; font-size: 30px; font-weight: 700; color: var(--ink); white-space: nowrap; flex-shrink: 0; }
+  .gs-who { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; min-width: 0; }
+  .gs-who .gs-badge { margin-left: 0; white-space: nowrap; }
   .gs-score small { font-size: 12px; color: var(--muted); font-weight: 600; }
   .gs-badge { display: inline-block; font-size: 10.5px; font-weight: 700; padding: 2px 8px; border-radius: 999px; background: #FBE9E7; color: #B3261E; margin-left: 6px; }
   .gs-bar { display: flex; height: 10px; border-radius: 5px; overflow: hidden; background: var(--paper); margin: 10px 0 8px; }
@@ -315,6 +317,7 @@
   <button class="tab-btn active" data-view="logView">Log Shot</button>
   <button class="tab-btn" data-view="playerView">Player Heat Maps</button>
   <button class="tab-btn" data-view="goalieView">Goalie Heat Maps</button>
+  <button class="tab-btn" data-view="defenseView">Defense</button>
   <button class="tab-btn" data-view="efficiencyView">Efficiency</button>
   <button class="tab-btn" data-view="faceoffView">Faceoffs</button>
   <button class="tab-btn" data-view="tableView">Shot Log</button>
@@ -587,6 +590,27 @@
             </div>
           </div>
         </details>
+        <details class="log-card more-card" id="defCard">
+          <summary class="log-card-head"><span class="step">7</span> Defense <span class="sub">on-ball defender, slide, beaten (optional)</span></summary>
+          <div class="field-grid" style="margin-top:12px;">
+            <div class="span-2">
+              <label for="f_defender">On-Ball Defender (#)</label>
+              <div class="pill-row" id="f_defender_pills"></div>
+              <input type="text" id="f_defender" inputmode="numeric" maxlength="3" placeholder="Jersey #" style="margin-top:6px; max-width:150px;">
+              <div class="readout" id="defenderResolve"></div>
+            </div>
+            <div class="span-2">
+              <label for="f_slide_defender">Slide Defender (#)</label>
+              <div class="pill-row" id="f_slide_pills"></div>
+              <input type="text" id="f_slide_defender" inputmode="numeric" maxlength="3" placeholder="Jersey # (blank = no slide)" style="margin-top:6px; max-width:200px;">
+              <div class="readout" id="slideResolve"></div>
+            </div>
+            <div>
+              <label>Was He Beaten?</label>
+              <div class="pill-row" id="f_defbeaten"></div>
+            </div>
+          </div>
+        </details>
       </div>
 
       <div class="log-side">
@@ -784,6 +808,22 @@
       <div class="subtabs" data-view="playerView"></div>
     </div>
     <div class="view-tiles trend-grid" id="playerTiles"></div>
+    <div class="subpage" data-label="Shooter Score">
+    <div class="panel">
+      <div style="display:flex; align-items:center; gap:14px; flex-wrap:wrap; margin-bottom:4px;">
+        <p class="panel-title" style="margin:0;">Shooter Score</p>
+        <div class="seg seg-sm" id="ssTabSeg"><button type="button" data-value="shooting" class="active">Shooting</button><button type="button" data-value="offense">Complete Offense</button></div>
+      </div>
+      <p class="panel-sub" id="ssSub"></p>
+      <div class="model-note" id="ssNote"></div>
+      <div class="gs-grid" id="ssCards"></div>
+    </div>
+    <div class="panel" id="ssChartPanel">
+      <p class="panel-title">Look Quality vs Goalie</p>
+      <p class="panel-sub">Each shooter&rsquo;s two finishing numbers against each other. Right = scores more than his looks predict (Finishing). Up = scores more than the goalie he shot on usually allows (Goalie-Adjusted). Dashed lines are the team average. Top-right is good at both; the other corners are a gap worth a look.</p>
+      <div class="chart-wrap" id="ssChart" style="max-width:640px;"></div>
+    </div>
+    </div>
     <div class="subpage" data-label="Heat Map">
     <div class="panel">
       <div class="controls-row">
@@ -1034,6 +1074,32 @@
       <div class="trend-grid" id="goalieTrendsDownGrid"></div>
     </div>
     </div>
+  </section>
+
+  <section id="defenseView" class="view">
+    <div class="view-bar">
+      <div class="view-bar-row">
+        <div class="view-title">Defense</div>
+        <div class="control-group"><div class="grade-pills" id="defSeasonPills"></div></div>
+        <div class="control-group"><div class="grade-pills" id="defContextPills"></div></div>
+      </div>
+    </div>
+    <p class="view-intro">Individual defense from the <b>Defense</b> card on the Log Shot form (on-ball defender, slide defender, beaten). Shows one season at a time, 2027 and later, live as you log. Lower is better for goals and expected goals allowed.</p>
+    <div class="view-tiles trend-grid" id="defTiles"></div>
+    <div class="panel">
+      <p class="panel-title">On-Ball Defense</p>
+      <p class="panel-sub" id="defSub"></p>
+      <div class="table-wrap" id="defPlayerWrap"></div>
+    </div>
+    <div class="panel">
+      <p class="panel-title">Slides</p>
+      <p class="panel-sub">Shots taken after he slid: how often the slide still gave up a goal, and the quality of the look it allowed.</p>
+      <div class="table-wrap" id="defSlideWrap"></div>
+    </div>
+    <details class="panel collapsible">
+      <summary><span class="panel-title">Matchups</span> <span class="panel-sub">defender vs shooter, practice reps with 3+ shots</span></summary>
+      <div class="collapsible-body"><div class="table-wrap" id="defMatchWrap"></div></div>
+    </details>
   </section>
 
   <section id="efficiencyView" class="view">
@@ -1618,7 +1684,9 @@ const COLS =["id","date","practiceId","context","shooterJersey","goalieJersey","
   // columns, which tupleToObj reads back as undefined -> treated as unset.
   "team","oppShooter","oppPasser","dominoes","advCreator","advType","screened","goalieSet","outlet","possStart","possStartJersey","stintId",
   // Pick coverage (2027+): how the defense played a pick on this possession.
-  "pick","pickType","pickSpot","pickScreener","pickUser","pickCoverage","pickResult","pickMismatch","pickAction"];
+  "pick","pickType","pickSpot","pickScreener","pickUser","pickCoverage","pickResult","pickMismatch","pickAction",
+  // Individual defense (2027+): who guarded the shooter, who slid, beaten.
+  "defender","slideDefender","defBeaten"];
 // team: 'OPP' marks an opponent shot on a WLU goalie (games). Those never go
 // into SHOTS (every shooting stat assumes a WLU shooter); they live in
 // OPP_SHOTS and feed only the goalie views. Opponent jerseys are stored as
@@ -2135,6 +2203,8 @@ function rerenderAfterShotsChange() {
   renderGoalieHeat();
   renderGoalieAdvanced();
   renderEfficiencyView();
+  renderShooterScore();
+  renderDefense();
   populatePlayerGoalieDropdowns();
   populatePlayerSelectForSeason(heatSeason);
   populateGoalieSelectForSeason(goalieHeatSeason);
@@ -2801,7 +2871,8 @@ function populateSelect(sel, items, placeholderText, includeEmptyNet) {
 function switchTab(viewId) {
   document.querySelectorAll('.tab-btn').forEach(b=>b.classList.toggle('active', b.dataset.view === viewId));
   document.querySelectorAll('.view').forEach(v=>v.classList.toggle('active', v.id === viewId));
-  if (viewId === 'playerView') renderPlayerHeat();
+  if (viewId === 'playerView') { renderPlayerHeat(); renderShooterScore(); }
+  if (viewId === 'defenseView') renderDefense();
   if (viewId === 'goalieView') { renderGoalieHeat(); renderGoalieAdvanced(); }
   if (viewId === 'faceoffView') renderFaceoffs();
   if (viewId === 'tableView') renderTable();
@@ -2898,7 +2969,9 @@ function pmEnter(p) {
   document.getElementById('pmBannerName').textContent = `#${p.seasons[ss[ss.length - 1]]} ${p.name}`;
   document.body.classList.add('player-mode');
   const isPlayer = p.roles.includes('player'), isGoalie = p.roles.includes('goalie');
-  const show = { logView: false, playerView: isPlayer, goalieView: isGoalie, efficiencyView: isPlayer, faceoffView: PLAYER_MODE.fogo,
+  const mine = s => s && Object.keys(p.seasons).some(ss => p.seasons[ss] === s);
+  const isDefender = allShotEntries().some(s => (mine(s.defender) && s.defender === p.seasons[seasonForDate(s.date)]) || (mine(s.slideDefender) && s.slideDefender === p.seasons[seasonForDate(s.date)]));
+  const show = { logView: false, playerView: isPlayer, goalieView: isGoalie, defenseView: isDefender, efficiencyView: isPlayer, faceoffView: PLAYER_MODE.fogo,
     tableView: true, compareView: isPlayer, opponentView: false, recruitsView: false, boardView: false };
   Object.keys(show).forEach(id => {
     document.querySelectorAll(`.tab-btn[data-view="${id}"]`).forEach(b => b.classList.toggle('pm-off', !show[id]));
@@ -3490,9 +3563,35 @@ bindJerseyReadout('p_caused_by', 'pCausedResolve', () => otherTeam(currentTeam()
   bindJerseyReadout(x + '_pick_screener', x + 'PickScreenerResolve', () => currentTeam());
   bindJerseyReadout(x + '_pick_user', x + 'PickUserResolve', () => currentTeam());
 });
+// Defenders belong to the team without the ball (in practice, WLU).
+bindJerseyReadout('f_defender', 'defenderResolve', () => otherTeam(currentTeam()));
+bindJerseyReadout('f_slide_defender', 'slideResolve', () => otherTeam(currentTeam()));
+// One-tap defender pills from the defense row of the lineup bar; the typed
+// box stays for anyone not in the bar.
+function renderDefenderPills() {
+  const season = currentLogSeason();
+  // Practice is WLU on both sides; in a game it's whoever doesn't have the ball.
+  const defTeam = isGameSession() ? otherTeam(currentTeam()) : 'WLU';
+  const nums = currentLineup().defense.map(j => isOppJersey(j) ? j.slice(1) : j);
+  [['f_defender_pills', 'f_defender'], ['f_slide_pills', 'f_slide_defender']].forEach(([wrapId, inputId]) => {
+    const wrap = document.getElementById(wrapId), input = document.getElementById(inputId);
+    const cur = normJerseyText(input.value);
+    const label = n => defTeam === 'WLU' ? `#${n} ${lastNameOf(rosterNameFor(n, season))}` : `Opp #${n}`;
+    wrap.innerHTML = nums.length
+      ? nums.map(n => `<button type="button" class="pill${cur === n ? ' active' : ''}" data-j="${escapeHtml(n)}">${escapeHtml(label(n))}</button>`).join('')
+      : '<span class="n-note">Set the defense row in the lineup bar for one-tap picks, or type a number.</span>';
+    wrap.querySelectorAll('button').forEach(b => b.addEventListener('click', () => {
+      input.value = normJerseyText(input.value) === b.dataset.j ? '' : b.dataset.j;
+      input.dispatchEvent(new Event('input'));
+    }));
+  });
+}
+['f_defender', 'f_slide_defender'].forEach(id => document.getElementById(id).addEventListener('input', renderDefenderPills));
+setupPillGroup('f_defbeaten', ['Yes','No'], null);
 function refreshJerseyReadouts() {
+  renderDefenderPills();
   ['f_adv_creator','f_possstart_jersey','p_adv_creator','p_possstart_jersey','p_turnover_by','p_caused_by',
-   'f_pick_screener','f_pick_user','p_pick_screener','p_pick_user'].forEach(id => {
+   'f_pick_screener','f_pick_user','p_pick_screener','p_pick_user','f_defender','f_slide_defender'].forEach(id => {
     const el = document.getElementById(id); if (el.__updateReadout) el.__updateReadout();
   });
 }
@@ -3657,6 +3756,7 @@ function decorateChips() {
   else if (!lu.offense.length && !lu.defense.length) status.textContent = 'No lineup set — entries still save, just without lineup stats.';
   else status.textContent = `Lineup: ${lu.offense.length} on offense, ${lu.defense.length} on defense`;
   status.style.color = problems.length ? '#F8A5A6' : '';
+  renderDefenderPills();
   return problems;
 }
 // The lineup to attach to a saved entry: { offense, defense, offTeam }.
@@ -3830,9 +3930,9 @@ function pointSessionBarAt(entry) {
 }
 function resetShotFields() {
   ['f_outcome','f_cleansave','f_screened','f_goalieset','f_outlet','f_catchdodge','f_quality','f_contest','f_defscheme','f_handedness',
-   'f_transitiontype','f_shotmechanism','f_rebound','f_bounceshot','f_dominoes','f_advtype','f_possstart'].forEach(id => setPillGroupValue(id, null));
+   'f_transitiontype','f_shotmechanism','f_rebound','f_bounceshot','f_dominoes','f_advtype','f_possstart','f_defbeaten'].forEach(id => setPillGroupValue(id, null));
   setPillGroupValue('f_mansituation', 'Even');
-  ['f_shooter_name','f_assist_name','f_opp_shooter','f_opp_passer','f_trigger','f_adv_creator','f_possstart_jersey'].forEach(id => { document.getElementById(id).value = ''; });
+  ['f_shooter_name','f_assist_name','f_opp_shooter','f_opp_passer','f_trigger','f_adv_creator','f_possstart_jersey','f_defender','f_slide_defender'].forEach(id => { document.getElementById(id).value = ''; });
   resolvedShooterJersey = null;
   resolvedAssistJersey = null;
   document.getElementById('shooterResolve').innerHTML = '';
@@ -3914,6 +4014,9 @@ function startEditShot(id, returnTo) {
   toggleJerseyWrap('possStartJerseyWrap', 'f_possstart_jersey', !!shot.possStart);
   document.getElementById('f_possstart_jersey').value = shot.possStartJersey ? shot.possStartJersey.replace(/^o/, '') : '';
   fillPickFields('f', shot);
+  document.getElementById('f_defender').value = shot.defender ? shot.defender.replace(/^o/, '') : '';
+  document.getElementById('f_slide_defender').value = shot.slideDefender ? shot.slideDefender.replace(/^o/, '') : '';
+  setPillGroupValue('f_defbeaten', shot.defBeaten || null);
   refreshJerseyReadouts();
   buildFieldClickWidget({ distanceYds: shot.distanceYds, lateralYds: shot.lateralYds });
   buildGoalClickWidget({ goalX: shot.goalX, goalY: shot.goalY });
@@ -3980,6 +4083,11 @@ document.getElementById('submitShotBtn').addEventListener('click', async () => {
   if (!ps.ok) { showMsg('Possession started by: ' + ps.why, false); return; }
   const pk = readPickFields('f', team);
   if (!pk.ok) { showMsg(pk.why, false); return; }
+  const defOn = readJerseyField('f_defender', otherTeam(team));
+  if (!defOn.ok) { showMsg('On-ball defender: ' + defOn.why, false); return; }
+  const defSlide = readJerseyField('f_slide_defender', otherTeam(team));
+  if (!defSlide.ok) { showMsg('Slide defender: ' + defSlide.why, false); return; }
+  if (defOn.value && defOn.value === defSlide.value) { showMsg('The slide defender can’t be the on-ball defender.', false); return; }
   const isEdit = editingShotId !== null;
   if (!isEdit && decorateChips().length) { showMsg('Fix the lineup bar first (marked in red), or clear it.', false); return; }
 
@@ -4024,6 +4132,9 @@ document.getElementById('submitShotBtn').addEventListener('click', async () => {
     outlet: document.getElementById('f_outlet').dataset.value || null,
     possStart,
     possStartJersey: possStart ? ps.value : null,
+    defender: defOn.value,
+    slideDefender: defSlide.value,
+    defBeaten: document.getElementById('f_defbeaten').dataset.value || null,
   };
   Object.assign(shotData, pk.data);
 
@@ -6557,10 +6668,18 @@ function goalieGapText(g) {
   return `${head}. ${lead}: ${bits.join('; and ')}.${noise}`;
 }
 function goalieScoreChartSvg(list, teamX, teamY) {
-  const pts = list.filter(g => g.gsax100 !== null && g.sae100 !== null);
-  if (!pts.length) return `<p class="sans" style="color:var(--muted); font-size:13px;">Fills in once a goalie has SAE &mdash; practice shots from shooters with ${SA_MIN_SHOTS}+ shots this season.</p>`;
+  return quadrantChartSvg(list.filter(g => g.gsax100 !== null && g.sae100 !== null).map(g => ({ name: g.name, x: g.gsax100, y: g.sae100, n: g.faced })), teamX, teamY, {
+    empty: `Fills in once a goalie has SAE &mdash; practice shots from shooters with ${SA_MIN_SHOTS}+ shots this season.`,
+    tl: 'Beats the shooters, not the shot quality', br: 'Beats the shot quality, not the shooters',
+    xLabel: 'Saved vs. Expected /100 (shot quality) &rarr;', yLabel: 'SAE /100 (who was shooting) &rarr;' });
+}
+// Two "above expected" numbers against each other, one dot per player
+// (sized by sample), team-average lines, top-right shaded "good at both".
+// pts: [{ name, x, y, n }].
+function quadrantChartSvg(pts, teamX, teamY, o) {
+  if (!pts.length) return `<p class="sans" style="color:var(--muted); font-size:13px;">${o.empty}</p>`;
   const W = 560, H = 400, pad = 46;
-  const span = Math.max(4, ...pts.map(g => Math.max(Math.abs(g.gsax100 - teamX), Math.abs(g.sae100 - teamY)))) * 1.25;
+  const span = Math.max(4, ...pts.map(g => Math.max(Math.abs(g.x - teamX), Math.abs(g.y - teamY)))) * 1.25;
   const px = v => pad + (v - (teamX - span)) / (2 * span) * (W - 2 * pad);
   const py = v => H - pad - (v - (teamY - span)) / (2 * span) * (H - 2 * pad);
   const t = (x, y, txt, anchor, extra) => `<text x="${x}" y="${y}" text-anchor="${anchor}" font-family="Helvetica Neue, Arial, sans-serif" ${extra || 'font-size="11" fill="var(--muted)"'}>${txt}</text>`;
@@ -6570,24 +6689,24 @@ function goalieScoreChartSvg(list, teamX, teamY) {
   svg += `<line x1="${px(teamX)}" y1="${pad}" x2="${px(teamX)}" y2="${H - pad}" stroke="var(--muted)" stroke-dasharray="5 4"/>`;
   svg += `<rect x="${pad}" y="${pad}" width="${W - 2 * pad}" height="${H - 2 * pad}" fill="none" stroke="var(--line)"/>`;
   svg += t(W - pad - 6, pad + 16, 'Good at both', 'end', 'font-size="11.5" font-weight="700" fill="#256029"');
-  svg += t(pad + 6, pad + 16, 'Beats the shooters, not the shot quality', 'start');
-  svg += t(W - pad - 6, H - pad - 8, 'Beats the shot quality, not the shooters', 'end');
+  svg += t(pad + 6, pad + 16, o.tl, 'start');
+  svg += t(W - pad - 6, H - pad - 8, o.br, 'end');
   svg += t(pad + 6, H - pad - 8, 'Below on both', 'start');
-  svg += t(W / 2, H - 12, 'Saved vs. Expected /100 (shot quality) &rarr;', 'middle', 'font-size="11.5" font-weight="700" fill="var(--navy-3)"');
-  svg += `<text x="14" y="${H / 2}" transform="rotate(-90 14 ${H / 2})" text-anchor="middle" font-family="Helvetica Neue, Arial, sans-serif" font-size="11.5" font-weight="700" fill="var(--navy-3)">SAE /100 (who was shooting) &rarr;</text>`;
+  svg += t(W / 2, H - 12, o.xLabel, 'middle', 'font-size="11.5" font-weight="700" fill="var(--navy-3)"');
+  svg += `<text x="14" y="${H / 2}" transform="rotate(-90 14 ${H / 2})" text-anchor="middle" font-family="Helvetica Neue, Arial, sans-serif" font-size="11.5" font-weight="700" fill="var(--navy-3)">${o.yLabel}</text>`;
   // Labels go above each dot; one that would sit on top of another's moves
   // below its dot, then out to the side.
   const placed = [];
-  pts.slice().sort((a, b) => b.faced - a.faced).forEach(g => {
-    const r = Math.min(13, 5 + Math.sqrt(g.faced) / 3);
-    const cx = px(g.gsax100), cy = py(g.sae100);
+  pts.slice().sort((a, b) => b.n - a.n).forEach(g => {
+    const r = Math.min(13, 5 + Math.sqrt(g.n) / 3);
+    const cx = px(g.x), cy = py(g.y);
     const label = lastNameOf(g.name), w = label.length * 6.6 + 6;
     const spots = [[cx, cy - r - 4, 'middle'], [cx, cy + r + 13, 'middle'], [cx + r + 4, cy + 4, 'start'], [cx - r - 4, cy + 4, 'end']];
     const box = ([x, y, anc]) => { const x0 = anc === 'middle' ? x - w / 2 : anc === 'start' ? x : x - w; return [x0, y - 11, x0 + w, y + 2]; };
     const hit = b1 => placed.some(b2 => b1[0] < b2[2] && b2[0] < b1[2] && b1[1] < b2[3] && b2[1] < b1[3]);
     const spot = spots.find(sp => !hit(box(sp))) || spots[0];
     placed.push(box(spot));
-    svg += `<circle cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="${r.toFixed(1)}" fill="var(--navy-3)" fill-opacity=".85" stroke="#fff" stroke-width="1.5"><title>${escapeHtml(g.name)}: ${g.gsax100.toFixed(1)} / ${g.sae100.toFixed(1)}</title></circle>`;
+    svg += `<circle cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="${r.toFixed(1)}" fill="var(--navy-3)" fill-opacity=".85" stroke="#fff" stroke-width="1.5"><title>${escapeHtml(g.name)}: ${g.x.toFixed(1)} / ${g.y.toFixed(1)}</title></circle>`;
     svg += t(spot[0].toFixed(1), spot[1].toFixed(1), escapeHtml(label), spot[2], 'font-size="11.5" font-weight="700" fill="var(--ink)" paint-order="stroke" stroke="#fff" stroke-width="3"');
   });
   return svg + '</svg>';
@@ -6633,6 +6752,310 @@ function renderGoalieScore() {
   const team = saveStats(goalieShotsForSeason(season).filter(s => s.onKeeper === 1), model);
   document.getElementById('gsChart').innerHTML = goalieScoreChartSvg(shown, team.n ? team.gsax / team.n * 100 : 0, sa.n ? sa.per100 : 0);
 }
+
+// ---------------- Player Heat Maps > Shooter Score (2027+) ----------------
+// Same method as the Goalie Score (gsPoints / gsAvg): each part is compared
+// with the team, shrunk toward 50 for a small sample, and mapped onto 0-100.
+// Two weightings, confirmed with the staff:
+//  - Shooting mirrors the Goalie Score: finishing against the look (G-xG)
+//    and against the goalie he shot on, plus look quality and accuracy.
+//  - Complete Offense maps basketball's Four Factors onto lacrosse: shooting
+//    35, ball security 25, creation 25 (expected assists + dominoes), and
+//    possession winning 15. Basketball's free-throw factor would be drawn
+//    penalties, which aren't logged.
+const SS_PARTS = {
+  shooting: [
+    { key: 'fin', label: 'Finishing', weight: 35, color: '#1F3864' },
+    { key: 'gadj', label: 'Goalie-Adjusted Finishing', weight: 35, color: '#D4AF37' },
+    { key: 'quality', label: 'Shot quality', weight: 20, color: '#0ca30c' },
+    { key: 'acc', label: 'Accuracy', weight: 10, color: '#9AA1A9' },
+  ],
+  offense: [
+    { key: 'fin', label: 'Finishing', weight: 12, color: '#1F3864' },
+    { key: 'gadj', label: 'Goalie-Adjusted Finishing', weight: 12, color: '#D4AF37' },
+    { key: 'quality', label: 'Shot quality', weight: 11, color: '#0ca30c' },
+    { key: 'security', label: 'Ball security', weight: 25, color: '#d03b3b' },
+    { key: 'xa', label: 'Creation: expected assists', weight: 12.5, color: '#B0703A' },
+    { key: 'dom', label: 'Creation: dominoes', weight: 12.5, color: '#7A4A22' },
+    { key: 'poss', label: 'Possession winning', weight: 15, color: '#33507A' },
+  ],
+};
+// The gap to the team that moves a part about 38 points (tanh(1) = 0.76).
+const SS_SCALE = { per100: 8, look: 10, acc: 0.10, to: 0.05, xa: 0.04, perSess: 0.5 };
+const SS_K = { shots: REGRESS_K, touches: 20, sessions: 4 };
+const SS_MIN_SHOTS = 10;
+const SS_LOW_SAMPLE = 50;
+let ssTab = 'shooting';
+// Each WLU goalie's practice goals allowed by tier, on shots on cage.
+function goalieTierTallies(season) {
+  const t = {};
+  advShots(season).forEach(x => {
+    if (x.context !== 'Practice' || !x.goalieJersey || x.onKeeper !== 1 || !SA_TIERS.includes(x.shotQuality)) return;
+    const g = (t[x.goalieJersey] = t[x.goalieJersey] || { n: 0, tiers: {} });
+    g.n++;
+    const k = (g.tiers[x.shotQuality] = g.tiers[x.shotQuality] || { onCage: 0, goals: 0 });
+    k.onCage++; if (x.goal === 1) k.goals++;
+  });
+  return t;
+}
+// The mirror of scoreFacedShot: a shot on cage is scored by the rate that
+// goalie allows on that tier (this shot left out), once he has 50+ faced.
+function scoreShotVsGoalie(x, tallies, team) {
+  const g = tallies[x.goalieJersey];
+  if (!g || g.n < SA_MIN_SHOTS || !SA_TIERS.includes(x.shotQuality)) return null;
+  const k = g.tiers[x.shotQuality] || { onCage: 0, goals: 0 };
+  const goals = k.goals - (x.goal === 1 ? 1 : 0), oc = k.onCage - 1;
+  return { chance: oc <= 0 ? team[x.shotQuality].onCage : goals / oc };
+}
+// buildEffData() reads the Efficiency tab's season/context; run it for one
+// season, all contexts, without touching that tab's own selection.
+function effDataFor(season) {
+  const s = EFF_SEASON, c = EFF_CONTEXT;
+  EFF_SEASON = season; EFF_CONTEXT = 'All';
+  try { return buildEffData(); } finally { EFF_SEASON = s; EFF_CONTEXT = c; }
+}
+function computeShooterScores(season, tab) {
+  const d = effDataFor(season);
+  const model = d.model;
+  const gt = goalieTierTallies(season), tierTeam = teamPracticeTierRates(season);
+  const gaBy = {};
+  d.shots.forEach(x => {
+    if (x.context !== 'Practice' || x.onKeeper !== 1 || !x.goalieJersey) return;
+    const sc = scoreShotVsGoalie(x, gt, tierTeam);
+    if (sc) (gaBy[x.shooterJersey] = gaBy[x.shooterJersey] || []).push(Object.assign({ s: x }, sc));
+  });
+  const gaStats = l => {
+    const n = l.length, goals = l.filter(r => r.s.goal === 1).length, xg = l.reduce((a, r) => a + r.chance, 0);
+    return { n, goals, per100: n ? (goals - xg) / n * 100 : null, edge: n ? l.reduce((a, r) => a + (r.chance - tierTeam[r.s.shotQuality].onCage), 0) / n : null };
+  };
+  const tGa = gaStats([].concat(...Object.values(gaBy)));
+  const finOf = list => list.length ? (list.filter(s => s.goal === 1).length - xgSum(list, model)) / list.length * 100 : null;
+  const tFin = finOf(d.shots), tLook = lookValue(d.shots, model), tAcc = ratio(d.shots.filter(s => s.onKeeper === 1).length, d.shots.length);
+  const players = Object.values(d.players);
+  const info = {};
+  let tTouch = 0, tTo = 0, tXa = 0, tDom = 0, tPoss = 0, tApps = 0;
+  players.forEach(p => {
+    const boxes = [...p.sessions].map(sid => d.bySession[sid] && d.bySession[sid].players[p.jersey]).filter(Boolean);
+    const touches = p.shots + p.potAst + p.to;
+    info[p.jersey] = { apps: boxes.length, swing: stdev(boxes.map(b => b.xg + b.xa)), touches };
+    tTouch += touches; tTo += p.to; tXa += p.xa; tDom += p.dominoes; tPoss += p.gb + p.ct; tApps += boxes.length;
+  });
+  const tToT = ratio(tTo, tTouch), tXaT = ratio(tXa, tTouch), tDomS = ratio(tDom, tApps), tPossS = ratio(tPoss, tApps);
+  const qualified = players.filter(p => p.shots >= SS_MIN_SHOTS);
+  const swings = qualified.map(p => info[p.jersey]).filter(i => i.apps >= 3 && i.swing !== null).map(i => i.swing);
+  const swingMed = swings.length >= 3 ? median(swings) : null;
+  const fmtS = v => v === null || v === undefined || !isFinite(v) ? '—' : (v >= 0 ? '+' : '') + v.toFixed(1);
+  const parts = SS_PARTS[tab];
+  const out = qualified.map(p => {
+    const i = info[p.jersey];
+    const ga = gaStats(gaBy[p.jersey] || []);
+    const fin = finOf(p.ownShots), look = lookValue(p.ownShots, model), acc = ratio(p.ownShots.filter(s => s.onKeeper === 1).length, p.shots);
+    const toT = ratio(p.to, i.touches), xaT = ratio(p.xa, i.touches), domS = ratio(p.dominoes, i.apps), possS = ratio(p.gb + p.ct, i.apps);
+    const vals = {
+      fin: { points: gsPoints(fin, tFin, p.shots, SS_K.shots, SS_SCALE.per100), detail: `${fmtS(fin)} /100 shots vs team ${fmtS(tFin)}` },
+      gadj: { points: ga.n ? gsPoints(ga.per100, tGa.per100, ga.n, SS_K.shots, SS_SCALE.per100) : null,
+        detail: ga.n ? `${fmtS(ga.per100)} /100 on cage (${ga.n}) vs team ${fmtS(tGa.per100)}` : `no practice shots on a goalie with ${SA_MIN_SHOTS}+ faced yet` },
+      quality: { points: gsPoints(look, tLook, p.shots, SS_K.shots, SS_SCALE.look), detail: `Look ${num(look, 0)} vs team ${num(tLook, 0)}` },
+      acc: { points: gsPoints(acc, tAcc, p.shots, SS_K.shots, SS_SCALE.acc), detail: `${pct(acc)} on cage vs ${pct(tAcc)}` },
+      // Parts that need possession logging stay out until the team has any.
+      security: { points: tTo ? gsPoints(toT, tToT, i.touches, SS_K.touches, SS_SCALE.to, true) : null,
+        detail: tTo ? `${p.to} TO on ${i.touches} touches (${pct(toT)}) vs team ${pct(tToT)}` : 'no turnovers logged yet (no-shot possessions)' },
+      xa: { points: tXa ? gsPoints(xaT, tXaT, i.touches, SS_K.touches, SS_SCALE.xa) : null,
+        detail: tXa ? `${num(p.xa, 1)} xA · ${num(xaT, 3)} per touch vs ${num(tXaT, 3)}` : 'no passers logged yet' },
+      dom: { points: tDom ? gsPoints(domS, tDomS, i.apps, SS_K.sessions, SS_SCALE.perSess) : null,
+        detail: tDom ? `${p.dominoes} started · ${num(domS, 2)} per session vs ${num(tDomS, 2)}` : 'no dominoes logged yet' },
+      poss: { points: tPoss ? gsPoints(possS, tPossS, i.apps, SS_K.sessions, SS_SCALE.perSess) : null,
+        detail: tPoss ? `${p.gb} GB + ${p.ct} CT · ${num(possS, 2)} per session vs ${num(tPossS, 2)}` : 'no ground balls or caused TOs logged yet' },
+    };
+    const used = parts.filter(pt => vals[pt.key].points !== null);
+    const wSum = used.reduce((a, pt) => a + pt.weight, 0);
+    const score = wSum ? used.reduce((a, pt) => a + pt.weight * vals[pt.key].points, 0) / wSum : null;
+    const prac = p.ownShots.filter(s => s.context !== 'Game');
+    return {
+      jersey: p.jersey, name: nameFor(p.jersey, season), shots: p.shots, score, wSum, parts: vals,
+      contrib: used.map(pt => ({ color: pt.color, value: pt.weight * vals[pt.key].points / wSum })),
+      fin100: fin, finPrac100: finOf(prac), games: p.shots - prac.length,
+      ga100: ga.n ? ga.per100 : null, gaN: ga.n, gaGoals: ga.goals, edge: ga.edge,
+      badge: swingMed === null || i.apps < 3 || i.swing === null ? null : (i.swing <= swingMed ? 'steady' : 'streaky'),
+    };
+  }).sort((a, b) => (b.score ?? -1) - (a.score ?? -1));
+  return { list: out, tFin, tGa: tGa.per100 };
+}
+// Why Finishing and Goalie-Adjusted disagree, in plain words.
+function shooterGapText(g) {
+  const s1 = v => (v >= 0 ? '+' : '') + v.toFixed(1);
+  if (g.ga100 === null) return `No goalie-adjusted number yet: none of his practice shots on cage came against a goalie with ${SA_MIN_SHOTS}+ shots faced, so his score leans on Finishing until it fills in.`;
+  const gap = g.ga100 - g.fin100;
+  const head = `Goalie-Adjusted ${s1(g.ga100)} vs Finishing ${s1(g.fin100)} per 100`;
+  if (Math.abs(gap) < 1) return `${head}. The two agree.`;
+  const p = g.gaGoals / g.gaN;
+  const se = 100 * Math.sqrt(Math.max(p * (1 - p), 0.05) / g.gaN);
+  const bits = [];
+  if (g.edge !== null) {
+    const pts = Math.abs(g.edge) * 100;
+    const weaker = g.edge > 0;
+    if (pts >= 1 && (gap < 0) === weaker) {
+      bits.push(weaker
+        ? `the goalies he&rsquo;s shot on allow ${pts.toFixed(0)} pts more on those looks than the team average, so Finishing flatters him`
+        : `the goalies he&rsquo;s shot on allow ${pts.toFixed(0)} pts less on those looks than the team average, so Finishing undersells him`);
+    } else if (pts >= 1) {
+      bits.push(`the goalies he&rsquo;s shot on allow ${pts.toFixed(0)} pts ${weaker ? 'more' : 'less'} on those looks than the team average, but he&rsquo;s done ${gap > 0 ? 'better' : 'worse'} against those goalies than on the rest of his shots`);
+    }
+  }
+  if (g.games >= 5 && g.finPrac100 !== null && Math.abs(g.fin100 - g.finPrac100) >= 1) {
+    const ge = g.fin100 - g.finPrac100;
+    bits.push(`his ${g.games} game shots ${ge > 0 ? 'lift' : 'pull down'} his Finishing by ${Math.abs(ge).toFixed(1)} per 100 (Goalie-Adjusted only counts practice)`);
+  }
+  if (!bits.length) bits.push(`Goalie-Adjusted only scores his ${g.gaN} practice shots on cage against goalies with ${SA_MIN_SHOTS}+ faced, and he did ${gap > 0 ? 'better' : 'worse'} on those than across all his shots`);
+  const lead = gap > 0 ? 'He grades out better once you account for the goalie' : 'He grades out better against the look than once you account for the goalie';
+  const noise = Math.abs(gap) < 1.5 * se ? ` Still too close to call: with ${g.gaN} scored shots, a ${Math.abs(gap).toFixed(1)} gap is within normal noise.` : '';
+  return `${head}. ${lead}: ${bits.join('; and ')}.${noise}`;
+}
+function renderShooterScore() {
+  const cards = document.getElementById('ssCards');
+  if (!cards) return;
+  const season = heatSeason;
+  const sub = document.getElementById('ssSub'), note = document.getElementById('ssNote'), chartPanel = document.getElementById('ssChartPanel');
+  if (!isAdvSeason(season)) {
+    sub.textContent = '';
+    note.style.display = 'none';
+    chartPanel.style.display = 'none';
+    cards.innerHTML = `<p class="sans" style="color:var(--muted); font-size:13px;">The Shooter Score covers ${ADV_FIRST_SEASON} and later &mdash; pick ${currentAdvSeason()} above. ${escapeHtml(season)} keeps its original views.</p>`;
+    return;
+  }
+  note.style.display = '';
+  chartPanel.style.display = '';
+  const { list: all, tFin, tGa } = computeShooterScores(season, ssTab);
+  const shown = PLAYER_MODE ? all.filter(g => g.name.includes(PLAYER_MODE.name)) : all;
+  const parts = SS_PARTS[ssTab];
+  sub.textContent = `${season}, practice + game shots. 0–100: 50 is a team-average ${ssTab === 'shooting' ? 'shooter' : 'offensive player'}, higher is better. Players with ${SS_MIN_SHOTS}+ shots.${PLAYER_MODE ? '' : ' Ranked best first.'}`;
+  note.innerHTML = (ssTab === 'shooting'
+    ? 'Weights: Finishing (goals vs the look, per 100 shots) 35%, Goalie-Adjusted Finishing (goals vs what the goalie he shot on allows, practice shots on cage) 35%, shot quality (Look Value) 20%, accuracy (on cage) 10%. Built like basketball&rsquo;s shot making + shot quality.'
+    : 'Weights follow basketball&rsquo;s Four Factors: shooting 35% (Finishing 12, Goalie-Adjusted 12, shot quality 11), ball security 25% (turnovers per touch), creation 25% (expected assists per touch 12.5, dominoes started per session 12.5), possession winning 15% (ground balls + caused turnovers per session). Drawn penalties (basketball&rsquo;s free throws) aren&rsquo;t logged yet.')
+    + ' Each part compares him to the team and is pulled toward 50 for a small sample. A part with no data yet drops out and its weight goes to the rest. Consistency isn&rsquo;t scored &mdash; it shows as a steady / streaky badge (per-session swing vs the team median, 3+ sessions).';
+  if (!shown.length) { cards.innerHTML = `<p class="sans" style="color:var(--muted); font-size:13px;">${PLAYER_MODE ? escapeHtml(PLAYER_MODE.name) + ' doesn&rsquo;t have' : 'No player has'} ${SS_MIN_SHOTS}+ ${escapeHtml(season)} shots yet.</p>`; document.getElementById('ssChart').innerHTML = ''; return; }
+  const sgn = v => v === null || v === undefined || !isFinite(v) ? '—' : (v >= 0 ? '+' : '') + v.toFixed(1);
+  cards.innerHTML = shown.map(g => {
+    const rank = all.indexOf(g) + 1;
+    const partRows = parts.map(pt => {
+      const v = g.parts[pt.key];
+      return `<tr><td><span class="gs-key" style="background:${pt.color}"></span>${pt.label}<div class="n-note" style="font-style:normal;">${v.detail}</div></td><td>${v.points === null ? '<span class="n-note">not counted</span>' : Math.round(v.points)}</td><td class="n-note" style="font-style:normal;">${v.points === null ? '' : Math.round(pt.weight / g.wSum * 100) + '%'}</td></tr>`;
+    }).join('');
+    const badge = g.badge ? `<span class="gs-badge" style="background:${g.badge === 'steady' ? '#E6F4EA' : 'var(--gold-bg)'}; color:${g.badge === 'steady' ? '#256029' : 'var(--gold-ink)'};" title="How much his per-session expected points move around, vs the team median. Not part of the score.">${g.badge}</span>` : '';
+    return `<div class="gs-card">
+      <div class="gs-head"><span class="gs-who">${PLAYER_MODE ? '' : `<span class="gs-rank">#${rank}</span>`}<span class="gs-name">#${escapeHtml(g.jersey)} ${escapeHtml(g.name)}</span>${g.shots < SS_LOW_SAMPLE ? `<span class="gs-badge" title="Fewer than ${SS_LOW_SAMPLE} shots: the score is pulled toward 50 and will move as he shoots more.">low sample</span>` : ''}${badge}</span>
+        <span class="gs-score">${g.score === null ? '—' : Math.round(g.score)}<small> / 100</small></span></div>
+      <div class="n-note" style="font-style:normal;">${g.shots} shots${PLAYER_MODE ? ' &middot; team average = 50' : ''}</div>
+      <div class="gs-bar">${g.contrib.map(c => `<span style="width:${c.value.toFixed(2)}%; background:${c.color};"></span>`).join('')}</div>
+      <table class="gs-parts"><tbody>${partRows}</tbody></table>
+      <div class="gs-two"><div><b>${sgn(g.fin100)}</b> Finishing /100</div><div><b>${sgn(g.ga100)}</b> Goalie-Adjusted /100</div></div>
+      <div class="gs-gap">${shooterGapText(g)}</div>
+    </div>`;
+  }).join('');
+  document.getElementById('ssChart').innerHTML = quadrantChartSvg(shown.filter(g => g.ga100 !== null && g.fin100 !== null).map(g => ({ name: g.name, x: g.fin100, y: g.ga100, n: g.shots })), tFin || 0, tGa || 0, {
+    empty: `Fills in once shooters have practice shots on cage against a goalie with ${SA_MIN_SHOTS}+ faced.`,
+    tl: 'Beats the goalie, not the look', br: 'Beats the look, not the goalie',
+    xLabel: 'Finishing /100 (vs the look) &rarr;', yLabel: 'Goalie-Adjusted /100 (vs the goalie) &rarr;' });
+}
+setupSeg('ssTabSeg', v => { ssTab = v; renderShooterScore(); });
+
+// ---------------- Defense (2027+) ----------------
+// From the Defense card on the Log Shot form: who was on the ball, who slid,
+// and whether the shooter beat his man. Covers WLU shots in practice (WLU
+// defending WLU) and opponent shots in games (WLU defending them).
+let defSeason = currentAdvSeason(), defContext = 'All';
+function defShotsFor(season) {
+  return advShots(season).concat(OPP_SHOTS.filter(s => seasonForDate(s.date) === season)).filter(s => defContext === 'All' || s.context === defContext);
+}
+// Goals/xG allowed: lower is better, so a positive gap is red.
+function defChip(v, d) {
+  if (v === null || v === undefined || !isFinite(v)) return '—';
+  const cls = v > 0.05 ? 'down' : (v < -0.05 ? 'up' : 'flat');
+  return `<span class="delta-chip ${cls}">${v >= 0 ? '+' : ''}${v.toFixed(d === undefined ? 1 : d)}</span>`;
+}
+function renderDefense() {
+  const wrap = document.getElementById('defPlayerWrap');
+  if (!wrap) return;
+  const season = defSeason;
+  const model = xgModelFor(season);
+  const shots = defShotsFor(season);
+  const wlu = j => j && !isOppJersey(j);
+  const logged = shots.filter(s => wlu(s.defender));
+  const small = n => n < 5 ? 'color:var(--muted); font-style:italic;' : '';
+  const goalsOf = l => l.filter(s => s.goal === 1).length;
+  const beatenLogged = logged.filter(s => s.defBeaten === 'Yes' || s.defBeaten === 'No');
+  const beaten = beatenLogged.filter(s => s.defBeaten === 'Yes'), held = beatenLogged.filter(s => s.defBeaten === 'No');
+  const slides = shots.filter(s => wlu(s.slideDefender));
+  const tXg = ratio(xgSum(logged, model), logged.length), tG = ratio(goalsOf(logged), logged.length);
+  document.getElementById('defTiles').innerHTML = logged.length ? [
+    statTile('Shots With a Defender', logged.length.toLocaleString(), `of ${shots.length} ${season} shots logged`),
+    statTile('Goals Allowed / Shot', pct(tG), `vs ${pct(tXg)} expected from the looks`, 'Goals ÷ shots where a WLU on-ball defender was logged, against the expected-goal value of those shots.'),
+    statTile('Beaten', pct(ratio(beaten.length, beatenLogged.length)), `of ${beatenLogged.length} shots with Beaten logged`),
+    statTile('Beaten vs Not', `${pct(ratio(goalsOf(beaten), beaten.length))} / ${pct(ratio(goalsOf(held), held.length))}`, 'Goal % when he was beaten / when he wasn’t'),
+    statTile('After a Slide', pct(ratio(goalsOf(slides), slides.length)), `${slides.length} shots after a WLU slide`),
+  ].join('') : '';
+  document.getElementById('defSub').textContent = `${season} ${defContext === 'All' ? 'practice + game' : defContext.toLowerCase()} shots with a WLU on-ball defender logged (${logged.length} of ${shots.length}). In games these are opponent shots. xG allowed is the expected-goal value of the looks he gave up; G−xG /100 is goals allowed above (+, worse) or below (−, better) what those looks predict. Gray italic rows have fewer than 5 shots.`;
+  const eff = effDataFor(season);
+  const byD = {}, byS = {};
+  logged.forEach(s => { (byD[s.defender] = byD[s.defender] || []).push(s); });
+  slides.forEach(s => { (byS[s.slideDefender] = byS[s.slideDefender] || []).push(s); });
+  const rows = Object.keys(byD).map(j => {
+    const l = byD[j], n = l.length, g = goalsOf(l), xg = xgSum(l, model);
+    const bl = l.filter(s => s.defBeaten === 'Yes' || s.defBeaten === 'No');
+    const p = eff.players[j];
+    return { jersey: j, name: nameFor(j, season), n, g, xgPer: xg / n, gmx100: (g - xg) / n * 100,
+      beat: ratio(bl.filter(s => s.defBeaten === 'Yes').length, bl.length), beatN: bl.length,
+      heavy: ratio(l.filter(s => s.contestLevel === 'Heavy').length, n), open: ratio(l.filter(s => s.contestLevel === 'Open').length, n),
+      slides: (byS[j] || []).length, ct: p ? p.ct : 0, gb: p ? p.gb : 0 };
+  });
+  renderSortableTable('defPlayerWrap', [
+    { key: 'jersey', label: '#', type: 'text', value: r => r.jersey },
+    { key: 'name', label: 'Name', type: 'text', value: r => r.name, format: nameCell },
+    { key: 'n', label: 'Shots', type: 'num', value: r => r.n, title: 'Shots taken by the man he was guarding.' },
+    { key: 'g', label: 'Goals', type: 'num', value: r => r.g, cellStyle: (v, r) => small(r.n) },
+    { key: 'xgPer', label: 'xG / Shot', type: 'num', value: r => r.xgPer, format: v => num(v, 2), cellStyle: (v, r) => small(r.n), title: 'Average expected-goal value of the shots he gave up. Lower = he forces worse looks.' },
+    { key: 'gmx100', label: 'G−xG /100', type: 'num', value: r => r.gmx100, format: v => defChip(v), cellStyle: (v, r) => small(r.n), title: 'Goals allowed minus expected, per 100 shots. Negative (green) = fewer goals than those looks predict.' },
+    { key: 'beat', label: 'Beaten %', type: 'num', value: r => r.beat, format: (v, r) => v === null ? '—' : `${pct(v)} <span class="n-note">(${r.beatN})</span>`, cellStyle: (v, r) => small(r.beatN) },
+    { key: 'heavy', label: 'Heavy Contest', type: 'num', value: r => r.heavy, format: v => pct(v) },
+    { key: 'open', label: 'Open Look', type: 'num', value: r => r.open, format: v => pct(v), title: 'Share of shots he allowed that were logged as Open (uncontested).' },
+    { key: 'slides', label: 'Slides', type: 'num', value: r => r.slides },
+    { key: 'ct', label: 'Caused TO', type: 'num', value: r => r.ct },
+    { key: 'gb', label: 'GB', type: 'num', value: r => r.gb, title: 'Ground balls that started a possession.' },
+  ], rows, { dense: true, defaultSort: { key: 'n', dir: 'desc' }, emptyMsg: `No ${season} shots with an on-ball defender logged yet. Open the Defense card on the Log Shot form to add one.` });
+  const slideRows = Object.keys(byS).map(j => { const l = byS[j]; return { jersey: j, name: nameFor(j, season), n: l.length, g: goalsOf(l), gPct: ratio(goalsOf(l), l.length), xgPer: xgSum(l, model) / l.length }; });
+  renderSortableTable('defSlideWrap', [
+    { key: 'jersey', label: '#', type: 'text', value: r => r.jersey },
+    { key: 'name', label: 'Name', type: 'text', value: r => r.name, format: nameCell },
+    { key: 'n', label: 'Slides', type: 'num', value: r => r.n, title: 'Shots taken after he slid.' },
+    { key: 'g', label: 'Goals After', type: 'num', value: r => r.g, cellStyle: (v, r) => small(r.n) },
+    { key: 'gPct', label: 'Goal %', type: 'num', value: r => r.gPct, format: v => pct(v), cellStyle: (v, r) => small(r.n) },
+    { key: 'xgPer', label: 'xG / Shot', type: 'num', value: r => r.xgPer, format: v => num(v, 2), cellStyle: (v, r) => small(r.n), title: 'Quality of the look the offense still got after his slide.' },
+  ], slideRows, { dense: true, defaultSort: { key: 'n', dir: 'desc' }, emptyMsg: 'No slides logged yet.' });
+  const mm = {};
+  logged.filter(s => s.context === 'Practice' && s.team !== 'OPP' && s.shooterJersey).forEach(s => { const k = s.defender + '|' + s.shooterJersey; (mm[k] = mm[k] || []).push(s); });
+  const mRows = Object.keys(mm).filter(k => mm[k].length >= 3).map(k => {
+    const [dj, sj] = k.split('|'), l = mm[k];
+    return { def: jerseyLabel(dj, season), shooter: jerseyLabel(sj, season), n: l.length, g: goalsOf(l), xg: xgSum(l, model), beat: l.filter(s => s.defBeaten === 'Yes').length };
+  });
+  renderSortableTable('defMatchWrap', [
+    { key: 'def', label: 'Defender', type: 'text', value: r => r.def, format: nameCell },
+    { key: 'shooter', label: 'Shooter', type: 'text', value: r => r.shooter, format: nameCell },
+    { key: 'n', label: 'Shots', type: 'num', value: r => r.n },
+    { key: 'g', label: 'Goals', type: 'num', value: r => r.g },
+    { key: 'xg', label: 'xG', type: 'num', value: r => r.xg, format: v => num(v, 1) },
+    { key: 'beat', label: 'Beaten', type: 'num', value: r => r.beat },
+  ], mRows, { dense: true, defaultSort: { key: 'n', dir: 'desc' }, emptyMsg: 'No defender–shooter pair has 3+ practice shots yet.' });
+}
+setupPillGroup('defSeasonPills', ADV_SEASONS, defSeason, v => {
+  defSeason = v || defSeason;
+  if (!v) setPillGroupValue('defSeasonPills', defSeason);
+  renderDefense();
+});
+setupPillGroup('defContextPills', ['All', 'Practice', 'Game'], 'All', v => {
+  defContext = v || 'All';
+  if (!v) setPillGroupValue('defContextPills', 'All');
+  renderDefense();
+});
 
 // One row per goalie for the Advanced table (also feeds the Goalie Score).
 function goalieAdvRows(faced, model, season, team) {
@@ -8065,6 +8488,7 @@ setupSeasonPills('playerSeasonPills', (s) => {
   heatSeason = s;
   populatePlayerSelectForSeason(heatSeason);
   renderPlayerHeat();
+  renderShooterScore();
   renderRosterManager();
   renderShootingTrends();
   renderPlayerDeepDive();
