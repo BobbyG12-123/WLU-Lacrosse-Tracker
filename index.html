@@ -1001,6 +1001,19 @@
       <div class="chart-wrap" id="gsChart" style="max-width:640px;"></div>
     </div>
     </div>
+    <div class="subpage" data-label="Save Surface">
+    <div class="panel">
+      <p class="panel-title">Save Surface</p>
+      <p class="panel-sub">Where in the net this goalie makes or misses saves compared with the team, from anywhere or from one spot on the field.</p>
+      <div class="controls-row" style="margin-bottom:8px;">
+        <div class="control-group"><label for="surfGoalieSelect">Goalie</label><select id="surfGoalieSelect"></select></div>
+        <div class="control-group"><label>View</label><div class="pill-row" id="surfModePills"></div></div>
+      </div>
+      <p class="sans" id="surfSpotNote" style="font-size:13px; margin:0 0 10px;"></p>
+      <div id="surfWrap"></div>
+    </div>
+    <div class="panel"><div id="surfLists"></div></div>
+    </div>
     <div class="subpage" data-label="Save Map">
     <div class="panel">
       <div class="controls-row">
@@ -3081,6 +3094,7 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
 // sub-tab picked in each tab is remembered on this device.
 function showSubpage(viewId, label) {
   if (viewId === 'efficiencyView' && label === 'xG Model') setTimeout(() => renderXg2Cone(), 0);
+  if (viewId === 'goalieView' && label === 'Save Surface' && surfMode === '3d') setTimeout(() => renderSaveSurface(), 0);
   const view = document.getElementById(viewId);
   const pages = [...view.querySelectorAll(':scope > .subpage')];
   if (!pages.length) return;
@@ -7939,6 +7953,164 @@ function renderDepthChart() {
 setupPillGroup('depthSeasonPills', ADV_SEASONS, DEPTH_SEASON, v => { DEPTH_SEASON = v || DEPTH_SEASON; if (!v) setPillGroupValue('depthSeasonPills', DEPTH_SEASON); renderDepthChart(); });
 setupPillGroup('depthModePills', [{ value: 'scores', label: 'Scores' }, { value: 'recent', label: 'Recent form' }, { value: 'chem', label: 'Chemistry' }], 'scores', v => { depthMode = v || 'scores'; if (!v) setPillGroupValue('depthModePills', 'scores'); renderDepthChart(); });
 
+// ---------------- Goalie Heat Maps > Save Surface (2027+) ----------------
+// For one goalie: his save % on each ninth of the net compared with the
+// team's, either from anywhere or from a tapped spot on the field. Nearby
+// shots count most (Gaussian weight by distance from the spot, about 4 yds),
+// and a thin area is pulled toward the team rate (k = 3 shots) and grayed
+// out under 1.5 shots' worth of data.
+const SURF_BW = 4, SURF_K = 3, SURF_MIN_N = 1.5;
+let surfGoalie = '', surfSpot = null, surfMode = '2d';
+const SURF_BANDS = [0, 1 / 3, 2 / 3, 1.001];
+function surfCell(s) {
+  if (s.goalX === null || s.goalX === undefined || s.goalY === null || s.goalY === undefined) return null;
+  const col = s.goalX < 1 / 3 ? 0 : s.goalX < 2 / 3 ? 1 : 2, row = s.goalY >= 2 / 3 ? 0 : s.goalY >= 1 / 3 ? 1 : 2;
+  return row * 3 + col;
+}
+function surfaceFor(season, goalie, spot) {
+  const faced = goalieShotsForSeason(season).filter(s => s.onKeeper === 1 && surfCell(s) !== null);
+  const w = s => !spot ? 1 : (s.lateralYds === null || s.lateralYds === undefined || s.distanceYds === null || s.distanceYds === undefined ? 0
+    : Math.exp(-(((s.lateralYds - spot.L) ** 2 + (s.distanceYds - spot.D) ** 2) / (2 * SURF_BW * SURF_BW))));
+  const cells = Array.from({ length: 9 }, (_, i) => ({ i, row: Math.floor(i / 3), col: i % 3, label: GOAL_GRID_LABELS[Math.floor(i / 3)][i % 3], hn: 0, hs: 0, tn: 0, ts: 0, raw: 0 }));
+  faced.forEach(s => {
+    const c = cells[surfCell(s)], wt = w(s), save = s.goal !== 1 ? 1 : 0;
+    c.tn += wt; c.ts += wt * save;
+    if (s.goalieJersey === goalie) { c.hn += wt; c.hs += wt * save; if (wt > 0.05) c.raw++; }
+  });
+  cells.forEach(c => {
+    c.team = c.tn ? c.ts / c.tn : null;
+    c.his = c.team === null ? null : (c.hs + SURF_K * c.team) / (c.hn + SURF_K);
+    c.diff = c.his === null ? null : c.his - c.team;
+    c.thin = c.hn < SURF_MIN_N;
+  });
+  return { cells, n: faced.filter(s => s.goalieJersey === goalie).length };
+}
+function surfColor(diff, thin) {
+  if (thin || diff === null) return '#C9CED6';
+  const t = Math.max(-1, Math.min(1, diff / 0.2));
+  return t >= 0 ? hexInterp('#F4F1E6', '#1E9E48', t) : hexInterp('#F4F1E6', '#D03B3B', -t);
+}
+function surfFieldSvg(season, goalie) {
+  const W = 420, H = 300, pad = 18;
+  const fx = L => pad + (L + 19) / 38 * (W - 2 * pad), fy = D => 26 + Math.max(-2, Math.min(20, D)) / 20 * (H - 46);
+  const shots = goalieShotsForSeason(season).filter(s => s.onKeeper === 1 && s.goalieJersey === goalie && s.lateralYds !== null && s.lateralYds !== undefined && s.distanceYds !== null && s.distanceYds !== undefined);
+  let svg = `<svg viewBox="0 0 ${W} ${H}" id="surfFieldSvg" style="background:#2F6B44; border-radius:10px; cursor:crosshair; width:100%;">`;
+  svg += `<line x1="${pad}" y1="${fy(0)}" x2="${W - pad}" y2="${fy(0)}" stroke="#fff" stroke-opacity=".7"/>`;
+  svg += `<circle cx="${fx(0)}" cy="${fy(0)}" r="${3 / 38 * (W - 2 * pad)}" fill="#fff" fill-opacity=".08" stroke="#fff" stroke-opacity=".6"/>`;
+  svg += `<rect x="${fx(-1)}" y="${fy(0) - 4}" width="${fx(1) - fx(-1)}" height="4" fill="#E8621F"/>`;
+  [-8, 8].forEach(L => { svg += `<line x1="${fx(L)}" y1="${fy(0)}" x2="${fx(L)}" y2="${fy(20)}" stroke="#fff" stroke-opacity=".35" stroke-dasharray="6 5"/>`; });
+  shots.forEach(s => { svg += `<circle cx="${fx(s.lateralYds).toFixed(1)}" cy="${fy(s.distanceYds).toFixed(1)}" r="2.6" fill="${s.goal === 1 ? '#F8696B' : '#fff'}" fill-opacity=".7"/>`; });
+  if (surfSpot) {
+    const r = SURF_BW / 38 * (W - 2 * pad);
+    svg += `<circle cx="${fx(surfSpot.L)}" cy="${fy(surfSpot.D)}" r="${r.toFixed(1)}" fill="#D4AF37" fill-opacity=".18" stroke="#D4AF37" stroke-width="1.5" stroke-dasharray="4 3"/>`;
+    svg += `<circle cx="${fx(surfSpot.L)}" cy="${fy(surfSpot.D)}" r="6" fill="#D4AF37" stroke="#fff" stroke-width="2"/>`;
+  }
+  return svg + `</svg><div class="n-note" style="font-style:normal; margin-top:4px;">Dots: shots he faced (white = save, red = goal). Tap anywhere to see the net from there.</div>`;
+}
+function surfNetHtml(surf) {
+  const cell = c => `<div style="background:${surfColor(c.diff, c.thin)}; border:1px solid rgba(15,31,61,.25); padding:8px 4px; text-align:center; font-family:'Helvetica Neue', Arial, sans-serif; min-height:74px;">
+    <div style="font-size:10.5px; color:var(--navy-3); font-weight:700;">${escapeHtml(c.label)}</div>
+    ${c.thin || c.his === null ? '<div class="n-note" style="margin-top:8px;">too few shots</div>'
+      : `<div style="font-size:19px; font-weight:700; color:#0F1F3D;">${Math.round(c.his * 100)}%</div><div style="font-size:11px; color:#0F1F3D;">team ${Math.round(c.team * 100)}% · <b>${c.diff >= 0 ? '+' : ''}${Math.round(c.diff * 100)}</b></div><div class="n-note" style="font-style:normal; font-size:10.5px;">${c.raw} shot${c.raw === 1 ? '' : 's'}${surfSpot ? ' near here' : ''}</div>`}
+  </div>`;
+  return `<div style="border:4px solid #E8621F; border-bottom-width:0; border-radius:4px 4px 0 0; display:grid; grid-template-columns:repeat(3, 1fr); max-width:420px;">${surf.cells.map(cell).join('')}</div>
+    <div class="n-note" style="font-style:normal; margin-top:4px;">The net as the shooter sees it. Green = he saves more than the team on these shots, red = fewer. Gray = too few shots to say.</div>`;
+}
+let SURF3D = null;
+function renderSurface3D(surf) {
+  const wrap = document.getElementById('surf3dWrap');
+  if (!wrap || !wrap.offsetParent) return;
+  loadThree().then(() => {
+    const T = window.THREE;
+    if (!SURF3D || !wrap.contains(SURF3D.renderer.domElement)) {
+      wrap.innerHTML = '';
+      const renderer = new T.WebGLRenderer({ antialias: true });
+      renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
+      wrap.appendChild(renderer.domElement);
+      const scene = new T.Scene(); scene.background = new T.Color(0x1F4F2B);
+      const camera = new T.PerspectiveCamera(45, 1, 0.1, 300);
+      const controls = new T.OrbitControls(camera, renderer.domElement);
+      controls.maxPolarAngle = Math.PI / 2 - 0.02;
+      scene.add(new T.AmbientLight(0xffffff, 0.85));
+      const turf = addField3D(T, scene);
+      const g = new T.Group(); scene.add(g);
+      camera.position.set(4, 4, 14); controls.target.set(0, 1, 0);
+      SURF3D = { T, renderer, scene, camera, controls, turf, g };
+      const size = () => { const w = wrap.clientWidth || 700, h = wrap.clientHeight || 420; renderer.setSize(w, h); camera.aspect = w / h; camera.updateProjectionMatrix(); };
+      SURF3D.size = size; size(); window.addEventListener('resize', size);
+      let down = null;
+      renderer.domElement.addEventListener('pointerdown', e => { down = [e.clientX, e.clientY]; });
+      renderer.domElement.addEventListener('pointerup', e => {
+        if (!down || Math.hypot(e.clientX - down[0], e.clientY - down[1]) > 5) return;
+        const rect = renderer.domElement.getBoundingClientRect();
+        const v = new T.Vector2(((e.clientX - rect.left) / rect.width) * 2 - 1, -((e.clientY - rect.top) / rect.height) * 2 + 1);
+        const ray = new T.Raycaster(); ray.setFromCamera(v, camera);
+        const hit = ray.intersectObject(turf)[0];
+        if (!hit) return;
+        surfSpot = { L: Math.max(-19, Math.min(19, hit.point.x)), D: Math.max(0, Math.min(20, hit.point.z)) };
+        renderSaveSurface();
+      });
+      const loop = () => { if (!document.body.contains(renderer.domElement)) return; controls.update(); renderer.render(scene, camera); requestAnimationFrame(loop); };
+      loop();
+    }
+    SURF3D.size();
+    drawSurface3D(surf);
+  }).catch(() => { SURF3D = null; wrap.innerHTML = '<p class="sans" style="color:#fff; font-size:13px; padding:14px;">The 3D view couldn&rsquo;t start in this browser (3D graphics are turned off, or there&rsquo;s no internet connection). The 2D view has the same numbers.</p>'; });
+}
+function drawSurface3D(surf) {
+  if (!SURF3D) return;
+  const T = SURF3D.T, g = SURF3D.g;
+  while (g.children.length) { const c = g.children.pop(); c.traverse(o => { if (o.geometry) o.geometry.dispose(); }); }
+  // The cage face (x -1..1, y 0..2 yds), split into the 3x3 grid.
+  surf.cells.forEach(c => {
+    const m = new T.Mesh(new T.PlaneGeometry(2 / 3 - 0.02, 2 / 3 - 0.02), new T.MeshBasicMaterial({ color: new T.Color(surfColor(c.diff, c.thin)), transparent: true, opacity: 0.85, side: T.DoubleSide }));
+    m.position.set(-1 + (c.col + 0.5) * 2 / 3, 2 - (c.row + 0.5) * 2 / 3, 0.02);
+    g.add(m);
+    if (!c.thin && c.his !== null) { const lab = threeLabel(T, `${c.diff >= 0 ? '+' : ''}${Math.round(c.diff * 100)}`, 0.22, '#FFFFFF'); lab.position.set(m.position.x, m.position.y, 0.06); g.add(lab); }
+  });
+  if (surfSpot) g.add(shooterFigure(T, { lateralYds: surfSpot.L, distanceYds: surfSpot.D, shotMechanism: 'Overhand', rightHanded: 'Right' }, new T.MeshLambertMaterial({ color: 0x0F1F3D })));
+}
+function renderSaveSurface() {
+  const wrap = document.getElementById('surfWrap');
+  if (!wrap) return;
+  const season = goalieHeatSeason;
+  if (!isAdvSeason(season)) {
+    wrap.innerHTML = `<p class="sans" style="color:var(--muted); font-size:13px;">The Save Surface covers ${ADV_FIRST_SEASON} and later &mdash; pick ${currentAdvSeason()} above.</p>`;
+    document.getElementById('surfLists').innerHTML = ''; return;
+  }
+  const sel = document.getElementById('surfGoalieSelect');
+  const goalies = rosterGoalies(season).map(g => ({ j: g.jersey, name: g.name, n: goalieShotsForSeason(season).filter(s => s.onKeeper === 1 && s.goalieJersey === g.jersey).length })).filter(g => g.n > 0).sort((a, b) => b.n - a.n);
+  sel.innerHTML = goalies.length ? goalies.map(g => `<option value="${escapeHtml(g.j)}">#${escapeHtml(g.j)} ${escapeHtml(g.name)} (${g.n})</option>`).join('') : '<option value="">No goalies yet</option>';
+  if (!goalies.some(g => g.j === surfGoalie)) surfGoalie = goalies.length ? goalies[0].j : '';
+  sel.value = surfGoalie;
+  if (PLAYER_MODE) surfGoalie = pmLockSelect(sel);
+  if (!surfGoalie || surfGoalie === '__NONE__') { wrap.innerHTML = '<p class="sans" style="color:var(--muted); font-size:13px;">No shots on cage logged for this goalie yet.</p>'; document.getElementById('surfLists').innerHTML = ''; return; }
+  const surf = surfaceFor(season, surfGoalie, surfSpot);
+  document.getElementById('surfSpotNote').innerHTML = surfSpot
+    ? `From <b>${num(surfSpot.D, 1)} yds out, ${num(Math.abs(surfSpot.L), 1)} yds ${surfSpot.L < -0.5 ? 'left' : surfSpot.L > 0.5 ? 'right' : 'center'}</b> (shots within about ${SURF_BW} yds count most). <button type="button" class="btn secondary" id="surfReset" style="margin-left:8px;">From anywhere</button>`
+    : `<b>From anywhere</b>: all ${surf.n} of his shots on cage. Tap the field to see the net from one spot.`;
+  wrap.innerHTML = surfMode === '2d'
+    ? `<div style="display:flex; gap:18px; flex-wrap:wrap; align-items:flex-start;"><div style="flex:1 1 360px; max-width:440px;">${surfFieldSvg(season, surfGoalie)}</div><div style="flex:1 1 300px;">${surfNetHtml(surf)}</div></div>`
+    : `<div id="surf3dWrap" style="position:relative; height:420px; border-radius:10px; overflow:hidden; background:#1F4F2B;"></div><div class="n-note" style="font-style:normal; margin-top:4px;">Tap the field to stand there; drag to turn. Cage colors and numbers = his save % minus the team&rsquo;s, in points.</div>`;
+  const rs = document.getElementById('surfReset'); if (rs) rs.addEventListener('click', () => { surfSpot = null; renderSaveSurface(); });
+  if (surfMode === '2d') {
+    const svgEl = document.getElementById('surfFieldSvg');
+    svgEl.addEventListener('click', e => {
+      const pt = svgPoint(svgEl, e), W = 420, H = 300, pad = 18;
+      surfSpot = { L: Math.max(-19, Math.min(19, (pt.x - pad) / (W - 2 * pad) * 38 - 19)), D: Math.max(0, Math.min(20, (pt.y - 26) / (H - 46) * 20)) };
+      renderSaveSurface();
+    });
+  } else { SURF3D = null; setTimeout(() => renderSurface3D(surf), 0); }
+  const ok = surf.cells.filter(c => !c.thin && c.diff !== null);
+  const best = ok.filter(c => c.diff > 0.03).sort((a, b) => b.diff - a.diff).slice(0, 3), worst = ok.filter(c => c.diff < -0.03).sort((a, b) => a.diff - b.diff).slice(0, 3);
+  const line = c => `<li><b>${escapeHtml(c.label)}</b>: saves ${Math.round(c.his * 100)}% vs the team&rsquo;s ${Math.round(c.team * 100)}% (${c.diff >= 0 ? '+' : ''}${Math.round(c.diff * 100)} pts, ${c.raw} shot${c.raw === 1 ? '' : 's'})</li>`;
+  document.getElementById('surfLists').innerHTML = `<div style="display:flex; gap:24px; flex-wrap:wrap;" class="sans">
+    <div style="flex:1 1 260px;"><p style="font-weight:700; color:var(--good); margin:0 0 4px;">Strongest areas${surfSpot ? ' from here' : ''}</p>${best.length ? `<ul style="margin:0; padding-left:18px; font-size:13px; line-height:1.7;">${best.map(line).join('')}</ul>` : '<p class="n-note">Nothing clearly above the team yet.</p>'}</div>
+    <div style="flex:1 1 260px;"><p style="font-weight:700; color:var(--critical); margin:0 0 4px;">Biggest holes${surfSpot ? ' from here' : ''}</p>${worst.length ? `<ul style="margin:0; padding-left:18px; font-size:13px; line-height:1.7;">${worst.map(line).join('')}</ul>` : '<p class="n-note">Nothing clearly below the team yet.</p>'}</div></div>`;
+}
+document.getElementById('surfGoalieSelect').addEventListener('change', e => { surfGoalie = e.target.value; surfSpot = null; renderSaveSurface(); });
+setupPillGroup('surfModePills', [{ value: '2d', label: '2D' }, { value: '3d', label: '3D' }], '2d', v => { surfMode = v || '2d'; if (!v) setPillGroupValue('surfModePills', '2d'); renderSaveSurface(); });
+
 // One row per goalie for the Advanced table (also feeds the Goalie Score).
 function goalieAdvRows(faced, model, season, team) {
   const byG = {};
@@ -7973,6 +8145,7 @@ function renderGoalieAdvanced() {
   if (!wrap) return;
   renderGoalieShooterAdj();
   renderGoalieScore();
+  renderSaveSurface();
   const season = goalieAdvSeason();
   const model = facedXgModelFor(season);
   const faced = goalieAdvShots(season);
