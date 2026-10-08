@@ -1162,6 +1162,50 @@
       <div class="model-note" id="effModelNote"></div>
     </div>
     </div>
+    <div class="subpage" data-label="xG Model">
+    <div class="panel">
+      <p class="panel-title">How It Works</p>
+      <p class="panel-sub" id="xg2How" style="font-size:13px; line-height:1.55;"></p>
+    </div>
+    <div class="panel">
+      <p class="panel-title">What Matters Most</p>
+      <p class="panel-sub">How much each factor changes the chance a shot goes in, on average across our shots, in percentage points. Green helps, red hurts.</p>
+      <div id="xg2EffectsWrap"></div>
+    </div>
+    <div class="panel">
+      <p class="panel-title">Model vs Grades</p>
+      <p class="panel-sub">Which predicts goals better on shots it never saw: the objective model, or the Gold/Silver/Bronze grade? Below: when each one says a shot has a given chance, how often those shots actually went in (closer = more honest).</p>
+      <div class="view-tiles trend-grid" id="xg2CompareWrap"></div>
+      <div class="table-wrap" id="xg2CalibWrap"></div>
+    </div>
+    <div class="panel">
+      <p class="panel-title">Grade Check</p>
+      <p class="panel-sub">For each grade: how often those shots actually went in, and what the objective model expected on the same shots.</p>
+      <div class="table-wrap" id="xg2GradeWrap"></div>
+      <p class="panel-title" style="margin-top:16px; font-size:15px;">Biggest Disagreements</p>
+      <p class="panel-sub">Shots where the grade and the model disagree most &mdash; worth a rewatch.</p>
+      <div class="table-wrap" id="xg2DisagreeWrap"></div>
+    </div>
+    <div class="panel">
+      <p class="panel-title">Old vs New by Player</p>
+      <p class="panel-sub">Each player&rsquo;s expected goals and finishing under the grade-based xG (used everywhere today) and the objective model. Players with 5+ located shots.</p>
+      <div class="table-wrap" id="xg2PlayerWrap"></div>
+    </div>
+    <div class="panel">
+      <p class="panel-title">3D Shot Cone</p>
+      <p class="panel-sub">Tap anywhere on the field to stand there: the cone shows the cage the shooter sees, colored by the model&rsquo;s chance; the ground is colored the same way for every spot. Drag to turn the view. Set the typical shot below.</p>
+      <div class="controls-row" style="margin-bottom:8px;">
+        <div class="control-group"><label>Hand</label><div class="pill-row" id="xg2HandPills"></div></div>
+        <div class="control-group"><label>Catch / Dodge</label><div class="pill-row" id="xg2DodgePills"></div></div>
+        <div class="control-group"><label>Contest</label><div class="pill-row" id="xg2ContestPills"></div></div>
+        <div class="control-group"><label>Stick Plane</label><div class="pill-row" id="xg2PlanePills"></div></div>
+      </div>
+      <div style="display:flex; gap:14px; flex-wrap:wrap; align-items:flex-start;">
+        <div id="xg2ConeWrap" style="position:relative; flex:1 1 520px; min-width:280px; height:440px; border-radius:10px; overflow:hidden; background:#1F4F2B;"></div>
+        <div id="xg2ConeInfo" class="sans" style="flex:0 1 260px; min-width:220px; font-size:12.5px; line-height:1.6;"></div>
+      </div>
+    </div>
+    </div>
     <div class="subpage" data-label="Players">
     <div class="panel">
       <p class="panel-title">Player Efficiency</p>
@@ -2968,6 +3012,7 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
 // blocks; the strip of buttons is built from those labels. The last
 // sub-tab picked in each tab is remembered on this device.
 function showSubpage(viewId, label) {
+  if (viewId === 'efficiencyView' && label === 'xG Model') setTimeout(() => renderXg2Cone(), 0);
   const view = document.getElementById(viewId);
   const pages = [...view.querySelectorAll(':scope > .subpage')];
   if (!pages.length) return;
@@ -7761,6 +7806,347 @@ function renderExactModel(shots, xgOf) {
   renderAngle3D(xgOf);
 }
 
+// ---------------- Efficiency > xG Model (objective expected goals) ----------------
+// A second, objective xG: regularized logistic regression on this season's
+// shots using only facts about the shot (where, how, pressure, setting) and
+// never the Gold/Silver/Bronze grade, so it can check the grading. Shown side
+// by side with the grade-based xG; nothing else in the tracker uses it yet.
+const XG2_PLANES = ['Sidearm', 'Underhand', 'BTB', 'Twister'];   // vs Overhand
+const XG2_LAMBDA = 3;
+const XG2_FOLDS = 5;
+// Release height (yards) by stick plane, from releasePoint().
+const XG2_RELEASE_H = { Overhand: 2.15, Sidearm: 1.2, Underhand: 0.5, BTB: 0.95, Twister: 1.05 };
+// The shot cone: the 3D opening of the 6x6 cage from where the ball is
+// released. Width = the angle between the posts; height = the angle between
+// the crossbar and the ground line, from release height. "Visible cage" is
+// width x height relative to a shot from 5 yds straight on at overhand height
+// (100%).
+function cageAngles(L, D, h) {
+  if (D === null || D === undefined || L === null || L === undefined) return null;
+  const z = Math.max(0.05, D);
+  const wid = Math.abs(Math.atan2(1 - L, z) - Math.atan2(-1 - L, z));
+  const r = Math.hypot(L, z);
+  const hgt = Math.atan2(2 - h, r) + Math.atan2(h, r);
+  return { wid, hgt };
+}
+const XG2_REF = (() => { const a = cageAngles(0, 5, 2.15); return a.wid * a.hgt; })();
+function visibleCage(L, D, plane) {
+  const a = cageAngles(L, D, XG2_RELEASE_H[plane] || 1.5);
+  return a ? Math.min(1.5, a.wid * a.hgt / XG2_REF) : null;
+}
+function xg2Profile(x) {
+  const hand = getHandedness(x) || null;
+  const L = x.lateralYds;
+  return { lat: L, dist: x.distanceYds, dodge: x.offDodge === 1 ? 1 : (x.offDodge === 0 ? 0 : null), hand,
+    plane: x.shotMechanism || null, contest: x.contestLevel || null, bounce: x.bounceShot === 'Yes' ? 1 : 0,
+    trans: x.transition === 'FO' || x.transition === 'OTOD' ? 1 : 0, man: x.manSituation || 'Even', reb: x.rebound === 'Yes' ? 1 : 0,
+    game: x.context === 'Game' ? 1 : 0 };
+}
+// Shooting hand vs field side (as the shooter faces the goal): a righty on
+// the right or a lefty on the left has his stick to the outside; a righty
+// on the left or a lefty on the right has it to the inside, toward the middle.
+function xg2Side(p) {
+  if (!p.hand || p.lat === null || p.lat === undefined || Math.abs(p.lat) <= 1) return { strong: 0, off: 0 };
+  const right = p.lat > 1;
+  const strong = (p.hand === 'Right') === right;
+  return { strong: strong ? 1 : 0, off: strong ? 0 : 1 };
+}
+const XG2_NAMES = ['(base)', 'Distance', 'Distance²', 'Angle', 'Angle²', 'Visible cage', 'Off the dodge', 'Stick to the outside', 'Stick to the inside']
+  .concat(XG2_PLANES, ['Bounce shot', 'Light contest', 'Heavy contest', 'Transition', 'Man-up', 'Man-down', 'Rebound', 'Game']);
+function xg2Features(p, means) {
+  const ang = Math.atan2(Math.abs(p.lat), Math.max(0, p.dist)) / (Math.PI / 2), d = p.dist / 20;
+  const vc = visibleCage(p.lat, p.dist, p.plane || 'Overhand');
+  const sd = xg2Side(p);
+  const f = [1, d, d * d, ang, ang * ang, vc === null ? means.vc : vc];
+  f.push(p.dodge === null ? means.dodge : p.dodge);
+  f.push(p.hand ? sd.strong : means.strong, p.hand ? sd.off : means.off);
+  XG2_PLANES.forEach((k, i) => f.push(p.plane === null ? means.plane[i] : (p.plane === k ? 1 : 0)));
+  f.push(p.bounce);
+  f.push(p.contest === null ? means.light : (p.contest === 'Light' ? 1 : 0), p.contest === null ? means.heavy : (p.contest === 'Heavy' ? 1 : 0));
+  f.push(p.trans, p.man === 'Man-Up' ? 1 : 0, p.man === 'Man-Down' ? 1 : 0, p.reb, p.game);
+  return f;
+}
+function xg2Usable(x) { return x.distanceYds !== null && x.distanceYds !== undefined && x.lateralYds !== null && x.lateralYds !== undefined; }
+function fitXg2(shots) {
+  const use = shots.filter(xg2Usable);
+  const rows = use.map(xg2Profile), goals = use.map(x => x.goal === 1 ? 1 : 0);
+  const n = rows.length, base = n ? goals.reduce((a, b) => a + b, 0) / n : 0;
+  const avg = vals => { const v = vals.filter(x => x !== null && x !== undefined); return v.length ? v.reduce((a, b) => a + b, 0) / v.length : 0; };
+  const means = {
+    vc: avg(rows.map(r => visibleCage(r.lat, r.dist, r.plane || 'Overhand'))), dodge: avg(rows.map(r => r.dodge)),
+    strong: avg(rows.filter(r => r.hand).map(r => xg2Side(r).strong)), off: avg(rows.filter(r => r.hand).map(r => xg2Side(r).off)),
+    plane: XG2_PLANES.map(k => avg(rows.map(r => r.plane === null ? null : (r.plane === k ? 1 : 0)))),
+    light: avg(rows.map(r => r.contest === null ? null : (r.contest === 'Light' ? 1 : 0))), heavy: avg(rows.map(r => r.contest === null ? null : (r.contest === 'Heavy' ? 1 : 0))),
+  };
+  const X = rows.map(r => xg2Features(r, means));
+  const k = XG2_NAMES.length;
+  const clip = v => Math.max(0.02, Math.min(0.98, v));
+  let w = Array(k).fill(0); w[0] = Math.log(clip(base) / (1 - clip(base)));
+  for (let it = 0; it < 30 && n; it++) {
+    const g = Array(k).fill(0), H = Array.from({ length: k }, () => Array(k).fill(0));
+    X.forEach((f, i) => {
+      const z = f.reduce((a, v, j) => a + v * w[j], 0), pr = 1 / (1 + Math.exp(-z)), e = goals[i] - pr, wt = pr * (1 - pr);
+      for (let a = 0; a < k; a++) { g[a] += e * f[a]; for (let b = a; b < k; b++) H[a][b] += wt * f[a] * f[b]; }
+    });
+    for (let a = 0; a < k; a++) { for (let b = 0; b < a; b++) H[a][b] = H[b][a]; if (a > 0) { g[a] -= XG2_LAMBDA * w[a]; H[a][a] += XG2_LAMBDA; } H[a][a] += 1e-6; }
+    const step = solveLinear(H, g);
+    w = w.map((v, j) => v + step[j]);
+    if (Math.max(...step.map(Math.abs)) < 1e-6) break;
+  }
+  return { w, means, base, n };
+}
+function predictXg2(model, p) {
+  const z = xg2Features(p, model.means).reduce((a, v, j) => a + v * model.w[j], 0);
+  return 1 / (1 + Math.exp(-z));
+}
+// The grade-only model fit the same way (Gold/Bronze vs Silver, game), so
+// the two can be compared fairly on shots neither one saw.
+function fitGradeOnly(shots) {
+  const rows = shots.map(x => [1, x.shotQuality === '1-Gold' ? 1 : 0, x.shotQuality === '3-Bronze' ? 1 : 0, x.context === 'Game' ? 1 : 0]);
+  const goals = shots.map(x => x.goal === 1 ? 1 : 0), n = rows.length, k = 4;
+  const base = n ? goals.reduce((a, b) => a + b, 0) / n : 0.3;
+  let w = [Math.log(Math.max(0.02, base) / (1 - Math.min(0.98, base))), 0, 0, 0];
+  for (let it = 0; it < 30 && n; it++) {
+    const g = Array(k).fill(0), H = Array.from({ length: k }, () => Array(k).fill(0));
+    rows.forEach((f, i) => { const z = f.reduce((a, v, j) => a + v * w[j], 0), pr = 1 / (1 + Math.exp(-z)), e = goals[i] - pr, wt = pr * (1 - pr); for (let a = 0; a < k; a++) { g[a] += e * f[a]; for (let b = a; b < k; b++) H[a][b] += wt * f[a] * f[b]; } });
+    for (let a = 0; a < k; a++) { for (let b = 0; b < a; b++) H[a][b] = H[b][a]; if (a > 0) { g[a] -= XG2_LAMBDA * w[a]; H[a][a] += XG2_LAMBDA; } H[a][a] += 1e-6; }
+    const step = solveLinear(H, g); w = w.map((v, j) => v + step[j]);
+    if (Math.max(...step.map(Math.abs)) < 1e-6) break;
+  }
+  return x => 1 / (1 + Math.exp(-[1, x.shotQuality === '1-Gold' ? 1 : 0, x.shotQuality === '3-Bronze' ? 1 : 0, x.context === 'Game' ? 1 : 0].reduce((a, v, j) => a + v * w[j], 0)));
+}
+// Everything the xG Model sub-tab shows, for one season.
+function computeXg2(season) {
+  const shots = advShots(season).filter(s => s.shooterJersey && xg2Usable(s)).sort((a, b) => a.id - b.id);
+  if (shots.length < 40) return { shots, tooFew: true };
+  const model = fitXg2(shots);
+  const pred = new Map(shots.map(x => [x, predictXg2(model, xg2Profile(x))]));
+  // 5-fold cross-validation: every shot is predicted by models that never saw it.
+  const oof = new Map(), oofGrade = new Map();
+  for (let f = 0; f < XG2_FOLDS; f++) {
+    const train = shots.filter((_, i) => i % XG2_FOLDS !== f), test = shots.filter((_, i) => i % XG2_FOLDS === f);
+    const m = fitXg2(train), gm = fitGradeOnly(train);
+    test.forEach(x => { oof.set(x, predictXg2(m, xg2Profile(x))); oofGrade.set(x, gm(x)); });
+  }
+  const y = x => x.goal === 1 ? 1 : 0;
+  const base = shots.filter(x => x.goal === 1).length / shots.length;
+  const ll = get => -shots.reduce((a, x) => { const p = Math.max(1e-4, Math.min(1 - 1e-4, get(x))); return a + (y(x) ? Math.log(p) : Math.log(1 - p)); }, 0) / shots.length;
+  const llBase = ll(() => base), llModel = ll(x => oof.get(x)), llGrade = ll(x => oofGrade.get(x));
+  const calib = get => [[0, 0.15], [0.15, 0.3], [0.3, 0.45], [0.45, 0.6], [0.6, 1.01]].map(([lo, hi]) => {
+    const b = shots.filter(x => get(x) >= lo && get(x) < hi);
+    return { lo, hi, n: b.length, pred: b.length ? b.reduce((a, x) => a + get(x), 0) / b.length : null, actual: b.length ? b.filter(x => x.goal === 1).length / b.length : null };
+  });
+  // What matters most: the average change in scoring chance across our shots
+  // when one factor is switched on (or the shot is moved 5 yds farther out).
+  const avgDelta = (mod) => shots.reduce((a, x) => { const p = xg2Profile(x); const q = mod(Object.assign({}, p)); return a + (predictXg2(model, q) - predictXg2(model, p)); }, 0) / shots.length;
+  const effects = [
+    ['5 yds farther out', p => Object.assign(p, { dist: p.dist + 5 })],
+    ['Off the dodge (vs catch)', p => Object.assign(p, { dodge: 1 })],
+    ['Off the catch (vs dodge)', p => Object.assign(p, { dodge: 0 })],
+    ['Light contest (vs open)', p => Object.assign(p, { contest: 'Light' })],
+    ['Heavy contest (vs open)', p => Object.assign(p, { contest: 'Heavy' })],
+    ['Open (vs contested)', p => Object.assign(p, { contest: 'Open' })],
+    ['Sidearm (vs overhand)', p => Object.assign(p, { plane: 'Sidearm' })],
+    ['Underhand (vs overhand)', p => Object.assign(p, { plane: 'Underhand' })],
+    ['Bounce shot', p => Object.assign(p, { bounce: 1 })],
+    ['Transition', p => Object.assign(p, { trans: 1 })],
+    ['Man-up', p => Object.assign(p, { man: 'Man-Up' })],
+    ['Rebound / second chance', p => Object.assign(p, { reb: 1 })],
+    ['Stick to the outside (righty on right, lefty on left)', p => p.hand ? Object.assign(p, { lat: (p.hand === 'Right' ? 1 : -1) * Math.max(2, Math.abs(p.lat)) }) : p],
+    ['Stick to the inside (righty on left, lefty on right)', p => p.hand ? Object.assign(p, { lat: (p.hand === 'Right' ? -1 : 1) * Math.max(2, Math.abs(p.lat)) }) : p],
+  ].map(([label, mod]) => ({ label, delta: avgDelta(mod) }));
+  return { shots, model, pred, oof, oofGrade, base, llBase, llModel, llGrade, calibModel: calib(x => oof.get(x)), calibGrade: calib(x => oofGrade.get(x)), effects };
+}
+let XG2_LAST = null;
+function xg2Skill(ll, llBase) { return llBase ? (1 - ll / llBase) : null; }
+function renderXg2Tab() {
+  const wrap = document.getElementById('xg2EffectsWrap');
+  if (!wrap) return;
+  const season = EFF_SEASON;
+  const r = computeXg2(season);
+  XG2_LAST = { season, r };
+  const how = document.getElementById('xg2How');
+  if (r.tooFew) {
+    how.innerHTML = `Needs at least 40 located ${escapeHtml(season)} shots to fit &mdash; ${r.shots.length} so far.`;
+    ['xg2EffectsWrap', 'xg2CompareWrap', 'xg2CalibWrap', 'xg2GradeWrap', 'xg2DisagreeWrap', 'xg2PlayerWrap'].forEach(id => { document.getElementById(id).innerHTML = ''; });
+    return;
+  }
+  how.innerHTML = `For every shot, this model asks: <b>how often do shots like this go in for us?</b> It learns from all ${r.shots.length} ${escapeHtml(season)} shots, using only facts about the shot &mdash; where it was taken from, how much of the cage was open, catch or dodge, which hand and side, stick plane, contest, transition, man-up, rebound, bounce, and practice vs game. It <b>never looks at the Gold/Silver/Bronze grade</b>, so it&rsquo;s a second opinion on every look. It refits itself as you log. For now it&rsquo;s shown side by side with the grade-based xG; nothing else in the tracker uses it yet.`;
+  // 2. What matters most.
+  const eff = r.effects.filter(e => isFinite(e.delta)).sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta));
+  const maxAbs = Math.max(0.01, ...eff.map(e => Math.abs(e.delta)));
+  wrap.innerHTML = eff.map(e => {
+    const pts = e.delta * 100, wpct = Math.abs(e.delta) / maxAbs * 50;
+    return `<div class="sans" style="display:flex; align-items:center; gap:10px; font-size:12.5px; margin:3px 0;">
+      <div style="flex:0 0 250px; text-align:right;">${escapeHtml(e.label)}</div>
+      <div style="flex:1; position:relative; height:14px; background:var(--paper); border-radius:3px;">
+        <div style="position:absolute; left:50%; top:0; bottom:0; width:1px; background:var(--muted);"></div>
+        <div style="position:absolute; top:2px; height:10px; border-radius:2px; ${pts >= 0 ? `left:50%; width:${wpct}%; background:var(--good);` : `right:50%; width:${wpct}%; background:var(--critical);`}"></div>
+      </div>
+      <div style="flex:0 0 70px; font-weight:700; color:${pts >= 0 ? 'var(--good)' : 'var(--critical)'};">${pts >= 0 ? '+' : ''}${pts.toFixed(1)} pts</div></div>`;
+  }).join('');
+  // 3. Model vs grades.
+  const sm = xg2Skill(r.llModel, r.llBase), sg = xg2Skill(r.llGrade, r.llBase);
+  document.getElementById('xg2CompareWrap').innerHTML = [
+    statTile('Objective Model', sm === null ? '—' : `${(sm * 100).toFixed(1)}%`, 'better than guessing the team average', 'Cross-validated: every shot is predicted by a model that never saw it. Measured by log loss against just guessing our overall goal rate.'),
+    statTile('Gold/Silver/Bronze Grades', sg === null ? '—' : `${(sg * 100).toFixed(1)}%`, 'better than guessing the team average', 'The grade alone (plus practice vs game), fit and tested the same way.'),
+    statTile('Verdict', sm === null || sg === null ? '—' : Math.abs(sm - sg) < 0.01 ? 'About even' : (sm > sg ? 'Model ahead' : 'Grades ahead'), sm === null || sg === null ? '' : `by ${(Math.abs(sm - sg) * 100).toFixed(1)} pts on ${r.shots.length} shots`),
+  ].join('');
+  const calRows = r.calibModel.map((c, i) => ({ order: i, band: `${Math.round(c.lo * 100)}–${Math.min(100, Math.round(c.hi * 100))}%`, mN: c.n, mPred: c.pred, mAct: c.actual, g: r.calibGrade[i] }));
+  renderSortableTable('xg2CalibWrap', [
+    { key: 'order', label: 'Predicted Chance', type: 'num', value: r2 => r2.order, format: (v, r2) => r2.band, sortable: false },
+    { key: 'mN', label: 'Shots', type: 'num', value: r2 => r2.mN, group: 'Objective model', sortable: false },
+    { key: 'mPred', label: 'Said', type: 'num', value: r2 => r2.mPred, format: v => pct(v), group: 'Objective model', sortable: false },
+    { key: 'mAct', label: 'Went In', type: 'num', value: r2 => r2.mAct, format: v => pct(v), group: 'Objective model', sortable: false },
+    { key: 'gN', label: 'Shots', type: 'num', value: r2 => r2.g.n, group: 'Grades', sortable: false },
+    { key: 'gPred', label: 'Said', type: 'num', value: r2 => r2.g.pred, format: v => pct(v), group: 'Grades', sortable: false },
+    { key: 'gAct', label: 'Went In', type: 'num', value: r2 => r2.g.actual, format: v => pct(v), group: 'Grades', sortable: false },
+  ], calRows, { dense: true, defaultSort: { key: 'order', dir: 'asc' }, emptyMsg: 'No shots yet.' });
+  // 4. Grade check.
+  const gradeRows = [['1-Gold', 'Gold'], ['2-Silver', 'Silver'], ['3-Bronze', 'Bronze']].map(([q, label], order) => {
+    const l = r.shots.filter(x => x.shotQuality === q);
+    const act = l.length ? l.filter(x => x.goal === 1).length / l.length : null;
+    const exp = l.length ? l.reduce((a, x) => a + r.oof.get(x), 0) / l.length : null;
+    const diff = act === null ? null : (exp - act);
+    const verdict = act === null ? '—' : Math.abs(exp - act) < 0.04 ? 'Matches the model' : (exp > act ? 'Model rates these looks higher than they’ve played' : 'Model rates these looks lower than they’ve played');
+    return { order, label, n: l.length, act, exp, diff, verdict };
+  });
+  renderSortableTable('xg2GradeWrap', [
+    { key: 'order', label: 'Grade', type: 'num', value: r2 => r2.order, sortable: false, format: (v, r2) => `<span class="tier-chip ${r2.label.toLowerCase()}">${r2.label}</span>` },
+    { key: 'n', label: 'Shots', type: 'num', value: r2 => r2.n, sortable: false },
+    { key: 'act', label: 'Actually Went In', type: 'num', value: r2 => r2.act, format: v => pct(v), sortable: false },
+    { key: 'exp', label: 'Model Expected', type: 'num', value: r2 => r2.exp, format: v => pct(v), sortable: false, title: 'The objective model’s average chance on these same shots (cross-validated).' },
+    { key: 'verdict', label: 'Read', type: 'text', value: r2 => r2.verdict, sortable: false },
+  ], gradeRows, { dense: true, defaultSort: { key: 'order', dir: 'asc' }, emptyMsg: 'No graded shots yet.' });
+  const tierRate = {}; ['1-Gold', '2-Silver', '3-Bronze'].forEach(q => { const l = r.shots.filter(x => x.shotQuality === q); tierRate[q] = l.length ? l.filter(x => x.goal === 1).length / l.length : null; });
+  const dis = r.shots.filter(x => tierRate[x.shotQuality] !== null && tierRate[x.shotQuality] !== undefined)
+    .map(x => ({ x, gap: r.oof.get(x) - tierRate[x.shotQuality] })).sort((a, b) => Math.abs(b.gap) - Math.abs(a.gap)).slice(0, 15);
+  renderSortableTable('xg2DisagreeWrap', [
+    { key: 'date', label: 'Date', type: 'text', value: d => d.x.date },
+    { key: 'shooter', label: 'Shooter', type: 'text', value: d => jerseyLabel(d.x.shooterJersey, season), format: nameCell },
+    { key: 'grade', label: 'Your Grade', type: 'text', value: d => (d.x.shotQuality || '').replace(/^\d-/, ''), format: v => `<span class="tier-chip ${v.toLowerCase()}">${escapeHtml(v)}</span>` },
+    { key: 'gradeRate', label: 'Grade Says', type: 'num', value: d => tierRate[d.x.shotQuality], format: v => pct(v), title: 'How often shots with this grade have gone in this season.' },
+    { key: 'model', label: 'Model Says', type: 'num', value: d => r.oof.get(d.x), format: v => pct(v) },
+    { key: 'where', label: 'Where / How', type: 'text', value: d => `${num(d.x.distanceYds, 0)} yds · ${num(shotAngleDeg(d.x), 0)}° · ${d.x.offDodge === 1 ? 'dodge' : 'catch'} · ${d.x.contestLevel || ''}`, sortable: false },
+    { key: 'result', label: 'Result', type: 'text', value: d => outcomeFor(d.x) },
+  ], dis, { dense: true, defaultSort: { key: 'date', dir: 'desc' }, emptyMsg: 'No disagreements yet.' });
+  // 5. Old vs new by player.
+  const gModel = xgModelFor(season);
+  const byP = {};
+  r.shots.forEach(x => { (byP[x.shooterJersey] = byP[x.shooterJersey] || []).push(x); });
+  const pRows = Object.keys(byP).filter(j => byP[j].length >= 5).map(j => {
+    const l = byP[j], g = l.filter(x => x.goal === 1).length;
+    const xOld = xgSum(l, gModel), xNew = l.reduce((a, x) => a + r.pred.get(x), 0);
+    return { jersey: j, name: nameFor(j, season), shots: l.length, goals: g, xOld, xNew, finOld: g - xOld, finNew: g - xNew };
+  });
+  renderSortableTable('xg2PlayerWrap', [
+    { key: 'jersey', label: '#', type: 'text', value: p => p.jersey },
+    { key: 'name', label: 'Name', type: 'text', value: p => p.name, format: nameCell },
+    { key: 'shots', label: 'Shots', type: 'num', value: p => p.shots },
+    { key: 'goals', label: 'Goals', type: 'num', value: p => p.goals },
+    { key: 'xOld', label: 'Grade xG', type: 'num', value: p => p.xOld, format: v => num(v, 1), group: 'Expected goals' },
+    { key: 'xNew', label: 'Model xG', type: 'num', value: p => p.xNew, format: v => num(v, 1), group: 'Expected goals' },
+    { key: 'finOld', label: 'Grade', type: 'num', value: p => p.finOld, format: v => signed(v), group: 'Finishing (G − xG)' },
+    { key: 'finNew', label: 'Model', type: 'num', value: p => p.finNew, format: v => signed(v), group: 'Finishing (G − xG)' },
+    { key: 'shift', label: 'Change', type: 'num', value: p => p.finNew - p.finOld, format: v => signed(v), group: 'Finishing (G − xG)', title: 'How much his finishing number moves when the objective model replaces the grade.' },
+  ], pRows, { dense: true, defaultSort: { key: 'shots', dir: 'desc' }, emptyMsg: 'No player has 5+ located shots yet.' });
+  renderXg2Cone();
+}
+// ---- 6. 3D shot cone ----
+let XG2C = null;
+let xg2Spot = { lat: 4, dist: 9 };
+let xg2Typical = { hand: 'Right', dodge: 0, contest: 'Open', plane: 'Overhand' };
+function xg2SpotProfile() { return { lat: xg2Spot.lat, dist: xg2Spot.dist, dodge: xg2Typical.dodge, hand: xg2Typical.hand, plane: xg2Typical.plane, contest: xg2Typical.contest, bounce: 0, trans: 0, man: 'Even', reb: 0, game: 0 }; }
+function xg2Color(p) { return p >= 0.5 ? 0x1E9E48 : p >= 0.35 ? 0x7DBE4A : p >= 0.2 ? 0xE0B000 : p >= 0.1 ? 0xE8761F : 0xD03B3B; }
+function renderXg2Cone() {
+  const wrap = document.getElementById('xg2ConeWrap');
+  if (!wrap || !XG2_LAST || XG2_LAST.r.tooFew) { if (wrap && XG2_LAST && XG2_LAST.r.tooFew) wrap.innerHTML = ''; return; }
+  // Only builds while the sub-tab is on screen.
+  if (!wrap.offsetParent) return;
+  loadThree().then(() => {
+    const T = window.THREE;
+    if (!XG2C || !wrap.contains(XG2C.renderer.domElement)) {
+      wrap.innerHTML = '';
+      const renderer = new T.WebGLRenderer({ antialias: true });
+      renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
+      wrap.appendChild(renderer.domElement);
+      const scene = new T.Scene(); scene.background = new T.Color(0x1F4F2B);
+      const camera = new T.PerspectiveCamera(45, 1, 0.1, 300);
+      const controls = new T.OrbitControls(camera, renderer.domElement);
+      controls.maxPolarAngle = Math.PI / 2 - 0.02;
+      scene.add(new T.AmbientLight(0xffffff, 0.85));
+      const sun = new T.DirectionalLight(0xffffff, 0.5); sun.position.set(5, 20, 10); scene.add(sun);
+      const turf = addField3D(T, scene);
+      const heatG = new T.Group(), coneG = new T.Group(); scene.add(heatG); scene.add(coneG);
+      camera.position.set(9, 13, 24); controls.target.set(0, 0.5, 6);
+      XG2C = { T, renderer, scene, camera, controls, turf, heatG, coneG, wrap };
+      const size = () => { const w = wrap.clientWidth || 700, h = wrap.clientHeight || 440; renderer.setSize(w, h); camera.aspect = w / h; camera.updateProjectionMatrix(); };
+      XG2C.size = size; size(); window.addEventListener('resize', size);
+      let down = null;
+      renderer.domElement.addEventListener('pointerdown', e => { down = [e.clientX, e.clientY]; });
+      renderer.domElement.addEventListener('pointerup', e => {
+        if (!down || Math.hypot(e.clientX - down[0], e.clientY - down[1]) > 5) return;
+        const rect = renderer.domElement.getBoundingClientRect();
+        const v = new T.Vector2(((e.clientX - rect.left) / rect.width) * 2 - 1, -((e.clientY - rect.top) / rect.height) * 2 + 1);
+        const ray = new T.Raycaster(); ray.setFromCamera(v, camera);
+        const hit = ray.intersectObject(turf)[0];
+        if (!hit) return;
+        xg2Spot = { lat: Math.max(-19, Math.min(19, hit.point.x)), dist: Math.max(0, Math.min(20, hit.point.z)) };
+        drawXg2Cone(false);
+      });
+      const loop = () => { if (!document.body.contains(renderer.domElement)) return; controls.update(); renderer.render(scene, camera); requestAnimationFrame(loop); };
+      loop();
+    }
+    XG2C.size();
+    drawXg2Cone(true);
+  }).catch(() => { XG2C = null; wrap.innerHTML = '<p class="sans" style="color:#fff; font-size:13px; padding:14px;">The 3D view couldn&rsquo;t start in this browser (3D graphics are turned off, or there&rsquo;s no internet connection). Everything above still works.</p>'; });
+}
+function drawXg2Cone(redrawHeat) {
+  if (!XG2C || !XG2_LAST || XG2_LAST.r.tooFew) return;
+  const T = XG2C.T, model = XG2_LAST.r.model;
+  const clear = g => { while (g.children.length) { const c = g.children.pop(); c.traverse(o => { if (o.geometry) o.geometry.dispose(); }); } };
+  if (redrawHeat) {
+    clear(XG2C.heatG);
+    // Ground tiles: the model's chance for a typical shot from each yard.
+    for (let L = -15; L < 15; L++) for (let D = 0; D < 20; D++) {
+      const p = predictXg2(model, Object.assign(xg2SpotProfile(), { lat: L + 0.5, dist: D + 0.5 }));
+      const m = new T.Mesh(new T.PlaneGeometry(0.96, 0.96), new T.MeshBasicMaterial({ color: xg2Color(p), transparent: true, opacity: 0.55, depthWrite: false }));
+      m.rotation.x = -Math.PI / 2; m.position.set(L + 0.5, 0.02, D + 0.5); XG2C.heatG.add(m);
+    }
+  }
+  clear(XG2C.coneG);
+  const prof = xg2SpotProfile();
+  const p = predictXg2(model, prof);
+  const h = XG2_RELEASE_H[prof.plane] || 1.5;
+  const handDir = prof.hand === 'Left' ? -1 : 1;
+  const rel = new T.Vector3(xg2Spot.lat + handDir * 0.25, h, xg2Spot.dist);
+  const corners = [[-1, 0, 0], [1, 0, 0], [1, 2, 0], [-1, 2, 0]].map(c => new T.Vector3(...c));
+  const pos = [];
+  for (let i = 0; i < 4; i++) { const a = corners[i], b = corners[(i + 1) % 4]; pos.push(rel.x, rel.y, rel.z, a.x, a.y, a.z, b.x, b.y, b.z); }
+  const geo = new T.BufferGeometry(); geo.setAttribute('position', new T.Float32BufferAttribute(pos, 3)); geo.computeVertexNormals();
+  XG2C.coneG.add(new T.Mesh(geo, new T.MeshBasicMaterial({ color: xg2Color(p), transparent: true, opacity: 0.35, side: T.DoubleSide, depthWrite: false })));
+  const edge = new T.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.85 });
+  corners.forEach(c => XG2C.coneG.add(new T.Line(new T.BufferGeometry().setFromPoints([rel, c]), edge)));
+  const fig = shooterFigure(T, { lateralYds: xg2Spot.lat, distanceYds: xg2Spot.dist, shotMechanism: prof.plane, rightHanded: prof.hand }, new T.MeshLambertMaterial({ color: 0x0F1F3D }));
+  XG2C.coneG.add(fig);
+  // Readout.
+  const a = cageAngles(xg2Spot.lat, xg2Spot.dist, h);
+  const vc = visibleCage(xg2Spot.lat, xg2Spot.dist, prof.plane);
+  const near = XG2_LAST.r.shots.filter(x => Math.hypot(x.lateralYds - xg2Spot.lat, x.distanceYds - xg2Spot.dist) <= 2);
+  const nearG = near.filter(x => x.goal === 1).length;
+  document.getElementById('xg2ConeInfo').innerHTML = `
+    <div style="font-size:26px; font-weight:700; color:#${xg2Color(p).toString(16).padStart(6, '0')};">${(p * 100).toFixed(0)}%</div>
+    <div class="n-note" style="font-style:normal; margin-bottom:8px;">model chance for a typical shot from here</div>
+    <div><b>${num(xg2Spot.dist, 1)}</b> yds out, <b>${num(Math.abs(xg2Spot.lat), 1)}</b> yds ${xg2Spot.lat < -0.5 ? 'left' : xg2Spot.lat > 0.5 ? 'right' : 'center'} · ${num(Math.atan2(Math.abs(xg2Spot.lat), Math.max(0.05, xg2Spot.dist)) * 180 / Math.PI, 0)}° off center</div>
+    <div>Cage opening: <b>${a ? num(a.wid * 180 / Math.PI, 0) : '—'}°</b> wide × <b>${a ? num(a.hgt * 180 / Math.PI, 0) : '—'}°</b> tall</div>
+    <div>Visible cage: <b>${vc === null ? '—' : Math.round(vc * 100) + '%'}</b> <span class="n-note">(100% = 5 yds straight on)</span></div>
+    <div style="margin-top:6px;">Our shots within 2 yds of here: <b>${nearG} of ${near.length}</b>${near.length ? ` (${pct(nearG / near.length)})` : ''}</div>`;
+}
+setupPillGroup('xg2HandPills', [{ value: 'Right', label: 'Righty' }, { value: 'Left', label: 'Lefty' }], 'Right', v => { xg2Typical.hand = v || 'Right'; if (!v) setPillGroupValue('xg2HandPills', 'Right'); drawXg2Cone(true); });
+setupPillGroup('xg2DodgePills', [{ value: '0', label: 'Catch' }, { value: '1', label: 'Dodge' }], '0', v => { xg2Typical.dodge = v === '1' ? 1 : 0; if (!v) setPillGroupValue('xg2DodgePills', '0'); drawXg2Cone(true); });
+setupPillGroup('xg2ContestPills', ['Open', 'Light', 'Heavy'], 'Open', v => { xg2Typical.contest = v || 'Open'; if (!v) setPillGroupValue('xg2ContestPills', 'Open'); drawXg2Cone(true); });
+setupPillGroup('xg2PlanePills', ['Overhand', 'Sidearm', 'Underhand'], 'Overhand', v => { xg2Typical.plane = v || 'Overhand'; if (!v) setPillGroupValue('xg2PlanePills', 'Overhand'); drawXg2Cone(true); });
+
 // ---- 3D shot map (three.js from jsDelivr, loaded on first use) ----
 let THREE_LOADING = null;
 function loadThree() {
@@ -7929,22 +8315,9 @@ function shotPathObject(T, x, mat, tube) {
   const curve = new T.QuadraticBezierCurve3(from, mid, to);
   return tube ? new T.Mesh(new T.TubeGeometry(curve, 24, tube, 6), mat) : new T.Line(new T.BufferGeometry().setFromPoints(curve.getPoints(24)), mat);
 }
-function buildAng3D(T, wrap) {
-  wrap.innerHTML = '';
-  const renderer = new T.WebGLRenderer({ antialias: true });
-  renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
-  wrap.appendChild(renderer.domElement);
-  const legend = document.createElement('div');
-  legend.className = 'sans';
-  legend.style.cssText = 'position:absolute; top:8px; left:8px; background:rgba(255,255,255,0.88); border-radius:8px; padding:6px 9px; font-size:11.5px; line-height:1.6; pointer-events:none;';
-  legend.innerHTML = '<span style="display:inline-block;width:14px;height:4px;background:#1E9E48;vertical-align:middle;margin-right:5px;"></span>Goal<br><span style="display:inline-block;width:14px;height:2px;background:#1F3864;opacity:.6;vertical-align:middle;margin-right:5px;"></span>Save<br><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#8C8C8C;vertical-align:middle;margin:0 8px 0 3px;"></span>Miss / block<br><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#D4AF37;vertical-align:middle;margin:0 6px 0 2px;"></span>What-if spot';
-  wrap.appendChild(legend);
-  const scene = new T.Scene(); scene.background = new T.Color(0x1F4F2B);
-  const camera = new T.PerspectiveCamera(45, 1, 0.1, 300);
-  const controls = new T.OrbitControls(camera, renderer.domElement);
-  controls.maxPolarAngle = Math.PI / 2 - 0.02;
-  scene.add(new T.AmbientLight(0xffffff, 0.85));
-  const sun = new T.DirectionalLight(0xffffff, 0.5); sun.position.set(5, 20, 10); scene.add(sun);
+// The Log Shot field and cage in 3D (shared by the 3D shot map and the
+// xG Model shot cone). Returns the turf mesh, for tap-to-pick.
+function addField3D(T, scene) {
   // Field in the Log Shot look: dark surround, turf -21..21 wide x -3.5..21.5 out,
   // mowed stripes every 2.5 yds, goal line / GLE, dashed alleys at 8 yds,
   // shaded crease, yard numbers down the left side.
@@ -7987,6 +8360,25 @@ function buildAng3D(T, wrap) {
   tri([[-1, 0, 0], [-1, 2, 0], [0, 1.1, -2.3], [-1, 0, 0], [0, 1.1, -2.3], [0, 0, -2.3]]);
   tri([[1, 0, 0], [1, 2, 0], [0, 1.1, -2.3], [1, 0, 0], [0, 1.1, -2.3], [0, 0, -2.3]]);
   tri([[-1, 2, 0], [1, 2, 0], [0, 1.1, -2.3]]);
+  return turf;
+}
+function buildAng3D(T, wrap) {
+  wrap.innerHTML = '';
+  const renderer = new T.WebGLRenderer({ antialias: true });
+  renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
+  wrap.appendChild(renderer.domElement);
+  const legend = document.createElement('div');
+  legend.className = 'sans';
+  legend.style.cssText = 'position:absolute; top:8px; left:8px; background:rgba(255,255,255,0.88); border-radius:8px; padding:6px 9px; font-size:11.5px; line-height:1.6; pointer-events:none;';
+  legend.innerHTML = '<span style="display:inline-block;width:14px;height:4px;background:#1E9E48;vertical-align:middle;margin-right:5px;"></span>Goal<br><span style="display:inline-block;width:14px;height:2px;background:#1F3864;opacity:.6;vertical-align:middle;margin-right:5px;"></span>Save<br><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#8C8C8C;vertical-align:middle;margin:0 8px 0 3px;"></span>Miss / block<br><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#D4AF37;vertical-align:middle;margin:0 6px 0 2px;"></span>What-if spot';
+  wrap.appendChild(legend);
+  const scene = new T.Scene(); scene.background = new T.Color(0x1F4F2B);
+  const camera = new T.PerspectiveCamera(45, 1, 0.1, 300);
+  const controls = new T.OrbitControls(camera, renderer.domElement);
+  controls.maxPolarAngle = Math.PI / 2 - 0.02;
+  scene.add(new T.AmbientLight(0xffffff, 0.85));
+  const sun = new T.DirectionalLight(0xffffff, 0.5); sun.position.set(5, 20, 10); scene.add(sun);
+  const turf = addField3D(T, scene);
   const shotsG = new T.Group(), overlayG = new T.Group();
   scene.add(overlayG); scene.add(shotsG);
   ANG3D = { T, renderer, scene, camera, controls, turf, shotsG, overlayG, wrap };
@@ -8492,6 +8884,7 @@ function renderEfficiencyView() {
   renderPlayerBestTriggers(shots);
   renderEffFilmMetrics();
   renderEffAngles(model);
+  renderXg2Tab();
 }
 setupPillGroup('effSeasonPills', ADV_SEASONS, EFF_SEASON, v => {
   if (v) EFF_SEASON = v;
