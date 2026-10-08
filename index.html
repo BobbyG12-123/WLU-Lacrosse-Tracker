@@ -1247,6 +1247,18 @@
       <div class="table-wrap" id="effManWrap"></div>
     </div>
     </div>
+    <div class="subpage" data-label="Goals Added">
+    <div class="panel">
+      <p class="panel-title">Goals Added</p>
+      <p class="panel-sub" id="gaSub" style="line-height:1.55;"></p>
+      <div class="table-wrap" id="gaWrap"></div>
+    </div>
+    <div class="panel">
+      <p class="panel-title">By Trigger</p>
+      <p class="panel-sub">Goals added per possession for each offense trigger (5+ possessions), vs an average possession. The trigger doesn&rsquo;t change how player credit is split.</p>
+      <div class="table-wrap" id="gaTrigWrap"></div>
+    </div>
+    </div>
     <div class="subpage" data-label="Passing">
     <div class="panel">
       <p class="panel-title">Passing Network</p>
@@ -8435,6 +8447,109 @@ function renderExactModel(shots, xgOf) {
   renderAngle3D(xgOf);
 }
 
+// ---------------- Efficiency > Goals Added (possession chains) ----------------
+// Every WLU possession starts worth V (our average goals per possession).
+// Credit goes to whoever moves that value:
+//  1. Advantage: starting dominoes moves it to V_adv (avg with dominoes).
+//  2. The look: a shot moves it to that shot's xG. Assisted: passer 50 /
+//     shooter 50, or with an off-ball pick passer 40 / screener 30 /
+//     shooter 30; unassisted: shooter (screener 30 if an off-ball pick).
+//     A rebound shot is a new chance from nothing, credited to the rebounder.
+//  3. The finish: goal (1) or not (0) minus xG, to the shooter.
+//  Turnover: value drops to 0: minus to the player who turned it over, plus
+//  to the defender who caused it. Each possession's offense credits add up
+//  to (goals - V). On top: goalies' saves above expected and on-ball
+//  defenders' expected minus actual goals on their man's shots.
+// Uses the grade-based xG like the rest of the tracker. Triggers don't
+// change the split; Goals Added is also shown by trigger.
+const GA_PARTS = [['adv', 'Advantage'], ['look', 'Look creation'], ['screen', 'Screening'], ['finish', 'Finishing'], ['security', 'Ball security'], ['takeaway', 'Takeaways'], ['onball', 'On-ball D'], ['goalie', 'Goalie']];
+function gaOffPick(s) { return s.pick === 'Yes' && s.pickAction !== 'Get' && s.pickType === 'Off-ball' && s.pickScreener && !isOppJersey(s.pickScreener) && s.pickScreener !== s.shooterJersey ? s.pickScreener : null; }
+function computeGoalsAdded() {
+  const d = buildEffData();
+  // A goal ends a possession, so anything logged after a goal in the same
+  // possession (a "rebound" after a goal) starts a new one here.
+  const wp = [];
+  d.possList.filter(p => p.team === 'WLU').forEach(pp => {
+    if (!pp.shots.length) { wp.push(pp); return; }
+    let cur = null;
+    pp.shots.forEach((s, i) => {
+      if (!cur) { cur = Object.assign({}, pp, { shots: [], goal: 0, dom: i === 0 ? pp.dom : 0, creator: i === 0 ? pp.creator : null }); wp.push(cur); }
+      cur.shots.push(s);
+      if (s.goal === 1) { cur.goal = 1; cur = null; }
+    });
+  });
+  const V = wp.length ? wp.filter(p => p.goal).length / wp.length : 0;
+  const advList = wp.filter(p => p.dom);
+  const Vadv = advList.length >= 10 ? advList.filter(p => p.goal).length / advList.length : V;
+  const P = {};
+  const add = (j, part, v) => { if (!j || isOppJersey(j)) return; const r = (P[j] = P[j] || { jersey: j, total: 0 }); r[part] = (r[part] || 0) + v; r.total += v; };
+  const trig = {};
+  wp.forEach(pp => {
+    let v = V;
+    // Advantage only moves the value when we know who started it, so every
+    // bit of value is credited to someone.
+    if (pp.dom && pp.creator && !isOppJersey(pp.creator)) { add(pp.creator, 'adv', Vadv - V); v = Vadv; }
+    let offense = v - V;
+    if (pp.shots.length) {
+      pp.shots.forEach((s, i) => {
+        const xg = d.xgOf(s), base = i === 0 ? v : 0, look = xg - base;
+        const passer = s.assistJersey && !isOppJersey(s.assistJersey) && s.assistJersey !== s.shooterJersey ? s.assistJersey : null;
+        const scr = i === 0 ? gaOffPick(s) : null;
+        if (i > 0) add(s.shooterJersey, 'look', look);
+        else if (passer && scr) { add(passer, 'look', 0.4 * look); add(scr, 'screen', 0.3 * look); add(s.shooterJersey, 'look', 0.3 * look); }
+        else if (passer) { add(passer, 'look', 0.5 * look); add(s.shooterJersey, 'look', 0.5 * look); }
+        else if (scr) { add(scr, 'screen', 0.3 * look); add(s.shooterJersey, 'look', 0.7 * look); }
+        else add(s.shooterJersey, 'look', look);
+        const fin = (s.goal === 1 ? 1 : 0) - xg;
+        add(s.shooterJersey, 'finish', fin);
+        offense += look + fin;
+        // On-ball defense: the other side of the finish.
+        if (s.defender && !isOppJersey(s.defender)) add(s.defender, 'onball', xg - (s.goal === 1 ? 1 : 0));
+      });
+    } else if (pp.to) {
+      add(pp.e.turnoverBy, 'security', -v);
+      add(pp.e.causedBy, 'takeaway', v);
+      offense += -v;
+    }
+    const tk = pp.shots.length ? (pp.shots[0].trigger || null) : (pp.e.trigger || null);
+    const tr = (trig[tk || '(none)'] = trig[tk || '(none)'] || { trigger: tk || '(no trigger logged)', n: 0, total: 0 });
+    tr.n++; tr.total += offense;
+  });
+  // Opponent possessions in games: caused turnovers and on-ball defense.
+  d.possList.filter(p => p.team === 'OPP').forEach(pp => {
+    if (!pp.shots.length && pp.to && pp.e.causedBy) add(pp.e.causedBy, 'takeaway', V);
+    pp.shots.forEach(s => { if (s.defender && !isOppJersey(s.defender)) add(s.defender, 'onball', d.xgOf(s) - (s.goal === 1 ? 1 : 0)); });
+  });
+  // Goalies: saves above expected on shots faced.
+  const fm = facedXgModelFor(EFF_SEASON);
+  goalieShotsForSeason(EFF_SEASON).filter(s => s.onKeeper === 1 && s.goalieJersey && effContextOk(s)).forEach(s => add(s.goalieJersey, 'goalie', xgForShot(s, fm) - (s.goal === 1 ? 1 : 0)));
+  const sessions = j => (d.players[j] ? d.players[j].sessions.size : 0) || new Set(d.shots.filter(s => s.shooterJersey === j || s.assistJersey === j || s.goalieJersey === j || s.defender === j).map(sessKey)).size;
+  const rows = Object.values(P).map(r => Object.assign(r, { name: nameFor(r.jersey, EFF_SEASON), apps: sessions(r.jersey) }));
+  rows.forEach(r => { r.perApp = r.apps ? r.total / r.apps : null; });
+  return { V, Vadv, poss: wp.length, rows, triggers: Object.values(trig) };
+}
+function renderGoalsAdded() {
+  const wrap = document.getElementById('gaWrap');
+  if (!wrap) return;
+  const r = computeGoalsAdded();
+  document.getElementById('gaSub').innerHTML = `${escapeHtml(EFF_SEASON)} ${EFF_CTX_WORD()}: ${r.poss} WLU possessions. An average possession is worth <b>${num(r.V, 2)}</b> goals; with dominoes started, <b>${num(r.Vadv, 2)}</b>. Each player gets credit for how much he moved the value of the possessions he touched &mdash; starting the advantage, creating the look (split with the passer, and the screener on an off-ball pick), finishing it, or losing it (turnover). Defenders get the possession value for turnovers they cause and the goals their man didn&rsquo;t score vs expected; goalies get saves above expected. <b>+1.0 = one goal more</b> than an average player would produce with the same chances. In practice both sides are WLU, so one player&rsquo;s plus can be a teammate&rsquo;s minus.`;
+  const cell = v => v === null || v === undefined ? '<span class="n-note">—</span>' : signed(v);
+  renderSortableTable('gaWrap', [
+    { key: 'jersey', label: '#', type: 'text', value: x => x.jersey },
+    { key: 'name', label: 'Name', type: 'text', value: x => x.name, format: nameCell },
+    { key: 'total', label: 'Goals Added', type: 'num', value: x => x.total, format: v => `<b>${signed(v)}</b>`, title: 'The sum of every part to the right.' },
+    { key: 'perApp', label: 'Per Session', type: 'num', value: x => x.perApp, format: v => signed(v, 2), title: 'Goals added per session he appeared in.' },
+  ].concat(GA_PARTS.map(([k, label]) => ({ key: k, label, type: 'num', value: x => x[k] === undefined ? null : x[k], format: cell, group: 'Where it came from' }))),
+  r.rows, { dense: true, defaultSort: { key: 'total', dir: 'desc' }, emptyMsg: 'No possessions logged yet.' });
+  const tRows = r.triggers.filter(t => t.n >= 5).map(t => Object.assign({ per: t.total / t.n }, t));
+  renderSortableTable('gaTrigWrap', [
+    { key: 'trigger', label: 'Trigger', type: 'text', value: t => t.trigger },
+    { key: 'n', label: 'Possessions', type: 'num', value: t => t.n },
+    { key: 'total', label: 'Goals Added', type: 'num', value: t => t.total, format: v => signed(v) },
+    { key: 'per', label: 'Per Possession', type: 'num', value: t => t.per, format: v => signed(v, 3), title: 'Goals added per possession run off this trigger, vs an average possession.' },
+  ], tRows, { dense: true, defaultSort: { key: 'per', dir: 'desc' }, emptyMsg: 'No trigger has 5+ possessions yet.' });
+}
+
 // ---------------- Efficiency > Passing (passing network) ----------------
 // Who feeds whom: every shot with a WLU passer logged is one feed from the
 // passer to the shooter. Lines are colored by look quality (expected goals
@@ -9657,6 +9772,7 @@ function renderEfficiencyView() {
   renderEffAngles(model);
   renderXg2Tab();
   renderPassingNetwork();
+  renderGoalsAdded();
 }
 setupPillGroup('effSeasonPills', ADV_SEASONS, EFF_SEASON, v => {
   if (v) EFF_SEASON = v;
