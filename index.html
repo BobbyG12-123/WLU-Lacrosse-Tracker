@@ -3094,7 +3094,9 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
 // sub-tab picked in each tab is remembered on this device.
 function showSubpage(viewId, label) {
   if (viewId === 'efficiencyView' && label === 'xG Model') setTimeout(() => renderXg2Cone(), 0);
-  if (viewId === 'goalieView' && label === 'Save Surface' && surfMode === '3d') setTimeout(() => renderSaveSurface(), 0);
+  // Deferred: on page load this runs (from the remembered sub-tab) before
+  // the Save Surface settings exist.
+  if (viewId === 'goalieView' && label === 'Save Surface') setTimeout(() => { if (surfMode === '3d') renderSaveSurface(); }, 0);
   const view = document.getElementById(viewId);
   const pages = [...view.querySelectorAll(':scope > .subpage')];
   if (!pages.length) return;
