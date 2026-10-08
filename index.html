@@ -323,6 +323,7 @@
   <button class="tab-btn" data-view="tableView">Shot Log</button>
   <button class="tab-btn" data-view="compareView">Compare</button>
   <button class="tab-btn" data-view="opponentView">Opponent</button>
+  <button class="tab-btn" data-view="healthView">Data Health</button>
   <button class="tab-btn" data-view="recruitsView">Recruits</button>
   <button class="tab-btn" data-view="boardView">Board</button>
 </nav>
@@ -1567,6 +1568,32 @@
     <div id="opponentReport"></div>
   </section>
 
+  <section id="healthView" class="view">
+    <div class="view-bar">
+      <div class="view-bar-row">
+        <div class="view-title">Data Health</div>
+        <div class="control-group"><div class="grade-pills" id="healthSeasonPills"></div></div>
+      </div>
+    </div>
+    <p class="view-intro">How completely each field is being logged, and how many reps each key stat needs before it mostly reflects skill instead of luck. Use it to see which numbers to trust and what to log more of. 2027 and later.</p>
+    <div class="view-tiles trend-grid" id="healthTiles"></div>
+    <div class="panel">
+      <p class="panel-title">Field Coverage</p>
+      <p class="panel-sub">Share of the entries each field applies to where it was filled in (placement only counts shots on cage, Turnover By only counts turnover possessions, and so on). Green 80%+, yellow 40&ndash;79%, red under 40%. Lowest first.</p>
+      <div class="table-wrap" id="healthFieldWrap"></div>
+    </div>
+    <div class="panel">
+      <p class="panel-title">Coverage by Session</p>
+      <p class="panel-sub">The optional fields session by session, newest first &mdash; is logging getting more complete?</p>
+      <div class="table-wrap" id="healthSessionWrap"></div>
+    </div>
+    <div class="panel">
+      <p class="panel-title">Reps Needed</p>
+      <p class="panel-sub">Roughly how many reps a player needs before each stat is about 70% skill and 30% luck. Measured from this season&rsquo;s data by splitting each player&rsquo;s reps into odd and even halves and checking how well the halves agree; it updates as you log. A reference only &mdash; nothing elsewhere in the tracker is tagged.</p>
+      <div class="table-wrap" id="healthRepsWrap"></div>
+    </div>
+  </section>
+
   <section id="recruitsView" class="view">
     <div id="recruitsTrendsView">
       <div class="panel">
@@ -2253,6 +2280,7 @@ function rerenderAfterShotsChange() {
   renderEfficiencyView();
   renderShooterScore();
   renderDefense();
+  renderDataHealth();
   populatePlayerGoalieDropdowns();
   populatePlayerSelectForSeason(heatSeason);
   populateGoalieSelectForSeason(goalieHeatSeason);
@@ -2921,6 +2949,7 @@ function switchTab(viewId) {
   document.querySelectorAll('.view').forEach(v=>v.classList.toggle('active', v.id === viewId));
   if (viewId === 'playerView') { renderPlayerHeat(); renderShooterScore(); }
   if (viewId === 'defenseView') renderDefense();
+  if (viewId === 'healthView') renderDataHealth();
   if (viewId === 'goalieView') { renderGoalieHeat(); renderGoalieAdvanced(); }
   if (viewId === 'faceoffView') renderFaceoffs();
   if (viewId === 'tableView') renderTable();
@@ -3021,7 +3050,7 @@ function pmEnter(p) {
   const isDefender = allShotEntries().some(s => (mine(s.defender) && s.defender === p.seasons[seasonForDate(s.date)]) || (mine(s.slideDefender) && s.slideDefender === p.seasons[seasonForDate(s.date)]) || (mine(s.offBallFault) && s.offBallFault === p.seasons[seasonForDate(s.date)]))
     || allShotEntries().concat(POSSESSIONS).some(e => [e.pickScreenerDef, e.pickUserDef].some(j => j && j === p.seasons[seasonForDate(e.date)]));
   const show = { logView: false, playerView: isPlayer, goalieView: isGoalie, defenseView: isDefender, efficiencyView: isPlayer, faceoffView: PLAYER_MODE.fogo,
-    tableView: true, compareView: isPlayer, opponentView: false, recruitsView: false, boardView: false };
+    tableView: true, compareView: isPlayer, opponentView: false, healthView: false, recruitsView: false, boardView: false };
   Object.keys(show).forEach(id => {
     document.querySelectorAll(`.tab-btn[data-view="${id}"]`).forEach(b => b.classList.toggle('pm-off', !show[id]));
     document.getElementById(id).classList.toggle('pm-off', !show[id]);
@@ -7246,6 +7275,169 @@ setupPillGroup('defContextPills', ['All', 'Practice', 'Game'], 'All', v => {
   defContext = v || 'All';
   if (!v) setPillGroupValue('defContextPills', 'All');
   renderDefense();
+});
+
+// ---------------- Data Health (2027+) ----------------
+// How completely each optional field is logged (out of the entries where it
+// applies), the same by session, and a reference table of how many reps
+// each key stat needs before it's mostly skill rather than luck.
+let healthSeason = currentAdvSeason();
+function healthColor(p) { return p === null ? 'var(--line)' : p >= 0.8 ? 'var(--good)' : p >= 0.4 ? '#D9A400' : 'var(--critical)'; }
+function healthBar(p) {
+  if (p === null) return '<span class="n-note">—</span>';
+  return `<div style="display:flex; align-items:center; gap:8px;"><div style="flex:0 0 110px; height:8px; background:var(--paper); border:1px solid var(--line); border-radius:4px; overflow:hidden;"><div style="width:${(p * 100).toFixed(1)}%; height:100%; background:${healthColor(p)};"></div></div><b style="color:${healthColor(p)}; min-width:44px;">${Math.round(p * 100)}%</b></div>`;
+}
+const filled = v => v !== null && v !== undefined && v !== '';
+// Each row: the entries a field applies to, and whether it's logged on one.
+function healthFieldRows(season) {
+  const S = advShots(season), O = OPP_SHOTS.filter(s => seasonForDate(s.date) === season), P = POSSESSIONS.filter(p => seasonForDate(p.date) === season);
+  const SO = S.concat(O);
+  const onCageG = SO.filter(s => s.onKeeper === 1 && s.goalieJersey);
+  const wluDef = SO.concat(P).filter(e => e.defender && !isOppJersey(e.defender));
+  const row = (field, list, ok, affects) => ({ field, n: list.length, k: list.filter(ok).length, p: list.length ? list.filter(ok).length / list.length : null, affects });
+  return [
+    row('Shot location', SO, s => filled(s.distanceYds), 'xG, heat maps, Angles, zone map'),
+    row('Shot quality (grade)', SO, s => filled(s.shotQuality), 'xG, Look Value, every score'),
+    row('Contest level', SO, s => filled(s.contestLevel), 'Shot Types, Angles, Defense contest %'),
+    row('Goal placement (shots on cage)', SO.filter(s => s.onKeeper === 1), s => filled(s.goalX), 'Goal-placement maps, goalie Where & When'),
+    row('Shooter hand', S, s => filled(s.rightHanded), 'Angles, Shot Types, goalie hand splits'),
+    row('Shot mechanism', SO, s => filled(s.shotMechanism), 'Angles stick plane, Shot Types, goalie mechanism splits'),
+    row('Goalie (practice + opponent shots)', S.filter(s => s.context === 'Practice').concat(O), s => filled(s.goalieJersey), 'Save %, Saved vs. Expected, SAE, Goalie Score, Goalie-Adjusted Finishing'),
+    row('Screened (on cage, goalie in)', onCageG, s => filled(s.screened), 'Goalie tough situations'),
+    row('Goalie set (on cage, goalie in)', onCageG, s => filled(s.goalieSet), 'Goalie tough situations'),
+    row('Passer', S, s => filled(s.assistJersey), 'Assists, xA, Creation, A/TO, passing network'),
+    row('Offense trigger', S, s => filled(s.trigger), 'Trigger tables'),
+    row('Dominoes yes/no', S.concat(P.filter(p => p.team !== 'OPP')), e => e.dominoes === 'Yes' || e.dominoes === 'No', 'Dominoes tab, Creation'),
+    row('Pick / get yes/no', S.concat(P.filter(p => p.team !== 'OPP')), e => e.pick === 'Yes' || e.pick === 'No', 'Picks tab, Pick Defense'),
+    row('Lineup', SO.concat(P), e => filled(e.stintId), 'On/Off, Lineups, per-session apps, depth-chart Chemistry'),
+    row('Possession start', S.filter(s => s.rebound !== 'Yes').concat(P), e => filled(e.possStart), 'Ground balls, FO wins, clears'),
+    row('Turnover by (turnover possessions)', P.filter(p => p.end === 'Turnover'), p => filled(p.turnoverBy), 'Ball security, A/TO, turnover %'),
+    row('On-ball defender', SO, s => filled(s.defender), 'Defense tab, beaten %'),
+    row('Beaten (shots with a WLU defender)', wluDef.filter(e => e.shooterJersey !== undefined || e.oppShooter !== undefined), s => s.defBeaten === 'Yes' || s.defBeaten === 'No', 'Beaten %, How They’re Beaten'),
+    row('Outlet (saves, WLU goalie)', SO.filter(s => s.onKeeper === 1 && s.goal !== 1 && s.goalieJersey && (s.context === 'Practice' || s.team === 'OPP')), s => filled(s.outlet), 'Goalie outlets'),
+  ];
+}
+function pearson(xs, ys) {
+  const n = xs.length, mx = xs.reduce((a, b) => a + b, 0) / n, my = ys.reduce((a, b) => a + b, 0) / n;
+  let sxy = 0, sxx = 0, syy = 0;
+  for (let i = 0; i < n; i++) { sxy += (xs[i] - mx) * (ys[i] - my); sxx += (xs[i] - mx) ** 2; syy += (ys[i] - my) ** 2; }
+  return sxx && syy ? sxy / Math.sqrt(sxx * syy) : null;
+}
+const REL_TARGET = 0.7, REL_MIN_PLAYERS = 8, REL_MIN_HALF = 10;
+// Split-half reliability: each player's reps (in order) split odd/even,
+// the stat computed on each half, and the two halves correlated across
+// players. With r at an average half of h reps, reliability at n reps is
+// n / (n + k) where k = h(1 - r) / r; solving for 70% gives the reps needed.
+function repsNeeded(groups, statOf) {
+  const pairs = [];
+  Object.values(groups).forEach(list => {
+    if (list.length < 2 * REL_MIN_HALF) return;
+    const a = list.filter((_, i) => i % 2 === 0), b = list.filter((_, i) => i % 2 === 1);
+    const va = statOf(a), vb = statOf(b);
+    if (va === null || vb === null || !isFinite(va) || !isFinite(vb)) return;
+    pairs.push({ va, vb, h: (a.length + b.length) / 2 });
+  });
+  const counts = Object.values(groups).map(l => l.length);
+  if (pairs.length < REL_MIN_PLAYERS) return { status: 'few', players: pairs.length };
+  const r = pearson(pairs.map(p => p.va), pairs.map(p => p.vb));
+  if (r === null || r <= 0.05) return { status: 'noisy', players: pairs.length, r };
+  const h = pairs.reduce((a, p) => a + p.h, 0) / pairs.length;
+  const n = h * (1 - r) / r * REL_TARGET / (1 - REL_TARGET);
+  return { status: 'ok', r, n, players: pairs.length, past: counts.filter(c => c >= n).length, total: counts.filter(c => c > 0).length };
+}
+function healthRepsRows(season) {
+  const byOrder = (a, b) => (a.date || '').localeCompare(b.date || '') || (a.id - b.id);
+  const group = (list, keyOf) => { const g = {}; list.forEach(x => { const k = keyOf(x); if (k) (g[k] = g[k] || []).push(x); }); Object.values(g).forEach(l => l.sort(byOrder)); return g; };
+  const model = xgModelFor(season), fModel = facedXgModelFor(season);
+  const shots = advShots(season).filter(s => s.shooterJersey);
+  const byShooter = group(shots, s => s.shooterJersey);
+  const byShooterOnCage = group(shots.filter(s => s.onKeeper === 1), s => s.shooterJersey);
+  const faced = goalieShotsForSeason(season).filter(s => s.onKeeper === 1);
+  const byGoalie = group(faced, s => s.goalieJersey);
+  const saRows = saFacedShots(season).rows.map(r => Object.assign({ date: r.s.date, id: r.s.id }, r));
+  const bySaGoalie = group(saRows, r => r.s.goalieJersey);
+  // Touches: his shots, his passes that led to a shot, his turnovers.
+  const touches = [];
+  shots.forEach(s => {
+    touches.push({ j: s.shooterJersey, date: s.date, id: s.id, to: 0, pa: 0 });
+    if (s.assistJersey) touches.push({ j: s.assistJersey, date: s.date, id: s.id + 0.5, to: 0, pa: 1 });
+  });
+  POSSESSIONS.filter(p => seasonForDate(p.date) === season && p.turnoverBy && !isOppJersey(p.turnoverBy)).forEach(p => touches.push({ j: p.turnoverBy, date: p.date, id: 1e6 + p.id, to: 1, pa: 0 }));
+  const byToucher = group(touches, t => t.j);
+  const mean = (l, f) => l.length ? l.reduce((a, x) => a + f(x), 0) / l.length : null;
+  const goalsOf = l => l.filter(s => s.goal === 1).length;
+  return [
+    { stat: 'Shot % (Sh%)', unit: 'shots', res: repsNeeded(byShooter, l => goalsOf(l) / l.length) },
+    { stat: 'On Cage', unit: 'shots', res: repsNeeded(byShooter, l => l.filter(s => s.onKeeper === 1).length / l.length) },
+    { stat: 'On-Goal Sh%', unit: 'shots on cage', res: repsNeeded(byShooterOnCage, l => goalsOf(l) / l.length) },
+    { stat: 'Finishing (G−xG per shot)', unit: 'shots', res: repsNeeded(byShooter, l => (goalsOf(l) - xgSum(l, model)) / l.length) },
+    { stat: 'Save %', unit: 'shots faced', res: repsNeeded(byGoalie, l => 1 - goalsOf(l) / l.length) },
+    { stat: 'Saved vs. Expected (per shot)', unit: 'shots faced', res: repsNeeded(byGoalie, l => (xgSum(l, fModel) - goalsOf(l)) / l.length) },
+    { stat: 'SAE (per shot)', unit: 'scored shots faced', res: repsNeeded(bySaGoalie, l => mean(l, r => r.chance - (r.s.goal === 1 ? 1 : 0))) },
+    { stat: 'Turnovers per touch', unit: 'touches', res: repsNeeded(byToucher, l => mean(l, t => t.to)) },
+    { stat: 'Potential assists per touch', unit: 'touches', res: repsNeeded(byToucher, l => mean(l, t => t.pa)) },
+  ];
+}
+function roundReps(n) { return n < 50 ? Math.max(5, Math.round(n / 5) * 5) : n < 1000 ? Math.round(n / 10) * 10 : null; }
+function renderDataHealth() {
+  const wrap = document.getElementById('healthFieldWrap');
+  if (!wrap) return;
+  const season = healthSeason;
+  const rows = healthFieldRows(season);
+  const applicable = rows.filter(r => r.n);
+  const green = applicable.filter(r => r.p >= 0.8), red = applicable.filter(r => r.p < 0.4);
+  const S = advShots(season), P = POSSESSIONS.filter(p => seasonForDate(p.date) === season);
+  document.getElementById('healthTiles').innerHTML = [
+    statTile('Entries', (S.length + P.length).toLocaleString(), `${S.length} shots · ${P.length} no-shot possessions · ${season}`),
+    statTile('Well Logged', `${green.length} of ${applicable.length}`, 'Fields logged on 80%+ of the entries they apply to'),
+    statTile('Needs Attention', red.length.toLocaleString(), red.length ? red.map(r => r.field.replace(/ \(.*\)$/, '')).join(', ') : 'Nothing under 40%'),
+  ].join('');
+  renderSortableTable('healthFieldWrap', [
+    { key: 'field', label: 'Field', type: 'text', value: r => r.field, format: v => `<span style="white-space:nowrap;">${escapeHtml(v)}</span>` },
+    { key: 'p', label: 'Logged On', type: 'num', value: r => r.p, format: v => healthBar(v), title: 'Share of the entries this field applies to where it was filled in. Green 80%+, yellow 40–79%, red under 40%.' },
+    { key: 'k', label: 'Count', type: 'num', value: r => r.k, format: (v, r) => `${v} <span class="n-note">of ${r.n}</span>` },
+    { key: 'affects', label: 'What Depends on It', type: 'text', value: r => r.affects, sortable: false },
+  ], rows, { dense: true, defaultSort: { key: 'p', dir: 'asc' }, emptyMsg: `No ${season} entries yet.` });
+  // By session.
+  const SO = S.concat(OPP_SHOTS.filter(s => seasonForDate(s.date) === season));
+  const sess = {};
+  SO.concat(P).forEach(e => { const k = sessKey(e); (sess[k] = sess[k] || { date: e.date, context: e.context, opponent: e.opponent, s: [], o: [], p: [] }); (e.shooterJersey !== undefined && e.team !== 'OPP' && S.includes(e) ? sess[k].s : (P.includes(e) ? sess[k].p : sess[k].o)).push(e); });
+  const share = (list, ok) => list.length ? list.filter(ok).length / list.length : null;
+  const sRows = Object.values(sess).map(x => ({
+    date: x.date, label: `${x.date || ''} · ${x.context || ''}${x.opponent ? ' vs ' + x.opponent : ''}`, shots: x.s.length, poss: x.p.length,
+    passer: share(x.s, e => filled(e.assistJersey)), lineup: share(x.s.concat(x.o, x.p), e => filled(e.stintId)),
+    dom: share(x.s.concat(x.p.filter(p => p.team !== 'OPP')), e => e.dominoes === 'Yes' || e.dominoes === 'No'),
+    pick: share(x.s.concat(x.p.filter(p => p.team !== 'OPP')), e => e.pick === 'Yes' || e.pick === 'No'),
+    def: share(x.s.concat(x.o), e => filled(e.defender)), trig: share(x.s, e => filled(e.trigger)),
+  }));
+  const cell = v => v === null ? '<span class="n-note">—</span>' : `<b style="color:${healthColor(v)};">${Math.round(v * 100)}%</b>`;
+  renderSortableTable('healthSessionWrap', [
+    { key: 'date', label: 'Session', type: 'text', value: r => r.date, format: (v, r) => `<span style="white-space:nowrap;">${escapeHtml(r.label)}</span>` },
+    { key: 'shots', label: 'Shots', type: 'num', value: r => r.shots },
+    { key: 'poss', label: 'No-Shot Poss.', type: 'num', value: r => r.poss },
+    { key: 'passer', label: 'Passer', type: 'num', value: r => r.passer, format: cell },
+    { key: 'lineup', label: 'Lineup', type: 'num', value: r => r.lineup, format: cell },
+    { key: 'dom', label: 'Dominoes', type: 'num', value: r => r.dom, format: cell },
+    { key: 'pick', label: 'Pick', type: 'num', value: r => r.pick, format: cell },
+    { key: 'def', label: 'Defender', type: 'num', value: r => r.def, format: cell },
+    { key: 'trig', label: 'Trigger', type: 'num', value: r => r.trig, format: cell },
+  ], sRows, { dense: true, defaultSort: { key: 'date', dir: 'desc' }, emptyMsg: `No ${season} sessions yet.` });
+  // Reps needed (reference).
+  const rr = healthRepsRows(season);
+  renderSortableTable('healthRepsWrap', [
+    { key: 'stat', label: 'Stat', type: 'text', value: r => r.stat },
+    { key: 'n', label: 'Reps Needed', type: 'num', value: r => r.res.status === 'ok' ? r.res.n : null, format: (v, r) => {
+      if (r.res.status === 'few') return `<span class="n-note">Not enough data yet (${r.res.players} of ${REL_MIN_PLAYERS} players with ${2 * REL_MIN_HALF}+ ${r.unit})</span>`;
+      if (r.res.status === 'noisy') return '<span class="n-note">Mostly luck so far — needs far more reps</span>';
+      const n = roundReps(v); return n === null ? `<b>1,000+</b> <span class="n-note">${escapeHtml(r.unit)}</span>` : `<b>about ${n}</b> <span class="n-note">${escapeHtml(r.unit)}</span>`; } },
+    { key: 'past', label: 'Players Past It', type: 'num', value: r => r.res.status === 'ok' ? r.res.past : null, format: (v, r) => r.res.status === 'ok' ? `${v} <span class="n-note">of ${r.res.total}</span>` : '—' },
+    { key: 'r', label: 'Half-vs-Half Agreement', type: 'num', value: r => r.res.r === undefined ? null : r.res.r, format: v => v === null ? '—' : num(v, 2), title: 'How well each player’s odd and even reps agree, across the team (1 = perfectly, 0 = not at all). Used to compute Reps Needed.' },
+  ], rr, { dense: true, defaultSort: { key: 'n', dir: 'asc' }, emptyMsg: 'No data yet.' });
+}
+setupPillGroup('healthSeasonPills', ADV_SEASONS, healthSeason, v => {
+  healthSeason = v || healthSeason;
+  if (!v) setPillGroupValue('healthSeasonPills', healthSeason);
+  renderDataHealth();
 });
 
 // One row per goalie for the Advanced table (also feeds the Goalie Score).
