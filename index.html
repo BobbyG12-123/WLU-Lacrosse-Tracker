@@ -5876,7 +5876,7 @@ function renderEffPlayers(d) {
       lookVal: p.ownShots.length ? lookValue(p.ownShots, d.model) : null,
       xg: p.xg, gmx: p.goals - p.xg, potAst: p.potAst, xa: p.xa, chance: lookFed, amx: p.assists - p.xa, xp, pmx: pts - xp,
       usage: ratio(p.shots + p.potAst, teamShots), assistedPct: ratio(assistedGoals, p.goals),
-      onKeeperPct: ratio(p.onGoal, p.shots),
+      onKeeperPct: ratio(p.onGoal, p.shots), onGoalShPct: ratio(p.goals, p.onGoal), onCageN: p.onGoal,
       to: p.to, ato: atoValue(p.assists, p.to), pato: atoValue(p.potAst, p.to),
     };
   });
@@ -5907,6 +5907,7 @@ function renderEffPlayers(d) {
     { key: 'usage', label: 'Usage', type: 'num', value: r => r.usage, format: v => pct(v), group: 'Role', title: 'Share of team shots he either took or set up (shots + potential assists ÷ team shots).' },
     { key: 'assistedPct', label: 'Assisted G%', type: 'num', value: r => r.assistedPct, format: v => pct(v), group: 'Role', title: 'Share of his goals that came off a pass. Low = he creates his own.' },
     { key: 'onKeeperPct', label: 'On Cage', type: 'num', value: r => r.onKeeperPct, format: v => pct(v), group: 'Role' },
+    { key: 'onGoalShPct', label: 'On-Goal Sh%', type: 'num', value: r => r.onGoalShPct, format: (v, r) => v === null ? '—' : `<span style="white-space:nowrap;">${pct(v)} <span class="n-note">(${r.goals}/${r.onCageN})</span></span>`, group: 'Role', title: 'Goals ÷ shots on cage: when he puts it on the goalie, how often it goes in.' },
   ];
   renderSortableTable('effPlayerWrap', cols, rows, { dense: true, defaultSort: { key: 'xp', dir: 'desc' }, emptyMsg: `No player has 5+ ${EFF_SEASON} ${EFF_CTX_WORD()} shots or potential assists yet.` });
 }
