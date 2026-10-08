@@ -1234,6 +1234,23 @@
       <div class="table-wrap" id="effManWrap"></div>
     </div>
     </div>
+    <div class="subpage" data-label="Passing">
+    <div class="panel">
+      <p class="panel-title">Passing Network</p>
+      <p class="panel-sub" id="pnSub"></p>
+      <div class="controls-row" style="margin-bottom:8px;"><div class="control-group"><label>Layout</label><div class="pill-row" id="pnLayoutPills"></div></div></div>
+      <div class="chart-wrap" id="pnNetWrap" style="max-width:720px;"></div>
+    </div>
+    <div class="panel">
+      <p class="panel-title">Connections</p>
+      <p class="panel-sub">Every passer &rarr; shooter pair with 3+ feeds. Lift = how much better the shooter finishes off this passer than on his other shots.</p>
+      <div class="table-wrap" id="pnTableWrap"></div>
+    </div>
+    <div class="panel">
+      <div class="controls-row" style="margin-bottom:8px;"><div class="control-group"><label for="pnPlayerSelect">Player</label><select id="pnPlayerSelect"></select></div></div>
+      <div id="pnPlayerWrap"></div>
+    </div>
+    </div>
     <div class="subpage" data-label="Per Touch">
     <div class="panel">
       <p class="panel-title">Per Touch</p>
@@ -8243,6 +8260,148 @@ function renderExactModel(shots, xgOf) {
   renderAngle3D(xgOf);
 }
 
+// ---------------- Efficiency > Passing (passing network) ----------------
+// Who feeds whom: every shot with a WLU passer logged is one feed from the
+// passer to the shooter. Lines are colored by look quality (expected goals
+// per feed, from the grade-based xG used everywhere else), so a connection
+// that keeps creating Gold looks shows green even if the shots didn't fall.
+const PN_MIN_FEEDS = 3;
+let pnPlayer = '', pnLayout = 'zones';
+// Where each named zone sits on the field (yds lateral, yds out).
+const PN_ZONE_XY = { 'Doorstep': [0, 2.5], 'GLE Left': [-9, 0.8], 'GLE Right': [9, 0.8], 'Low Left': [-7, 4.5], 'Low Right': [7, 4.5], 'Crease': [0, 8],
+  'Alley Left': [-9, 9.5], 'Alley Right': [9, 9.5], 'Wing Left': [-15, 8], 'Wing Right': [15, 8], 'Top Left': [-9, 15.5], 'Top Center': [0, 15.5], 'Top Right': [9, 15.5] };
+function pnData() {
+  const xm = xgModelFor(EFF_SEASON);
+  const shots = effShots().filter(s => s.shooterJersey);
+  const fed = shots.filter(s => s.assistJersey && !isOppJersey(s.assistJersey) && s.assistJersey !== s.shooterJersey);
+  const links = {};
+  fed.forEach(s => { const k = s.assistJersey + '>' + s.shooterJersey; (links[k] = links[k] || { from: s.assistJersey, to: s.shooterJersey, list: [] }).list.push(s); });
+  const teamXg = shots.length ? xgSum(shots, xm) / shots.length : 0;
+  const rows = Object.values(links).map(l => {
+    const n = l.list.length, g = l.list.filter(s => s.goal === 1).length;
+    const other = shots.filter(s => s.shooterJersey === l.to && s.assistJersey !== l.from);
+    const og = other.filter(s => s.goal === 1).length;
+    return { from: l.from, to: l.to, n, g, sh: g / n, xgPer: xgSum(l.list, xm) / n, otherSh: other.length ? og / other.length : null, otherN: other.length };
+  });
+  // Where each player usually shoots from (his node on the field).
+  const spot = {};
+  shots.forEach(s => { if (s.lateralYds === null || s.lateralYds === undefined || s.distanceYds === null || s.distanceYds === undefined) return; const p = (spot[s.shooterJersey] = spot[s.shooterJersey] || { L: 0, D: 0, n: 0 }); p.L += s.lateralYds; p.D += s.distanceYds; p.n++; });
+  Object.values(spot).forEach(p => { p.L /= p.n; p.D /= p.n; });
+  const zones = {};
+  shots.forEach(s => { const z = shotZone(s); if (!z) return; const m = (zones[s.shooterJersey] = zones[s.shooterJersey] || {}); m[z] = (m[z] || 0) + 1; });
+  const mainZone = {};
+  Object.keys(zones).forEach(j => { const m = zones[j], top = Object.keys(m).sort((a, b) => m[b] - m[a])[0], n = Object.values(m).reduce((a, b) => a + b, 0); if (n >= 3) mainZone[j] = { zone: top, share: m[top] / n }; });
+  const volume = {};
+  shots.forEach(s => { volume[s.shooterJersey] = (volume[s.shooterJersey] || 0) + 1; });
+  fed.forEach(s => { volume[s.assistJersey] = (volume[s.assistJersey] || 0) + 1; });
+  return { rows, spot, mainZone, volume, teamXg, fedCount: fed.length, shotCount: shots.length };
+}
+function pnColor(v, team) {
+  const d = team ? v / team : 1; // relative to the team's average look
+  return d >= 1.25 ? '#0ca30c' : d >= 1.05 ? '#7DBE4A' : d >= 0.95 ? '#C9A400' : d >= 0.8 ? '#E8761F' : '#d03b3b';
+}
+function pnNetworkSvg(data, season) {
+  let edges = data.rows.filter(r => r.n >= PN_MIN_FEEDS);
+  if (PLAYER_MODE) { const mine = j => j === pmJersey(season); edges = edges.filter(r => mine(r.from) || mine(r.to)); }
+  if (!edges.length) return `<p class="sans" style="color:var(--muted); font-size:13px;">No connection has ${PN_MIN_FEEDS}+ feeds yet.</p>`;
+  const W = 640, H = 470, padX = 30, top = 70;
+  const fx = L => padX + (L + 19) / 38 * (W - 2 * padX);
+  // The field is cropped to 17 yds out so the busy area near the cage gets more room.
+  const fy = D => top + Math.max(-2, Math.min(17, D)) / 17 * (H - top - 30);
+  const players = Array.from(new Set(edges.flatMap(e => [e.from, e.to]))).sort((a, b) => (data.volume[b] || 0) - (data.volume[a] || 0));
+  const pos = {};
+  let noSpot = [];
+  if (pnLayout === 'circle') {
+    const cx = W / 2, cy = H / 2 + 8, R = Math.min(W, H) / 2 - 50;
+    players.forEach((j, i) => { const a = -Math.PI / 2 + i * 2 * Math.PI / players.length; pos[j] = [cx + R * Math.cos(a), cy + R * Math.sin(a)]; });
+  } else {
+    // Each player in the zone he shoots from most; players sharing a zone
+    // are spread side by side. Feeders with no shot location sit along the top.
+    noSpot = players.filter(j => !data.mainZone[j]);
+    const byZone = {};
+    players.filter(j => data.mainZone[j]).forEach(j => { (byZone[data.mainZone[j].zone] = byZone[data.mainZone[j].zone] || []).push(j); });
+    Object.keys(byZone).forEach(z => {
+      const list = byZone[z], [L, D] = PN_ZONE_XY[z] || [0, 10];
+      list.forEach((j, i) => { const off = (i - (list.length - 1) / 2) * 4.2; pos[j] = [fx(Math.max(-18, Math.min(18, L + off))), fy(D) + (i % 2 ? 16 : 0)]; });
+    });
+    noSpot.forEach((j, i) => { pos[j] = [padX + 40 + i * ((W - 2 * padX - 80) / Math.max(1, noSpot.length - 1)), 26]; });
+    // Nudge apart any dots (and their labels) that still overlap.
+    const ids = players.filter(j => !noSpot.includes(j)), MIN = 62;
+    for (let it = 0; it < 200; it++) {
+      let moved = false;
+      for (let a = 0; a < ids.length; a++) for (let c = a + 1; c < ids.length; c++) {
+        const p1 = pos[ids[a]], p2 = pos[ids[c]];
+        let dx = p2[0] - p1[0], dy = (p2[1] - p1[1]) * 1.25; const d = Math.hypot(dx, dy) || 0.01;
+        if (d >= MIN) continue;
+        if (d < 0.02) { dx = 1; dy = 0; }
+        const push = (MIN - d) / 2, ux = dx / (Math.hypot(dx, dy) || 1), uy = dy / (Math.hypot(dx, dy) || 1) / 1.25;
+        p1[0] -= ux * push; p1[1] -= uy * push; p2[0] += ux * push; p2[1] += uy * push; moved = true;
+      }
+      if (!moved) break;
+    }
+    ids.forEach(j => { pos[j][0] = Math.max(padX + 14, Math.min(W - padX - 14, pos[j][0])); pos[j][1] = Math.max(top - 10, Math.min(H - 20, pos[j][1])); });
+  }
+  const maxN = Math.max(...edges.map(e => e.n));
+  let svg = `<svg viewBox="0 0 ${W} ${H}" style="background:${pnLayout === 'circle' ? '#16294D' : '#2F6B44'}; border-radius:10px;">`;
+  svg += `<defs>${['#0ca30c', '#7DBE4A', '#C9A400', '#E8761F', '#d03b3b'].map((c, i) => `<marker id="pnArr${i}" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="${c}"/></marker>`).join('')}</defs>`;
+  // Field: goal line, cage, crease, alleys (field layout only).
+  if (pnLayout !== 'circle') svg += `<line x1="${padX}" y1="${fy(0)}" x2="${W - padX}" y2="${fy(0)}" stroke="#fff" stroke-opacity=".7"/>`;
+  if (pnLayout !== 'circle') svg += `<circle cx="${fx(0)}" cy="${fy(0)}" r="${3 / 38 * (W - 2 * padX)}" fill="#fff" fill-opacity=".08" stroke="#fff" stroke-opacity=".6"/>`;
+  if (pnLayout !== 'circle') svg += `<rect x="${fx(-1)}" y="${fy(0) - 5}" width="${fx(1) - fx(-1)}" height="5" fill="#E8621F"/>`;
+  if (pnLayout !== 'circle') [-8, 8].forEach(L => { svg += `<line x1="${fx(L)}" y1="${fy(0)}" x2="${fx(L)}" y2="${fy(20)}" stroke="#fff" stroke-opacity=".35" stroke-dasharray="6 5"/>`; });
+  if (noSpot.length) svg += `<text x="${padX}" y="14" font-family="Helvetica Neue, Arial, sans-serif" font-size="10.5" fill="#fff" fill-opacity=".75">Feeders with no shot location</text>`;
+  const colors = ['#0ca30c', '#7DBE4A', '#C9A400', '#E8761F', '#d03b3b'];
+  edges.sort((a, b) => a.n - b.n).forEach(e => {
+    const [x1, y1] = pos[e.from], [x2, y2] = pos[e.to];
+    const c = pnColor(e.xgPer, data.teamXg), ci = colors.indexOf(c);
+    const mx = (x1 + x2) / 2 + (y2 - y1) * 0.15, my = (y1 + y2) / 2 - (x2 - x1) * 0.15;
+    const w = 1.5 + 6 * Math.sqrt(e.n / maxN);
+    svg += `<path d="M${x1.toFixed(1)},${y1.toFixed(1)} Q${mx.toFixed(1)},${my.toFixed(1)} ${x2.toFixed(1)},${y2.toFixed(1)}" fill="none" stroke="${c}" stroke-width="${w.toFixed(1)}" stroke-opacity=".85" marker-end="url(#pnArr${ci})"><title>${escapeHtml(jerseyLabel(e.from, season))} → ${escapeHtml(jerseyLabel(e.to, season))}: ${e.n} feeds, ${e.g} goals, ${num(e.xgPer, 2)} xG per feed</title></path>`;
+  });
+  players.forEach(j => {
+    const [x, y] = pos[j], r = 6 + Math.min(10, Math.sqrt(data.volume[j] || 1));
+    const mine = PLAYER_MODE && j === pmJersey(season);
+    svg += `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${r.toFixed(1)}" fill="${mine ? '#D4AF37' : pnLayout === 'circle' ? '#4A6FA5' : '#0F1F3D'}" stroke="#fff" stroke-width="1.5"><title>${escapeHtml(jerseyLabel(j, season))}</title></circle>`;
+    svg += `<text x="${x.toFixed(1)}" y="${(y - r - 4).toFixed(1)}" text-anchor="middle" font-family="Helvetica Neue, Arial, sans-serif" font-size="11" font-weight="700" fill="#fff" paint-order="stroke" stroke="#0F1F3D" stroke-width="3">${escapeHtml(nameFor(j, season) === PM_OTHER ? PM_OTHER : '#' + j + ' ' + lastNameOf(nameFor(j, season)))}</text>`;
+  });
+  return svg + '</svg>';
+}
+function renderPassingNetwork() {
+  const wrap = document.getElementById('pnNetWrap');
+  if (!wrap) return;
+  const season = EFF_SEASON, data = pnData();
+  document.getElementById('pnSub').textContent = `${season} ${EFF_CTX_WORD()}: ${data.fedCount} of ${data.shotCount} shots have a WLU passer logged. Each arrow goes from the passer to the shooter; thicker = more feeds (${PN_MIN_FEEDS}+ to show). Color = look quality: expected goals per feed vs the team's average shot (${num(data.teamXg, 2)}) — green creates better looks, red worse. ${pnLayout === 'circle' ? 'Players around the circle, busiest first from the top.' : 'Each player sits in the zone he shoots from most.'}`;
+  wrap.innerHTML = pnNetworkSvg(data, season);
+  const rows = data.rows.filter(r => r.n >= PN_MIN_FEEDS);
+  renderSortableTable('pnTableWrap', [
+    { key: 'from', label: 'Passer', type: 'text', value: r => jerseyLabel(r.from, season), format: nameCell },
+    { key: 'to', label: 'Shooter', type: 'text', value: r => jerseyLabel(r.to, season), format: nameCell },
+    { key: 'n', label: 'Feeds', type: 'num', value: r => r.n },
+    { key: 'g', label: 'Goals', type: 'num', value: r => r.g },
+    { key: 'sh', label: 'Sh% on Feeds', type: 'num', value: r => r.sh, format: v => pct(v) },
+    { key: 'xgPer', label: 'xG per Feed', type: 'num', value: r => r.xgPer, format: v => `<b style="color:${pnColor(v, data.teamXg)};">${num(v, 2)}</b>`, title: 'Average look quality of the shots off this connection (grade-based xG).' },
+    { key: 'otherSh', label: 'Shooter Sh% Otherwise', type: 'num', value: r => r.otherSh, format: (v, r) => v === null ? '—' : `${pct(v)} <span class="n-note">(${r.otherN})</span>`, title: 'The shooter’s shooting % on all his other shots (not fed by this passer).' },
+    { key: 'lift', label: 'Lift', type: 'num', value: r => r.otherSh === null ? null : r.sh - r.otherSh, format: v => v === null ? '—' : `<b style="color:${v >= 0 ? 'var(--good)' : 'var(--critical)'};">${v >= 0 ? '+' : ''}${(v * 100).toFixed(0)} pts</b>`, title: 'How much better (or worse) the shooter finishes off this passer than on his other shots.' },
+  ], rows, { dense: true, defaultSort: { key: 'n', dir: 'desc' }, emptyMsg: `No connection has ${PN_MIN_FEEDS}+ feeds yet.` });
+  // Per player: top targets and top feeders.
+  const sel = document.getElementById('pnPlayerSelect');
+  const js = Array.from(new Set(data.rows.flatMap(r => [r.from, r.to]))).map(j => ({ j, name: nameFor(j, season) })).sort((a, b) => a.name.localeCompare(b.name));
+  sel.innerHTML = js.length ? js.map(p => `<option value="${escapeHtml(p.j)}">#${escapeHtml(p.j)} ${escapeHtml(p.name)}</option>`).join('') : '<option value="">No passers yet</option>';
+  if (!js.some(p => p.j === pnPlayer)) pnPlayer = js.length ? js[0].j : '';
+  sel.value = pnPlayer;
+  if (PLAYER_MODE) pnPlayer = pmLockSelect(sel);
+  const out = data.rows.filter(r => r.from === pnPlayer).sort((a, b) => b.n - a.n).slice(0, 3);
+  const inn = data.rows.filter(r => r.to === pnPlayer).sort((a, b) => b.n - a.n).slice(0, 3);
+  const li = (r, other) => `<li><b>${escapeHtml(jerseyLabel(other, season))}</b>: ${r.n} feed${r.n === 1 ? '' : 's'}, ${r.g} goal${r.g === 1 ? '' : 's'}, <span style="color:${pnColor(r.xgPer, data.teamXg)}; font-weight:700;">${num(r.xgPer, 2)} xG per feed</span></li>`;
+  document.getElementById('pnPlayerWrap').innerHTML = !pnPlayer || pnPlayer === '__NONE__' ? '<p class="sans n-note">No passes logged for this player yet.</p>' : `
+    <div style="display:flex; gap:24px; flex-wrap:wrap;" class="sans">
+      <div style="flex:1 1 260px;"><p style="font-weight:700; color:var(--navy-3); margin:0 0 4px;">He feeds most</p>${out.length ? `<ul style="margin:0; padding-left:18px; font-size:13px; line-height:1.7;">${out.map(r => li(r, r.to)).join('')}</ul>` : '<p class="n-note">No feeds logged yet.</p>'}</div>
+      <div style="flex:1 1 260px;"><p style="font-weight:700; color:var(--navy-3); margin:0 0 4px;">Feeds him most</p>${inn.length ? `<ul style="margin:0; padding-left:18px; font-size:13px; line-height:1.7;">${inn.map(r => li(r, r.from)).join('')}</ul>` : '<p class="n-note">No feeds to him logged yet.</p>'}</div>
+    </div>`;
+}
+document.getElementById('pnPlayerSelect').addEventListener('change', e => { pnPlayer = e.target.value; renderPassingNetwork(); });
+setupPillGroup('pnLayoutPills', [{ value: 'zones', label: 'Field zones' }, { value: 'circle', label: 'Circle' }], 'zones', v => { pnLayout = v || 'zones'; if (!v) setPillGroupValue('pnLayoutPills', 'zones'); renderPassingNetwork(); });
+
 // ---------------- Efficiency > xG Model (objective expected goals) ----------------
 // A second, objective xG: regularized logistic regression on this season's
 // shots using only facts about the shot (where, how, pressure, setting) and
@@ -9322,6 +9481,7 @@ function renderEfficiencyView() {
   renderEffFilmMetrics();
   renderEffAngles(model);
   renderXg2Tab();
+  renderPassingNetwork();
 }
 setupPillGroup('effSeasonPills', ADV_SEASONS, EFF_SEASON, v => {
   if (v) EFF_SEASON = v;
