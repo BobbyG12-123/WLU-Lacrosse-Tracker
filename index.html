@@ -1259,6 +1259,29 @@
       <div class="table-wrap" id="gaTrigWrap"></div>
     </div>
     </div>
+    <div class="subpage" data-label="Projections">
+    <div class="panel">
+      <p class="panel-title">Projections</p>
+      <div class="model-note" id="pjNote" style="line-height:1.55;"></div>
+      <p class="panel-title" style="font-size:15px;">Shooting &amp; Season Totals</p>
+      <div class="table-wrap" id="pjShootWrap"></div>
+    </div>
+    <div class="panel">
+      <p class="panel-title">Goals Added</p>
+      <p class="panel-sub">True goals added per session, and over 17 games at that rate (rough &mdash; built on practice sessions).</p>
+      <div class="table-wrap" id="pjGaWrap"></div>
+    </div>
+    <div class="panel">
+      <p class="panel-title">Ball Security</p>
+      <p class="panel-sub">Players with 10+ touches (shots, passes that led to a shot, turnovers).</p>
+      <div class="table-wrap" id="pjBallWrap"></div>
+    </div>
+    <div class="panel">
+      <p class="panel-title">Goalies</p>
+      <p class="panel-sub">True level from this season&rsquo;s shots on cage, and a 17-game season as the starter.</p>
+      <div class="table-wrap" id="pjGoalieWrap"></div>
+    </div>
+    </div>
     <div class="subpage" data-label="Passing">
     <div class="panel">
       <p class="panel-title">Passing Network</p>
@@ -7838,7 +7861,17 @@ function renderPlayerReport(period, cur, season, prior) {
     ${goodS.length ? `<ul class="sans" style="font-size:13px; line-height:1.7; margin:0; padding-left:18px;">${goodS.map(x => `<li>${rptSplitSentence(x)}</li>`).join('')}</ul>` : '<p class="sans n-note" style="font-size:12.5px;">Nothing stands out above the team yet with enough shots.</p>'}
     <p class="sans" style="font-size:13px; margin:10px 0 2px;"><b style="color:var(--gold-ink);">What to work on</b></p>
     ${workS.length ? `<ul class="sans" style="font-size:13px; line-height:1.7; margin:0; padding-left:18px;">${workS.map(x => `<li>${rptSplitSentence(x)}</li>`).join('')}</ul>` : '<p class="sans n-note" style="font-size:12.5px;">Nothing stands out below the team yet with enough shots.</p>'}
-    ${goalieHtml}`;
+    ${goalieHtml}
+    ${rptProjectionLine(j, season)}`;
+}
+function rptProjectionLine(j, season) {
+  if (!isAdvSeason(season)) return '';
+  const r = computeProjections(season);
+  const p = r.players.find(x => x.jersey === j), g = r.goalies.find(x => x.jersey === j);
+  const bits = [];
+  if (p && p.shots >= 5) bits.push(`true shooting % about <b>${pjPct(p.sh.m)}</b> (likely ${pjPct(p.sh.lo)}–${pjPct(p.sh.hi)}); over ${PJ_GAMES} games about <b>${Math.round(p.goals17.m)} goals</b> (${Math.round(p.goals17.lo)}–${Math.round(p.goals17.hi)}) and ${Math.round(p.ast17.m)} assists`);
+  if (g) bits.push(`true save % about <b>${pjPct(g.save.m)}</b> (likely ${pjPct(g.save.lo)}–${pjPct(g.save.hi)})`);
+  return bits.length ? `<p class="sans" style="font-size:13px; margin-top:14px; padding:8px 10px; background:#FBFAF6; border-left:3px solid var(--gold); border-radius:0 6px 6px 0;"><b>Projection:</b> ${bits.join('; ')}. <span class="n-note">(Efficiency → Projections has the details.)</span></p>` : '';
 }
 setupPillGroup('rptModePills', [{ value: 'practice', label: 'Practice' }, { value: 'week', label: 'Week' }], 'practice', v => {
   rptMode = v || 'practice'; if (!v) setPillGroupValue('rptModePills', 'practice'); rptKey = ''; renderReports();
@@ -8447,6 +8480,176 @@ function renderExactModel(shots, xgOf) {
   renderAngle3D(xgOf);
 }
 
+// ---------------- Efficiency > Projections ----------------
+// True level going forward: each rate is pulled toward the team by k reps,
+// where k comes from the split-half reliability on the Data Health tab
+// (k = reps needed for 70% x 0.3 / 0.7), with an 80% range. Season totals
+// are for the 17 spring games: his share of team shots x team shots per
+// game (2026 games until 3+ games are logged this season) x 17, at his true
+// rate adjusted by the game-vs-practice shooting ratio. Goalies are framed
+// as starting all 17, facing as many shots on cage as we took per game.
+const PJ_GAMES = 17, PJ_Z80 = 1.2816, PJ_MIN_GAMES = 3;
+const PJ_FALLBACK_K = { sh: 25, oncage: 30, ongoal: 35, fin: 40, save: 60, sve: 60, to: 15, pa: 25 };
+function pjK(season) {
+  const map = { 'Shot % (Sh%)': 'sh', 'On Cage': 'oncage', 'On-Goal Sh%': 'ongoal', 'Finishing (G−xG per shot)': 'fin', 'Save %': 'save', 'Saved vs. Expected (per shot)': 'sve', 'Turnovers per touch': 'to', 'Potential assists per touch': 'pa' };
+  const k = Object.assign({}, PJ_FALLBACK_K), measured = {};
+  healthRepsRows(season).forEach(r => { const key = map[r.stat]; if (key && r.res.status === 'ok') { k[key] = r.res.n * 0.3 / 0.7; measured[key] = true; } });
+  return { k, measured };
+}
+function pjBinom(x, n, p0, k) {
+  const m = (x + k * p0) / (n + k), sd = Math.sqrt(Math.max(m * (1 - m), 1e-6) / (n + k + 1));
+  return { m, lo: Math.max(0, m - PJ_Z80 * sd), hi: Math.min(1, m + PJ_Z80 * sd), sd, now: n ? x / n : null, n };
+}
+function pjMean(sum, n, mu0, k, sigma2) {
+  const m = (sum + k * mu0) / (n + k), sd = Math.sqrt(sigma2 / (n + k));
+  return { m, lo: m - PJ_Z80 * sd, hi: m + PJ_Z80 * sd, sd, now: n ? sum / n : null, n };
+}
+// Game environment: 2026 games until this season has its own.
+function pjGameBase(season) {
+  const games = sh => new Set(sh.map(s => s.date + '|' + (s.opponent || ''))).size;
+  const own = SHOTS.filter(s => seasonForDate(s.date) === season && s.context === 'Game');
+  const useOwn = games(own) >= PJ_MIN_GAMES;
+  const src = useOwn ? season : String(Number(season) - 1);
+  const g = SHOTS.filter(s => seasonForDate(s.date) === src && s.context === 'Game'), p = SHOTS.filter(s => seasonForDate(s.date) === src && s.context === 'Practice');
+  const ng = games(g) || 1, shG = g.length ? g.filter(s => s.goal === 1).length / g.length : null, shP = p.length ? p.filter(s => s.goal === 1).length / p.length : null;
+  const oppOwn = OPP_SHOTS.filter(s => seasonForDate(s.date) === season);
+  const facedPerGame = useOwn && oppOwn.length ? oppOwn.filter(s => s.onKeeper === 1).length / games(oppOwn) : g.filter(s => s.onKeeper === 1).length / ng;
+  const goalsAgainstPerGame = useOwn && oppOwn.length ? oppOwn.filter(s => s.goal === 1).length / games(oppOwn) : g.filter(s => s.goal === 1).length / ng;
+  return { src, useOwn, games: ng, shotsPerGame: g.length / ng, goalsPerGame: g.filter(s => s.goal === 1).length / ng, gameFactor: shG && shP ? shG / shP : 1,
+    facedPerGame, gameSave: facedPerGame ? 1 - goalsAgainstPerGame / facedPerGame : null };
+}
+function computeProjections(season) {
+  const { k, measured } = pjK(season);
+  const base = pjGameBase(season);
+  const xm = xgModelFor(season), fm = facedXgModelFor(season);
+  const shots = advShots(season).filter(s => s.shooterJersey);
+  const team = { n: shots.length, g: shots.filter(s => s.goal === 1).length, oc: shots.filter(s => s.onKeeper === 1).length };
+  const teamSh = team.g / team.n, teamOC = team.oc / team.n, teamOG = team.g / team.oc;
+  const finVals = shots.map(s => (s.goal === 1 ? 1 : 0) - xgForShot(s, xm));
+  const finVar = finVals.reduce((a, v) => a + v * v, 0) / Math.max(1, finVals.length);
+  const assisted = shots.filter(s => s.goal === 1 && s.assistJersey && !isOppJersey(s.assistJersey));
+  const assistedFrac = team.g ? assisted.length / team.g : 0;
+  // Touches: shots, passes that led to a shot, turnovers.
+  const d = effDataFor(season);
+  let tTouch = 0, tTo = 0, tPa = 0;
+  Object.values(d.players).forEach(p => { const t = p.shots + p.potAst + p.to; tTouch += t; tTo += p.to; tPa += p.potAst; });
+  const ga = computeGoalsAddedFor(season);
+  const players = Array.from(new Set(shots.map(s => s.shooterJersey).concat(Object.keys(d.players)))).map(j => {
+    const mine = shots.filter(s => s.shooterJersey === j), n = mine.length, g = mine.filter(s => s.goal === 1).length, oc = mine.filter(s => s.onKeeper === 1).length;
+    const p = d.players[j] || { shots: 0, potAst: 0, to: 0 };
+    const touches = p.shots + p.potAst + p.to;
+    const sh = pjBinom(g, n, teamSh, k.sh);
+    const share = n / team.n;
+    const shots17 = share * base.shotsPerGame * PJ_GAMES;
+    const pG = sh.m * base.gameFactor;
+    const goalsVar = shots17 * pG * (1 - pG) + shots17 * shots17 * (sh.sd * base.gameFactor) ** 2;
+    const goals17 = shots17 * pG;
+    const astShare = assisted.length ? assisted.filter(s => s.assistJersey === j).length / assisted.length : 0;
+    const ast17 = base.goalsPerGame * PJ_GAMES * assistedFrac * astShare;
+    const gaRow = ga.byPlayer[j];
+    return {
+      jersey: j, name: nameFor(j, season), shots: n,
+      sh, oncage: pjBinom(oc, n, teamOC, k.oncage), ongoal: pjBinom(g, oc, teamOG, k.ongoal),
+      fin: pjMean(mine.reduce((a, s) => a + (s.goal === 1 ? 1 : 0) - xgForShot(s, xm), 0), n, 0, k.fin, finVar),
+      to: pjBinom(p.to, touches, tTouch ? tTo / tTouch : 0, k.to), pa: pjBinom(p.potAst, touches, tTouch ? tPa / tTouch : 0, k.pa), touches,
+      shots17, goals17: { m: goals17, lo: Math.max(0, goals17 - PJ_Z80 * Math.sqrt(goalsVar)), hi: goals17 + PJ_Z80 * Math.sqrt(goalsVar) },
+      ast17: { m: ast17, lo: Math.max(0, ast17 - PJ_Z80 * Math.sqrt(ast17)), hi: ast17 + PJ_Z80 * Math.sqrt(ast17) },
+      ga: gaRow || null,
+    };
+  });
+  // Goalies.
+  const faced = goalieShotsForSeason(season).filter(s => s.onKeeper === 1 && s.goalieJersey);
+  const tSave = faced.length ? faced.filter(s => s.goal !== 1).length / faced.length : 0;
+  const sveVals = faced.map(s => xgForShot(s, fm) - (s.goal === 1 ? 1 : 0));
+  const sveVar = sveVals.reduce((a, v) => a + v * v, 0) / Math.max(1, sveVals.length);
+  const byG = {}; faced.forEach(s => { (byG[s.goalieJersey] = byG[s.goalieJersey] || []).push(s); });
+  const goalies = Object.keys(byG).map(j => {
+    const l = byG[j], sv = l.filter(s => s.goal !== 1).length;
+    const save = pjBinom(sv, l.length, tSave, k.save);
+    const sve = pjMean(l.reduce((a, s) => a + xgForShot(s, fm) - (s.goal === 1 ? 1 : 0), 0), l.length, 0, k.sve, sveVar);
+    // His edge over our goalies, applied to the game environment.
+    const gameSave = base.gameSave === null ? null : Math.max(0, Math.min(1, base.gameSave + (save.m - tSave)));
+    const faced17 = base.facedPerGame * PJ_GAMES;
+    const saves17 = gameSave === null ? null : faced17 * gameSave;
+    const sd17 = gameSave === null ? null : Math.sqrt(faced17 * gameSave * (1 - gameSave) + faced17 * faced17 * save.sd * save.sd);
+    return { jersey: j, name: nameFor(j, season), faced: l.length, save, sve, gameSave, faced17, saves17: saves17 === null ? null : { m: saves17, lo: saves17 - PJ_Z80 * sd17, hi: saves17 + PJ_Z80 * sd17 } };
+  });
+  return { base, k, measured, players, goalies, assistedFrac, gaSessK: ga.k };
+}
+// Goals Added per session, with its own empirical-Bayes shrinkage: k =
+// (variation within a player across sessions) / (true spread between players).
+function computeGoalsAddedFor(season) {
+  const s0 = EFF_SEASON, c0 = EFF_CONTEXT;
+  EFF_SEASON = season; EFF_CONTEXT = 'All';
+  let r; try { r = computeGoalsAdded(); } finally { EFF_SEASON = s0; EFF_CONTEXT = c0; }
+  const rows = r.rows.filter(x => x.sess && Object.keys(x.sess).length >= 2);
+  const within = [], means = [];
+  rows.forEach(x => { const v = Object.values(x.sess), m = v.reduce((a, b) => a + b, 0) / v.length; means.push(m); v.forEach(y => within.push((y - m) ** 2 * v.length / Math.max(1, v.length - 1))); });
+  const s2w = within.length ? within.reduce((a, b) => a + b, 0) / within.length : 1;
+  const avgApps = rows.length ? rows.reduce((a, x) => a + Object.keys(x.sess).length, 0) / rows.length : 1;
+  const mAll = means.length ? means.reduce((a, b) => a + b, 0) / means.length : 0;
+  const varMeans = means.length > 1 ? means.reduce((a, b) => a + (b - mAll) ** 2, 0) / (means.length - 1) : 0;
+  const tau2 = Math.max(1e-4, varMeans - s2w / avgApps);
+  const k = Math.min(30, s2w / tau2);
+  const byPlayer = {};
+  r.rows.forEach(x => {
+    const v = Object.values(x.sess || {}), n = v.length;
+    const est = pjMean(v.reduce((a, b) => a + b, 0), n, mAll, k, s2w);
+    byPlayer[x.jersey] = { perSess: est, season17: { m: est.m * PJ_GAMES, lo: est.lo * PJ_GAMES, hi: est.hi * PJ_GAMES } };
+  });
+  return { byPlayer, k };
+}
+function pjCell(e, f) { return e ? `<span style="white-space:nowrap;"><b>${f(e.m)}</b> <span class="n-note">(${f(e.lo)}–${f(e.hi)})</span></span>` : '—'; }
+const pjPct = v => v === null || v === undefined ? '—' : Math.round(v * 100) + '%';
+const pjNum = d => v => v === null || v === undefined ? '—' : (Math.abs(v) < 1e-9 ? 0 : v).toFixed(d);
+const pjSigned = d => v => v === null || v === undefined ? '—' : (v >= 0 ? '+' : '') + v.toFixed(d);
+function renderProjections() {
+  const wrap = document.getElementById('pjShootWrap');
+  if (!wrap) return;
+  const season = EFF_SEASON, r = computeProjections(season), b = r.base;
+  document.getElementById('pjNote').innerHTML = `<b>True level</b> = what each player&rsquo;s numbers point to going forward: his ${escapeHtml(season)} results pulled toward the team by how much each stat can be trusted at his number of reps (measured on the Data Health tab${Object.keys(r.measured).length < 8 ? '; a default is used where there isn&rsquo;t enough data yet' : ''}). The range in gray is where he&rsquo;ll likely land &mdash; about 4 times out of 5. <b>17-game totals</b> use his share of our ${escapeHtml(season)} shots &times; ${b.shotsPerGame.toFixed(1)} team shots per game (${b.useOwn ? 'this season&rsquo;s games' : escapeHtml(b.src) + ' games, until ' + PJ_MIN_GAMES + '+ games are logged this season'}), at his true shooting % &times; ${b.gameFactor.toFixed(2)} (game vs practice shooting in ${escapeHtml(b.src)}). Assists use the share of goals that were assisted this season (${Math.round(r.assistedFrac * 100)}%) and his share of those assists. Goalies are shown as if starting all 17, facing ${b.facedPerGame.toFixed(1)} shots on cage a game${b.useOwn ? '' : ' (mirroring ours in ' + escapeHtml(b.src) + ')'}. Projections use every ${escapeHtml(season)} session regardless of the Practice / Game pill.`;
+  const players = r.players.filter(p => p.shots >= 5);
+  renderSortableTable('pjShootWrap', [
+    { key: 'jersey', label: '#', type: 'text', value: p => p.jersey },
+    { key: 'name', label: 'Name', type: 'text', value: p => p.name, format: nameCell },
+    { key: 'shots', label: 'Shots', type: 'num', value: p => p.shots },
+    { key: 'shNow', label: 'Sh% Now', type: 'num', value: p => p.sh.now, format: v => pjPct(v), group: 'True level' },
+    { key: 'sh', label: 'True Sh%', type: 'num', value: p => p.sh.m, format: (v, p) => pjCell(p.sh, pjPct), group: 'True level' },
+    { key: 'oncage', label: 'On Cage', type: 'num', value: p => p.oncage.m, format: (v, p) => pjCell(p.oncage, pjPct), group: 'True level' },
+    { key: 'ongoal', label: 'On-Goal Sh%', type: 'num', value: p => p.ongoal.m, format: (v, p) => pjCell(p.ongoal, pjPct), group: 'True level' },
+    { key: 'fin', label: 'Finishing / Shot', type: 'num', value: p => p.fin.m, format: (v, p) => pjCell(p.fin, pjSigned(2)), group: 'True level', title: 'Goals above expected per shot.' },
+    { key: 'shots17', label: 'Shots', type: 'num', value: p => p.shots17, format: v => Math.round(v), group: `${PJ_GAMES} games` },
+    { key: 'goals17', label: 'Goals', type: 'num', value: p => p.goals17.m, format: (v, p) => pjCell(p.goals17, x => Math.round(x)), group: `${PJ_GAMES} games` },
+    { key: 'ast17', label: 'Assists', type: 'num', value: p => p.ast17.m, format: (v, p) => pjCell(p.ast17, x => Math.round(x)), group: `${PJ_GAMES} games` },
+  ], players, { dense: true, defaultSort: { key: 'goals17', dir: 'desc' }, emptyMsg: 'No player has 5+ shots yet.' });
+  const gaRows = r.players.filter(p => p.ga);
+  renderSortableTable('pjGaWrap', [
+    { key: 'jersey', label: '#', type: 'text', value: p => p.jersey },
+    { key: 'name', label: 'Name', type: 'text', value: p => p.name, format: nameCell },
+    { key: 'now', label: 'Per Session Now', type: 'num', value: p => p.ga.perSess.now, format: v => pjSigned(2)(v) },
+    { key: 'per', label: 'True per Session', type: 'num', value: p => p.ga.perSess.m, format: (v, p) => pjCell(p.ga.perSess, pjSigned(2)) },
+    { key: 'season', label: `${PJ_GAMES}-Game Goals Added`, type: 'num', value: p => p.ga.season17.m, format: (v, p) => pjCell(p.ga.season17, pjSigned(1)), title: 'At his true per-session rate, one session per game. Rough: built on practice sessions.' },
+  ], gaRows, { dense: true, defaultSort: { key: 'season', dir: 'desc' }, emptyMsg: 'No Goals Added data yet.' });
+  const btRows = r.players.filter(p => p.touches >= 10);
+  renderSortableTable('pjBallWrap', [
+    { key: 'jersey', label: '#', type: 'text', value: p => p.jersey },
+    { key: 'name', label: 'Name', type: 'text', value: p => p.name, format: nameCell },
+    { key: 'touches', label: 'Touches', type: 'num', value: p => p.touches },
+    { key: 'to', label: 'True Turnovers / Touch', type: 'num', value: p => p.to.m, format: (v, p) => pjCell(p.to, pjPct) },
+    { key: 'pa', label: 'True Shots Set Up / Touch', type: 'num', value: p => p.pa.m, format: (v, p) => pjCell(p.pa, pjPct) },
+  ], btRows, { dense: true, defaultSort: { key: 'touches', dir: 'desc' }, emptyMsg: 'No player has 10+ touches yet.' });
+  renderSortableTable('pjGoalieWrap', [
+    { key: 'jersey', label: '#', type: 'text', value: g => g.jersey },
+    { key: 'name', label: 'Name', type: 'text', value: g => g.name, format: nameCell },
+    { key: 'faced', label: 'Faced', type: 'num', value: g => g.faced },
+    { key: 'saveNow', label: 'Save % Now', type: 'num', value: g => g.save.now, format: v => pjPct(v), group: 'True level' },
+    { key: 'save', label: 'True Save %', type: 'num', value: g => g.save.m, format: (v, g) => pjCell(g.save, pjPct), group: 'True level' },
+    { key: 'sve', label: 'Saves vs Exp. / Shot', type: 'num', value: g => g.sve.m, format: (v, g) => pjCell(g.sve, pjSigned(2)), group: 'True level' },
+    { key: 'gameSave', label: 'Game Save %', type: 'num', value: g => g.gameSave, format: v => pjPct(v), group: `As starter, ${PJ_GAMES} games` },
+    { key: 'saves17', label: 'Saves', type: 'num', value: g => g.saves17 ? g.saves17.m : null, format: (v, g) => pjCell(g.saves17, x => Math.round(x)), group: `As starter, ${PJ_GAMES} games`, title: `Out of about ${Math.round(r.base.facedPerGame * PJ_GAMES)} shots on cage.` },
+  ], r.goalies, { dense: true, defaultSort: { key: 'faced', dir: 'desc' }, emptyMsg: 'No goalie has faced shots yet.' });
+}
+
 // ---------------- Efficiency > Goals Added (possession chains) ----------------
 // Every WLU possession starts worth V (our average goals per possession).
 // Credit goes to whoever moves that value:
@@ -8482,9 +8685,11 @@ function computeGoalsAdded() {
   const advList = wp.filter(p => p.dom);
   const Vadv = advList.length >= 10 ? advList.filter(p => p.goal).length / advList.length : V;
   const P = {};
-  const add = (j, part, v) => { if (!j || isOppJersey(j)) return; const r = (P[j] = P[j] || { jersey: j, total: 0 }); r[part] = (r[part] || 0) + v; r.total += v; };
+  let curSid = null; // the session being credited, for per-session totals
+  const add = (j, part, v) => { if (!j || isOppJersey(j)) return; const r = (P[j] = P[j] || { jersey: j, total: 0, sess: {} }); r[part] = (r[part] || 0) + v; r.total += v; if (curSid) r.sess[curSid] = (r.sess[curSid] || 0) + v; };
   const trig = {};
   wp.forEach(pp => {
+    curSid = sessKey(pp.e);
     let v = V;
     // Advantage only moves the value when we know who started it, so every
     // bit of value is credited to someone.
@@ -8517,12 +8722,13 @@ function computeGoalsAdded() {
   });
   // Opponent possessions in games: caused turnovers and on-ball defense.
   d.possList.filter(p => p.team === 'OPP').forEach(pp => {
+    curSid = sessKey(pp.e);
     if (!pp.shots.length && pp.to && pp.e.causedBy) add(pp.e.causedBy, 'takeaway', V);
     pp.shots.forEach(s => { if (s.defender && !isOppJersey(s.defender)) add(s.defender, 'onball', d.xgOf(s) - (s.goal === 1 ? 1 : 0)); });
   });
   // Goalies: saves above expected on shots faced.
   const fm = facedXgModelFor(EFF_SEASON);
-  goalieShotsForSeason(EFF_SEASON).filter(s => s.onKeeper === 1 && s.goalieJersey && effContextOk(s)).forEach(s => add(s.goalieJersey, 'goalie', xgForShot(s, fm) - (s.goal === 1 ? 1 : 0)));
+  goalieShotsForSeason(EFF_SEASON).filter(s => s.onKeeper === 1 && s.goalieJersey && effContextOk(s)).forEach(s => { curSid = sessKey(s); add(s.goalieJersey, 'goalie', xgForShot(s, fm) - (s.goal === 1 ? 1 : 0)); });
   const sessions = j => (d.players[j] ? d.players[j].sessions.size : 0) || new Set(d.shots.filter(s => s.shooterJersey === j || s.assistJersey === j || s.goalieJersey === j || s.defender === j).map(sessKey)).size;
   const rows = Object.values(P).map(r => Object.assign(r, { name: nameFor(r.jersey, EFF_SEASON), apps: sessions(r.jersey) }));
   rows.forEach(r => { r.perApp = r.apps ? r.total / r.apps : null; });
@@ -9773,6 +9979,7 @@ function renderEfficiencyView() {
   renderXg2Tab();
   renderPassingNetwork();
   renderGoalsAdded();
+  renderProjections();
 }
 setupPillGroup('effSeasonPills', ADV_SEASONS, EFF_SEASON, v => {
   if (v) EFF_SEASON = v;
