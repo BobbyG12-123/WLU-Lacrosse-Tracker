@@ -369,6 +369,14 @@
             <button type="button" data-value="OPP">Opponent ball</button>
           </div>
         </div>
+        <div class="sb-item" id="gameClockWrap" style="display:none;">
+          <label>Quarter &amp; clock left</label>
+          <div style="display:flex; gap:6px; align-items:center; flex-wrap:wrap;"><div class="pill-row" id="f_quarter"></div><input type="text" id="f_clock" placeholder="m:ss" maxlength="5" title="Time left in the quarter, e.g. 7:42 (or 742)" style="width:70px;" inputmode="numeric"></div>
+        </div>
+        <div class="sb-item" id="gameScoreWrap" style="display:none;">
+          <label>Score</label>
+          <div id="gameScoreReadout" class="sans" style="font-size:13px; display:flex; gap:6px; align-items:center; flex-wrap:wrap;"></div>
+        </div>
         <div class="sb-item sb-entry">
           <label>Log</label>
           <div class="seg" id="entryTypeSeg">
@@ -1282,6 +1290,24 @@
       <div class="table-wrap" id="pjGoalieWrap"></div>
     </div>
     </div>
+    <div class="subpage" data-label="Win Probability">
+    <div class="panel">
+      <p class="panel-title">Win Probability</p>
+      <div class="model-note" id="wpNote" style="line-height:1.55;"></div>
+      <div class="controls-row" style="margin-bottom:8px;"><div class="control-group"><label for="wpGameSelect">Game</label><select id="wpGameSelect"></select></div></div>
+      <div class="chart-wrap" id="wpChartWrap"></div>
+    </div>
+    <div class="panel">
+      <p class="panel-title">Win Probability Added</p>
+      <p class="panel-sub">Season, games only. Each player&rsquo;s plays valued by how much they moved our chance to win.</p>
+      <div class="table-wrap" id="wpPlayerWrap"></div>
+    </div>
+    <div class="panel">
+      <p class="panel-title">Clutch</p>
+      <p class="panel-sub">Shooting in the top 20% of moments by leverage vs everything else. Players with 3+ timed game shots.</p>
+      <div class="table-wrap" id="wpClutchWrap"></div>
+    </div>
+    </div>
     <div class="subpage" data-label="Passing">
     <div class="panel">
       <p class="panel-title">Passing Network</p>
@@ -1912,7 +1938,9 @@ const COLS =["id","date","practiceId","context","shooterJersey","goalieJersey","
   // Individual defense (2027+): who guarded the shooter, who slid, beaten.
   "defender","slideDefender","defBeaten","beatenHow","offBallFault",
   // Who defended the pick / get (2027+).
-  "pickScreenerDef","pickUserDef"];
+  "pickScreenerDef","pickUserDef",
+  // Game time (2027+ games): quarter '1'-'4' / 'OT' and clock left 'm:ss'.
+  "quarter","clock"];
 // team: 'OPP' marks an opponent shot on a WLU goalie (games). Those never go
 // into SHOTS (every shooting stat assumes a WLU shooter); they live in
 // OPP_SHOTS and feed only the goalie views. Opponent jerseys are stored as
@@ -1925,7 +1953,7 @@ const POSS_END_OPTIONS = ["Turnover","Failed clear","End of period"];
 // from shots so no shot math changes; lineup/turnover/dominoes stats read both.
 const POSS_COLS = ["id","date","context","opponent","team","possStart","possStartJersey","dominoes","advCreator","advType","manSituation","end","turnoverBy","causedBy","stintId",
   "pick","pickType","pickSpot","pickScreener","pickUser","pickCoverage","pickResult","pickMismatch","pickAction",
-  "pickScreenerDef","pickUserDef"];
+  "pickScreenerDef","pickUserDef","quarter","clock"];
 // Shot Outcome (one required pill pick) replaces the old On Goal/On
 // Keeper/Goal Scored/Blocked checkboxes. Rather than rewriting every
 // existing analytics function that reads onGoal/onKeeper/goal/blocked
@@ -2082,12 +2110,18 @@ function sessionIdFor(entry) {
   return date + '_' + ctx + (opp ? '_' + opp : '');
 }
 function parseSessionDoc(id, data) {
-  const sess = { id, date: cleanValue(data.date) || null, context: cleanValue(data.context) || null, opponent: cleanValue(data.opponent) || null, shots: [], poss: [], stints: [] };
+  const sess = { id, date: cleanValue(data.date) || null, context: cleanValue(data.context) || null, opponent: cleanValue(data.opponent) || null, shots: [], poss: [], stints: [], adjs: [] };
   Object.keys(data).forEach(k => {
     if (typeof data[k] !== 'string') return;
     try {
       if (k.startsWith(SESSION_ENTRY_PREFIX.shot)) { const o = tupleToObj(JSON.parse(data[k])); if (Number.isInteger(o.id)) { o._sid = id; sess.shots.push(o); } }
       else if (k.startsWith(SESSION_ENTRY_PREFIX.poss)) { const o = tupleToObj(JSON.parse(data[k]), POSS_COLS); if (Number.isInteger(o.id)) { o._sid = id; sess.poss.push(o); } }
+      else if (k.startsWith('a_')) {
+        // Score fix: "at this quarter/clock the real score was W-O" (lw/lo =
+        // goals logged for each side when it was saved).
+        const o = cleanDeep(JSON.parse(data[k]));
+        if (o && Number.isInteger(o.wlu) && Number.isInteger(o.opp)) sess.adjs.push({ id: k, quarter: o.quarter || null, clock: o.clock || null, wlu: o.wlu, opp: o.opp, lw: Number.isInteger(o.lw) ? o.lw : o.wlu, lo: Number.isInteger(o.lo) ? o.lo : o.opp });
+      }
       else if (k.startsWith(SESSION_ENTRY_PREFIX.stint)) {
         const o = cleanDeep(JSON.parse(data[k]));
         if (o && Array.isArray(o.offense) && Array.isArray(o.defense)) { o.id = cleanText(k.slice(SESSION_ENTRY_PREFIX.stint.length)); sess.stints.push(o); }
@@ -3418,6 +3452,7 @@ function toggleOpponentField() {
   const isGame = document.getElementById('f_context').dataset.value === 'Game';
   document.getElementById('opponentFieldWrap').style.display = isGame ? '' : 'none';
   document.getElementById('possessionToggleWrap').style.display = isGame ? '' : 'none';
+  ['gameClockWrap', 'gameScoreWrap'].forEach(id => { document.getElementById(id).style.display = isGame ? '' : 'none'; });
   if (!isGame) document.getElementById('f_opponent').value = '';
   onSessionChanged();
 }
@@ -3433,6 +3468,7 @@ function onSessionChanged() {
   loadLineupForSession();
   applyTeamToForm();
   renderRecentEntries();
+  renderGameScore();
 }
 document.getElementById('f_date').addEventListener('change', () => { refreshFormRosterOptions(); onSessionChanged(); });
 document.getElementById('f_opponent').addEventListener('change', onSessionChanged);
@@ -4157,6 +4193,7 @@ function restoreLogState() {
   document.getElementById('f_opponent').value = st.opponent;
   document.getElementById('opponentFieldWrap').style.display = st.context === 'Game' ? '' : 'none';
   document.getElementById('possessionToggleWrap').style.display = st.context === 'Game' ? '' : 'none';
+  ['gameClockWrap', 'gameScoreWrap'].forEach(id => { document.getElementById(id).style.display = st.context === 'Game' ? '' : 'none'; });
   if (st.ball) setSegValue('lb_possession', st.ball);
   setSegValue('entryTypeSeg', st.entry || 'shot'); showEntryType(st.entry || 'shot');
   refreshFormRosterOptions();
@@ -4187,6 +4224,8 @@ function pointSessionBarAt(entry) {
   setPillGroupValue('f_context', SESSION_CONTEXTS.includes(entry.context) ? entry.context : 'Practice');
   document.getElementById('opponentFieldWrap').style.display = entry.context === 'Game' ? '' : 'none';
   document.getElementById('possessionToggleWrap').style.display = entry.context === 'Game' ? '' : 'none';
+  ['gameClockWrap', 'gameScoreWrap'].forEach(id => { document.getElementById(id).style.display = entry.context === 'Game' ? '' : 'none'; });
+  if (entry.context === 'Game') { setPillGroupValue('f_quarter', entry.quarter || '1'); document.getElementById('f_clock').value = entry.clock || ''; }
   document.getElementById('f_opponent').value = entry.context === 'Game' ? (entry.opponent || '') : '';
   lineupLoadedFor = null;
   onSessionChanged();
@@ -4410,6 +4449,9 @@ document.getElementById('submitShotBtn').addEventListener('click', async () => {
     offBallFault: offFault.value,
   };
   Object.assign(shotData, pk.data);
+  const gt = readGameTime(sess.context);
+  if (!gt.ok) { showMsg(gt.why, false); return; }
+  Object.assign(shotData, gt.data);
 
   let savedId, saveResult;
   if (isEdit) {
@@ -4526,6 +4568,9 @@ document.getElementById('submitPossBtn').addEventListener('click', async () => {
     end, turnoverBy: end === 'Turnover' ? tob.value : null, causedBy: end === 'Turnover' ? cb.value : null,
   };
   Object.assign(data, pk.data);
+  const gt = readGameTime(sess.context);
+  if (!gt.ok) { showMsg(gt.why, false); return; }
+  Object.assign(data, gt.data);
   let res, id;
   if (isEdit) {
     const original = POSSESSIONS.find(x => x.id === editingPossId);
@@ -4548,6 +4593,7 @@ let recentDeleteArmed = null; // 'shot:12' / 'poss:3'
 function renderRecentEntries() {
   const wrap = document.getElementById('recentWrap');
   if (!wrap) return;
+  renderGameScore();
   const sid = currentSessionId();
   const sess = LIVE_SESSIONS[sid];
   const season = currentLogSeason();
@@ -8480,6 +8526,181 @@ function renderExactModel(shots, xgOf) {
   renderAngle3D(xgOf);
 }
 
+// ---------------- Game time, running score, win probability ----------------
+// Game entries carry the quarter ('1'-'4', 'OT') and clock left ('m:ss') of a
+// 15-minute quarter. The score is counted from logged goals for both teams,
+// corrected by any "fix score" the coach saves (stored on the session doc as
+// a_<id>: the real score at that quarter/clock).
+const WP_QTR = 15, WP_CLUTCH_PCT = 0.8;
+setupPillGroup('f_quarter', ['1', '2', '3', '4', 'OT'], '1');
+function gtMinutes(clock) { const m = /^(\d{1,2}):(\d{2})$/.exec(clock || ''); return m ? Number(m[1]) + Number(m[2]) / 60 : null; }
+function readGameTime(context) {
+  if (context !== 'Game') return { ok: true, data: { quarter: null, clock: null } };
+  const quarter = document.getElementById('f_quarter').dataset.value || null;
+  let clock = document.getElementById('f_clock').value.trim();
+  if (/^\d{3,4}$/.test(clock)) clock = clock.slice(0, -2) + ':' + clock.slice(-2); // "742" -> "7:42" (phone keypads have no colon)
+  if (clock) {
+    const m = /^(\d{1,2}):(\d{2})$/.exec(clock);
+    if (!m || Number(m[2]) > 59 || Number(m[1]) * 60 + Number(m[2]) > WP_QTR * 60) return { ok: false, why: 'Clock should be time left in the quarter, like 7:42 (up to 15:00).' };
+  }
+  return { ok: true, data: { quarter, clock: clock || null } };
+}
+// Minutes elapsed in the game (OT after 60); null without a quarter.
+// Without a clock, the middle of the quarter.
+function gtElapsed(e) {
+  if (!e || !e.quarter) return null;
+  const left = gtMinutes(e.clock); const into = left === null ? WP_QTR / 2 : WP_QTR - left;
+  return e.quarter === 'OT' ? 60 + into : (Number(e.quarter) - 1) * WP_QTR + into;
+}
+function sessionGoals(sess) {
+  const w = sess.shots.filter(s => s.team !== 'OPP' && s.goal === 1).length, o = sess.shots.filter(s => s.team === 'OPP' && s.goal === 1).length;
+  return { w, o };
+}
+function renderGameScore() {
+  const box = document.getElementById('gameScoreReadout');
+  if (!box || !isGameSession()) return;
+  const sid = currentSessionId(), sess = LIVE_SESSIONS[sid];
+  const logged = sess ? sessionGoals(sess) : { w: 0, o: 0 };
+  const adj = sess && sess.adjs.length ? sess.adjs.slice().sort((a, b) => a.id.localeCompare(b.id)).pop() : null;
+  const w = logged.w + (adj ? adj.wlu - adj.lw : 0), o = logged.o + (adj ? adj.opp - adj.lo : 0);
+  box.innerHTML = `<b>WLU ${w} &ndash; ${o} Opp</b> <span class="n-note">${adj ? '(fixed)' : '(from logged goals)'}</span> <button type="button" class="btn secondary" id="gsFixBtn" style="padding:3px 9px; font-size:11px;">Fix</button>
+    <span id="gsFixRow" style="display:none;">WLU <input type="number" id="gsFixW" min="0" value="${w}" style="width:52px;"> Opp <input type="number" id="gsFixO" min="0" value="${o}" style="width:52px;"> <button type="button" class="btn secondary" id="gsFixSave" style="padding:3px 9px; font-size:11px;">Save</button></span>`;
+  document.getElementById('gsFixBtn').addEventListener('click', () => { document.getElementById('gsFixRow').style.display = ''; });
+  document.getElementById('gsFixSave').addEventListener('click', async () => {
+    const W = Math.max(0, parseInt(document.getElementById('gsFixW').value, 10) || 0), O = Math.max(0, parseInt(document.getElementById('gsFixO').value, 10) || 0);
+    const sessF = readSessionFields(); if (sessF.error) { showMsg(sessF.error, false); return; }
+    const rec = { quarter: document.getElementById('f_quarter').dataset.value || null, clock: document.getElementById('f_clock').value.trim() || null, wlu: W, opp: O, lw: logged.w, lo: logged.o };
+    const key = 'a_' + Date.now().toString(36);
+    const res = await settleWrite(DB.collection('sessions').doc(sid).set(Object.assign(sessionMeta(sessF), { [key]: JSON.stringify(rec) }), { merge: true }));
+    if (res === 'error') { showMsg('Score fix didn’t save — try again.', false); return; }
+    if (LIVE_SESSIONS[sid]) LIVE_SESSIONS[sid].adjs.push(Object.assign({ id: key }, rec));
+    renderGameScore();
+  });
+}
+// Poisson scoring model: each team scores at its own rate per minute for
+// the time left; a tie at the end goes to sudden-death OT (next goal wins).
+function poisPmf(lam, kmax) { const p = [Math.exp(-lam)]; for (let k = 1; k <= kmax; k++) p.push(p[k - 1] * lam / k); return p; }
+function wpOf(diff, left, lw, lo) {
+  const ot = lw + lo > 0 ? lw / (lw + lo) : 0.5;
+  if (left <= 0) return diff > 0 ? 1 : diff < 0 ? 0 : ot;
+  const K = 40, a = poisPmf(lw * left, K), b = poisPmf(lo * left, K);
+  let win = 0, tie = 0;
+  for (let x = 0; x <= K; x++) for (let y = 0; y <= K; y++) { const pr = a[x] * b[y], f = diff + x - y; if (f > 0) win += pr; else if (f === 0) tie += pr; }
+  return win + tie * ot;
+}
+function wpRates(season) {
+  const gameShots = SHOTS.filter(s => seasonForDate(s.date) === season && s.context === 'Game'), opp = OPP_SHOTS.filter(s => seasonForDate(s.date) === season);
+  const games = l => new Set(l.map(s => s.date + '|' + (s.opponent || ''))).size;
+  const base = pjGameBase(season);
+  const own = games(gameShots) >= PJ_MIN_GAMES;
+  const lw = (own ? gameShots.filter(s => s.goal === 1).length / games(gameShots) : base.goalsPerGame) / 60;
+  const lo = own && games(opp) >= PJ_MIN_GAMES ? opp.filter(s => s.goal === 1).length / games(opp) / 60 : lw;
+  return { lw, lo, own, src: base.src };
+}
+// Win probability through each game, leverage at every entry, and
+// Goals Added credits weighted by that leverage.
+function computeWinProb(season) {
+  const { lw, lo, own, src } = wpRates(season);
+  const games = Object.values(LIVE_SESSIONS).filter(x => x.context === 'Game' && x.date && seasonForDate(x.date) === season);
+  const levOf = new Map(), timeline = {};
+  games.forEach(g => {
+    const ents = g.shots.concat(g.poss).filter(e => gtElapsed(e) !== null).sort((a, b) => gtElapsed(a) - gtElapsed(b) || a.id - b.id);
+    const adjs = g.adjs.filter(a => gtElapsed(a) !== null).sort((a, b) => gtElapsed(a) - gtElapsed(b));
+    let W = 0, O = 0, ai = 0;
+    const pts = [{ t: 0, wp: wpOf(0, 60, lw, lo), W, O }];
+    const applyFixes = t => { while (ai < adjs.length && gtElapsed(adjs[ai]) <= t) { const a = adjs[ai++], at = gtElapsed(a); W = a.wlu; O = a.opp; pts.push({ t: at, wp: wpOf(W - O, Math.max(0, 60 - at), lw, lo), W, O, fix: true }); } };
+    ents.forEach(e => {
+      const t = gtElapsed(e);
+      applyFixes(t);
+      const left = Math.max(0, 60 - t), d = W - O;
+      const before = wpOf(d, left, lw, lo);
+      levOf.set(e, (wpOf(d + 1, left, lw, lo) - wpOf(d - 1, left, lw, lo)) / 2);
+      if (e.goal === 1 && g.shots.includes(e)) { if (e.team === 'OPP') O++; else W++; }
+      const after = wpOf(W - O, left, lw, lo);
+      pts.push({ t, wp: after, W, O, e, swing: after - before });
+    });
+    applyFixes(Infinity);
+    timeline[g.id] = { g, pts, final: { W, O } };
+  });
+  const levs = [...levOf.values()].sort((a, b) => a - b);
+  const avgLev = levs.length ? levs.reduce((a, b) => a + b, 0) / levs.length : 0;
+  const clutchCut = levs.length ? levs[Math.floor(levs.length * WP_CLUTCH_PCT)] : Infinity;
+  const P = {};
+  const row = j => (P[j] = P[j] || { jersey: j, wpa: 0, lwga: 0, ga: 0, clutchGa: 0, clutchPoss: 0, cShots: 0, cGoals: 0, oShots: 0, oGoals: 0 });
+  if (levs.length) {
+    const s0 = EFF_SEASON, c0 = EFF_CONTEXT;
+    EFF_SEASON = season; EFF_CONTEXT = 'Game';
+    try {
+      computeGoalsAdded((j, part, v, ent) => {
+        const lev = levOf.get(ent);
+        if (lev === undefined) return;
+        const r = row(j);
+        r.ga += v; r.wpa += v * lev; r.lwga += avgLev ? v * lev / avgLev : 0;
+        if (lev >= clutchCut) r.clutchGa += v;
+      });
+    } finally { EFF_SEASON = s0; EFF_CONTEXT = c0; }
+    games.forEach(g => g.shots.filter(s => s.team !== 'OPP' && levOf.has(s)).forEach(s => {
+      const r = row(s.shooterJersey), c = levOf.get(s) >= clutchCut;
+      if (c) { r.cShots++; if (s.goal === 1) r.cGoals++; } else { r.oShots++; if (s.goal === 1) r.oGoals++; }
+    }));
+  }
+  Object.values(P).forEach(r => { r.name = nameFor(r.jersey, season); });
+  return { lw, lo, own, src, games, timeline, rows: Object.values(P), avgLev, clutchCut, timed: levs.length };
+}
+let wpGame = '';
+function wpChartSvg(tl, season) {
+  const W = 680, H = 260, padL = 40, padR = 14, padT = 14, padB = 30;
+  const maxT = Math.max(60, ...tl.pts.map(p => p.t));
+  const px = t => padL + t / maxT * (W - padL - padR), py = v => padT + (1 - v) * (H - padT - padB);
+  let svg = `<svg viewBox="0 0 ${W} ${H}" font-family="Helvetica Neue, Arial, sans-serif" style="width:100%; background:#fff; border:1px solid var(--line); border-radius:8px;">`;
+  [0, 0.25, 0.5, 0.75, 1].forEach(v => { svg += `<line x1="${padL}" y1="${py(v)}" x2="${W - padR}" y2="${py(v)}" stroke="var(--line)"/><text x="${padL - 6}" y="${py(v) + 4}" text-anchor="end" font-size="10" fill="var(--muted)">${v * 100}%</text>`; });
+  [15, 30, 45, 60].forEach(t => { svg += `<line x1="${px(t)}" y1="${padT}" x2="${px(t)}" y2="${H - padB}" stroke="var(--line)" stroke-dasharray="3 3"/><text x="${px(t - 7.5)}" y="${H - 10}" text-anchor="middle" font-size="10.5" fill="var(--muted)">Q${t / 15}</text>`; });
+  let d = '';
+  tl.pts.forEach((p, i) => { d += (i ? ` L${px(p.t).toFixed(1)},${py(i ? tl.pts[i - 1].wp : p.wp).toFixed(1)} L` : 'M') + `${px(p.t).toFixed(1)},${py(p.wp).toFixed(1)}`; });
+  svg += `<path d="${d}" fill="none" stroke="var(--navy-3)" stroke-width="2.2"/>`;
+  const big = tl.pts.filter(p => p.e && p.e.goal === 1).sort((a, b) => Math.abs(b.swing) - Math.abs(a.swing)).slice(0, 3);
+  tl.pts.filter(p => p.e && p.e.goal === 1).forEach(p => {
+    const ours = p.e.team !== 'OPP';
+    const who = ours ? jerseyLabel(p.e.shooterJersey, season) : 'Opponent goal';
+    svg += `<circle cx="${px(p.t).toFixed(1)}" cy="${py(p.wp).toFixed(1)}" r="4" fill="${ours ? 'var(--good)' : 'var(--critical)'}"><title>${escapeHtml(who)} · ${p.W}-${p.O} · ${p.swing >= 0 ? '+' : ''}${Math.round(p.swing * 100)} pts</title></circle>`;
+    // Label above a rise, below a drop; kept inside the frame.
+    const lx = px(p.t), ly = Math.min(H - padB - 4, Math.max(padT + 10, p.swing >= 0 ? py(p.wp) - 8 : py(p.wp) + 16));
+    const anchor = lx > W - padR - 50 ? 'end' : lx < padL + 50 ? 'start' : 'middle', dx = anchor === 'end' ? -7 : anchor === 'start' ? 7 : 0;
+    if (big.includes(p)) svg += `<text x="${(lx + dx).toFixed(1)}" y="${ly.toFixed(1)}" text-anchor="${anchor}" font-size="10.5" font-weight="700" fill="${ours ? '#256029' : '#B3261E'}">${escapeHtml(ours ? lastNameOf(nameFor(p.e.shooterJersey, season)) : 'Opp')} ${p.swing >= 0 ? '+' : '&minus;'}${Math.abs(Math.round(p.swing * 100))}</text>`;
+  });
+  return svg + '</svg>';
+}
+function renderWinProb() {
+  const wrap = document.getElementById('wpChartWrap');
+  if (!wrap) return;
+  const season = EFF_SEASON, r = computeWinProb(season);
+  document.getElementById('wpNote').innerHTML = `Our chance to win at every moment, from the score and time left: each team scores at its usual rate per minute (WLU ${(r.lw * 60).toFixed(1)} goals a game, opponents ${(r.lo * 60).toFixed(1)}${r.own ? ', from this season&rsquo;s games' : ' &mdash; from ' + escapeHtml(r.src) + ' games, opponents assumed even, until 3+ games are logged'}), and a tie after regulation goes to sudden death. <b>Leverage</b> = how much one goal swings that chance right then. <b>Win probability added</b> = each player&rsquo;s Goals Added credits, each worth that moment&rsquo;s swing. <b>Clutch</b> = the top 20% of moments by leverage. Needs the quarter and clock logged on game entries.`;
+  const sel = document.getElementById('wpGameSelect');
+  const gs = r.games.filter(g => r.timeline[g.id].pts.length > 1).sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+  sel.innerHTML = gs.length ? gs.map(g => `<option value="${escapeHtml(g.id)}">${escapeHtml(g.date || '')} vs ${escapeHtml(g.opponent || '?')} (${r.timeline[g.id].final.W}-${r.timeline[g.id].final.O})</option>`).join('') : '<option value="">No timed games yet</option>';
+  if (!gs.some(g => g.id === wpGame)) wpGame = gs.length ? gs[0].id : '';
+  sel.value = wpGame;
+  wrap.innerHTML = wpGame ? wpChartSvg(r.timeline[wpGame], season) : `<p class="sans" style="color:var(--muted); font-size:13px;">No ${escapeHtml(season)} games with the quarter and clock logged yet. Set Game on Log Shot and the quarter / clock boxes appear.</p>`;
+  renderSortableTable('wpPlayerWrap', [
+    { key: 'jersey', label: '#', type: 'text', value: x => x.jersey },
+    { key: 'name', label: 'Name', type: 'text', value: x => x.name, format: nameCell },
+    { key: 'wpa', label: 'Win Prob. Added', type: 'num', value: x => x.wpa, format: v => `<b style="color:${v >= 0 ? 'var(--good)' : 'var(--critical)'};">${v >= 0 ? '+' : ''}${(v * 100).toFixed(1)}%</b>`, title: 'Total change in our chance to win from his plays, in percentage points (100 = one full game).' },
+    { key: 'lwga', label: 'Leverage-Weighted GA', type: 'num', value: x => x.lwga, format: v => signed(v), title: 'Goals Added in games, with each credit weighted by how big the moment was (1.0 = an average moment).' },
+    { key: 'ga', label: 'Goals Added (games)', type: 'num', value: x => x.ga, format: v => signed(v) },
+    { key: 'clutchGa', label: 'Clutch GA', type: 'num', value: x => x.clutchGa, format: v => signed(v), title: 'Goals Added in the top 20% of moments by leverage.' },
+  ], r.rows, { dense: true, defaultSort: { key: 'wpa', dir: 'desc' }, emptyMsg: 'No timed game entries yet.' });
+  const cRows = r.rows.filter(x => x.cShots + x.oShots >= 3);
+  renderSortableTable('wpClutchWrap', [
+    { key: 'jersey', label: '#', type: 'text', value: x => x.jersey },
+    { key: 'name', label: 'Name', type: 'text', value: x => x.name, format: nameCell },
+    { key: 'cShots', label: 'Shots', type: 'num', value: x => x.cShots, group: 'Clutch moments' },
+    { key: 'cSh', label: 'Sh%', type: 'num', value: x => x.cShots ? x.cGoals / x.cShots : null, format: (v, x) => v === null ? '—' : `${pct(v)} <span class="n-note">(${x.cGoals}/${x.cShots})</span>`, group: 'Clutch moments' },
+    { key: 'oShots', label: 'Shots', type: 'num', value: x => x.oShots, group: 'Everything else' },
+    { key: 'oSh', label: 'Sh%', type: 'num', value: x => x.oShots ? x.oGoals / x.oShots : null, format: (v, x) => v === null ? '—' : `${pct(v)} <span class="n-note">(${x.oGoals}/${x.oShots})</span>`, group: 'Everything else' },
+  ], cRows, { dense: true, defaultSort: { key: 'cShots', dir: 'desc' }, emptyMsg: 'No player has 3+ timed game shots yet.' });
+}
+document.getElementById('wpGameSelect').addEventListener('change', e => { wpGame = e.target.value; renderWinProb(); });
+
 // ---------------- Efficiency > Projections ----------------
 // True level going forward: each rate is pulled toward the team by k reps,
 // where k comes from the split-half reliability on the Data Health tab
@@ -8667,7 +8888,7 @@ function renderProjections() {
 // change the split; Goals Added is also shown by trigger.
 const GA_PARTS = [['adv', 'Advantage'], ['look', 'Look creation'], ['screen', 'Screening'], ['finish', 'Finishing'], ['security', 'Ball security'], ['takeaway', 'Takeaways'], ['onball', 'On-ball D'], ['goalie', 'Goalie']];
 function gaOffPick(s) { return s.pick === 'Yes' && s.pickAction !== 'Get' && s.pickType === 'Off-ball' && s.pickScreener && !isOppJersey(s.pickScreener) && s.pickScreener !== s.shooterJersey ? s.pickScreener : null; }
-function computeGoalsAdded() {
+function computeGoalsAdded(onCredit) {
   const d = buildEffData();
   // A goal ends a possession, so anything logged after a goal in the same
   // possession (a "rebound" after a goal) starts a new one here.
@@ -8686,10 +8907,11 @@ function computeGoalsAdded() {
   const Vadv = advList.length >= 10 ? advList.filter(p => p.goal).length / advList.length : V;
   const P = {};
   let curSid = null; // the session being credited, for per-session totals
-  const add = (j, part, v) => { if (!j || isOppJersey(j)) return; const r = (P[j] = P[j] || { jersey: j, total: 0, sess: {} }); r[part] = (r[part] || 0) + v; r.total += v; if (curSid) r.sess[curSid] = (r.sess[curSid] || 0) + v; };
+  let curEnt = null; // the entry being credited (win probability uses its game time)
+  const add = (j, part, v) => { if (!j || isOppJersey(j)) return; const r = (P[j] = P[j] || { jersey: j, total: 0, sess: {} }); r[part] = (r[part] || 0) + v; r.total += v; if (curSid) r.sess[curSid] = (r.sess[curSid] || 0) + v; if (onCredit) onCredit(j, part, v, curEnt); };
   const trig = {};
   wp.forEach(pp => {
-    curSid = sessKey(pp.e);
+    curSid = sessKey(pp.e); curEnt = pp.shots.length ? pp.shots[0] : pp.e;
     let v = V;
     // Advantage only moves the value when we know who started it, so every
     // bit of value is credited to someone.
@@ -8697,6 +8919,7 @@ function computeGoalsAdded() {
     let offense = v - V;
     if (pp.shots.length) {
       pp.shots.forEach((s, i) => {
+        curEnt = s;
         const xg = d.xgOf(s), base = i === 0 ? v : 0, look = xg - base;
         const passer = s.assistJersey && !isOppJersey(s.assistJersey) && s.assistJersey !== s.shooterJersey ? s.assistJersey : null;
         const scr = i === 0 ? gaOffPick(s) : null;
@@ -8722,13 +8945,13 @@ function computeGoalsAdded() {
   });
   // Opponent possessions in games: caused turnovers and on-ball defense.
   d.possList.filter(p => p.team === 'OPP').forEach(pp => {
-    curSid = sessKey(pp.e);
+    curSid = sessKey(pp.e); curEnt = pp.e;
     if (!pp.shots.length && pp.to && pp.e.causedBy) add(pp.e.causedBy, 'takeaway', V);
-    pp.shots.forEach(s => { if (s.defender && !isOppJersey(s.defender)) add(s.defender, 'onball', d.xgOf(s) - (s.goal === 1 ? 1 : 0)); });
+    pp.shots.forEach(s => { curEnt = s; if (s.defender && !isOppJersey(s.defender)) add(s.defender, 'onball', d.xgOf(s) - (s.goal === 1 ? 1 : 0)); });
   });
   // Goalies: saves above expected on shots faced.
   const fm = facedXgModelFor(EFF_SEASON);
-  goalieShotsForSeason(EFF_SEASON).filter(s => s.onKeeper === 1 && s.goalieJersey && effContextOk(s)).forEach(s => { curSid = sessKey(s); add(s.goalieJersey, 'goalie', xgForShot(s, fm) - (s.goal === 1 ? 1 : 0)); });
+  goalieShotsForSeason(EFF_SEASON).filter(s => s.onKeeper === 1 && s.goalieJersey && effContextOk(s)).forEach(s => { curSid = sessKey(s); curEnt = s; add(s.goalieJersey, 'goalie', xgForShot(s, fm) - (s.goal === 1 ? 1 : 0)); });
   const sessions = j => (d.players[j] ? d.players[j].sessions.size : 0) || new Set(d.shots.filter(s => s.shooterJersey === j || s.assistJersey === j || s.goalieJersey === j || s.defender === j).map(sessKey)).size;
   const rows = Object.values(P).map(r => Object.assign(r, { name: nameFor(r.jersey, EFF_SEASON), apps: sessions(r.jersey) }));
   rows.forEach(r => { r.perApp = r.apps ? r.total / r.apps : null; });
@@ -9980,6 +10203,7 @@ function renderEfficiencyView() {
   renderPassingNetwork();
   renderGoalsAdded();
   renderProjections();
+  renderWinProb();
 }
 setupPillGroup('effSeasonPills', ADV_SEASONS, EFF_SEASON, v => {
   if (v) EFF_SEASON = v;
