@@ -255,6 +255,15 @@
   body.player-mode [data-edit-id], body.player-mode .btn.danger,
   body.player-mode #compareView > .panel:first-child, body.player-mode #comparePlayersPanel { display: none !important; }
   body.player-mode #compareSeasonsPanel { display: block !important; }
+  /* ---- Depth chart ---- */
+  .depth-lines { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 14px; }
+  .depth-line { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; background: #FBFAF6; }
+  .depth-line-head { font-family: 'Helvetica Neue', Arial, sans-serif; font-size: 12px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--navy-3); margin-bottom: 6px; }
+  .depth-chip { font-family: 'Helvetica Neue', Arial, sans-serif; font-size: 13px; background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 7px 10px; margin-bottom: 6px; display: grid; grid-template-columns: 1fr auto; gap: 2px 8px; align-items: center; }
+  .depth-chip .n-note { grid-column: 1; }
+  .depth-chip .depth-pos { grid-row: 1 / span 2; grid-column: 2; }
+  .depth-rest { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 0 10px; }
+  .depth-pos { font-family: 'Helvetica Neue', Arial, sans-serif; font-size: 11.5px; font-weight: 700; border: 1.5px solid var(--navy-3); color: var(--navy-3); background: #fff; border-radius: 999px; padding: 4px 10px; cursor: pointer; white-space: nowrap; }
   /* ---- Goalie Score ---- */
   .gs-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(330px, 1fr)); gap: 14px; }
   .gs-card { border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; background: var(--card); font-family: 'Helvetica Neue', Arial, sans-serif; }
@@ -324,6 +333,7 @@
   <button class="tab-btn" data-view="compareView">Compare</button>
   <button class="tab-btn" data-view="opponentView">Opponent</button>
   <button class="tab-btn" data-view="reportsView">Reports</button>
+  <button class="tab-btn" data-view="depthView">Depth Chart</button>
   <button class="tab-btn" data-view="healthView">Data Health</button>
   <button class="tab-btn" data-view="recruitsView">Recruits</button>
   <button class="tab-btn" data-view="boardView">Board</button>
@@ -1631,6 +1641,20 @@
     </div>
   </section>
 
+  <section id="depthView" class="view">
+    <div class="view-bar">
+      <div class="view-bar-row">
+        <div class="view-title">Depth Chart</div>
+        <div class="control-group"><div class="grade-pills" id="depthModePills"></div></div>
+        <div class="control-group"><div class="grade-pills" id="depthSeasonPills"></div></div>
+      </div>
+    </div>
+    <p class="view-intro">Recommended offensive lines, updated live as you log. Set each player&rsquo;s position once below (saved for everyone). <span id="depthSub"></span></p>
+    <div class="panel" id="depthAttack"></div>
+    <div class="panel" id="depthMid"></div>
+    <div class="panel" id="depthUnassigned"></div>
+  </section>
+
   <section id="healthView" class="view">
     <div class="view-bar">
       <div class="view-bar-row">
@@ -2318,6 +2342,10 @@ async function loadAll() {
     rebuildFaceoffs();
     renderFaceoffs();
   }, e => console.error('faceoffs sync error', e));
+  ADV_SEASONS.forEach(season => DB.doc('app/positions_' + season).onSnapshot(snap => {
+    try { const o = snap.exists ? JSON.parse(snap.data().json || '{}') : {}; const clean = {}; Object.keys(o).forEach(j => { if (validJerseyText(j) && (o[j] === 'A' || o[j] === 'M' || o[j] === 'X')) clean[j] = o[j]; }); POSITIONS[season] = clean; } catch (e) { POSITIONS[season] = {}; }
+    if (window.__appReady) renderDepthChart();
+  }, e => console.error('positions sync error', e)));
   const unitsRef = DB.doc('app/units');
   unitsRef.onSnapshot(snap => {
     UNITS = snap.exists ? parseUnits(snap.data().json) : [];
@@ -2345,6 +2373,7 @@ function rerenderAfterShotsChange() {
   renderDefense();
   renderDataHealth();
   renderReports();
+  renderDepthChart();
   populatePlayerGoalieDropdowns();
   populatePlayerSelectForSeason(heatSeason);
   populateGoalieSelectForSeason(goalieHeatSeason);
@@ -3015,6 +3044,7 @@ function switchTab(viewId) {
   if (viewId === 'defenseView') renderDefense();
   if (viewId === 'healthView') renderDataHealth();
   if (viewId === 'reportsView') renderReports();
+  if (viewId === 'depthView') renderDepthChart();
   if (viewId === 'goalieView') { renderGoalieHeat(); renderGoalieAdvanced(); }
   if (viewId === 'faceoffView') renderFaceoffs();
   if (viewId === 'tableView') renderTable();
@@ -3116,7 +3146,7 @@ function pmEnter(p) {
   const isDefender = allShotEntries().some(s => (mine(s.defender) && s.defender === p.seasons[seasonForDate(s.date)]) || (mine(s.slideDefender) && s.slideDefender === p.seasons[seasonForDate(s.date)]) || (mine(s.offBallFault) && s.offBallFault === p.seasons[seasonForDate(s.date)]))
     || allShotEntries().concat(POSSESSIONS).some(e => [e.pickScreenerDef, e.pickUserDef].some(j => j && j === p.seasons[seasonForDate(e.date)]));
   const show = { logView: false, playerView: isPlayer, goalieView: isGoalie, defenseView: isDefender, efficiencyView: isPlayer, faceoffView: PLAYER_MODE.fogo,
-    tableView: true, compareView: isPlayer, opponentView: false, reportsView: true, healthView: false, recruitsView: false, boardView: false };
+    tableView: true, compareView: isPlayer, opponentView: false, reportsView: true, depthView: false, healthView: false, recruitsView: false, boardView: false };
   Object.keys(show).forEach(id => {
     document.querySelectorAll(`.tab-btn[data-view="${id}"]`).forEach(b => b.classList.toggle('pm-off', !show[id]));
     document.getElementById(id).classList.toggle('pm-off', !show[id]);
@@ -5787,9 +5817,13 @@ function renderShotTypeBreakdown() {
 let EFF_CONTEXT = 'All';
 let EFF_SEASON = currentAdvSeason();
 function effContextOk(e) { return EFF_CONTEXT === 'All' || e.context === EFF_CONTEXT; }
-function effShots() { return advShots(EFF_SEASON).filter(effContextOk); }
-function effOppShots() { return OPP_SHOTS.filter(s => seasonForDate(s.date) === EFF_SEASON && effContextOk(s)); }
-function effPoss() { return POSSESSIONS.filter(p => seasonForDate(p.date) === EFF_SEASON && effContextOk(p)); }
+// EFF_FROM: an optional first date (the depth chart's Recent form); null
+// everywhere else, so every other view reads the whole season.
+let EFF_FROM = null;
+const effFromOk = e => !EFF_FROM || (e.date && e.date >= EFF_FROM);
+function effShots() { return advShots(EFF_SEASON).filter(e => effContextOk(e) && effFromOk(e)); }
+function effOppShots() { return OPP_SHOTS.filter(s => seasonForDate(s.date) === EFF_SEASON && effContextOk(s) && effFromOk(s)); }
+function effPoss() { return POSSESSIONS.filter(p => seasonForDate(p.date) === EFF_SEASON && effContextOk(p) && effFromOk(p)); }
 const EFF_CTX_WORD = () => EFF_CONTEXT === 'All' ? 'all sessions' : EFF_CONTEXT.toLowerCase();
 
 function nameCell(v) { return `<span style="white-space:nowrap;">${escapeHtml(v || '')}</span>`; }
@@ -7030,13 +7064,13 @@ function scoreShotVsGoalie(x, tallies, team) {
 }
 // buildEffData() reads the Efficiency tab's season/context; run it for one
 // season, all contexts, without touching that tab's own selection.
-function effDataFor(season) {
-  const s = EFF_SEASON, c = EFF_CONTEXT;
-  EFF_SEASON = season; EFF_CONTEXT = 'All';
-  try { return buildEffData(); } finally { EFF_SEASON = s; EFF_CONTEXT = c; }
+function effDataFor(season, from) {
+  const s = EFF_SEASON, c = EFF_CONTEXT, f = EFF_FROM;
+  EFF_SEASON = season; EFF_CONTEXT = 'All'; EFF_FROM = from || null;
+  try { return buildEffData(); } finally { EFF_SEASON = s; EFF_CONTEXT = c; EFF_FROM = f; }
 }
-function computeShooterScores(season, tab) {
-  const d = effDataFor(season);
+function computeShooterScores(season, tab, from) {
+  const d = effDataFor(season, from);
   const model = d.model;
   const gt = goalieTierTallies(season), tierTeam = teamPracticeTierRates(season);
   const gaBy = {};
@@ -7767,6 +7801,126 @@ setupPillGroup('rptModePills', [{ value: 'practice', label: 'Practice' }, { valu
 document.getElementById('rptPeriodSelect').addEventListener('change', e => { rptKey = e.target.value; renderReports(); });
 document.getElementById('rptPlayerSelect').addEventListener('change', e => { rptPlayer = e.target.value; renderReports(); });
 document.getElementById('rptPrintBtn').addEventListener('click', () => window.print());
+
+// ---------------- Depth Chart (offense, 2027+) ----------------
+// Recommended 1st / 2nd / 3rd attack and midfield lines, live. The coach sets
+// each player's position once with a tap (Attack, Midfield, or Other for
+// defense / goalies / faceoff); it's saved to app/positions_<season> for
+// everyone. Shot locations can't tell attack from midfield in practice data,
+// so nothing is inferred. Ranked by the Complete
+// Offense score, by recent form (the same score on the last 14 days), or by
+// chemistry (which groups of three produce most together, from lineups).
+let DEPTH_SEASON = currentAdvSeason(), depthMode = 'scores';
+let POSITIONS = {}; // { season: { jersey: 'A' | 'M' | 'X' } } set by the coach; X = not offense
+const DEPTH_RECENT_DAYS = 14, DEPTH_CHEM_MIN_POSS = 30, DEPTH_TRIO_MIN = 5;
+const DEPTH_POS_LABEL = { A: 'Attack', M: 'Midfield', X: 'Other' };
+async function persistPositions(season) {
+  if (!DB) return false;
+  try { await DB.doc('app/positions_' + season).set({ json: JSON.stringify(POSITIONS[season] || {}) }); } catch (e) { console.error(e); return false; }
+  return true;
+}
+function depthLatestDate(season) { return advShots(season).reduce((m, s) => (s.date && s.date > m ? s.date : m), ''); }
+function depthRanked(season, mode) {
+  if (mode === 'recent') {
+    const last = depthLatestDate(season);
+    if (!last) return { list: [] };
+    const d = new Date(last + 'T00:00:00'); d.setDate(d.getDate() - (DEPTH_RECENT_DAYS - 1));
+    const from = localDateStr(d);
+    return Object.assign(computeShooterScores(season, 'offense', from), { from, to: last });
+  }
+  return computeShooterScores(season, 'offense');
+}
+// Chemistry: every group of three from his position group, scored by
+// expected points per possession when all three were on the field together.
+function depthChemistry(season, players) {
+  const d = effDataFor(season);
+  const poss = d.possList.filter(pp => pp.team === 'WLU');
+  const withLineup = poss.filter(pp => { const on = wluOnField(pp.e); return on && on.offense.length; });
+  if (withLineup.length < DEPTH_CHEM_MIN_POSS) return { ready: false, logged: withLineup.length };
+  const trios = [];
+  for (let a = 0; a < players.length; a++) for (let b = a + 1; b < players.length; b++) for (let c = b + 1; c < players.length; c++) {
+    const g = [players[a], players[b], players[c]];
+    const list = withLineup.filter(pp => { const on = wluOnField(pp.e).offense; return g.every(j => on.includes(j)); });
+    if (list.length < DEPTH_TRIO_MIN) continue;
+    const st = pickPossStats(list, d.xgOf);
+    trios.push({ g, n: list.length, xp: st.xp, goalRate: st.goalRate });
+  }
+  trios.sort((x, y) => y.xp - x.xp);
+  // Greedy lines: best trio, then the best trio with nobody already used.
+  const used = new Set(), lines = [];
+  trios.forEach(t => { if (lines.length < 3 && t.g.every(j => !used.has(j))) { lines.push(t); t.g.forEach(j => used.add(j)); } });
+  return { ready: true, logged: withLineup.length, lines };
+}
+function renderDepthChart() {
+  const wrap = document.getElementById('depthAttack');
+  if (!wrap || !document.getElementById('depthView').classList.contains('active')) return;
+  const season = DEPTH_SEASON;
+  const fixes = POSITIONS[season] || {};
+  const posOf = j => fixes[j] || null;
+  const ranked = depthRanked(season, depthMode === 'chem' ? 'scores' : depthMode);
+  const scoreOf = {}; ranked.list.forEach(g => { scoreOf[g.jersey] = g; });
+  const everyone = rosterPlayers(season).map(r => r.jersey);
+  const sub = document.getElementById('depthSub');
+  sub.innerHTML = depthMode === 'recent'
+    ? `Complete Offense score on just the last ${DEPTH_RECENT_DAYS} days of logged practices (${ranked.from ? escapeHtml(ranked.from) + ' to ' + escapeHtml(ranked.to) : 'none yet'}). Players need ${SS_MIN_SHOTS}+ shots in that window to be ranked.`
+    : depthMode === 'chem' ? 'Groups of three ranked by expected points per possession when all three were on the field together, from logged lineups.'
+    : `Ranked by the Complete Offense score for ${escapeHtml(season)} (players with ${SS_MIN_SHOTS}+ shots).`;
+  const chip = (j, extra) => {
+    const g = scoreOf[j];
+    const pos = posOf(j);
+    const btns = pos
+      ? `<button type="button" class="depth-pos" data-j="${escapeHtml(j)}" data-to="${pos === 'A' ? 'M' : pos === 'M' ? 'X' : ''}" title="Tap to change: Attack → Midfield → Other → Unassigned">${DEPTH_POS_LABEL[pos]}</button>`
+      : `<span style="display:flex; gap:4px;">${['A', 'M', 'X'].map(p => `<button type="button" class="depth-pos" data-j="${escapeHtml(j)}" data-to="${p}">${DEPTH_POS_LABEL[p]}</button>`).join('')}</span>`;
+    return `<div class="depth-chip">
+      <div><b>#${escapeHtml(j)} ${escapeHtml(nameFor(j, season))}</b>${extra || ''}</div>
+      <div class="n-note" style="font-style:normal;">${g && g.score !== null ? `Score <b>${Math.round(g.score)}</b> · ${g.shots} shots` : 'Not ranked yet (too few shots)'}</div>
+      ${btns}
+    </div>`;
+  };
+  const renderGroup = (pos, elId, title) => {
+    const el = document.getElementById(elId);
+    const group = everyone.filter(j => posOf(j) === pos);
+    let lines = [], rest = [];
+    if (depthMode === 'chem') {
+      const ch = depthChemistry(season, group);
+      if (!ch.ready) {
+        el.innerHTML = `<p class="panel-title">${title}</p><div class="model-note">Chemistry needs lineups. Only ${ch.logged} WLU possession${ch.logged === 1 ? '' : 's'} have a lineup logged so far (it needs ${DEPTH_CHEM_MIN_POSS}+). Fill in the lineup bar on Log Shot while logging and this fills in on its own.</div>`;
+        return;
+      }
+      lines = ch.lines.map(t => ({ js: t.g, note: ` · ${num(t.xp, 2)} xP/poss together (${t.n} poss.)` }));
+      const inLines = new Set(lines.flatMap(l => l.js));
+      rest = group.filter(j => !inLines.has(j));
+      if (!lines.length) { el.innerHTML = `<p class="panel-title">${title}</p><div class="model-note">No group of three ${pos === 'A' ? 'attackmen' : 'middies'} has ${DEPTH_TRIO_MIN}+ possessions together yet.</div>`; return; }
+    } else {
+      const sorted = group.filter(j => scoreOf[j] && scoreOf[j].score !== null).sort((a, b) => scoreOf[b].score - scoreOf[a].score);
+      for (let i = 0; i < 3 && i * 3 < sorted.length; i++) lines.push({ js: sorted.slice(i * 3, i * 3 + 3), note: '' });
+      rest = group.filter(j => !sorted.slice(0, 9).includes(j));
+    }
+    const ord = ['1st', '2nd', '3rd'];
+    el.innerHTML = `<p class="panel-title">${title}</p>
+      <div class="depth-lines">${lines.map((l, i) => `<div class="depth-line"><div class="depth-line-head">${ord[i]} line${escapeHtml(l.note)}</div>${l.js.map(j => chip(j)).join('')}</div>`).join('')}</div>
+      ${rest.length ? `<p class="panel-sub" style="margin-top:12px;">Also ${pos === 'A' ? 'attack' : 'midfield'}:</p><div class="depth-rest">${rest.map(j => chip(j)).join('')}</div>` : ''}`;
+  };
+  renderGroup('A', 'depthAttack', 'Attack');
+  renderGroup('M', 'depthMid', 'Midfield');
+  const unassigned = everyone.filter(j => !posOf(j)), other = everyone.filter(j => posOf(j) === 'X');
+  document.getElementById('depthUnassigned').innerHTML = `<p class="panel-title">Unassigned (${unassigned.length})</p>
+    <p class="panel-sub">Tap each player&rsquo;s position once. <b>Other</b> is for defense, goalies and faceoff &mdash; they drop off this offense chart. Saved for everyone.</p>
+    ${unassigned.length ? `<div class="depth-rest">${unassigned.map(j => chip(j)).join('')}</div>` : '<p class="sans n-note" style="font-size:12.5px;">Everyone has a position.</p>'}
+    ${other.length ? `<details style="margin-top:10px;"><summary class="panel-sub" style="cursor:pointer;">Other (${other.length}) &mdash; tap to change</summary><div class="depth-rest" style="margin-top:8px;">${other.map(j => chip(j)).join('')}</div></details>` : ''}`;
+  document.querySelectorAll('#depthView .depth-pos').forEach(b => b.addEventListener('click', async () => {
+    const j = b.dataset.j;
+    const next = b.dataset.to || null;
+    const map = Object.assign({}, POSITIONS[season] || {});
+    if (next) map[j] = next; else delete map[j];
+    const prev = POSITIONS[season];
+    POSITIONS[season] = map;
+    renderDepthChart();
+    if (!(await persistPositions(season))) { POSITIONS[season] = prev; renderDepthChart(); }
+  }));
+}
+setupPillGroup('depthSeasonPills', ADV_SEASONS, DEPTH_SEASON, v => { DEPTH_SEASON = v || DEPTH_SEASON; if (!v) setPillGroupValue('depthSeasonPills', DEPTH_SEASON); renderDepthChart(); });
+setupPillGroup('depthModePills', [{ value: 'scores', label: 'Scores' }, { value: 'recent', label: 'Recent form' }, { value: 'chem', label: 'Chemistry' }], 'scores', v => { depthMode = v || 'scores'; if (!v) setPillGroupValue('depthModePills', 'scores'); renderDepthChart(); });
 
 // One row per goalie for the Advanced table (also feeds the Goalie Score).
 function goalieAdvRows(faced, model, season, team) {
