@@ -323,6 +323,7 @@
   <button class="tab-btn" data-view="tableView">Shot Log</button>
   <button class="tab-btn" data-view="compareView">Compare</button>
   <button class="tab-btn" data-view="opponentView">Opponent</button>
+  <button class="tab-btn" data-view="reportsView">Reports</button>
   <button class="tab-btn" data-view="healthView">Data Health</button>
   <button class="tab-btn" data-view="recruitsView">Recruits</button>
   <button class="tab-btn" data-view="boardView">Board</button>
@@ -1612,6 +1613,24 @@
     <div id="opponentReport"></div>
   </section>
 
+  <section id="reportsView" class="view">
+    <div class="view-bar">
+      <div class="view-bar-row">
+        <div class="view-title">Reports</div>
+        <div class="control-group"><div class="grade-pills" id="rptModePills"></div></div>
+        <div class="control-group"><select id="rptPeriodSelect" style="min-width:260px;"></select></div>
+        <div class="control-group"><button type="button" class="btn secondary" id="rptPrintBtn">Print / Save as PDF</button></div>
+      </div>
+    </div>
+    <div class="panel pm-hide" id="rptTeam"></div>
+    <div class="panel">
+      <div class="controls-row" style="margin-bottom:10px;">
+        <div class="control-group"><label for="rptPlayerSelect">Player Report</label><select id="rptPlayerSelect"></select></div>
+      </div>
+      <div id="rptPlayer"></div>
+    </div>
+  </section>
+
   <section id="healthView" class="view">
     <div class="view-bar">
       <div class="view-bar-row">
@@ -2325,6 +2344,7 @@ function rerenderAfterShotsChange() {
   renderShooterScore();
   renderDefense();
   renderDataHealth();
+  renderReports();
   populatePlayerGoalieDropdowns();
   populatePlayerSelectForSeason(heatSeason);
   populateGoalieSelectForSeason(goalieHeatSeason);
@@ -2994,6 +3014,7 @@ function switchTab(viewId) {
   if (viewId === 'playerView') { renderPlayerHeat(); renderShooterScore(); }
   if (viewId === 'defenseView') renderDefense();
   if (viewId === 'healthView') renderDataHealth();
+  if (viewId === 'reportsView') renderReports();
   if (viewId === 'goalieView') { renderGoalieHeat(); renderGoalieAdvanced(); }
   if (viewId === 'faceoffView') renderFaceoffs();
   if (viewId === 'tableView') renderTable();
@@ -3095,7 +3116,7 @@ function pmEnter(p) {
   const isDefender = allShotEntries().some(s => (mine(s.defender) && s.defender === p.seasons[seasonForDate(s.date)]) || (mine(s.slideDefender) && s.slideDefender === p.seasons[seasonForDate(s.date)]) || (mine(s.offBallFault) && s.offBallFault === p.seasons[seasonForDate(s.date)]))
     || allShotEntries().concat(POSSESSIONS).some(e => [e.pickScreenerDef, e.pickUserDef].some(j => j && j === p.seasons[seasonForDate(e.date)]));
   const show = { logView: false, playerView: isPlayer, goalieView: isGoalie, defenseView: isDefender, efficiencyView: isPlayer, faceoffView: PLAYER_MODE.fogo,
-    tableView: true, compareView: isPlayer, opponentView: false, healthView: false, recruitsView: false, boardView: false };
+    tableView: true, compareView: isPlayer, opponentView: false, reportsView: true, healthView: false, recruitsView: false, boardView: false };
   Object.keys(show).forEach(id => {
     document.querySelectorAll(`.tab-btn[data-view="${id}"]`).forEach(b => b.classList.toggle('pm-off', !show[id]));
     document.getElementById(id).classList.toggle('pm-off', !show[id]);
@@ -7484,6 +7505,268 @@ setupPillGroup('healthSeasonPills', ADV_SEASONS, healthSeason, v => {
   if (!v) setPillGroupValue('healthSeasonPills', healthSeason);
   renderDataHealth();
 });
+
+// ---------------- Reports (2027+) ----------------
+// After every practice and every week (Monday-Sunday): a staff-only team
+// report (summary vs recent practices, standouts, trends beyond normal
+// noise) and a constructive report for each player. In Player View a player
+// sees only his own report.
+let rptMode = 'practice', rptKey = '', rptPlayer = '';
+const RPT_PRIOR_SESSIONS = 5, RPT_PRIOR_WEEKS = 4, RPT_Z = 1.5, RPT_MIN_N = 8, RPT_SPLIT_MIN = 8;
+function rptMonday(dateStr) {
+  const d = new Date(dateStr + 'T00:00:00'); const dow = (d.getDay() + 6) % 7; d.setDate(d.getDate() - dow);
+  return localDateStr(d);
+}
+function rptAllEntries() {
+  const adv = e => e.date && isAdvSeason(seasonForDate(e.date));
+  return { S: SHOTS.filter(s => adv(s) && !s.seed), O: OPP_SHOTS.filter(adv), P: POSSESSIONS.filter(adv) };
+}
+// Periods newest first: sessions (with WLU shots) or Monday-Sunday weeks.
+function rptPeriods(mode) {
+  const { S, O, P } = rptAllEntries();
+  const map = {};
+  S.concat(O, P).forEach(e => {
+    const k = mode === 'practice' ? sessKey(e) : rptMonday(e.date);
+    const m = (map[k] = map[k] || { key: k, date: mode === 'practice' ? e.date : k, context: e.context, opponent: e.opponent, shots: 0 });
+    if (S.includes(e)) m.shots++;
+  });
+  return Object.values(map).filter(m => m.shots > 0).sort((a, b) => b.date.localeCompare(a.date) || b.key.localeCompare(a.key));
+}
+function rptLabel(mode, p) {
+  if (mode === 'week') { const end = new Date(p.date + 'T00:00:00'); end.setDate(end.getDate() + 6); const e = localDateStr(end); return `Week of ${p.date} – ${e}${e >= localDateStr() ? ' (in progress)' : ''}`; }
+  return `${p.date} · ${p.context || 'Practice'}${p.opponent ? ' vs ' + p.opponent : ''}`;
+}
+function rptSlice(mode, keys) {
+  const { S, O, P } = rptAllEntries();
+  const inK = e => keys.includes(mode === 'practice' ? sessKey(e) : rptMonday(e.date));
+  return { S: S.filter(inK), O: O.filter(inK), P: P.filter(inK) };
+}
+function rptFaced(d) { return d.S.filter(s => s.context === 'Practice' && s.goalieJersey && s.onKeeper === 1).concat(d.O.filter(s => s.goalieJersey && s.onKeeper === 1)); }
+// Team numbers for a slice, each as { v, num, den } so trends can test noise.
+function rptTeamMetrics(d, season) {
+  const S = d.S, xm = xgModelFor(season);
+  const rate = (num, den) => ({ v: den ? num / den : null, num, den, kind: 'rate' });
+  const graded = S.filter(s => s.shotQuality);
+  const faced = rptFaced(d);
+  const poss = S.filter(s => s.rebound !== 'Yes').length + d.P.filter(p => p.team !== 'OPP').length;
+  const tos = d.P.filter(p => p.team !== 'OPP' && p.end === 'Turnover').length;
+  const xs = S.map(s => xgForShot(s, xm));
+  const mean = xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null;
+  const sd = xs.length > 1 ? Math.sqrt(xs.reduce((a, b) => a + (b - mean) ** 2, 0) / (xs.length - 1)) : null;
+  const sub = f => { const l = S.filter(f); return rate(l.filter(s => s.goal === 1).length, l.length); };
+  return {
+    shots: { v: S.length, kind: 'count' }, goals: { v: S.filter(s => s.goal === 1).length, kind: 'count' },
+    shPct: rate(S.filter(s => s.goal === 1).length, S.length), onCage: rate(S.filter(s => s.onKeeper === 1).length, S.length),
+    xgPer: { v: mean, n: xs.length, sd, kind: 'mean' }, gold: rate(graded.filter(s => s.shotQuality === '1-Gold').length, graded.length),
+    save: rate(faced.filter(s => s.goal !== 1).length, faced.length), toRate: rate(tos, poss),
+    open: sub(s => s.contestLevel === 'Open'), light: sub(s => s.contestLevel === 'Light'), heavy: sub(s => s.contestLevel === 'Heavy'),
+    catchSh: sub(s => s.offDodge === 0), dodgeSh: sub(s => s.offDodge === 1),
+  };
+}
+const RPT_SUMMARY = [
+  ['shots', 'Shots'], ['goals', 'Goals'], ['shPct', 'Shooting %'], ['onCage', 'On cage %'], ['xgPer', 'Expected goals per shot'],
+  ['gold', 'Gold-look share'], ['save', 'Save %'], ['toRate', 'Turnovers per possession (logged)'],
+];
+const RPT_TREND = RPT_SUMMARY.slice(2).concat([['open', 'Shooting on open looks'], ['light', 'Shooting on light contests'], ['heavy', 'Shooting on heavy contests'], ['catchSh', 'Shooting off the catch'], ['dodgeSh', 'Shooting off the dodge']]);
+// Beyond normal noise: the gap is more than 1.5 standard errors of this
+// period's sample, measured at the recent rate.
+function rptFlag(cur, base) {
+  if (!cur || !base || cur.v === null || base.v === null) return null;
+  if (cur.kind === 'rate') {
+    if (cur.den < RPT_MIN_N) return null;
+    const se = Math.sqrt(Math.max(base.v * (1 - base.v), 0.01) / cur.den);
+    return Math.abs(cur.v - base.v) > RPT_Z * se ? (cur.v > base.v ? 'up' : 'down') : null;
+  }
+  if (cur.kind === 'mean') {
+    if (cur.n < RPT_MIN_N || !base.sd) return null;
+    return Math.abs(cur.v - base.v) > RPT_Z * base.sd / Math.sqrt(cur.n) ? (cur.v > base.v ? 'up' : 'down') : null;
+  }
+  return null;
+}
+const rptFmt = (k, v) => v === null || v === undefined ? '—' : (k === 'xgPer' ? num(v, 2) : (k === 'shots' || k === 'goals') ? String(v) : pct(v));
+// For these a drop is the good direction.
+const RPT_LOWER_BETTER = { toRate: true };
+function rptSplitDefs() {
+  return [
+    ['Zone', s => shotZone(s)],
+    ['Catch / dodge', s => s.offDodge === 1 ? 'Off the dodge' : (s.offDodge === 0 ? 'Off the catch' : null)],
+    ['Contest', s => s.contestLevel ? s.contestLevel + ' contest' : null],
+    ['Stick plane', s => s.shotMechanism || null],
+    ['Stick side', s => { const sd = xg2Side(xg2Profile(s)); return sd.strong ? 'Stick to the outside' : (sd.off ? 'Stick to the inside' : null); }],
+  ];
+}
+function rptPlayerSplits(mine, team) {
+  const out = [];
+  rptSplitDefs().forEach(([group, of]) => {
+    const vals = new Set(mine.map(of).filter(Boolean));
+    vals.forEach(v => {
+      const l = mine.filter(s => of(s) === v), t = team.filter(s => of(s) === v);
+      if (l.length < RPT_SPLIT_MIN || t.length < RPT_SPLIT_MIN) return;
+      const his = l.filter(s => s.goal === 1).length / l.length, tm = t.filter(s => s.goal === 1).length / t.length;
+      out.push({ group, label: v, n: l.length, g: l.filter(s => s.goal === 1).length, his, tm, score: (his - tm) * l.length / (l.length + 10) });
+    });
+  });
+  return out;
+}
+function rptSplitSentence(x) { return `<b>${escapeHtml(x.label)}</b> (${escapeHtml(x.group.toLowerCase())}): ${x.g} of ${x.n} go in (${pct(x.his)}) &mdash; the team scores ${pct(x.tm)} on these.`; }
+function renderReports() {
+  const wrap = document.getElementById('rptTeam');
+  if (!wrap) return;
+  if (!document.getElementById('reportsView').classList.contains('active')) return;
+  const periods = rptPeriods(rptMode);
+  const sel = document.getElementById('rptPeriodSelect');
+  sel.innerHTML = periods.length ? periods.map(p => `<option value="${escapeHtml(p.key)}">${escapeHtml(rptLabel(rptMode, p))}</option>`).join('') : '<option value="">Nothing logged yet</option>';
+  if (!periods.some(p => p.key === rptKey)) rptKey = periods.length ? periods[0].key : '';
+  sel.value = rptKey;
+  const idx = periods.findIndex(p => p.key === rptKey);
+  if (idx < 0) { wrap.innerHTML = '<p class="sans" style="color:var(--muted); font-size:13px;">No 2027+ practices logged yet.</p>'; document.getElementById('rptPlayer').innerHTML = ''; return; }
+  const period = periods[idx];
+  const season = seasonForDate(period.date);
+  const prior = periods.slice(idx + 1).filter(p => seasonForDate(p.date) === season).slice(0, rptMode === 'practice' ? RPT_PRIOR_SESSIONS : RPT_PRIOR_WEEKS);
+  const word = rptMode === 'practice' ? 'practice' : 'week';
+  const priorWord = rptMode === 'practice' ? `previous ${prior.length} practice${prior.length === 1 ? '' : 's'}` : `previous ${prior.length} week${prior.length === 1 ? '' : 's'}`;
+  const cur = rptSlice(rptMode, [period.key]), base = rptSlice(rptMode, prior.map(p => p.key));
+  const cm = rptTeamMetrics(cur, season), bm = prior.length ? rptTeamMetrics(base, season) : null;
+  // Turnovers come only from logged no-shot possessions, so they're compared
+  // only with earlier practices/weeks where any were logged.
+  if (bm) {
+    const withPoss = prior.filter(p => rptSlice(rptMode, [p.key]).P.length > 0);
+    bm.toRate = withPoss.length ? rptTeamMetrics(rptSlice(rptMode, withPoss.map(p => p.key)), season).toRate : { v: null, kind: 'rate', num: 0, den: 0 };
+    if (!cur.P.length) cm.toRate = { v: null, kind: 'rate', num: 0, den: 0 };
+  }
+  // Counts compare against the per-period average.
+  const perPeriod = v => prior.length ? v / prior.length : null;
+  const summaryRows = RPT_SUMMARY.map(([k, label]) => {
+    const c = cm[k], b = bm ? bm[k] : null;
+    const bv = !b ? null : (b.kind === 'count' ? perPeriod(b.v) : b.v);
+    const flag = b ? rptFlag(c, b) : null;
+    const good = flag && ((flag === 'up') !== !!RPT_LOWER_BETTER[k]);
+    return `<tr><td>${label}</td><td><b>${rptFmt(k, c.v)}</b>${c.kind === 'rate' && c.den ? ` <span class="n-note">(${c.num}/${c.den})</span>` : ''}</td><td>${b && b.kind === 'count' ? (bv === null ? '—' : num(bv, 1)) : rptFmt(k, bv)}</td><td>${flag ? `<b style="color:${good ? 'var(--good)' : 'var(--critical)'};">${flag === 'up' ? '▲ up' : '▼ down'}</b>` : '<span class="n-note">normal range</span>'}</td></tr>`;
+  }).join('');
+  // Standouts.
+  const xm = xgModelFor(season), fm = facedXgModelFor(season);
+  const byShooter = {}; cur.S.forEach(s => { (byShooter[s.shooterJersey] = byShooter[s.shooterJersey] || []).push(s); });
+  const fin = Object.keys(byShooter).filter(j => byShooter[j].length >= 5).map(j => { const l = byShooter[j], g = l.filter(s => s.goal === 1).length; return { j, n: l.length, g, d: g - xgSum(l, xm) }; }).sort((a, b) => b.d - a.d)[0];
+  const byGoalie = {}; rptFaced(cur).forEach(s => { (byGoalie[s.goalieJersey] = byGoalie[s.goalieJersey] || []).push(s); });
+  const gk = Object.keys(byGoalie).filter(j => byGoalie[j].length >= 8).map(j => { const l = byGoalie[j], ga = l.filter(s => s.goal === 1).length; return { j, n: l.length, sv: l.length - ga, d: xgSum(l, fm) - ga }; }).sort((a, b) => b.d - a.d)[0];
+  const byPasser = {}; cur.S.filter(s => s.assistJersey && !isOppJersey(s.assistJersey)).forEach(s => { (byPasser[s.assistJersey] = byPasser[s.assistJersey] || []).push(s); });
+  const cr = Object.keys(byPasser).filter(j => byPasser[j].length >= 3).map(j => { const l = byPasser[j]; return { j, n: l.length, a: l.filter(s => s.goal === 1).length, xa: xgSum(l, xm) }; }).sort((a, b) => b.xa - a.xa)[0];
+  const who = j => escapeHtml(jerseyLabel(j, season));
+  const stand = [
+    fin ? `<li><b>Top finisher:</b> ${who(fin.j)} &mdash; ${fin.g} goals on ${fin.n} shots, ${fin.d >= 0 ? '+' : ''}${fin.d.toFixed(1)} vs what those looks usually produce.</li>` : `<li class="n-note">Top finisher: nobody had 5+ shots.</li>`,
+    gk ? `<li><b>Best goalie:</b> ${who(gk.j)} &mdash; ${gk.sv} saves on ${gk.n} shots on cage, ${gk.d >= 0 ? '+' : ''}${gk.d.toFixed(1)} saves vs expected.</li>` : `<li class="n-note">Best goalie: nobody faced 8+ shots on cage.</li>`,
+    cr ? `<li><b>Best creator:</b> ${who(cr.j)} &mdash; ${cr.n} shots set up (${cr.a} assists), ${cr.xa.toFixed(1)} expected assists.</li>` : `<li class="n-note">Best creator: nobody had 3+ potential assists.</li>`,
+  ].join('');
+  // Trends beyond noise.
+  const trends = !bm ? [] : RPT_TREND.map(([k, label]) => {
+    const c = cm[k], b = bm[k], flag = rptFlag(c, b);
+    if (!flag) return null;
+    const good = (flag === 'up') !== !!RPT_LOWER_BETTER[k];
+    return `<li><b style="color:${good ? 'var(--good)' : 'var(--critical)'};">${flag === 'up' ? '▲' : '▼'} ${label}:</b> ${rptFmt(k, c.v)}${c.kind === 'rate' ? ` (${c.num} of ${c.den})` : ''} vs ${rptFmt(k, b.v)} over the ${priorWord}.</li>`;
+  }).filter(Boolean);
+  wrap.innerHTML = `
+    <p class="panel-title">Team Report &mdash; ${escapeHtml(rptLabel(rptMode, period))}</p>
+    <p class="panel-sub">${cur.S.length} shots${cur.P.length ? `, ${cur.P.length} no-shot possessions` : ''}.${rptMode === 'week' && rptLabel('week', period).includes('in progress') ? ' This week isn&rsquo;t over yet, so its totals are partial &mdash; the percentages are the fair comparison.' : ''} Compared with the ${priorWord}${prior.length ? '' : ' (none yet &mdash; this is the first)'}. &ldquo;Up&rdquo; or &ldquo;down&rdquo; only when the change is bigger than normal ${word}-to-${word} swings for this many shots.</p>
+    <div class="table-wrap" style="max-height:none;"><table class="shotlog dense"><thead><tr><th>Stat</th><th>This ${word}</th><th>${rptMode === 'practice' ? 'Recent practices' : 'Recent weeks'}</th><th>Change</th></tr></thead><tbody>${summaryRows}</tbody></table></div>
+    <p class="panel-title" style="font-size:15px; margin-top:16px;">Standouts</p>
+    <ul class="sans" style="font-size:13px; line-height:1.7; margin:4px 0 0; padding-left:18px;">${stand}</ul>
+    <p class="panel-title" style="font-size:15px; margin-top:16px;">Trends</p>
+    ${trends.length ? `<ul class="sans" style="font-size:13px; line-height:1.7; margin:4px 0 0; padding-left:18px;">${trends.join('')}</ul>` : `<p class="sans" style="font-size:13px; color:var(--muted);">${bm ? `Nothing moved beyond normal ${word}-to-${word} swings.` : 'Trends start once there&rsquo;s an earlier ' + word + ' to compare with.'}</p>`}`;
+  // Player picker: anyone involved in the period.
+  const js = new Set();
+  cur.S.forEach(s => { js.add(s.shooterJersey); if (s.assistJersey && !isOppJersey(s.assistJersey)) js.add(s.assistJersey); });
+  rptFaced(cur).forEach(s => js.add(s.goalieJersey));
+  cur.P.forEach(p => { if (p.turnoverBy && !isOppJersey(p.turnoverBy)) js.add(p.turnoverBy); });
+  const psel = document.getElementById('rptPlayerSelect');
+  const players = [...js].filter(Boolean).map(j => ({ j, name: nameFor(j, season) })).sort((a, b) => a.name.localeCompare(b.name));
+  psel.innerHTML = players.length ? players.map(p => `<option value="${escapeHtml(p.j)}">#${escapeHtml(p.j)} ${escapeHtml(p.name)}</option>`).join('') : '<option value="">No players</option>';
+  if (!players.some(p => p.j === rptPlayer)) rptPlayer = players.length ? players[0].j : '';
+  psel.value = rptPlayer;
+  if (PLAYER_MODE) rptPlayer = pmLockSelect(psel);
+  renderPlayerReport(period, cur, season, prior);
+}
+function renderPlayerReport(period, cur, season, prior) {
+  const box = document.getElementById('rptPlayer');
+  const j = rptPlayer;
+  if (!j || j === '__NONE__') { box.innerHTML = `<p class="sans" style="color:var(--muted); font-size:13px;">${PLAYER_MODE ? escapeHtml(PLAYER_MODE.name) + ' wasn’t logged in this ' + (rptMode === 'practice' ? 'practice' : 'week') + '.' : 'Pick a player.'}</p>`; return; }
+  const word = rptMode === 'practice' ? 'practice' : 'week';
+  const xm = xgModelFor(season);
+  const { S: allS, O: allO, P: allP } = rptAllEntries();
+  const inSeason = e => seasonForDate(e.date) === season;
+  const before = e => inSeason(e) && e.date < period.date;
+  const weekEnd = (() => { const d = new Date(period.date + 'T00:00:00'); d.setDate(d.getDate() + 6); return localDateStr(d); })();
+  const through = e => inSeason(e) && e.date <= (rptMode === 'practice' ? period.date : weekEnd);
+  const priorS = allS.filter(before), priorO = allO.filter(before), priorP = allP.filter(before);
+  const mine = l => l.filter(s => s.shooterJersey === j);
+  const stat = (S, P) => {
+    const m = mine(S), g = m.filter(s => s.goal === 1).length, oc = m.filter(s => s.onKeeper === 1).length, graded = m.filter(s => s.shotQuality);
+    const fed = S.filter(s => s.assistJersey === j);
+    return { shots: m.length, goals: g, shPct: m.length ? g / m.length : null, onCage: m.length ? oc / m.length : null, onGoal: oc ? g / oc : null,
+      gold: graded.length ? graded.filter(s => s.shotQuality === '1-Gold').length / graded.length : null, xgPer: m.length ? xgSum(m, xm) / m.length : null,
+      fin: m.length ? g - xgSum(m, xm) : null, potAst: fed.length, ast: fed.filter(s => s.goal === 1).length, to: P.filter(p => p.turnoverBy === j).length };
+  };
+  const now = stat(cur.S, cur.P), was = stat(priorS, priorP);
+  const sessionsBefore = rptMode === 'practice' ? new Set(priorS.filter(s => s.shooterJersey === j || s.assistJersey === j).map(sessKey)).size : new Set(priorS.filter(s => s.shooterJersey === j || s.assistJersey === j).map(s => rptMonday(s.date))).size;
+  const teamNow = { shPct: rptTeamMetrics(cur, season).shPct.v, onCage: rptTeamMetrics(cur, season).onCage.v, gold: rptTeamMetrics(cur, season).gold.v, xgPer: rptTeamMetrics(cur, season).xgPer.v,
+    onGoal: (() => { const oc = cur.S.filter(s => s.onKeeper === 1); return oc.length ? oc.filter(s => s.goal === 1).length / oc.length : null; })() };
+  const per = v => sessionsBefore ? num(v / sessionsBefore, 1) : '—';
+  const rows = [
+    ['Shots', String(now.shots), per(was.shots), '—'], ['Goals', String(now.goals), per(was.goals), '—'],
+    ['Shooting %', pct(now.shPct), pct(was.shPct), pct(teamNow.shPct)], ['On cage %', pct(now.onCage), pct(was.onCage), pct(teamNow.onCage)],
+    ['Scores when on cage', pct(now.onGoal), pct(was.onGoal), pct(teamNow.onGoal)], ['Gold-look share', pct(now.gold), pct(was.gold), pct(teamNow.gold)],
+    ['Expected goals per shot', num(now.xgPer, 2), num(was.xgPer, 2), num(teamNow.xgPer, 2)],
+    ['Finishing (goals vs expected)', now.fin === null ? '—' : (now.fin >= 0 ? '+' : '') + now.fin.toFixed(1), '—', '—'],
+    ['Shots set up (assists)', `${now.potAst} (${now.ast})`, per(was.potAst), '—'], ['Turnovers', String(now.to), per(was.to), '—'],
+  ].filter(r => !(now.shots === 0 && r[0] !== 'Shots set up (assists)' && r[0] !== 'Turnovers'));
+  // Headline sentence.
+  let lead = '';
+  if (now.shots) {
+    const cmp = was.shPct === null ? '' : (Math.abs(now.shPct - was.shPct) < 0.03 ? `, right at his ${pct(was.shPct)} season rate` : now.shPct > was.shPct ? `, above his ${pct(was.shPct)} season rate` : `, below his ${pct(was.shPct)} season rate`);
+    lead = `This ${word}: <b>${now.goals} goal${now.goals === 1 ? '' : 's'} on ${now.shots} shot${now.shots === 1 ? '' : 's'}</b> (${pct(now.shPct)})${cmp}.`;
+  } else lead = `No shots this ${word}.`;
+  if (now.potAst) lead += ` Set up ${now.potAst} shot${now.potAst === 1 ? '' : 's'}${now.ast ? ` (${now.ast} assist${now.ast === 1 ? '' : 's'})` : ''}.`;
+  // Strengths / work on: season to date through this period, vs the team.
+  const seasonS = allS.filter(through);
+  const splits = rptPlayerSplits(mine(seasonS), seasonS);
+  const goodS = splits.filter(x => x.score > 0.02).sort((a, b) => b.score - a.score).slice(0, 2);
+  const workS = splits.filter(x => x.score < -0.02).sort((a, b) => a.score - b.score).slice(0, 2);
+  // Goalie section.
+  const facedNow = rptFaced(cur).filter(s => s.goalieJersey === j);
+  let goalieHtml = '';
+  if (facedNow.length) {
+    const fm = facedXgModelFor(season);
+    const facedWas = rptFaced({ S: priorS, O: priorO }).filter(s => s.goalieJersey === j);
+    const teamFaced = rptFaced(cur);
+    const sv = l => l.length ? l.filter(s => s.goal !== 1).length / l.length : null;
+    const gsax = xgSum(facedNow, fm) - facedNow.filter(s => s.goal === 1).length;
+    const facedSeason = rptFaced({ S: seasonS, O: allO.filter(through) });
+    const place = l => { const m = {}; l.forEach(s => { const h = goalHeight(s), sd = pipeSide(s); if (!h || !sd) return; const k = `${h} · ${sd.toLowerCase()}`; (m[k] = m[k] || []).push(s); }); return m; };
+    const mineP = place(facedSeason.filter(s => s.goalieJersey === j)), teamP = place(facedSeason);
+    const gsplits = Object.keys(mineP).filter(k => mineP[k].length >= RPT_SPLIT_MIN && (teamP[k] || []).length >= RPT_SPLIT_MIN).map(k => { const his = sv(mineP[k]), tm = sv(teamP[k]); return { k, n: mineP[k].length, his, tm, score: (his - tm) * mineP[k].length / (mineP[k].length + 10) }; });
+    const gGood = gsplits.filter(x => x.score > 0.02).sort((a, b) => b.score - a.score).slice(0, 2), gWork = gsplits.filter(x => x.score < -0.02).sort((a, b) => a.score - b.score).slice(0, 2);
+    const gs = x => `<b>${escapeHtml(x.k)}</b>: saves ${pct(x.his)} of ${x.n} &mdash; the team saves ${pct(x.tm)} there.`;
+    goalieHtml = `<p class="panel-title" style="font-size:15px; margin-top:16px;">In Goal</p>
+      <p class="sans" style="font-size:13px;">This ${word}: <b>${facedNow.filter(s => s.goal !== 1).length} saves on ${facedNow.length}</b> shots on cage (${pct(sv(facedNow))}), ${gsax >= 0 ? '+' : ''}${gsax.toFixed(1)} saves vs what those shots usually produce. His season before this ${word}: ${pct(sv(facedWas))}. Team this ${word}: ${pct(sv(teamFaced))}.</p>
+      ${gGood.length ? `<p class="sans" style="font-size:13px; margin:6px 0 2px;"><b style="color:var(--good);">What&rsquo;s working</b></p><ul class="sans" style="font-size:13px; line-height:1.7; margin:0; padding-left:18px;">${gGood.map(x => `<li>${gs(x)}</li>`).join('')}</ul>` : ''}
+      ${gWork.length ? `<p class="sans" style="font-size:13px; margin:6px 0 2px;"><b style="color:var(--gold-ink);">What to work on</b></p><ul class="sans" style="font-size:13px; line-height:1.7; margin:0; padding-left:18px;">${gWork.map(x => `<li>${gs(x)}</li>`).join('')}</ul>` : ''}`;
+  }
+  box.innerHTML = `
+    <p class="panel-title">${escapeHtml(jerseyLabel(j, season))} &mdash; ${escapeHtml(rptLabel(rptMode, period))}</p>
+    <p class="sans" style="font-size:13.5px; line-height:1.6;">${lead}</p>
+    ${rows.length ? `<div class="table-wrap" style="max-height:none;"><table class="shotlog dense"><thead><tr><th>Stat</th><th>This ${word}</th><th>His season before this ${word}${rptMode === 'practice' ? ' (per practice for counts)' : ' (per week for counts)'}</th><th>Team this ${word}</th></tr></thead><tbody>${rows.map(r => `<tr><td>${r[0]}</td><td><b>${r[1]}</b></td><td>${r[2]}</td><td>${r[3]}</td></tr>`).join('')}</tbody></table></div>` : ''}
+    <p class="panel-sub" style="margin-top:12px;">The two lists below use his whole season through this ${word} (one ${word} is too few shots), each with ${RPT_SPLIT_MIN}+ shots, compared with the team on the same kind of shot.</p>
+    <p class="sans" style="font-size:13px; margin:6px 0 2px;"><b style="color:var(--good);">What&rsquo;s working</b></p>
+    ${goodS.length ? `<ul class="sans" style="font-size:13px; line-height:1.7; margin:0; padding-left:18px;">${goodS.map(x => `<li>${rptSplitSentence(x)}</li>`).join('')}</ul>` : '<p class="sans n-note" style="font-size:12.5px;">Nothing stands out above the team yet with enough shots.</p>'}
+    <p class="sans" style="font-size:13px; margin:10px 0 2px;"><b style="color:var(--gold-ink);">What to work on</b></p>
+    ${workS.length ? `<ul class="sans" style="font-size:13px; line-height:1.7; margin:0; padding-left:18px;">${workS.map(x => `<li>${rptSplitSentence(x)}</li>`).join('')}</ul>` : '<p class="sans n-note" style="font-size:12.5px;">Nothing stands out below the team yet with enough shots.</p>'}
+    ${goalieHtml}`;
+}
+setupPillGroup('rptModePills', [{ value: 'practice', label: 'Practice' }, { value: 'week', label: 'Week' }], 'practice', v => {
+  rptMode = v || 'practice'; if (!v) setPillGroupValue('rptModePills', 'practice'); rptKey = ''; renderReports();
+});
+document.getElementById('rptPeriodSelect').addEventListener('change', e => { rptKey = e.target.value; renderReports(); });
+document.getElementById('rptPlayerSelect').addEventListener('change', e => { rptPlayer = e.target.value; renderReports(); });
+document.getElementById('rptPrintBtn').addEventListener('click', () => window.print());
 
 // One row per goalie for the Advanced table (also feeds the Goalie Score).
 function goalieAdvRows(faced, model, season, team) {
