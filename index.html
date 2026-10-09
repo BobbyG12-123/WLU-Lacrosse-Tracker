@@ -8136,6 +8136,20 @@ function surfNetHtml(surf) {
     <div class="n-note" style="font-style:normal; margin-top:4px;">The net as the shooter sees it. Green = he saves more than the team on these shots, red = fewer. Gray = too few shots to say.</div>`;
 }
 let SURF3D = null;
+// Camera presets. Close-up: about 4.5 yds in front of the cage (from the
+// tapped spot's direction, if any) so the cage fills the view and its
+// numbers are readable. Field: high and back, to tap a spot.
+let surfView = 'cage';
+function surf3dView(v) {
+  if (!SURF3D) return;
+  const { camera, controls } = SURF3D;
+  if (v === 'field') { camera.position.set(4, 9, 22); controls.target.set(0, 0, 7); }
+  else {
+    const L = surfSpot ? surfSpot.L : 0, D = surfSpot ? Math.max(1, surfSpot.D) : 1, len = Math.hypot(L, D);
+    camera.position.set(L / len * 4.5, 1.4, D / len * 4.5); controls.target.set(0, 1, 0);
+  }
+  controls.update();
+}
 function renderSurface3D(surf) {
   const wrap = document.getElementById('surf3dWrap');
   if (!wrap || !wrap.offsetParent) return;
@@ -8153,8 +8167,14 @@ function renderSurface3D(surf) {
       scene.add(new T.AmbientLight(0xffffff, 0.85));
       const turf = addField3D(T, scene);
       const g = new T.Group(); scene.add(g);
-      camera.position.set(4, 4, 14); controls.target.set(0, 1, 0);
       SURF3D = { T, renderer, scene, camera, controls, turf, g };
+      surf3dView(surfView);
+      // View buttons: close-up on the cage, or the whole field to pick a spot.
+      const bar = document.createElement('div');
+      bar.style.cssText = 'position:absolute; top:10px; right:10px; display:flex; gap:6px;';
+      bar.innerHTML = [['cage', 'Close-up'], ['field', 'Field view']].map(([v, l]) => `<button type="button" class="btn secondary" data-v="${v}" style="padding:4px 10px; font-size:12px; background:#fff;">${l}</button>`).join('');
+      bar.addEventListener('click', e => { const b = e.target.closest('button'); if (b) { surfView = b.dataset.v; surf3dView(surfView); } });
+      wrap.appendChild(bar);
       const size = () => { const w = wrap.clientWidth || 700, h = wrap.clientHeight || 420; renderer.setSize(w, h); camera.aspect = w / h; camera.updateProjectionMatrix(); };
       SURF3D.size = size; size(); window.addEventListener('resize', size);
       let down = null;
@@ -8167,6 +8187,7 @@ function renderSurface3D(surf) {
         const hit = ray.intersectObject(turf)[0];
         if (!hit) return;
         surfSpot = { L: Math.max(-19, Math.min(19, hit.point.x)), D: Math.max(0, Math.min(20, hit.point.z)) };
+        surfView = 'cage';
         renderSaveSurface();
       });
       const loop = () => { if (!document.body.contains(renderer.domElement)) return; controls.update(); renderer.render(scene, camera); requestAnimationFrame(loop); };
@@ -8210,7 +8231,7 @@ function renderSaveSurface() {
     : `<b>From anywhere</b>: all ${surf.n} of his shots on cage. Tap the field to see the net from one spot.`;
   wrap.innerHTML = surfMode === '2d'
     ? `<div style="display:flex; gap:18px; flex-wrap:wrap; align-items:flex-start;"><div style="flex:1 1 360px; max-width:440px;">${surfFieldSvg(season, surfGoalie)}</div><div style="flex:1 1 300px;">${surfNetHtml(surf)}</div></div>`
-    : `<div id="surf3dWrap" style="position:relative; height:420px; border-radius:10px; overflow:hidden; background:#1F4F2B;"></div><div class="n-note" style="font-style:normal; margin-top:4px;">Tap the field to stand there; drag to turn. Cage colors and numbers = his save % minus the team&rsquo;s, in points.</div>`;
+    : `<div id="surf3dWrap" style="position:relative; height:420px; border-radius:10px; overflow:hidden; background:#1F4F2B;"></div><div class="n-note" style="font-style:normal; margin-top:4px;">Opens on a close-up of the cage. Tap <b>Field view</b> to pick a spot on the field, then it zooms back in from there; drag to turn, scroll or pinch to zoom. Cage colors and numbers = his save % minus the team&rsquo;s, in points.</div>`;
   const rs = document.getElementById('surfReset'); if (rs) rs.addEventListener('click', () => { surfSpot = null; renderSaveSurface(); });
   if (surfMode === '2d') {
     const svgEl = document.getElementById('surfFieldSvg');
