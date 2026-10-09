@@ -7,7 +7,14 @@
 <link rel="manifest" href="manifest.json">
 <link rel="icon" href="favicon-32.png" sizes="32x32">
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
-<meta name="theme-color" content="#0F1F3D">
+<meta name="theme-color" content="#081A33">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Semi+Condensed:wght@400;500;600;700&family=Big+Shoulders+Display:wght@600;700;800;900&family=Instrument+Sans:wght@400;500;600;700&family=Saira+Condensed:wght@500;600;700&display=swap">
+<script>
+  // Theme: the device's light/dark setting unless this device chose one.
+  try { const t = localStorage.getItem('wluTheme'); if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t; } catch (e) { /* storage unavailable */ }
+</script>
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="WLU Lacrosse">
@@ -23,14 +30,14 @@
     --good: #0ca30c; --critical: #d03b3b;
   }
   * { box-sizing: border-box; }
-  body { margin: 0; font-family: Georgia, 'Iowan Old Style', serif; background: var(--paper); color: var(--ink); }
-  .sans { font-family: 'Helvetica Neue', Arial, sans-serif; }
+  body { margin: 0; font-family: var(--text); background: var(--paper); color: var(--ink); }
+  .sans { font-family: var(--text); }
   header { background: linear-gradient(135deg, var(--navy) 0%, var(--navy-2) 60%, var(--navy-3) 100%); color: #fff; padding: 22px 28px 16px; border-bottom: 4px solid var(--gold); }
-  header .eyebrow { font-family: 'Helvetica Neue', Arial, sans-serif; font-size: 11px; letter-spacing: .18em; text-transform: uppercase; color: #C9D2E6; margin-bottom: 4px; }
+  header .eyebrow { font-family: var(--text); font-size: 11px; letter-spacing: .18em; text-transform: uppercase; color: #C9D2E6; margin-bottom: 4px; }
   header h1 { margin: 0; font-size: 24px; }
-  header p { margin: 4px 0 0; font-family: 'Helvetica Neue', Arial, sans-serif; color: #A9B4CC; font-size: 12px; max-width: 700px; line-height: 1.5; }
+  header p { margin: 4px 0 0; font-family: var(--text); color: #A9B4CC; font-size: 12px; max-width: 700px; line-height: 1.5; }
   nav.tabs { display: flex; gap: 2px; padding: 0 28px; background: var(--navy-2); border-bottom: 1px solid rgba(255,255,255,.08); overflow-x: auto; }
-  nav.tabs button { font-family: 'Helvetica Neue', Arial, sans-serif; appearance: none; border: none; background: transparent; color: #A9B4CC; padding: 12px 16px; font-size: 12.5px; letter-spacing: .04em; text-transform: uppercase; cursor: pointer; border-bottom: 3px solid transparent; white-space: nowrap; }
+  nav.tabs button { font-family: var(--text); appearance: none; border: none; background: transparent; color: #A9B4CC; padding: 12px 16px; font-size: 12.5px; letter-spacing: .04em; text-transform: uppercase; cursor: pointer; border-bottom: 3px solid transparent; white-space: nowrap; }
   nav.tabs button:hover { color: #fff; }
   nav.tabs button.active { color: #fff; border-bottom-color: var(--gold); }
   main { max-width: 1180px; margin: 0 auto; padding: 22px 24px 60px; }
@@ -38,18 +45,18 @@
   .view.active { display: block; }
   .panel { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 22px; box-shadow: 0 1px 3px rgba(15,31,61,.06); margin-bottom: 18px; }
   .panel-title { font-size: 18px; font-weight: 700; margin: 0 0 4px; color: var(--navy-3); }
-  .panel-sub { font-family: 'Helvetica Neue', Arial, sans-serif; font-size: 12px; color: var(--muted); margin: 0 0 14px; }
-  label { display: block; font-family: 'Helvetica Neue', Arial, sans-serif; font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); margin-bottom: 5px; }
+  .panel-sub { font-family: var(--text); font-size: 12px; color: var(--muted); margin: 0 0 14px; }
+  label { display: block; font-family: var(--text); font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); margin-bottom: 5px; }
   select, input[type=date], input[type=text] {
-    font-family: 'Helvetica Neue', Arial, sans-serif; font-size: 14px; padding: 8px 10px; border-radius: 6px;
+    font-family: var(--text); font-size: 14px; padding: 8px 10px; border-radius: 6px;
     border: 1px solid var(--line); background: #fff; color: var(--ink); width: 100%;
   }
   .field-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 14px; margin-bottom: 16px; }
   .checks { display: flex; flex-wrap: wrap; gap: 14px; margin-bottom: 16px; }
-  .check-item { display: flex; align-items: center; gap: 6px; font-family: 'Helvetica Neue', Arial, sans-serif; font-size: 13px; }
+  .check-item { display: flex; align-items: center; gap: 6px; font-family: var(--text); font-size: 13px; }
   .check-item input { width: 16px; height: 16px; }
   .grade-pills, .pill-row { display: flex; gap: 8px; flex-wrap: wrap; }
-  .pill { font-family: 'Helvetica Neue', Arial, sans-serif; font-size: 13px; font-weight: 600; padding: 8px 15px; border-radius: 999px; border: 1.5px solid transparent; cursor: pointer; background: var(--overall-bg); color: var(--overall); }
+  .pill { font-family: var(--text); font-size: 13px; font-weight: 600; padding: 8px 15px; border-radius: 999px; border: 1.5px solid transparent; cursor: pointer; background: var(--overall-bg); color: var(--overall); }
   .pill[data-grade="Gold"] { background: var(--gold-bg); color: var(--gold-ink); }
   .pill[data-grade="Silver"] { background: var(--silver-bg); color: var(--silver-ink); }
   .pill[data-grade="Bronze"] { background: var(--bronze-bg); color: var(--bronze-ink); }
@@ -60,27 +67,27 @@
   .pill.active[data-grade="Bronze"] { border-color: var(--bronze); }
   .click-field { border: 1px solid var(--line); border-radius: 8px; padding: 10px; background: #FBFAF6; }
   .click-field svg { width: 100%; height: auto; cursor: crosshair; display: block; }
-  .readout { font-family: 'Helvetica Neue', Arial, sans-serif; font-size: 12px; color: var(--navy-3); margin-top: 6px; font-weight: 600; }
-  .btn { font-family: 'Helvetica Neue', Arial, sans-serif; font-size: 14px; font-weight: 700; padding: 11px 22px; border-radius: 7px; border: none; background: var(--navy-3); color: #fff; cursor: pointer; }
+  .readout { font-family: var(--text); font-size: 12px; color: var(--navy-3); margin-top: 6px; font-weight: 600; }
+  .btn { font-family: var(--text); font-size: 14px; font-weight: 700; padding: 11px 22px; border-radius: 7px; border: none; background: var(--navy-3); color: #fff; cursor: pointer; }
   .btn:hover { background: var(--navy); }
   .btn.secondary { background: transparent; border: 1.5px solid var(--line); color: var(--muted); font-weight: 600; padding: 7px 14px; font-size: 12px; }
   .btn.danger { background: transparent; border: 1.5px solid #C0392B; color: #C0392B; font-weight: 600; padding: 6px 12px; font-size: 11.5px; }
-  .msg { font-family: 'Helvetica Neue', Arial, sans-serif; font-size: 13px; padding: 10px 14px; border-radius: 6px; margin-bottom: 14px; }
+  .msg { font-family: var(--text); font-size: 13px; padding: 10px 14px; border-radius: 6px; margin-bottom: 14px; }
   .msg.ok { background: #E6F4EA; color: #256029; }
   .msg.err { background: #FBE9E7; color: #B3261E; }
-  .badge-shared { display: inline-block; font-family: 'Helvetica Neue', Arial, sans-serif; font-size: 10.5px; letter-spacing: .06em; text-transform: uppercase; background: rgba(255,255,255,.12); color: #E9DFB8; border: 1px solid rgba(212,175,55,.5); padding: 3px 9px; border-radius: 999px; margin-left: 10px; }
+  .badge-shared { display: inline-block; font-family: var(--text); font-size: 10.5px; letter-spacing: .06em; text-transform: uppercase; background: rgba(255,255,255,.12); color: #E9DFB8; border: 1px solid rgba(212,175,55,.5); padding: 3px 9px; border-radius: 999px; margin-left: 10px; }
   .controls-row { display: flex; flex-wrap: wrap; gap: 20px; align-items: flex-end; margin-bottom: 18px; }
   .control-group select { min-width: 240px; }
   .image-row { display: flex; gap: 22px; justify-content: center; flex-wrap: wrap; }
     .heat-zone { cursor: pointer; }
   .heat-zone:hover { opacity: 0.7; }
   .heat-zone-selected { stroke: #1F3864 !important; stroke-width: 0.35 !important; }
-  #heatTooltip { position: fixed; pointer-events: none; z-index: 9999; background: var(--navy); color: #fff; font-family: 'Helvetica Neue', Arial, sans-serif; font-size: 12px; line-height: 1.45; padding: 8px 12px; border-radius: 6px; box-shadow: 0 4px 14px rgba(0,0,0,.28); max-width: 240px; display: none; }
+  #heatTooltip { position: fixed; pointer-events: none; z-index: 9999; background: var(--navy); color: #fff; font-family: var(--text); font-size: 12px; line-height: 1.45; padding: 8px 12px; border-radius: 6px; box-shadow: 0 4px 14px rgba(0,0,0,.28); max-width: 240px; display: none; }
   #heatTooltip b { color: #E9DFB8; }
   .zone-drilldown { margin-top: 14px; }
   .zone-drilldown .table-wrap { max-height: 280px; }
   table.shot-quality-table th { position: static; }
-  table.shotlog { width: 100%; border-collapse: collapse; font-family: 'Helvetica Neue', Arial, sans-serif; font-size: 12.5px; }
+  table.shotlog { width: 100%; border-collapse: collapse; font-family: var(--text); font-size: 12.5px; }
   table.shotlog th { text-align: left; padding: 8px 8px; border-bottom: 2px solid var(--navy-3); color: var(--navy-3); position: sticky; top: 0; background: #fff; }
   table.shotlog td { padding: 7px 8px; border-bottom: 1px solid var(--line); }
   table.shotlog.sortable-table tbody tr:nth-child(even) { background: #FCFBF7; }
@@ -96,33 +103,33 @@
   table.shotlog th.group-head.gold { background: var(--gold-bg); color: var(--gold-ink); }
   table.shotlog th.group-head.silver { background: var(--silver-bg); color: var(--silver-ink); }
   table.shotlog th.group-head.bronze { background: var(--bronze-bg); color: var(--bronze-ink); }
-  .tier-chip { display: inline-block; font-family: 'Helvetica Neue', Arial, sans-serif; font-size: 10.5px; font-weight: 700; padding: 2px 8px; border-radius: 999px; letter-spacing: .04em; }
+  .tier-chip { display: inline-block; font-family: var(--text); font-size: 10.5px; font-weight: 700; padding: 2px 8px; border-radius: 999px; letter-spacing: .04em; }
   .tier-chip.gold { background: var(--gold-bg); color: var(--gold-ink); }
   .tier-chip.silver { background: var(--silver-bg); color: var(--silver-ink); }
   .tier-chip.bronze { background: var(--bronze-bg); color: var(--bronze-ink); }
   .tier-chip.ungraded { background: var(--overall-bg); color: var(--overall); }
-  .delta-chip { font-family: 'Helvetica Neue', Arial, sans-serif; font-size: 12px; font-weight: 700; white-space: nowrap; }
+  .delta-chip { font-family: var(--text); font-size: 12px; font-weight: 700; white-space: nowrap; }
   .delta-chip.up { color: var(--good); }
   .delta-chip.down { color: var(--critical); }
   .delta-chip.flat { color: var(--muted); }
-  .flag-card { border: 1px solid var(--line); border-left: 4px solid var(--line); border-radius: 8px; padding: 14px 16px; font-family: 'Helvetica Neue', Arial, sans-serif; }
+  .flag-card { border: 1px solid var(--line); border-left: 4px solid var(--line); border-radius: 8px; padding: 14px 16px; font-family: var(--text); }
   .flag-card.warn { border-left-color: var(--critical); }
   .flag-card.good { border-left-color: var(--good); }
   .flag-card .why { font-size: 12px; color: var(--muted); line-height: 1.5; margin-top: 6px; }
-  .n-note { font-family: 'Helvetica Neue', Arial, sans-serif; font-size: 11px; color: var(--muted); font-style: italic; }
-  .model-note { font-family: 'Helvetica Neue', Arial, sans-serif; font-size: 11.5px; color: var(--muted); background: #FBFAF6; border-left: 3px solid var(--line); padding: 8px 12px; border-radius: 0 6px 6px 0; margin-bottom: 14px; }
+  .n-note { font-family: var(--text); font-size: 11px; color: var(--muted); font-style: italic; }
+  .model-note { font-family: var(--text); font-size: 11.5px; color: var(--muted); background: #FBFAF6; border-left: 3px solid var(--line); padding: 8px 12px; border-radius: 0 6px 6px 0; margin-bottom: 14px; }
   .chart-wrap svg { width: 100%; height: auto; display: block; }
   .table-wrap { max-height: 520px; overflow: auto; border: 1px solid var(--line); border-radius: 8px; }
   .filter-row { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 14px; }
   .filter-row select, .filter-row input { width: auto; min-width: 150px; }
-  .loading { text-align: center; padding: 60px 20px; color: var(--muted); font-family: 'Helvetica Neue', Arial, sans-serif; }
+  .loading { text-align: center; padding: 60px 20px; color: var(--muted); font-family: var(--text); }
   .tag-gold { color: var(--gold-ink); font-weight: 700; }
   .tag-silver { color: var(--silver-ink); font-weight: 700; }
   .tag-bronze { color: var(--bronze-ink); font-weight: 700; }
-  footer { text-align: center; font-family: 'Helvetica Neue', Arial, sans-serif; font-size: 11px; color: var(--muted); padding: 10px 0 40px; }
+  footer { text-align: center; font-family: var(--text); font-size: 11px; color: var(--muted); padding: 10px 0 40px; }
   .small-sample { fill: #B00020; font-size: 10px; font-style: italic; }
   .trend-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 14px; }
-  .stat-tile { border: 1px solid var(--line); border-radius: 8px; padding: 14px 16px; font-family: 'Helvetica Neue', Arial, sans-serif; }
+  .stat-tile { border: 1px solid var(--line); border-radius: 8px; padding: 14px 16px; font-family: var(--text); }
   .stat-tile .name { font-weight: 700; color: var(--navy-3); font-size: 14px; }
   .stat-tile .meta { font-size: 11.5px; color: var(--muted); margin-top: 1px; }
   .stat-tile .row { display: flex; align-items: baseline; justify-content: space-between; margin-top: 10px; gap: 10px; }
@@ -131,7 +138,7 @@
   .stat-tile .delta.up { color: var(--good); }
   .stat-tile .delta.down { color: var(--critical); }
   .stat-tile svg { display: block; width: 100%; height: 30px; margin-top: 10px; }
-  .section-heading { display: flex; align-items: center; gap: 8px; font-family: 'Helvetica Neue', Arial, sans-serif; font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; margin: 22px 0 10px; }
+  .section-heading { display: flex; align-items: center; gap: 8px; font-family: var(--text); font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; margin: 22px 0 10px; }
   .section-heading:first-child { margin-top: 0; }
   .section-heading.up { color: var(--good); }
   .section-heading.down { color: var(--critical); }
@@ -141,7 +148,7 @@
   .view-title { font-size: 22px; font-weight: 700; color: var(--navy-3); margin-right: auto; }
   .view-bar .grade-pills .pill { padding: 6px 13px; font-size: 12.5px; }
   .subtabs { display: flex; gap: 2px; overflow-x: auto; }
-  .subtab-btn { font-family: 'Helvetica Neue', Arial, sans-serif; font-size: 13px; font-weight: 700; color: var(--muted); background: none; border: none; border-bottom: 3px solid transparent; padding: 8px 14px 9px; cursor: pointer; white-space: nowrap; }
+  .subtab-btn { font-family: var(--text); font-size: 13px; font-weight: 700; color: var(--muted); background: none; border: none; border-bottom: 3px solid transparent; padding: 8px 14px 9px; cursor: pointer; white-space: nowrap; }
   .subtab-btn:hover { color: var(--navy-3); }
   .subtab-btn.active { color: var(--navy-3); border-bottom-color: var(--gold); }
   .subpage { display: none; }
@@ -150,13 +157,13 @@
   .view-tiles:empty { display: none; }
   .view-tiles .stat-tile { background: var(--card); }
   .view-tiles .stat-tile .value { font-size: 26px; }
-  .view-intro { font-family: 'Helvetica Neue', Arial, sans-serif; font-size: 12.5px; color: var(--muted); margin: -4px 0 16px; line-height: 1.5; }
+  .view-intro { font-family: var(--text); font-size: 12.5px; color: var(--muted); margin: -4px 0 16px; line-height: 1.5; }
   .collapsible-body { margin-top: 12px; }
   .board-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(460px, 1fr)); gap: 0 18px; }
   .info-tip { display: inline-flex; align-items: center; justify-content: center; width: 14px; height: 14px; border-radius: 50%; background: var(--overall-bg); color: var(--overall); font-size: 9.5px; font-weight: 700; font-style: normal; margin-left: 4px; cursor: help; vertical-align: 1px; }
   @media (max-width: 700px) { .board-grid { grid-template-columns: 1fr; } }
   .filters-box { margin-bottom: 14px; }
-  .filters-box > summary { cursor: pointer; font-family: 'Helvetica Neue', Arial, sans-serif; font-size: 12px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--navy-3); display: inline-flex; align-items: center; gap: 8px; padding: 6px 12px; border: 1.5px solid var(--line); border-radius: 999px; list-style: none; }
+  .filters-box > summary { cursor: pointer; font-family: var(--text); font-size: 12px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--navy-3); display: inline-flex; align-items: center; gap: 8px; padding: 6px 12px; border: 1.5px solid var(--line); border-radius: 999px; list-style: none; }
   .filters-box > summary::-webkit-details-marker { display: none; }
   .filters-box[open] > summary { margin-bottom: 12px; }
   .filter-count { background: var(--gold-bg); color: var(--gold-ink); border-radius: 999px; padding: 1px 8px; font-size: 11px; letter-spacing: 0; }
@@ -167,10 +174,10 @@
   .seg.seg-sm button { font-size: 11.5px; padding: 5px 11px; }
   .heat-fig { margin: 0; text-align: center; max-width: 560px; flex: 1 1 340px; }
   .heat-fig.is-goal { max-width: 460px; }
-  .heat-cap { font-family: 'Helvetica Neue', Arial, sans-serif; font-weight: 700; color: var(--navy-3); margin-bottom: 2px; }
-  .heat-sub { font-family: 'Helvetica Neue', Arial, sans-serif; font-size: 11px; color: var(--muted); margin-bottom: 8px; }
+  .heat-cap { font-family: var(--text); font-weight: 700; color: var(--navy-3); margin-bottom: 2px; }
+  .heat-sub { font-family: var(--text); font-size: 11px; color: var(--muted); margin-bottom: 8px; }
   .heat-img svg { display: block; border-radius: 10px; box-shadow: 0 6px 18px rgba(15,31,61,.18), 0 1px 3px rgba(15,31,61,.12); }
-  .heat-legend { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 6px 10px; margin-top: 10px; font-family: 'Helvetica Neue', Arial, sans-serif; font-size: 11px; color: var(--muted); }
+  .heat-legend { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 6px 10px; margin-top: 10px; font-family: var(--text); font-size: 11px; color: var(--muted); }
   .heat-legend .bar { width: 120px; height: 9px; border-radius: 5px; }
   .heat-legend .avg { flex-basis: 100%; }
   .heat-legend .key { display: inline-flex; align-items: center; gap: 5px; }
@@ -187,31 +194,31 @@
   .session-bar .sb-item input[type=text] { width: 180px; }
   .session-bar .sb-entry { margin-left: auto; }
   .seg { display: inline-flex; border: 1.5px solid var(--navy-3); border-radius: 8px; overflow: hidden; }
-  .seg button { font-family: 'Helvetica Neue', Arial, sans-serif; font-size: 12.5px; font-weight: 700; padding: 8px 13px; border: none; background: #fff; color: var(--navy-3); cursor: pointer; }
+  .seg button { font-family: var(--text); font-size: 12.5px; font-weight: 700; padding: 8px 13px; border: none; background: #fff; color: var(--navy-3); cursor: pointer; }
   .seg button + button { border-left: 1.5px solid var(--navy-3); }
   .seg button.active { background: var(--navy-3); color: #fff; }
   .lineup-bar { margin-top: 8px; background: linear-gradient(180deg, var(--navy) 0%, var(--navy-2) 100%); border-radius: 10px; padding: 10px 14px; color: #fff; display: grid; grid-template-columns: 1fr; gap: 6px; }
   .lb-row { display: flex; align-items: center; gap: 10px; }
-  .lb-label { font-family: 'Helvetica Neue', Arial, sans-serif; font-size: 10.5px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: #C9D2E6; width: 128px; flex-shrink: 0; }
+  .lb-label { font-family: var(--text); font-size: 10.5px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: #C9D2E6; width: 128px; flex-shrink: 0; }
   .lb-label.off { color: var(--gold); }
   .lb-chips { display: flex; gap: 6px; flex: 1; flex-wrap: wrap; }
   .lb-chip { display: flex; flex-direction: column; align-items: center; width: 74px; }
   .lb-chip input { width: 74px; text-align: center; font-weight: 700; font-size: 15px; padding: 5px 4px; border-radius: 6px; border: 1.5px solid rgba(255,255,255,.18); background: rgba(255,255,255,.08); color: #fff; }
   .lb-chip input:focus { outline: none; border-color: var(--gold); background: rgba(255,255,255,.16); }
   .lb-chip input.bad { border-color: #F8696B; }
-  .lb-chip .nm { font-family: 'Helvetica Neue', Arial, sans-serif; font-size: 10px; color: #A9B4CC; margin-top: 2px; max-width: 74px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .lb-chip .nm { font-family: var(--text); font-size: 10px; color: #A9B4CC; margin-top: 2px; max-width: 74px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .lb-unit { width: 150px !important; font-size: 12px !important; padding: 5px 8px !important; background: rgba(255,255,255,.1) !important; color: #fff !important; border-color: rgba(255,255,255,.2) !important; }
   .lb-unit option { color: var(--ink); }
   .lb-actions { display: flex; gap: 8px; justify-content: flex-end; align-items: center; }
   .lb-actions .btn.secondary { color: #E9DFB8; border-color: rgba(212,175,55,.45); }
-  .lb-status { font-family: 'Helvetica Neue', Arial, sans-serif; font-size: 11px; color: #A9B4CC; margin-right: auto; }
+  .lb-status { font-family: var(--text); font-size: 11px; color: #A9B4CC; margin-right: auto; }
   .log-layout { display: grid; grid-template-columns: minmax(0, 1fr) 450px; gap: 16px; align-items: start; }
   .log-side { position: sticky; top: 12px; display: flex; flex-direction: column; gap: 12px; max-height: calc(100vh - 24px); overflow-y: auto; }
   .goal-click svg { max-width: 330px; margin: 0 auto; }
   .log-card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; box-shadow: 0 1px 3px rgba(15,31,61,.05); margin-bottom: 12px; }
   .log-side .log-card { margin-bottom: 0; }
   .log-card .field-grid { margin-bottom: 0; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); }
-  .log-card-head { font-family: 'Helvetica Neue', Arial, sans-serif; font-size: 12px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--navy-3); margin-bottom: 10px; display: flex; align-items: center; gap: 8px; }
+  .log-card-head { font-family: var(--text); font-size: 12px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--navy-3); margin-bottom: 10px; display: flex; align-items: center; gap: 8px; }
   .log-card-head .sub { font-weight: 400; text-transform: none; letter-spacing: 0; color: var(--muted); font-size: 11.5px; }
   .log-card-head .step { display: inline-flex; width: 20px; height: 20px; border-radius: 50%; background: var(--navy-3); color: #fff; font-size: 11px; align-items: center; justify-content: center; letter-spacing: 0; }
   .more-card > summary { cursor: pointer; list-style: none; margin-bottom: 0; }
@@ -226,9 +233,9 @@
   details.collapsible > summary::-webkit-details-marker { display: none; }
   details.collapsible > summary .panel-title { margin: 0; }
   details.collapsible > summary .panel-sub { margin: 0; }
-  details.collapsible > summary::after { content: 'Show \25BE'; margin-left: auto; font-family: 'Helvetica Neue', Arial, sans-serif; font-size: 11.5px; color: var(--muted); }
+  details.collapsible > summary::after { content: 'Show \25BE'; margin-left: auto; font-family: var(--text); font-size: 11.5px; color: var(--muted); }
   details.collapsible[open] > summary::after { content: 'Hide \25B4'; }
-  .recent-kind { font-family: 'Helvetica Neue', Arial, sans-serif; font-size: 10.5px; font-weight: 700; padding: 2px 7px; border-radius: 999px; background: var(--overall-bg); color: var(--overall); }
+  .recent-kind { font-family: var(--text); font-size: 10.5px; font-weight: 700; padding: 2px 7px; border-radius: 999px; background: var(--overall-bg); color: var(--overall); }
   .recent-kind.opp { background: #FBE9E7; color: #B3261E; }
   @media (max-width: 1000px) {
     .log-layout { grid-template-columns: 1fr; }
@@ -237,16 +244,16 @@
     .lb-label { width: 90px; }
   }
   /* ---- Player View: one player's own data, nobody else's ---- */
-  .pm-open-btn { margin-top: 10px; font-family: 'Helvetica Neue', Arial, sans-serif; font-size: 12px; font-weight: 700; letter-spacing: .04em; padding: 7px 14px; border-radius: 999px; border: 1.5px solid rgba(212,175,55,.6); background: rgba(255,255,255,.08); color: #E9DFB8; cursor: pointer; }
+  .pm-open-btn { margin-top: 10px; font-family: var(--text); font-size: 12px; font-weight: 700; letter-spacing: .04em; padding: 7px 14px; border-radius: 999px; border: 1.5px solid rgba(212,175,55,.6); background: rgba(255,255,255,.08); color: #E9DFB8; cursor: pointer; }
   .pm-open-btn:hover { background: rgba(255,255,255,.16); }
-  #pmBanner { display: none; align-items: center; gap: 12px; flex-wrap: wrap; background: var(--gold-bg); color: var(--gold-ink); border-bottom: 2px solid var(--gold); padding: 10px 28px; font-family: 'Helvetica Neue', Arial, sans-serif; font-size: 14px; }
+  #pmBanner { display: none; align-items: center; gap: 12px; flex-wrap: wrap; background: var(--gold-bg); color: var(--gold-ink); border-bottom: 2px solid var(--gold); padding: 10px 28px; font-family: var(--text); font-size: 14px; }
   #pmBanner b { color: var(--navy-3); font-size: 15px; }
   #pmBanner .pm-actions { margin-left: auto; display: flex; gap: 8px; align-items: center; }
   body.player-mode #pmBanner { display: flex; }
   #pmPicker { position: fixed; inset: 0; z-index: 10000; background: rgba(15,31,61,.55); display: none; align-items: flex-start; justify-content: center; padding: 60px 16px; overflow-y: auto; }
   #pmPicker.open { display: flex; }
   #pmPicker .pm-card { background: var(--card); border-radius: 12px; padding: 22px; max-width: 760px; width: 100%; box-shadow: 0 10px 40px rgba(0,0,0,.3); }
-  #pmPicker .pm-group { font-family: 'Helvetica Neue', Arial, sans-serif; font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); margin: 14px 0 8px; }
+  #pmPicker .pm-group { font-family: var(--text); font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); margin: 14px 0 8px; }
   body.player-mode .pm-hide, body.player-mode .pm-open-btn,
   .tab-btn.owner-off, .view.owner-off { display: none !important; }
   body.player-mode .tab-btn.pm-off, body.player-mode .view.pm-off,
@@ -259,15 +266,15 @@
   /* ---- Depth chart ---- */
   .depth-lines { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 14px; }
   .depth-line { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; background: #FBFAF6; }
-  .depth-line-head { font-family: 'Helvetica Neue', Arial, sans-serif; font-size: 12px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--navy-3); margin-bottom: 6px; }
-  .depth-chip { font-family: 'Helvetica Neue', Arial, sans-serif; font-size: 13px; background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 7px 10px; margin-bottom: 6px; display: grid; grid-template-columns: 1fr auto; gap: 2px 8px; align-items: center; }
+  .depth-line-head { font-family: var(--text); font-size: 12px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--navy-3); margin-bottom: 6px; }
+  .depth-chip { font-family: var(--text); font-size: 13px; background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 7px 10px; margin-bottom: 6px; display: grid; grid-template-columns: 1fr auto; gap: 2px 8px; align-items: center; }
   .depth-chip .n-note { grid-column: 1; }
   .depth-chip .depth-pos { grid-row: 1 / span 2; grid-column: 2; }
   .depth-rest { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 0 10px; }
-  .depth-pos { font-family: 'Helvetica Neue', Arial, sans-serif; font-size: 11.5px; font-weight: 700; border: 1.5px solid var(--navy-3); color: var(--navy-3); background: #fff; border-radius: 999px; padding: 4px 10px; cursor: pointer; white-space: nowrap; }
+  .depth-pos { font-family: var(--text); font-size: 11.5px; font-weight: 700; border: 1.5px solid var(--navy-3); color: var(--navy-3); background: #fff; border-radius: 999px; padding: 4px 10px; cursor: pointer; white-space: nowrap; }
   /* ---- Goalie Score ---- */
   .gs-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(330px, 1fr)); gap: 14px; }
-  .gs-card { border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; background: var(--card); font-family: 'Helvetica Neue', Arial, sans-serif; }
+  .gs-card { border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; background: var(--card); font-family: var(--text); }
   .gs-head { display: flex; align-items: baseline; gap: 10px; }
   .gs-rank { font-size: 12px; font-weight: 700; color: var(--muted); }
   .gs-name { font-weight: 700; color: var(--navy-3); font-size: 15px; }
@@ -292,25 +299,170 @@
     .panel { box-shadow: none; border: 1px solid #ccc; break-inside: avoid; }
   }
 </style>
+<style>
+  /* ================= Stats Desk theme (Phase 1) =================
+     Layered over the original styles: new fonts, colors, chrome, panels,
+     tables and controls. Data colors (green good / red bad, the heat and
+     table scales, Gold/Silver/Bronze) are unchanged. Light by default,
+     dark when the device is dark, and the Light/Dark button overrides. */
+  :root {
+    --chrome: #081A33; --chrome-2: #0D2547; --chrome-ink: #F2F5FA; --chrome-mute: #8FA3C2; --chrome-line: rgba(255,255,255,.1);
+    --accent: #2F7BFF; --accent-soft: rgba(47,123,255,.12);
+    --paper: #F4F6F9; --card: #FFFFFF; --card-2: #F8F9FB; --ink: #0A1424; --muted: #66748A; --line: #D8DEE7; --line-2: #E8ECF2;
+    --navy: #081A33; --navy-2: #0D2547; --navy-3: #0D2547;
+    --overall-bg: #E8EDF5; --overall: #2C4A78;
+    --display: 'Big Shoulders Display', 'Big Shoulders', 'Arial Narrow', sans-serif;
+    --text: 'Instrument Sans', 'Helvetica Neue', Arial, sans-serif;
+    --num: 'Saira Condensed', 'Barlow Semi Condensed', 'Arial Narrow', sans-serif;
+    --mono: 'Barlow Semi Condensed', 'Arial Narrow', 'Helvetica Neue', sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      color-scheme: dark;
+      --chrome: #040C18; --chrome-2: #0A1830;
+      --accent: #4D90FF; --accent-soft: rgba(77,144,255,.16);
+      --paper: #070E19; --card: #0E1625; --card-2: #121C2E; --ink: #E8EEF7; --muted: #8B98AE; --line: #22304A; --line-2: #1A2539;
+      --navy: #040C18; --navy-2: #0A1830; --navy-3: #CFDDF5;
+      --overall-bg: #1A2944; --overall: #A9C2EA;
+      --gold-bg: #3A2F0E; --gold-ink: #F0C75A; --silver-bg: #262D37; --silver-ink: #C3CBD5; --bronze-bg: #3A2617; --bronze-ink: #E3A574;
+      --good: #34C759; --critical: #FF5C55;
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --chrome: #040C18; --chrome-2: #0A1830;
+    --accent: #4D90FF; --accent-soft: rgba(77,144,255,.16);
+    --paper: #070E19; --card: #0E1625; --card-2: #121C2E; --ink: #E8EEF7; --muted: #8B98AE; --line: #22304A; --line-2: #1A2539;
+    --navy: #040C18; --navy-2: #0A1830; --navy-3: #CFDDF5;
+    --overall-bg: #1A2944; --overall: #A9C2EA;
+    --gold-bg: #3A2F0E; --gold-ink: #F0C75A; --silver-bg: #262D37; --silver-ink: #C3CBD5; --bronze-bg: #3A2617; --bronze-ink: #E3A574;
+    --good: #34C759; --critical: #FF5C55;
+  }
+  body { font-family: var(--text); background: var(--paper); color: var(--ink); -webkit-font-smoothing: antialiased; }
+  .sans { font-family: var(--text); }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  /* ---- top bar (replaces the tall header) ---- */
+  header.sd-top { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 40; display: flex; align-items: center; gap: 14px; height: 52px; padding: 0 20px; background: var(--chrome); color: var(--chrome-ink); border-bottom: 3px solid var(--accent); }
+  .sd-top .sd-logo { display: flex; align-items: center; gap: 10px; }
+  .sd-top .sd-w { font-family: var(--display); font-weight: 900; font-size: 26px; line-height: 1; letter-spacing: .02em; white-space: nowrap; }
+  .sd-top .sd-w span { color: var(--accent); }
+  .sd-top .sd-sub { font-size: 9.5px; letter-spacing: .22em; text-transform: uppercase; color: var(--chrome-mute); line-height: 1.25; }
+  .sd-top .sd-fill { flex: 1; }
+  .sd-top .sd-btn { height: 32px; border: 1px solid var(--chrome-line); background: none; color: var(--chrome-ink); padding: 0 12px; font: 600 12px var(--text); letter-spacing: .04em; cursor: pointer; white-space: nowrap; }
+  .sd-top .sd-btn:hover { background: var(--chrome-2); }
+  .sd-top .pm-open-btn { margin-top: 0; height: 32px; border-radius: 0; border: 0; background: var(--accent); color: #fff; padding: 0 14px; font: 600 12px var(--text); }
+  .sd-top .pm-open-btn:hover { filter: brightness(1.1); }
+  nav.tabs { position: sticky; top: calc(52px + env(safe-area-inset-top, 0px)); z-index: 39; background: var(--chrome); padding: 0 12px; border-bottom: 0; scrollbar-width: none; }
+  nav.tabs::-webkit-scrollbar { display: none; }
+  nav.tabs button { font-family: var(--display); font-weight: 700; font-size: 15px; letter-spacing: .07em; color: var(--chrome-mute); padding: 10px 12px 9px; border-bottom: 3px solid transparent; }
+  nav.tabs button:hover { color: var(--chrome-ink); }
+  nav.tabs button.active { color: var(--chrome-ink); background: var(--chrome-2); border-bottom-color: #E3A92B; }
+  main { max-width: 1320px; }
+
+  /* ---- view bar + sub-tabs ---- */
+  .view-bar { top: calc(94px + env(safe-area-inset-top, 0px)); background: var(--paper); border-bottom: 2px solid var(--ink); }
+  .view-title { font-family: var(--display); font-weight: 900; font-size: 34px; line-height: .95; letter-spacing: .01em; text-transform: uppercase; color: var(--ink); }
+  .subtab-btn { font-family: var(--text); font-weight: 500; font-size: 13px; color: var(--muted); border-bottom: 2px solid transparent; }
+  .subtab-btn:hover { color: var(--ink); }
+  .subtab-btn.active { color: var(--ink); font-weight: 700; border-bottom-color: var(--accent); }
+
+  /* ---- panels: square, ruled, navy header band ---- */
+  .panel { border-radius: 0; box-shadow: none; border: 1px solid var(--line); background: var(--card); }
+  .panel > .panel-title, .panel > :first-child.panel-title, details.collapsible > summary .panel-title { font-family: var(--display); font-weight: 800; font-size: 17px; letter-spacing: .08em; text-transform: uppercase; color: var(--chrome-ink); }
+  .panel > .panel-title { background: var(--chrome); margin: -22px -22px 12px; padding: 9px 22px 8px; }
+  .panel > .panel-title + .panel-sub { margin-top: 0; }
+  details.collapsible > summary .panel-title { color: var(--ink); }
+  .panel-title { font-family: var(--display); font-weight: 800; letter-spacing: .06em; text-transform: uppercase; color: var(--ink); }
+  .panel-sub, label, .view-intro, .n-note, .model-note, .heat-sub, .heat-legend, footer { font-family: var(--text); }
+  .model-note { background: var(--card-2); border-left: 3px solid var(--accent); border-radius: 0; color: var(--muted); }
+  .table-wrap { border-radius: 0; border: 1px solid var(--line); }
+
+  /* ---- tables ---- */
+  table.shotlog { font-family: var(--text); }
+  table.shotlog th { background: var(--card); color: var(--muted); font-size: 10px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; border-bottom: 1px solid var(--ink); }
+  table.shotlog th.sortable:hover { color: var(--ink); }
+  table.shotlog th.sorted { background: var(--card-2); color: var(--ink); }
+  table.shotlog td { border-bottom: 1px solid var(--line-2); font-family: var(--mono); font-size: 13px; font-variant-numeric: tabular-nums; }
+  table.shotlog.dense td { font-size: 12.5px; }
+  table.shotlog.sortable-table tbody tr:nth-child(even) { background: transparent; }
+  table.shotlog tr:hover { background: var(--card-2); }
+  table.shotlog th.group-head { color: var(--ink); border-left: 1px solid var(--line); }
+
+  /* ---- numbers ---- */
+  .stat-tile { border-radius: 0; font-family: var(--text); background: var(--card); }
+  .stat-tile .name { font-size: 10.5px; letter-spacing: .14em; text-transform: uppercase; font-weight: 600; color: var(--muted); }
+  .stat-tile .value { font-family: var(--num); font-weight: 700; font-size: 30px; line-height: 1; letter-spacing: -.01em; font-variant-numeric: tabular-nums; }
+  .view-tiles .stat-tile .value { font-size: 40px; }
+  .stat-tile .meta { font-family: var(--mono); font-size: 12px; }
+  .stat-tile .delta, .delta-chip { font-family: var(--mono); }
+  .gs-card { border-radius: 0; font-family: var(--text); }
+  .gs-score { font-family: var(--num); font-weight: 700; font-size: 38px; line-height: 1; }
+  .gs-two div, .gs-bar { border-radius: 0; }
+  .gs-gap { border-radius: 0; background: var(--card-2); color: var(--ink); }
+
+  /* ---- controls (sizes kept large for sideline logging) ---- */
+  .pill { font-family: var(--text); border-radius: 3px; }
+  .btn { font-family: var(--text); border-radius: 0; background: var(--chrome); color: #fff; }
+  .btn:hover { background: var(--chrome-2); }
+  .btn.secondary { border-radius: 0; border: 1px solid var(--line); color: var(--ink); background: var(--card); }
+  .btn.danger { border-radius: 0; }
+  .seg { border-radius: 0; border: 1px solid var(--ink); }
+  .seg button { font-family: var(--text); background: var(--card); color: var(--ink); }
+  .seg button + button { border-left: 1px solid var(--ink); }
+  .seg button.active { background: var(--ink); color: var(--card); }
+  select, input[type=date], input[type=text], input[type=number] { font-family: var(--text); border-radius: 0; background: var(--card); color: var(--ink); border-color: var(--line); }
+  .session-bar, .log-card { border-radius: 0; box-shadow: none; background: var(--card); }
+  .log-card-head { font-family: var(--text); color: var(--ink); }
+  .log-card-head .step { background: var(--ink); color: var(--card); }
+  .lineup-bar { border-radius: 0; background: var(--chrome); }
+  /* The lineup bar keeps its dark inputs and gold-outlined buttons in both themes. */
+  .lineup-bar .lb-chip input[type=text], .lineup-bar .lb-chip input { background: rgba(255,255,255,.08); color: #fff; border: 1.5px solid rgba(255,255,255,.18); }
+  .lineup-bar .lb-chip input:focus { border-color: var(--gold); background: rgba(255,255,255,.16); }
+  .lineup-bar .lb-chip input.bad { border-color: #F8696B; }
+  .lineup-bar .lb-unit { background: rgba(255,255,255,.1) !important; color: #fff !important; }
+  .lineup-bar .lb-actions .btn.secondary { background: transparent; color: #E9DFB8; border: 1px solid rgba(212,175,55,.45); }
+  .click-field { border-radius: 0; background: var(--card-2); }
+  .flag-card, .depth-line, .depth-chip { border-radius: 0; }
+  .depth-line { background: var(--card-2); }
+  .depth-chip { background: var(--card); }
+  .depth-pos { background: var(--card); color: var(--ink); border-color: var(--ink); }
+  .filters-box > summary, .heat-cap { font-family: var(--text); color: var(--ink); }
+  .msg { border-radius: 0; font-family: var(--text); }
+  #heatTooltip { font-family: var(--text); background: var(--chrome); border-radius: 0; }
+  #pmBanner { font-family: var(--text); }
+  #pmBanner b { color: var(--ink); }
+  #pmPicker .pm-card { border-radius: 0; }
+  .info-tip { font-family: var(--text); }
+  .heat-img svg, .click-field svg { border-radius: 4px; }
+  @media (max-width: 760px) {
+    header.sd-top { padding: 0 12px; gap: 8px; }
+    .sd-top .sd-sub { display: none; }
+    .view-title { font-size: 28px; }
+    .view-bar { top: calc(94px + env(safe-area-inset-top, 0px)); }
+  }
+  @media print { header.sd-top { display: none !important; } }
+</style>
+
 </head>
 <body>
 
-<div id="authGate" style="min-height:100vh;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:16px;font-family:'Helvetica Neue',Arial,sans-serif;">
+<div id="authGate" style="min-height:100vh;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:16px;font-family:var(--text);">
   <div style="font-size:20px;font-weight:700;color:var(--navy);">WLU Lacrosse &middot; Shot Tracker</div>
   <div id="authGateMsg" style="color:var(--muted);max-width:360px;text-align:center;">Sign in with your coaching staff Google account to continue.</div>
   <button id="authGateBtn" class="sans" style="padding:10px 20px;font-size:14px;font-weight:600;border:1px solid var(--navy);border-radius:6px;background:var(--navy);color:#fff;cursor:pointer;">Sign in with Google</button>
 </div>
 
 <div id="appRoot" style="display:none;">
-<header>
-  <div class="eyebrow">WLU Lacrosse &middot; Live Shot Tracker</div>
-  <h1>Shot Tracking &amp; Heat Maps <span class="badge-shared">Shared data &middot; WLU coaching staff only</span></h1>
-  <p>Log shots as they happen, and heat maps recompute instantly from the live data. This replaces the Excel workbook &mdash; the historical season (2,285 shots) is already loaded in.</p>
+<header class="sd-top">
+  <div class="sd-logo"><div class="sd-w">W<span>&amp;</span>L</div><div class="sd-sub">Generals<br>Stats Desk</div></div>
+  <div class="sd-fill"></div>
+  <button type="button" class="sd-btn" id="themeBtn">Dark</button>
   <button type="button" class="pm-open-btn" id="pmOpenBtn">Player View &rarr;</button>
 </header>
 <div id="pmBanner">
   <span>Player View: <b id="pmBannerName"></b> &mdash; only his data, other players hidden</span>
-  <div class="pm-actions" id="pmExitWrap"><button type="button" class="btn secondary" id="pmExitBtn" style="background:#fff;">Exit Player View</button></div>
+  <div class="pm-actions" id="pmExitWrap"><button type="button" class="btn secondary" id="pmExitBtn" style="background:var(--card);">Exit Player View</button></div>
 </div>
 <div id="pmPicker" role="dialog" aria-label="Pick a player">
   <div class="pm-card">
@@ -445,7 +597,7 @@
               <div class="pill-row" id="f_handedness"></div>
             </div>
           </div>
-          <div id="addPlayerPanel" class="field-grid" style="display:none; border:1px solid var(--line); border-radius:8px; padding:12px; background:#FBFAF6;">
+          <div id="addPlayerPanel" class="field-grid" style="display:none; border:1px solid var(--line); border-radius:8px; padding:12px; background:var(--card-2);">
             <div>
               <label for="np_name">New Player Name</label>
               <input type="text" id="np_name" placeholder="Full name" maxlength="60">
@@ -1005,7 +1157,7 @@
     <div class="panel">
       <p class="panel-title">Roster</p>
       <p class="panel-sub">Uses the season picked above.</p>
-      <div style="border:1px solid var(--line); border-radius:8px; padding:14px; background:#FBFAF6; margin-bottom:18px;" id="rosterManagerWrap"></div>
+      <div style="border:1px solid var(--line); border-radius:8px; padding:14px; background:var(--card-2); margin-bottom:18px;" id="rosterManagerWrap"></div>
     </div>
     </div>
   </section>
@@ -1295,24 +1447,6 @@
       <p class="panel-title">By Trigger</p>
       <p class="panel-sub">Goals added per possession for each offense trigger (5+ possessions), vs an average possession. The trigger doesn&rsquo;t change how player credit is split.</p>
       <div class="table-wrap" id="gaTrigWrap"></div>
-    </div>
-    </div>
-    <div class="subpage" data-label="Win Probability">
-    <div class="panel">
-      <p class="panel-title">Win Probability</p>
-      <div class="model-note" id="wpNote" style="line-height:1.55;"></div>
-      <div class="controls-row" style="margin-bottom:8px;"><div class="control-group"><label for="wpGameSelect">Game</label><select id="wpGameSelect"></select></div></div>
-      <div class="chart-wrap" id="wpChartWrap"></div>
-    </div>
-    <div class="panel">
-      <p class="panel-title">Win Probability Added</p>
-      <p class="panel-sub">Season, games only. Each player&rsquo;s plays valued by how much they moved our chance to win.</p>
-      <div class="table-wrap" id="wpPlayerWrap"></div>
-    </div>
-    <div class="panel">
-      <p class="panel-title">Clutch</p>
-      <p class="panel-sub">Shooting in the top 20% of moments by leverage vs everything else. Players with 3+ timed game shots.</p>
-      <div class="table-wrap" id="wpClutchWrap"></div>
     </div>
     </div>
     <div class="subpage" data-label="Passing">
@@ -1699,14 +1833,18 @@
   </section>
 
   <section id="opponentView" class="view">
+    <div class="view-bar print-hide">
+      <div class="view-bar-row">
+        <div class="view-title">Opponent</div>
+        <div class="control-group"><div class="grade-pills" id="oppSeasonPills"></div></div>
+      </div>
+      <div class="subtabs" data-view="opponentView"></div>
+    </div>
+    <div class="subpage" data-label="History">
     <div class="panel print-hide">
-      <p class="panel-title">Opponent</p>
+      <p class="panel-title">Our History vs an Opponent</p>
       <p class="panel-sub">How the team has actually shot when playing a specific opponent &mdash; not a scouting report on what they do (we only log our own shots), just our history against them. Pick an opponent below, then use Print Report for a clean, shareable page.</p>
       <div class="controls-row">
-        <div class="control-group">
-          <label>Season</label>
-          <div class="grade-pills" id="oppSeasonPills"></div>
-        </div>
         <div class="control-group">
           <label for="opp_select">Opponent</label>
           <select id="opp_select"></select>
@@ -1718,6 +1856,25 @@
       </div>
     </div>
     <div id="opponentReport"></div>
+    </div>
+    <div class="subpage" data-label="Win Probability">
+    <div class="panel">
+      <p class="panel-title">Win Probability</p>
+      <div class="model-note" id="wpNote" style="line-height:1.55;"></div>
+      <div class="controls-row" style="margin-bottom:8px;"><div class="control-group"><label for="wpGameSelect">Game</label><select id="wpGameSelect"></select></div></div>
+      <div class="chart-wrap" id="wpChartWrap"></div>
+    </div>
+    <div class="panel">
+      <p class="panel-title">Win Probability Added</p>
+      <p class="panel-sub">Season, games only. Each player&rsquo;s plays valued by how much they moved our chance to win.</p>
+      <div class="table-wrap" id="wpPlayerWrap"></div>
+    </div>
+    <div class="panel">
+      <p class="panel-title">Clutch</p>
+      <p class="panel-sub">Shooting in the top 20% of moments by leverage vs everything else. Players with 3+ timed game shots.</p>
+      <div class="table-wrap" id="wpClutchWrap"></div>
+    </div>
+    </div>
   </section>
 
   <section id="reportsView" class="view">
@@ -2857,10 +3014,10 @@ function fieldLines(uid, opts) {
     for (let yd = 5; yd <= 20; yd += 5) {
       const [x, y] = projectField(-20.1, yd);
       const fs = (2.6 * FIELD_CAM.refD / (FIELD_CAM.zc - yd)).toFixed(2);
-      s += `<text x="${x.toFixed(2)}" y="${(y + 0.9).toFixed(2)}" text-anchor="middle" font-family="Helvetica Neue, Arial, sans-serif" font-weight="700" font-size="${fs}" fill="rgba(255,255,255,0.75)">${yd}</text>`;
+      s += `<text x="${x.toFixed(2)}" y="${(y + 0.9).toFixed(2)}" text-anchor="middle" font-family="Instrument Sans, Helvetica Neue, Arial, sans-serif" font-weight="700" font-size="${fs}" fill="rgba(255,255,255,0.75)">${yd}</text>`;
     }
     const [gx, gy] = projectField(19.6, 0);
-    s += `<text x="${gx.toFixed(2)}" y="${(gy - 0.8).toFixed(2)}" text-anchor="end" font-family="Helvetica Neue, Arial, sans-serif" font-size="1.7" fill="rgba(255,255,255,0.7)">GLE</text>`;
+    s += `<text x="${gx.toFixed(2)}" y="${(gy - 0.8).toFixed(2)}" text-anchor="end" font-family="Instrument Sans, Helvetica Neue, Arial, sans-serif" font-size="1.7" fill="rgba(255,255,255,0.7)">GLE</text>`;
   }
   return s;
 }
@@ -2890,7 +3047,7 @@ function fieldSVG(zones, opts) {
     const rate = sc.rateOf(z);
     const color = z.n ? heatColor(rate, sc.base, sc.spread) : null;
     const ink = color && z.n >= HEAT_MIN_N ? inkOn(color) : '#FFFFFF';
-    const style = `font-family="Helvetica Neue, Arial, sans-serif" text-anchor="middle" fill="${ink}" style="pointer-events:none;"`;
+    const style = `font-family="Instrument Sans, Helvetica Neue, Arial, sans-serif" text-anchor="middle" fill="${ink}" style="pointer-events:none;"`;
     if (z.n > 0) {
       s += `<text x="${cx.toFixed(2)}" y="${(cy - 0.2 * scale).toFixed(2)}" font-size="${(3.1 * scale).toFixed(2)}" font-weight="700" ${style}>${Math.round(rate * 100)}%</text>`;
       const small = metric === 'save' ? `${z.n - z.goals}/${z.n} saved` : `${z.goals}/${z.n}`;
@@ -2908,7 +3065,7 @@ function fieldSVG(zones, opts) {
       [-1, 1].forEach(side => {
         const [x, y] = projectField(side * dist * t, dist);
         s += `<line x1="${gx.toFixed(2)}" y1="${gy.toFixed(2)}" x2="${x.toFixed(2)}" y2="${y.toFixed(2)}" stroke="#FFFFFF" stroke-width="0.35" stroke-dasharray="1.2,1" opacity="0.85" style="pointer-events:none;"/>`;
-        s += `<text x="${x.toFixed(2)}" y="${(y - 0.8).toFixed(2)}" font-size="2.2" font-family="Helvetica Neue, Arial, sans-serif" text-anchor="middle" fill="#FFFFFF" style="pointer-events:none;">${deg}&deg;</text>`;
+        s += `<text x="${x.toFixed(2)}" y="${(y - 0.8).toFixed(2)}" font-size="2.2" font-family="Instrument Sans, Helvetica Neue, Arial, sans-serif" text-anchor="middle" fill="#FFFFFF" style="pointer-events:none;">${deg}&deg;</text>`;
       });
     });
   }
@@ -3004,7 +3161,7 @@ function goalSVG(cells, opts) {
     if (faded) s += `<rect x="${x0 + 0.5}" y="${y0 + 0.5}" width="${w - 1}" height="${h - 1}" rx="1.2" fill="url(#${uid}hatch)" style="pointer-events:none;"/>`;
     const ink = color && !faded ? inkOn(color) : '#1A1A1A';
     const cx = x0 + w / 2, cy = y0 + h / 2;
-    const tstyle = `font-family="Helvetica Neue, Arial, sans-serif" text-anchor="middle" fill="${ink}" style="pointer-events:none;"`;
+    const tstyle = `font-family="Instrument Sans, Helvetica Neue, Arial, sans-serif" text-anchor="middle" fill="${ink}" style="pointer-events:none;"`;
     if (cell.n > 0) {
       s += `<text x="${cx}" y="${cy + 1}" font-size="6" font-weight="700" ${tstyle}>${Math.round(rate * 100)}%</text>`;
       s += `<text x="${cx}" y="${cy + 6}" font-size="3.3" ${tstyle} opacity="0.9">${metric === 'save' ? `${cell.n - cell.goals}/${cell.n} saved` : `${cell.goals}/${cell.n}`}</text>`;
@@ -3022,7 +3179,7 @@ function goalSVG(cells, opts) {
     });
     s += `</g>`;
     GOAL_GRID_LABELS.forEach((row, r) => row.forEach((label, c) => {
-      s += `<text x="${mx + (c + 0.5) * mw / 3}" y="${my + (r + 0.5) * mh / 3 + 1}" font-size="3" font-family="Helvetica Neue, Arial, sans-serif" text-anchor="middle" fill="#1A1A1A" opacity="0.55" style="pointer-events:none;">${escapeHtml(label)}</text>`;
+      s += `<text x="${mx + (c + 0.5) * mw / 3}" y="${my + (r + 0.5) * mh / 3 + 1}" font-size="3" font-family="Instrument Sans, Helvetica Neue, Arial, sans-serif" text-anchor="middle" fill="#1A1A1A" opacity="0.55" style="pointer-events:none;">${escapeHtml(label)}</text>`;
     }));
   }
   s += goalPipes(uid);
@@ -3302,8 +3459,8 @@ function pmExit() {
 function pmExitArmed(on) {
   const wrap = document.getElementById('pmExitWrap');
   wrap.innerHTML = on
-    ? '<span style="font-weight:700;">Exit Player View?</span> <button type="button" class="btn" id="pmExitYes" style="padding:7px 14px; font-size:12px;">Yes, exit</button> <button type="button" class="btn secondary" id="pmExitNo" style="background:#fff;">Stay</button>'
-    : '<button type="button" class="btn secondary" id="pmExitBtn" style="background:#fff;">Exit Player View</button>';
+    ? '<span style="font-weight:700;">Exit Player View?</span> <button type="button" class="btn" id="pmExitYes" style="padding:7px 14px; font-size:12px;">Yes, exit</button> <button type="button" class="btn secondary" id="pmExitNo" style="background:var(--card);">Stay</button>'
+    : '<button type="button" class="btn secondary" id="pmExitBtn" style="background:var(--card);">Exit Player View</button>';
   if (on) {
     document.getElementById('pmExitYes').addEventListener('click', pmExit);
     document.getElementById('pmExitNo').addEventListener('click', () => pmExitArmed(false));
@@ -3359,6 +3516,17 @@ function pmSweep() {
   if (PM_OBSERVER) PM_OBSERVER.observe(document.body, { childList: true, subtree: true, characterData: true });
 }
 document.getElementById('pmOpenBtn').addEventListener('click', pmPickerOpen);
+// Light / Dark: follows the device until this device picks one (saved here).
+function themeIsDark() { const t = document.documentElement.dataset.theme; return t ? t === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches; }
+function syncThemeBtn() { document.getElementById('themeBtn').textContent = themeIsDark() ? 'Light' : 'Dark'; }
+document.getElementById('themeBtn').addEventListener('click', () => {
+  const next = themeIsDark() ? 'light' : 'dark';
+  document.documentElement.dataset.theme = next;
+  try { localStorage.setItem('wluTheme', next); } catch (e) { /* storage unavailable */ }
+  syncThemeBtn();
+});
+matchMedia('(prefers-color-scheme: dark)').addEventListener('change', syncThemeBtn);
+syncThemeBtn();
 document.getElementById('pmPickerClose').addEventListener('click', () => document.getElementById('pmPicker').classList.remove('open'));
 pmExitArmed(false);
 
@@ -7077,7 +7245,7 @@ function quadrantChartSvg(pts, teamX, teamY, o) {
   const span = Math.max(4, ...pts.map(g => Math.max(Math.abs(g.x - teamX), Math.abs(g.y - teamY)))) * 1.25;
   const px = v => pad + (v - (teamX - span)) / (2 * span) * (W - 2 * pad);
   const py = v => H - pad - (v - (teamY - span)) / (2 * span) * (H - 2 * pad);
-  const t = (x, y, txt, anchor, extra) => `<text x="${x}" y="${y}" text-anchor="${anchor}" font-family="Helvetica Neue, Arial, sans-serif" ${extra || 'font-size="11" fill="var(--muted)"'}>${txt}</text>`;
+  const t = (x, y, txt, anchor, extra) => `<text x="${x}" y="${y}" text-anchor="${anchor}" font-family="Instrument Sans, Helvetica Neue, Arial, sans-serif" ${extra || 'font-size="11" fill="var(--muted)"'}>${txt}</text>`;
   let svg = `<svg viewBox="0 0 ${W} ${H}">`;
   svg += `<rect x="${px(teamX)}" y="${pad}" width="${W - pad - px(teamX)}" height="${py(teamY) - pad}" fill="#E6F4EA" opacity=".6"/>`;
   svg += `<line x1="${pad}" y1="${py(teamY)}" x2="${W - pad}" y2="${py(teamY)}" stroke="var(--muted)" stroke-dasharray="5 4"/>`;
@@ -7088,7 +7256,7 @@ function quadrantChartSvg(pts, teamX, teamY, o) {
   svg += t(W - pad - 6, H - pad - 8, o.br, 'end');
   svg += t(pad + 6, H - pad - 8, 'Below on both', 'start');
   svg += t(W / 2, H - 12, o.xLabel, 'middle', 'font-size="11.5" font-weight="700" fill="var(--navy-3)"');
-  svg += `<text x="14" y="${H / 2}" transform="rotate(-90 14 ${H / 2})" text-anchor="middle" font-family="Helvetica Neue, Arial, sans-serif" font-size="11.5" font-weight="700" fill="var(--navy-3)">${o.yLabel}</text>`;
+  svg += `<text x="14" y="${H / 2}" transform="rotate(-90 14 ${H / 2})" text-anchor="middle" font-family="Instrument Sans, Helvetica Neue, Arial, sans-serif" font-size="11.5" font-weight="700" fill="var(--navy-3)">${o.yLabel}</text>`;
   // Labels go above each dot; one that would sit on top of another's moves
   // below its dot, then out to the side.
   const placed = [];
@@ -7943,7 +8111,7 @@ function rptProjectionLine(j, season) {
   const bits = [];
   if (p && p.shots >= 5) bits.push(`true shooting % about <b>${pjPct(p.sh.m)}</b> (likely ${pjPct(p.sh.lo)}–${pjPct(p.sh.hi)}); over ${PJ_GAMES} games about <b>${Math.round(p.goals17.m)} goals</b> (${Math.round(p.goals17.lo)}–${Math.round(p.goals17.hi)}) and ${Math.round(p.ast17.m)} assists`);
   if (g) bits.push(`true save % about <b>${pjPct(g.save.m)}</b> (likely ${pjPct(g.save.lo)}–${pjPct(g.save.hi)})`);
-  return bits.length ? `<p class="sans" style="font-size:13px; margin-top:14px; padding:8px 10px; background:#FBFAF6; border-left:3px solid var(--gold); border-radius:0 6px 6px 0;"><b>Projection:</b> ${bits.join('; ')}. <span class="n-note">(Efficiency → Projections has the details.)</span></p>` : '';
+  return bits.length ? `<p class="sans" style="font-size:13px; margin-top:14px; padding:8px 10px; background:var(--card-2); border-left:3px solid var(--gold); border-radius:0 6px 6px 0;"><b>Projection:</b> ${bits.join('; ')}. <span class="n-note">(Efficiency → Projections has the details.)</span></p>` : '';
 }
 setupPillGroup('rptModePills', [{ value: 'practice', label: 'Practice' }, { value: 'week', label: 'Week' }], 'practice', v => {
   rptMode = v || 'practice'; if (!v) setPillGroupValue('rptModePills', 'practice'); rptKey = ''; renderReports();
@@ -8127,7 +8295,7 @@ function surfFieldSvg(season, goalie) {
   return svg + `</svg><div class="n-note" style="font-style:normal; margin-top:4px;">Dots: shots he faced (white = save, red = goal). Tap anywhere to see the net from there.</div>`;
 }
 function surfNetHtml(surf) {
-  const cell = c => `<div style="background:${surfColor(c.diff, c.thin)}; border:1px solid rgba(15,31,61,.25); padding:8px 4px; text-align:center; font-family:'Helvetica Neue', Arial, sans-serif; min-height:74px;">
+  const cell = c => `<div style="background:${surfColor(c.diff, c.thin)}; border:1px solid rgba(15,31,61,.25); padding:8px 4px; text-align:center; font-family:var(--text); min-height:74px;">
     <div style="font-size:10.5px; color:var(--navy-3); font-weight:700;">${escapeHtml(c.label)}</div>
     ${c.thin || c.his === null ? '<div class="n-note" style="margin-top:8px;">too few shots</div>'
       : `<div style="font-size:19px; font-weight:700; color:#0F1F3D;">${Math.round(c.his * 100)}%</div><div style="font-size:11px; color:#0F1F3D;">team ${Math.round(c.team * 100)}% · <b>${c.diff >= 0 ? '+' : ''}${Math.round(c.diff * 100)}</b></div><div class="n-note" style="font-style:normal; font-size:10.5px;">${c.raw} shot${c.raw === 1 ? '' : 's'}${surfSpot ? ' near here' : ''}</div>`}
@@ -8172,7 +8340,7 @@ function renderSurface3D(surf) {
       // View buttons: close-up on the cage, or the whole field to pick a spot.
       const bar = document.createElement('div');
       bar.style.cssText = 'position:absolute; top:10px; right:10px; display:flex; gap:6px;';
-      bar.innerHTML = [['cage', 'Close-up'], ['field', 'Field view']].map(([v, l]) => `<button type="button" class="btn secondary" data-v="${v}" style="padding:4px 10px; font-size:12px; background:#fff;">${l}</button>`).join('');
+      bar.innerHTML = [['cage', 'Close-up'], ['field', 'Field view']].map(([v, l]) => `<button type="button" class="btn secondary" data-v="${v}" style="padding:4px 10px; font-size:12px; background:var(--card);">${l}</button>`).join('');
       bar.addEventListener('click', e => { const b = e.target.closest('button'); if (b) { surfView = b.dataset.v; surf3dView(surfView); } });
       wrap.appendChild(bar);
       const size = () => { const w = wrap.clientWidth || 700, h = wrap.clientHeight || 420; renderer.setSize(w, h); camera.aspect = w / h; camera.updateProjectionMatrix(); };
@@ -8699,7 +8867,7 @@ function wpChartSvg(tl, season) {
   const W = 680, H = 260, padL = 40, padR = 14, padT = 14, padB = 30;
   const maxT = Math.max(60, ...tl.pts.map(p => p.t));
   const px = t => padL + t / maxT * (W - padL - padR), py = v => padT + (1 - v) * (H - padT - padB);
-  let svg = `<svg viewBox="0 0 ${W} ${H}" font-family="Helvetica Neue, Arial, sans-serif" style="width:100%; background:#fff; border:1px solid var(--line); border-radius:8px;">`;
+  let svg = `<svg viewBox="0 0 ${W} ${H}" font-family="Instrument Sans, Helvetica Neue, Arial, sans-serif" style="width:100%; background:var(--card); border:1px solid var(--line); border-radius:8px;">`;
   [0, 0.25, 0.5, 0.75, 1].forEach(v => { svg += `<line x1="${padL}" y1="${py(v)}" x2="${W - padR}" y2="${py(v)}" stroke="var(--line)"/><text x="${padL - 6}" y="${py(v) + 4}" text-anchor="end" font-size="10" fill="var(--muted)">${v * 100}%</text>`; });
   [15, 30, 45, 60].forEach(t => { svg += `<line x1="${px(t)}" y1="${padT}" x2="${px(t)}" y2="${H - padB}" stroke="var(--line)" stroke-dasharray="3 3"/><text x="${px(t - 7.5)}" y="${H - 10}" text-anchor="middle" font-size="10.5" fill="var(--muted)">Q${t / 15}</text>`; });
   let d = '';
@@ -8720,7 +8888,7 @@ function wpChartSvg(tl, season) {
 function renderWinProb() {
   const wrap = document.getElementById('wpChartWrap');
   if (!wrap) return;
-  const season = EFF_SEASON, r = computeWinProb(season);
+  const season = isAdvSeason(oppSeason) ? oppSeason : currentAdvSeason(), r = computeWinProb(season);
   document.getElementById('wpNote').innerHTML = `Our chance to win at every moment, from the score and time left: each team scores at its usual rate per minute (WLU ${(r.lw * 60).toFixed(1)} goals a game, opponents ${(r.lo * 60).toFixed(1)}${r.own ? ', from this season&rsquo;s games' : ' &mdash; from ' + escapeHtml(r.src) + ' games, opponents assumed even, until 3+ games are logged'}), and a tie after regulation goes to sudden death. <b>Leverage</b> = how much one goal swings that chance right then. <b>Win probability added</b> = each player&rsquo;s Goals Added credits, each worth that moment&rsquo;s swing. <b>Clutch</b> = the top 20% of moments by leverage. Needs the quarter and clock logged on game entries.`;
   const sel = document.getElementById('wpGameSelect');
   const gs = r.games.filter(g => r.timeline[g.id].pts.length > 1).sort((a, b) => (b.date || '').localeCompare(a.date || ''));
@@ -9216,7 +9384,7 @@ function pnPlayerSvg(data, season, j, out, inn) {
   ids.forEach(p => { pos[p][0] = Math.max(padX + 20, Math.min(W - padX - 20, pos[p][0])); pos[p][1] = Math.max(top - 6, Math.min(H - 20, pos[p][1])); });
   const edges = out.concat(inn), maxN = Math.max(1, ...edges.map(e => e.n));
   const colors = ['#0ca30c', '#7DBE4A', '#C9A400', '#E8761F', '#d03b3b'];
-  let svg = `<svg viewBox="0 0 ${W} ${H}" font-family="Helvetica Neue, Arial, sans-serif" style="background:#2F6B44; border-radius:10px;">`;
+  let svg = `<svg viewBox="0 0 ${W} ${H}" font-family="Instrument Sans, Helvetica Neue, Arial, sans-serif" style="background:#2F6B44; border-radius:10px;">`;
   svg += `<defs>${colors.map((c, i) => `<marker id="pnArr${i}" viewBox="0 0 10 10" refX="9" refY="5" markerUnits="userSpaceOnUse" markerWidth="13" markerHeight="13" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="${c}"/></marker>`).join('')}</defs>`;
   svg += `<line x1="${padX}" y1="${fy(0)}" x2="${W - padX}" y2="${fy(0)}" stroke="#fff" stroke-opacity=".7"/>`;
   svg += `<circle cx="${fx(0)}" cy="${fy(0)}" r="${3 / 38 * (W - 2 * padX)}" fill="#fff" fill-opacity=".08" stroke="#fff" stroke-opacity=".6"/>`;
@@ -10190,7 +10358,7 @@ function renderZoneMap(shots, xgOf) {
   svg += `<polyline points="${X(-1)},${Y(0)} ${X(0)},${Y(-2.3)} ${X(1)},${Y(0)}" fill="none" stroke="#E8621F" stroke-width="0.35" ${np}/>`;
   svg += `<line x1="${X(-1)}" y1="${Y(0)}" x2="${X(1)}" y2="${Y(0)}" stroke="#FF8A3D" stroke-width="0.7" stroke-linecap="round" ${np}/>`;
   svg += `<circle cx="${X(-1)}" cy="${Y(0)}" r="0.5" fill="#E8621F" ${np}/><circle cx="${X(1)}" cy="${Y(0)}" r="0.5" fill="#E8621F" ${np}/>`;
-  const ft = `font-family="Helvetica Neue, Arial, sans-serif"`;
+  const ft = `font-family="Instrument Sans, Helvetica Neue, Arial, sans-serif"`;
   [5, 10, 15, 20].forEach(d => { svg += `<text x="${X(-20.55)}" y="${(Y(d) + 0.7).toFixed(2)}" font-size="1.7" font-weight="700" text-anchor="middle" fill="rgba(255,255,255,0.75)" ${ft} ${np}>${d}</text>`; });
   svg += `<text x="${X(19.6)}" y="${(Y(0) - 0.6).toFixed(2)}" font-size="1.5" text-anchor="end" fill="rgba(255,255,255,0.7)" ${ft} ${np}>GLE</text>`;
   // Labels.
@@ -10377,7 +10545,6 @@ function renderEfficiencyView() {
   renderXg2Tab();
   renderPassingNetwork();
   renderGoalsAdded();
-  renderWinProb();
 }
 setupPillGroup('effSeasonPills', ADV_SEASONS, EFF_SEASON, v => {
   if (v) EFF_SEASON = v;
@@ -11437,8 +11604,9 @@ function renderOpponent() {
   if (!document.getElementById('opp_select')) return;
   populateOpponentSelect();
   renderOpponentReport();
+  renderWinProb();
 }
-setupSeasonPills('oppSeasonPills', (s) => { oppSeason = s; populateOpponentSelect(); renderOpponentReport(); }, oppSeason);
+setupSeasonPills('oppSeasonPills', (s) => { oppSeason = s; populateOpponentSelect(); renderOpponentReport(); renderWinProb(); }, oppSeason);
 document.getElementById('opp_select').addEventListener('change', renderOpponentReport);
 document.getElementById('opp_print').addEventListener('click', () => window.print());
 
