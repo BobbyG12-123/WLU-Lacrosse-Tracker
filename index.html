@@ -248,6 +248,7 @@
   #pmPicker .pm-card { background: var(--card); border-radius: 12px; padding: 22px; max-width: 760px; width: 100%; box-shadow: 0 10px 40px rgba(0,0,0,.3); }
   #pmPicker .pm-group { font-family: 'Helvetica Neue', Arial, sans-serif; font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); margin: 14px 0 8px; }
   body.player-mode .pm-hide, body.player-mode .pm-open-btn,
+  .tab-btn.owner-off, .view.owner-off { display: none !important; }
   body.player-mode .tab-btn.pm-off, body.player-mode .view.pm-off,
   body.player-mode #playerView .subtab-btn[data-label="Roster"],
   body.player-mode #exportShotsBtn, body.player-mode #resetDataBtn, body.player-mode #resetConfirmPanel,
@@ -978,6 +979,28 @@
       </div>
     </details>
     </div>
+    <div class="subpage" data-label="Projections">
+    <div class="panel">
+      <p class="panel-title">Projections &mdash; 17-Game Season</p>
+      <div class="model-note" id="pjNote" style="line-height:1.55;"></div>
+      <div class="table-wrap" id="pjSeasonWrap"></div>
+    </div>
+    <div class="panel">
+      <p class="panel-title">True Level</p>
+      <p class="panel-sub" id="pjTrueSub"></p>
+      <div class="table-wrap" id="pjShootWrap"></div>
+    </div>
+    <div class="panel">
+      <p class="panel-title">Goals Added</p>
+      <p class="panel-sub">True goals added per session, and over 17 games at that rate (rough &mdash; built on practice sessions).</p>
+      <div class="table-wrap" id="pjGaWrap"></div>
+    </div>
+    <div class="panel">
+      <p class="panel-title">Ball Security</p>
+      <p class="panel-sub">Players with 10+ touches (shots, passes that led to a shot, turnovers).</p>
+      <div class="table-wrap" id="pjBallWrap"></div>
+    </div>
+    </div>
     <div class="subpage" data-label="Roster">
     <div class="panel">
       <p class="panel-title">Roster</p>
@@ -1132,6 +1155,13 @@
       <div class="trend-grid" id="goalieTrendsDownGrid"></div>
     </div>
     </div>
+    <div class="subpage" data-label="Projections">
+    <div class="panel">
+      <p class="panel-title">Goalie Projections</p>
+      <p class="panel-sub" id="pjGoalieSub"></p>
+      <div class="table-wrap" id="pjGoalieWrap"></div>
+    </div>
+    </div>
   </section>
 
   <section id="defenseView" class="view">
@@ -1267,29 +1297,6 @@
       <div class="table-wrap" id="gaTrigWrap"></div>
     </div>
     </div>
-    <div class="subpage" data-label="Projections">
-    <div class="panel">
-      <p class="panel-title">Projections</p>
-      <div class="model-note" id="pjNote" style="line-height:1.55;"></div>
-      <p class="panel-title" style="font-size:15px;">Shooting &amp; Season Totals</p>
-      <div class="table-wrap" id="pjShootWrap"></div>
-    </div>
-    <div class="panel">
-      <p class="panel-title">Goals Added</p>
-      <p class="panel-sub">True goals added per session, and over 17 games at that rate (rough &mdash; built on practice sessions).</p>
-      <div class="table-wrap" id="pjGaWrap"></div>
-    </div>
-    <div class="panel">
-      <p class="panel-title">Ball Security</p>
-      <p class="panel-sub">Players with 10+ touches (shots, passes that led to a shot, turnovers).</p>
-      <div class="table-wrap" id="pjBallWrap"></div>
-    </div>
-    <div class="panel">
-      <p class="panel-title">Goalies</p>
-      <p class="panel-sub">True level from this season&rsquo;s shots on cage, and a 17-game season as the starter.</p>
-      <div class="table-wrap" id="pjGoalieWrap"></div>
-    </div>
-    </div>
     <div class="subpage" data-label="Win Probability">
     <div class="panel">
       <p class="panel-title">Win Probability</p>
@@ -1310,19 +1317,18 @@
     </div>
     <div class="subpage" data-label="Passing">
     <div class="panel">
-      <p class="panel-title">Passing Network</p>
+      <p class="panel-title">Passing</p>
       <p class="panel-sub" id="pnSub"></p>
-      <div class="controls-row" style="margin-bottom:8px;"><div class="control-group"><label>Layout</label><div class="pill-row" id="pnLayoutPills"></div></div></div>
-      <div class="chart-wrap" id="pnNetWrap" style="max-width:720px;"></div>
+      <div class="pill-row" id="pnPlayerPills" style="margin-bottom:10px; flex-wrap:wrap;"></div>
+      <div style="display:flex; gap:20px; flex-wrap:wrap; align-items:flex-start;">
+        <div class="chart-wrap" id="pnNetWrap" style="flex:1 1 440px; max-width:680px;"></div>
+        <div id="pnPlayerWrap" style="flex:1 1 240px;"></div>
+      </div>
     </div>
     <div class="panel">
       <p class="panel-title">Connections</p>
       <p class="panel-sub">Every passer &rarr; shooter pair with 3+ feeds. Lift = how much better the shooter finishes off this passer than on his other shots.</p>
       <div class="table-wrap" id="pnTableWrap"></div>
-    </div>
-    <div class="panel">
-      <div class="controls-row" style="margin-bottom:8px;"><div class="control-group"><label for="pnPlayerSelect">Player</label><select id="pnPlayerSelect"></select></div></div>
-      <div id="pnPlayerWrap"></div>
     </div>
     </div>
     <div class="subpage" data-label="Per Touch">
@@ -1897,6 +1903,9 @@ firebase.initializeApp({
   appId: "1:896246870043:web:ccf40f407b6963b4d548be"
 });
 
+// Data Health is only shown to this account (hidden for every other coach).
+const DATA_HEALTH_OWNER = 'rdglax22@icloud.com';
+let IS_DH_OWNER = false;
 const ALLOWED_COACHES = ['bgriffith@wlu.edu', 'rdglax22@icloud.com', 'wgarrett@wlu.edu', 'mccabee@wlu.edu', '5cornersports@gmail.com', 'eugenemccabe11@gmail.com', 'tfmarcille@gmail.com'];
 
 document.getElementById('authGateBtn').addEventListener('click', () => {
@@ -1925,6 +1934,8 @@ firebase.auth().onAuthStateChanged(user => {
     return;
   }
   gate.style.display = 'none'; app.style.display = '';
+  IS_DH_OWNER = email === DATA_HEALTH_OWNER;
+  document.querySelectorAll('.tab-btn[data-view="healthView"], #healthView').forEach(el => el.classList.toggle('owner-off', !IS_DH_OWNER));
   if (!window.__appInited) { window.__appInited = true; init(); }
 });
 </script>
@@ -2441,6 +2452,18 @@ async function loadAll() {
     rebuildFaceoffs();
     renderFaceoffs();
   }, e => console.error('faceoffs sync error', e));
+  // Official prior-season stats (for projections) and the coach's roles.
+  ADV_SEASONS.forEach(season => {
+    const prev = String(Number(season) - 1);
+    DB.doc('app/official_' + prev).onSnapshot(snap => {
+      try { const o = snap.exists ? cleanDeep(JSON.parse(snap.data().json || 'null')) : null; if (o && Array.isArray(o.players)) OFFICIAL[prev] = o; else delete OFFICIAL[prev]; } catch (e) { console.error('official stats parse', e); }
+      if (window.__appReady) renderSkaterProjections();
+    }, e => console.error('official stats sync error', e));
+    DB.doc('app/projRoles_' + season).onSnapshot(snap => {
+      try { const o = snap.exists ? cleanDeep(JSON.parse(snap.data().json || '{}')) : {}; PJ_SET[season] = { role: o.role || {}, bump: o.bump || {}, link: o.link || {} }; } catch (e) { console.error('roles parse', e); }
+      if (window.__appReady) renderSkaterProjections();
+    }, e => console.error('roles sync error', e));
+  });
   ADV_SEASONS.forEach(season => DB.doc('app/positions_' + season).onSnapshot(snap => {
     try { const o = snap.exists ? JSON.parse(snap.data().json || '{}') : {}; const clean = {}; Object.keys(o).forEach(j => { if (validJerseyText(j) && (o[j] === 'A' || o[j] === 'M' || o[j] === 'X')) clean[j] = o[j]; }); POSITIONS[season] = clean; } catch (e) { POSITIONS[season] = {}; }
     if (window.__appReady) renderDepthChart();
@@ -2467,6 +2490,8 @@ function rerenderAfterShotsChange() {
   renderGoalieTrends();
   renderGoalieHeat();
   renderGoalieAdvanced();
+  renderGoalieProjections();
+  renderSkaterProjections();
   renderEfficiencyView();
   renderShooterScore();
   renderDefense();
@@ -3137,6 +3162,7 @@ function populateSelect(sel, items, placeholderText, includeEmptyNet) {
 
 // ---------------- Tabs ----------------
 function switchTab(viewId) {
+  if (viewId === 'healthView' && !IS_DH_OWNER) return;
   document.querySelectorAll('.tab-btn').forEach(b=>b.classList.toggle('active', b.dataset.view === viewId));
   document.querySelectorAll('.view').forEach(v=>v.classList.toggle('active', v.id === viewId));
   if (viewId === 'playerView') { renderPlayerHeat(); renderShooterScore(); }
@@ -8148,7 +8174,7 @@ function renderSurface3D(surf) {
     }
     SURF3D.size();
     drawSurface3D(surf);
-  }).catch(() => { SURF3D = null; wrap.innerHTML = '<p class="sans" style="color:#fff; font-size:13px; padding:14px;">The 3D view couldn&rsquo;t start in this browser (3D graphics are turned off, or there&rsquo;s no internet connection). The 2D view has the same numbers.</p>'; });
+  }).catch(e => { SURF3D = null; wrap.innerHTML = threeFailMsg(e, '#fff'); });
 }
 function drawSurface3D(surf) {
   if (!SURF3D) return;
@@ -8701,14 +8727,45 @@ function renderWinProb() {
 }
 document.getElementById('wpGameSelect').addEventListener('change', e => { wpGame = e.target.value; renderWinProb(); });
 
-// ---------------- Efficiency > Projections ----------------
+// ---------------- Player / Goalie > Projections ----------------
 // True level going forward: each rate is pulled toward the team by k reps,
 // where k comes from the split-half reliability on the Data Health tab
-// (k = reps needed for 70% x 0.3 / 0.7), with an 80% range. Season totals
-// are for the 17 spring games: his share of team shots x team shots per
-// game (2026 games until 3+ games are logged this season) x 17, at his true
-// rate adjusted by the game-vs-practice shooting ratio. Goalies are framed
-// as starting all 17, facing as many shots on cage as we took per game.
+// (k = reps needed for 70% x 0.3 / 0.7), with an 80% range.
+// Season totals (17 spring games) are built on playing time: last season's
+// official shots per game (app/official_<prev>), scaled by the role the
+// coach expects this year vs the role he had (role averages from the same
+// official stats), plus the coach's bump. New players use the role average.
+// Goals = those shots x his true fall Sh% x the game-vs-practice ratio.
+// Without official stats it falls back to his share of practice shots.
+// Goalies are framed as starting all 17, facing as many shots on cage as we
+// took per game.
+let OFFICIAL = {}; // { '2026': { teamGames, players: [{ j, name, gp, gs, g, a, sh }] } }
+let PJ_SET = {};   // { season: { role: { jersey: 'S'|'R'|'B'|'N' }, bump: { jersey: shots/game }, link: { jersey: official name } } }
+const PJ_ROLES = [['S', 'Starter'], ['R', 'Rotation'], ['B', 'Reserve'], ['N', 'Won\u2019t play']];
+const PJ_ROLE_NAME = Object.fromEntries(PJ_ROLES);
+function pjNameKey(n) { return String(n || '').toLowerCase().replace(/[^a-z]/g, ''); }
+// Last season's role from games played / started.
+function pjRoleOf(o, teamGames) { return o.gs >= o.gp / 2 ? 'S' : o.gp >= Math.ceil(teamGames / 2) ? 'R' : 'B'; }
+function pjOfficial(season) {
+  const off = OFFICIAL[String(Number(season) - 1)];
+  if (!off) return null;
+  const tg = off.teamGames || 1, avg = {};
+  off.players.filter(o => o.gp > 0 && o.sh / o.gp >= 1).forEach(o => { const r = pjRoleOf(o, tg), a = (avg[r] = avg[r] || { shots: 0, ast: 0, n: 0 }); a.shots += o.sh / o.gp; a.ast += o.a / o.gp; a.n++; });
+  Object.values(avg).forEach(a => { a.shots /= a.n; a.ast /= a.n; });
+  const byKey = {}; off.players.forEach(o => { byKey[pjNameKey(o.name)] = o; });
+  return { season: String(Number(season) - 1), teamGames: tg, players: off.players, byKey, avg };
+}
+function pjMatch(j, season, off) {
+  if (!off) return null;
+  const link = ((PJ_SET[season] || {}).link || {})[j];
+  if (link === '__NEW__') return null;
+  return off.byKey[pjNameKey(link || nameFor(j, season))] || null;
+}
+async function persistPjSet(season) {
+  if (!DB) return false;
+  try { await DB.doc('app/projRoles_' + season).set({ json: JSON.stringify(PJ_SET[season] || {}) }); } catch (e) { console.error(e); return false; }
+  return true;
+}
 const PJ_GAMES = 17, PJ_Z80 = 1.2816, PJ_MIN_GAMES = 3;
 const PJ_FALLBACK_K = { sh: 25, oncage: 30, ongoal: 35, fin: 40, save: 60, sve: 60, to: 15, pa: 25 };
 function pjK(season) {
@@ -8755,26 +8812,38 @@ function computeProjections(season) {
   let tTouch = 0, tTo = 0, tPa = 0;
   Object.values(d.players).forEach(p => { const t = p.shots + p.potAst + p.to; tTouch += t; tTo += p.to; tPa += p.potAst; });
   const ga = computeGoalsAddedFor(season);
+  const off = pjOfficial(season), set = PJ_SET[season] || {};
   const players = Array.from(new Set(shots.map(s => s.shooterJersey).concat(Object.keys(d.players)))).map(j => {
     const mine = shots.filter(s => s.shooterJersey === j), n = mine.length, g = mine.filter(s => s.goal === 1).length, oc = mine.filter(s => s.onKeeper === 1).length;
     const p = d.players[j] || { shots: 0, potAst: 0, to: 0 };
     const touches = p.shots + p.potAst + p.to;
     const sh = pjBinom(g, n, teamSh, k.sh);
-    const share = n / team.n;
-    const shots17 = share * base.shotsPerGame * PJ_GAMES;
+    // Playing time: shots and assists per game.
+    const o = pjMatch(j, season, off), role26 = o && o.gp > 0 ? pjRoleOf(o, off.teamGames) : null;
+    const role = (set.role || {})[j] || role26 || null, bump = Number((set.bump || {})[j]) || 0;
+    let spg = null, apg = null;
+    if (!off) {
+      const astShare = assisted.length ? assisted.filter(s => s.assistJersey === j).length / assisted.length : 0;
+      spg = n / team.n * base.shotsPerGame; apg = base.goalsPerGame * assistedFrac * astShare;
+    } else if (role === 'N') { spg = 0; apg = 0; }
+    else if (role && role26 && off.avg[role] && off.avg[role26]) {
+      const ratio = off.avg[role].shots / off.avg[role26].shots;
+      spg = Math.max(0, o.sh / o.gp * ratio + bump); apg = o.a / o.gp * ratio;
+    } else if (role && off.avg[role]) { spg = Math.max(0, off.avg[role].shots + bump); apg = off.avg[role].ast; }
+    const shots17 = spg === null ? null : spg * PJ_GAMES;
     const pG = sh.m * base.gameFactor;
-    const goalsVar = shots17 * pG * (1 - pG) + shots17 * shots17 * (sh.sd * base.gameFactor) ** 2;
-    const goals17 = shots17 * pG;
-    const astShare = assisted.length ? assisted.filter(s => s.assistJersey === j).length / assisted.length : 0;
-    const ast17 = base.goalsPerGame * PJ_GAMES * assistedFrac * astShare;
+    const goalsVar = shots17 === null ? 0 : shots17 * pG * (1 - pG) + shots17 * shots17 * (sh.sd * base.gameFactor) ** 2;
+    const goals17 = shots17 === null ? null : shots17 * pG;
+    const ast17 = apg === null ? null : apg * PJ_GAMES;
+    const rng = (m, v) => m === null ? null : { m, lo: Math.max(0, m - PJ_Z80 * Math.sqrt(v)), hi: m + PJ_Z80 * Math.sqrt(v) };
     const gaRow = ga.byPlayer[j];
     return {
       jersey: j, name: nameFor(j, season), shots: n,
       sh, oncage: pjBinom(oc, n, teamOC, k.oncage), ongoal: pjBinom(g, oc, teamOG, k.ongoal),
       fin: pjMean(mine.reduce((a, s) => a + (s.goal === 1 ? 1 : 0) - xgForShot(s, xm), 0), n, 0, k.fin, finVar),
       to: pjBinom(p.to, touches, tTouch ? tTo / tTouch : 0, k.to), pa: pjBinom(p.potAst, touches, tTouch ? tPa / tTouch : 0, k.pa), touches,
-      shots17, goals17: { m: goals17, lo: Math.max(0, goals17 - PJ_Z80 * Math.sqrt(goalsVar)), hi: goals17 + PJ_Z80 * Math.sqrt(goalsVar) },
-      ast17: { m: ast17, lo: Math.max(0, ast17 - PJ_Z80 * Math.sqrt(ast17)), hi: ast17 + PJ_Z80 * Math.sqrt(ast17) },
+      off: o, role26, role, bump, spg, apg, trueGameSh: pG,
+      shots17, goals17: rng(goals17, goalsVar), ast17: rng(ast17, ast17), pts17: goals17 === null ? null : rng(goals17 + ast17, goalsVar + ast17),
       ga: gaRow || null,
     };
   });
@@ -8795,7 +8864,7 @@ function computeProjections(season) {
     const sd17 = gameSave === null ? null : Math.sqrt(faced17 * gameSave * (1 - gameSave) + faced17 * faced17 * save.sd * save.sd);
     return { jersey: j, name: nameFor(j, season), faced: l.length, save, sve, gameSave, faced17, saves17: saves17 === null ? null : { m: saves17, lo: saves17 - PJ_Z80 * sd17, hi: saves17 + PJ_Z80 * sd17 } };
   });
-  return { base, k, measured, players, goalies, assistedFrac, gaSessK: ga.k };
+  return { base, k, measured, players, goalies, assistedFrac, gaSessK: ga.k, off };
 }
 // Goals Added per session, with its own empirical-Bayes shrinkage: k =
 // (variation within a player across sessions) / (true spread between players).
@@ -8824,25 +8893,69 @@ function pjCell(e, f) { return e ? `<span style="white-space:nowrap;"><b>${f(e.m
 const pjPct = v => v === null || v === undefined ? '—' : Math.round(v * 100) + '%';
 const pjNum = d => v => v === null || v === undefined ? '—' : (Math.abs(v) < 1e-9 ? 0 : v).toFixed(d);
 const pjSigned = d => v => v === null || v === undefined ? '—' : (v >= 0 ? '+' : '') + v.toFixed(d);
-function renderProjections() {
-  const wrap = document.getElementById('pjShootWrap');
+function pjNotAdv(season) { return `<p class="sans" style="color:var(--muted); font-size:13px;">Projections start with the ${ADV_FIRST_SEASON} season &mdash; pick ${ADV_FIRST_SEASON} or later above.</p>`; }
+function renderSkaterProjections() {
+  const wrap = document.getElementById('pjSeasonWrap');
   if (!wrap) return;
-  const season = EFF_SEASON, r = computeProjections(season), b = r.base;
-  document.getElementById('pjNote').innerHTML = `<b>True level</b> = what each player&rsquo;s numbers point to going forward: his ${escapeHtml(season)} results pulled toward the team by how much each stat can be trusted at his number of reps (measured on the Data Health tab${Object.keys(r.measured).length < 8 ? '; a default is used where there isn&rsquo;t enough data yet' : ''}). The range in gray is where he&rsquo;ll likely land &mdash; about 4 times out of 5. <b>17-game totals</b> use his share of our ${escapeHtml(season)} shots &times; ${b.shotsPerGame.toFixed(1)} team shots per game (${b.useOwn ? 'this season&rsquo;s games' : escapeHtml(b.src) + ' games, until ' + PJ_MIN_GAMES + '+ games are logged this season'}), at his true shooting % &times; ${b.gameFactor.toFixed(2)} (game vs practice shooting in ${escapeHtml(b.src)}). Assists use the share of goals that were assisted this season (${Math.round(r.assistedFrac * 100)}%) and his share of those assists. Goalies are shown as if starting all 17, facing ${b.facedPerGame.toFixed(1)} shots on cage a game${b.useOwn ? '' : ' (mirroring ours in ' + escapeHtml(b.src) + ')'}. Projections use every ${escapeHtml(season)} session regardless of the Practice / Game pill.`;
+  const season = heatSeason;
+  if (!isAdvSeason(season)) {
+    document.getElementById('pjNote').innerHTML = pjNotAdv(season);
+    ['pjSeasonWrap', 'pjShootWrap', 'pjGaWrap', 'pjBallWrap'].forEach(id => { document.getElementById(id).innerHTML = ''; });
+    document.getElementById('pjTrueSub').textContent = '';
+    return;
+  }
+  const r = computeProjections(season), b = r.base, off = r.off, set = PJ_SET[season] || {};
+  const prev = String(Number(season) - 1);
+  document.getElementById('pjNote').innerHTML = off
+    ? `Built on <b>playing time</b>: each returner starts from his ${escapeHtml(prev)} shots and assists per game (official stats, ${off.teamGames} games). His <b>role</b> this year scales that by what ${escapeHtml(prev)} players in that role averaged (Starter ${num(off.avg.S ? off.avg.S.shots : null, 1)} shots a game, Rotation ${num(off.avg.R ? off.avg.R.shots : null, 1)}, Reserve ${num(off.avg.B ? off.avg.B.shots : null, 1)}) &mdash; same role, same volume. <b>Bump</b> adds or takes away shots per game on top. New players get the role average. <b>Goals</b> = those shots &times; his true ${escapeHtml(season)} fall shooting % &times; ${b.gameFactor.toFixed(2)} (game vs practice shooting in ${escapeHtml(b.src)}). The range in gray is where he&rsquo;ll likely land &mdash; about 4 times out of 5.${PLAYER_MODE ? '' : ' Tap a role or the bump to change it; it saves for every coach.'}`
+    : `Official ${escapeHtml(prev)} stats aren&rsquo;t loaded, so totals use each player&rsquo;s share of ${escapeHtml(season)} practice shots &times; ${b.shotsPerGame.toFixed(1)} team shots per game. Roles and bumps need the official stats.`;
+  // Unmatched: players without official stats who might not be freshmen.
+  const matchedNames = new Set(r.players.filter(p => p.off).map(p => p.off.name));
+  const unclaimed = off ? off.players.filter(o => o.gp > 0 && !matchedNames.has(o.name)).sort((a, b2) => b2.sh - a.sh) : [];
+  const rows = r.players.filter(p => p.shots >= 5 || (set.role || {})[p.jersey]);
+  const roleCell = p => {
+    if (PLAYER_MODE) return p.role ? escapeHtml(PJ_ROLE_NAME[p.role]) : '—';
+    if (!off) return '—';
+    const pills = PJ_ROLES.map(([v, l]) => `<button type="button" class="pill pj-role${p.role === v ? ' active' : ''}" data-j="${escapeHtml(p.jersey)}" data-v="${v}" style="padding:2px 8px; font-size:11px; white-space:nowrap;">${l}</button>`).join('');
+    const flag = p.off ? '' : `<div class="n-note" style="margin-top:3px;">No ${escapeHtml(prev)} stats found${(set.link || {})[p.jersey] === '__NEW__' ? ' (new player)' : ''}. ${unclaimed.length && (set.link || {})[p.jersey] !== '__NEW__' ? `<button type="button" class="pj-linkbtn" data-j="${escapeHtml(p.jersey)}" style="font-size:11px;">Link to last year&hellip;</button>` : ''}</div><div class="pj-linkrow" data-j="${escapeHtml(p.jersey)}" style="display:none; flex-wrap:wrap; gap:4px; margin-top:4px;"><button type="button" class="pill pj-link" data-j="${escapeHtml(p.jersey)}" data-v="__NEW__" style="padding:2px 8px; font-size:11px;">New player</button>${unclaimed.map(o => `<button type="button" class="pill pj-link" data-j="${escapeHtml(p.jersey)}" data-v="${escapeHtml(o.name)}" style="padding:2px 8px; font-size:11px;">#${escapeHtml(o.j)} ${escapeHtml(o.name)}</button>`).join('')}</div>`;
+    return `<div style="display:flex; gap:3px; flex-wrap:nowrap;">${pills}</div>${flag}`;
+  };
+  const bumpCell = p => {
+    const v = p.bump ? (p.bump > 0 ? '+' : '') + p.bump.toFixed(1) : '0';
+    if (PLAYER_MODE || !off) return v;
+    return `<span style="white-space:nowrap;"><button type="button" class="pj-bump" data-j="${escapeHtml(p.jersey)}" data-d="-0.5" style="width:24px;">&minus;</button> <b style="display:inline-block; min-width:30px; text-align:center;">${v}</b> <button type="button" class="pj-bump" data-j="${escapeHtml(p.jersey)}" data-d="0.5" style="width:24px;">+</button></span>`;
+  };
+  const cols = [
+    { key: 'jersey', label: '#', type: 'text', value: p => p.jersey },
+    { key: 'name', label: 'Name', type: 'text', value: p => p.name, format: nameCell },
+    { key: 'role', label: 'Role This Year', type: 'text', value: p => p.role || 'Z', format: (v, p) => roleCell(p), sortable: !!PLAYER_MODE },
+    { key: 'bump', label: 'Bump (shots/game)', type: 'num', value: p => p.bump, format: (v, p) => bumpCell(p) },
+  ];
+  if (off) cols.push(
+    { key: 'gp', label: 'GP-GS', type: 'num', value: p => p.off ? p.off.gp : null, format: (v, p) => p.off ? `${p.off.gp}-${p.off.gs}` : '—', group: prev },
+    { key: 'ga26', label: 'G-A', type: 'num', value: p => p.off ? p.off.g + p.off.a : null, format: (v, p) => p.off ? `${p.off.g}-${p.off.a}` : '—', group: prev },
+    { key: 'spg26', label: 'Shots/Game', type: 'num', value: p => p.off && p.off.gp ? p.off.sh / p.off.gp : null, format: v => v === null ? '—' : v.toFixed(1), group: prev },
+  );
+  cols.push(
+    { key: 'spg', label: 'Shots/Game', type: 'num', value: p => p.spg, format: v => v === null ? '—' : v.toFixed(1), group: `${PJ_GAMES} games` },
+    { key: 'trueSh', label: 'Game Sh%', type: 'num', value: p => p.trueGameSh, format: v => pjPct(v), group: `${PJ_GAMES} games`, title: 'His true fall shooting % adjusted to game shooting.' },
+    { key: 'goals17', label: 'Goals', type: 'num', value: p => p.goals17 ? p.goals17.m : null, format: (v, p) => pjCell(p.goals17, x => Math.round(x)), group: `${PJ_GAMES} games` },
+    { key: 'ast17', label: 'Assists', type: 'num', value: p => p.ast17 ? p.ast17.m : null, format: (v, p) => pjCell(p.ast17, x => Math.round(x)), group: `${PJ_GAMES} games` },
+    { key: 'pts17', label: 'Points', type: 'num', value: p => p.pts17 ? p.pts17.m : null, format: (v, p) => p.pts17 ? pjCell(p.pts17, x => Math.round(x)) : (off ? '<span class="n-note">Pick a role</span>' : '—'), group: `${PJ_GAMES} games` },
+  );
+  renderSortableTable('pjSeasonWrap', cols, rows, { dense: true, defaultSort: { key: 'pts17', dir: 'desc' }, emptyMsg: 'No player has 5+ shots yet.' });
+  document.getElementById('pjTrueSub').innerHTML = `What each player&rsquo;s ${escapeHtml(season)} numbers point to going forward: his results pulled toward the team by how much each stat can be trusted at his number of reps (measured on the Data Health tab${Object.keys(r.measured).length < 8 ? '; a default is used where there isn&rsquo;t enough data yet' : ''}). Uses every ${escapeHtml(season)} session.`;
   const players = r.players.filter(p => p.shots >= 5);
   renderSortableTable('pjShootWrap', [
     { key: 'jersey', label: '#', type: 'text', value: p => p.jersey },
     { key: 'name', label: 'Name', type: 'text', value: p => p.name, format: nameCell },
     { key: 'shots', label: 'Shots', type: 'num', value: p => p.shots },
-    { key: 'shNow', label: 'Sh% Now', type: 'num', value: p => p.sh.now, format: v => pjPct(v), group: 'True level' },
-    { key: 'sh', label: 'True Sh%', type: 'num', value: p => p.sh.m, format: (v, p) => pjCell(p.sh, pjPct), group: 'True level' },
-    { key: 'oncage', label: 'On Cage', type: 'num', value: p => p.oncage.m, format: (v, p) => pjCell(p.oncage, pjPct), group: 'True level' },
-    { key: 'ongoal', label: 'On-Goal Sh%', type: 'num', value: p => p.ongoal.m, format: (v, p) => pjCell(p.ongoal, pjPct), group: 'True level' },
-    { key: 'fin', label: 'Finishing / Shot', type: 'num', value: p => p.fin.m, format: (v, p) => pjCell(p.fin, pjSigned(2)), group: 'True level', title: 'Goals above expected per shot.' },
-    { key: 'shots17', label: 'Shots', type: 'num', value: p => p.shots17, format: v => Math.round(v), group: `${PJ_GAMES} games` },
-    { key: 'goals17', label: 'Goals', type: 'num', value: p => p.goals17.m, format: (v, p) => pjCell(p.goals17, x => Math.round(x)), group: `${PJ_GAMES} games` },
-    { key: 'ast17', label: 'Assists', type: 'num', value: p => p.ast17.m, format: (v, p) => pjCell(p.ast17, x => Math.round(x)), group: `${PJ_GAMES} games` },
-  ], players, { dense: true, defaultSort: { key: 'goals17', dir: 'desc' }, emptyMsg: 'No player has 5+ shots yet.' });
+    { key: 'shNow', label: 'Sh% Now', type: 'num', value: p => p.sh.now, format: v => pjPct(v) },
+    { key: 'sh', label: 'True Sh%', type: 'num', value: p => p.sh.m, format: (v, p) => pjCell(p.sh, pjPct) },
+    { key: 'oncage', label: 'On Cage', type: 'num', value: p => p.oncage.m, format: (v, p) => pjCell(p.oncage, pjPct) },
+    { key: 'ongoal', label: 'On-Goal Sh%', type: 'num', value: p => p.ongoal.m, format: (v, p) => pjCell(p.ongoal, pjPct) },
+    { key: 'fin', label: 'Finishing / Shot', type: 'num', value: p => p.fin.m, format: (v, p) => pjCell(p.fin, pjSigned(2)), title: 'Goals above expected per shot.' },
+  ], players, { dense: true, defaultSort: { key: 'sh', dir: 'desc' }, emptyMsg: 'No player has 5+ shots yet.' });
   const gaRows = r.players.filter(p => p.ga);
   renderSortableTable('pjGaWrap', [
     { key: 'jersey', label: '#', type: 'text', value: p => p.jersey },
@@ -8859,6 +8972,29 @@ function renderProjections() {
     { key: 'to', label: 'True Turnovers / Touch', type: 'num', value: p => p.to.m, format: (v, p) => pjCell(p.to, pjPct) },
     { key: 'pa', label: 'True Shots Set Up / Touch', type: 'num', value: p => p.pa.m, format: (v, p) => pjCell(p.pa, pjPct) },
   ], btRows, { dense: true, defaultSort: { key: 'touches', dir: 'desc' }, emptyMsg: 'No player has 10+ touches yet.' });
+}
+// Role / bump / link taps (one listener on the table; it re-renders often).
+document.getElementById('pjSeasonWrap').addEventListener('click', async e => {
+  if (PLAYER_MODE) return;
+  const t = e.target.closest('.pj-role, .pj-bump, .pj-link, .pj-linkbtn');
+  if (!t) return;
+  const season = heatSeason, j = t.dataset.j;
+  if (t.classList.contains('pj-linkbtn')) { const row = document.querySelector(`.pj-linkrow[data-j="${CSS.escape(j)}"]`); if (row) row.style.display = row.style.display === 'none' ? 'flex' : 'none'; return; }
+  const set = PJ_SET[season] = PJ_SET[season] || { role: {}, bump: {}, link: {} };
+  ['role', 'bump', 'link'].forEach(k => { set[k] = set[k] || {}; });
+  if (t.classList.contains('pj-role')) { if (set.role[j] === t.dataset.v) delete set.role[j]; else set.role[j] = t.dataset.v; }
+  if (t.classList.contains('pj-bump')) { const v = Math.round(((Number(set.bump[j]) || 0) + Number(t.dataset.d)) * 2) / 2; if (v) set.bump[j] = v; else delete set.bump[j]; }
+  if (t.classList.contains('pj-link')) set.link[j] = t.dataset.v;
+  renderSkaterProjections();
+  if (!(await persistPjSet(season))) showMsg('Couldn’t save that change — check the connection.', false);
+});
+function renderGoalieProjections() {
+  const wrap = document.getElementById('pjGoalieWrap');
+  if (!wrap) return;
+  const season = goalieHeatSeason;
+  if (!isAdvSeason(season)) { document.getElementById('pjGoalieSub').innerHTML = pjNotAdv(season); wrap.innerHTML = ''; return; }
+  const r = computeProjections(season), b = r.base;
+  document.getElementById('pjGoalieSub').innerHTML = `<b>True level</b> from this season&rsquo;s shots on cage, pulled toward the team by how much save % can be trusted at his number of shots faced. The range in gray is where he&rsquo;ll likely land &mdash; about 4 times out of 5. Shown as if starting all ${PJ_GAMES} games, facing ${b.facedPerGame.toFixed(1)} shots on cage a game${b.useOwn ? '' : ' (mirroring ours in ' + escapeHtml(b.src) + ')'}.`;
   renderSortableTable('pjGoalieWrap', [
     { key: 'jersey', label: '#', type: 'text', value: g => g.jersey },
     { key: 'name', label: 'Name', type: 'text', value: g => g.name, format: nameCell },
@@ -8985,7 +9121,7 @@ function renderGoalsAdded() {
 // per feed, from the grade-based xG used everywhere else), so a connection
 // that keeps creating Gold looks shows green even if the shots didn't fall.
 const PN_MIN_FEEDS = 3;
-let pnPlayer = '', pnLayout = 'zones';
+let pnPlayer = '';
 // Where each named zone sits on the field (yds lateral, yds out).
 const PN_ZONE_XY = { 'Doorstep': [0, 2.5], 'GLE Left': [-9, 0.8], 'GLE Right': [9, 0.8], 'Low Left': [-7, 4.5], 'Low Right': [7, 4.5], 'Crease': [0, 8],
   'Alley Left': [-9, 9.5], 'Alley Right': [9, 9.5], 'Wing Left': [-15, 8], 'Wing Right': [15, 8], 'Top Left': [-9, 15.5], 'Top Center': [0, 15.5], 'Top Right': [9, 15.5] };
@@ -9019,69 +9155,73 @@ function pnColor(v, team) {
   const d = team ? v / team : 1; // relative to the team's average look
   return d >= 1.25 ? '#0ca30c' : d >= 1.05 ? '#7DBE4A' : d >= 0.95 ? '#C9A400' : d >= 0.8 ? '#E8761F' : '#d03b3b';
 }
-function pnNetworkSvg(data, season) {
-  let edges = data.rows.filter(r => r.n >= PN_MIN_FEEDS);
-  if (PLAYER_MODE) { const mine = j => j === pmJersey(season); edges = edges.filter(r => mine(r.from) || mine(r.to)); }
-  if (!edges.length) return `<p class="sans" style="color:var(--muted); font-size:13px;">No connection has ${PN_MIN_FEEDS}+ feeds yet.</p>`;
+// Look quality in words, by the same buckets as the arrow colors.
+function pnLookWord(v, team) {
+  const c = pnColor(v, team);
+  return { '#0ca30c': 'great looks', '#7DBE4A': 'good looks', '#C9A400': 'average looks', '#E8761F': 'below-average looks', '#d03b3b': 'poor looks' }[c];
+}
+// One player at a time: him, the 5 teammates he feeds most and the 5 who
+// feed him most, each sitting in the zone he shoots from most.
+function pnPlayerSvg(data, season, j, out, inn) {
   const W = 640, H = 470, padX = 30, top = 70;
+  const players = Array.from(new Set([j].concat(out.map(r => r.to), inn.map(r => r.from))));
+  // Zoom the field to where these players actually shoot from (goal line
+  // always in view), so the dots get as much room as possible.
+  const spotOf = p => data.mainZone[p] ? (PN_ZONE_XY[data.mainZone[p].zone] || [0, 10]) : data.spot[p] ? [data.spot[p].L, data.spot[p].D] : null;
+  const maxD = Math.max(8, ...players.map(spotOf).filter(Boolean).map(xy => Math.min(17, xy[1] + 2)));
   const fx = L => padX + (L + 19) / 38 * (W - 2 * padX);
-  // The field is cropped to 17 yds out so the busy area near the cage gets more room.
-  const fy = D => top + Math.max(-2, Math.min(17, D)) / 17 * (H - top - 30);
-  const players = Array.from(new Set(edges.flatMap(e => [e.from, e.to]))).sort((a, b) => (data.volume[b] || 0) - (data.volume[a] || 0));
+  const fy = D => top + Math.max(-1, Math.min(maxD, D)) / maxD * (H - top - 40);
   const pos = {};
-  let noSpot = [];
-  if (pnLayout === 'circle') {
-    const cx = W / 2, cy = H / 2 + 8, R = Math.min(W, H) / 2 - 50;
-    players.forEach((j, i) => { const a = -Math.PI / 2 + i * 2 * Math.PI / players.length; pos[j] = [cx + R * Math.cos(a), cy + R * Math.sin(a)]; });
-  } else {
-    // Each player in the zone he shoots from most; players sharing a zone
-    // are spread side by side. Feeders with no shot location sit along the top.
-    noSpot = players.filter(j => !data.mainZone[j]);
-    const byZone = {};
-    players.filter(j => data.mainZone[j]).forEach(j => { (byZone[data.mainZone[j].zone] = byZone[data.mainZone[j].zone] || []).push(j); });
-    Object.keys(byZone).forEach(z => {
-      const list = byZone[z], [L, D] = PN_ZONE_XY[z] || [0, 10];
-      list.forEach((j, i) => { const off = (i - (list.length - 1) / 2) * 4.2; pos[j] = [fx(Math.max(-18, Math.min(18, L + off))), fy(D) + (i % 2 ? 16 : 0)]; });
-    });
-    noSpot.forEach((j, i) => { pos[j] = [padX + 40 + i * ((W - 2 * padX - 80) / Math.max(1, noSpot.length - 1)), 26]; });
-    // Nudge apart any dots (and their labels) that still overlap.
-    const ids = players.filter(j => !noSpot.includes(j)), MIN = 62;
-    for (let it = 0; it < 200; it++) {
-      let moved = false;
-      for (let a = 0; a < ids.length; a++) for (let c = a + 1; c < ids.length; c++) {
-        const p1 = pos[ids[a]], p2 = pos[ids[c]];
-        let dx = p2[0] - p1[0], dy = (p2[1] - p1[1]) * 1.25; const d = Math.hypot(dx, dy) || 0.01;
-        if (d >= MIN) continue;
-        if (d < 0.02) { dx = 1; dy = 0; }
-        const push = (MIN - d) / 2, ux = dx / (Math.hypot(dx, dy) || 1), uy = dy / (Math.hypot(dx, dy) || 1) / 1.25;
-        p1[0] -= ux * push; p1[1] -= uy * push; p2[0] += ux * push; p2[1] += uy * push; moved = true;
-      }
-      if (!moved) break;
-    }
-    ids.forEach(j => { pos[j][0] = Math.max(padX + 14, Math.min(W - padX - 14, pos[j][0])); pos[j][1] = Math.max(top - 10, Math.min(H - 20, pos[j][1])); });
-  }
-  const maxN = Math.max(...edges.map(e => e.n));
-  let svg = `<svg viewBox="0 0 ${W} ${H}" style="background:${pnLayout === 'circle' ? '#16294D' : '#2F6B44'}; border-radius:10px;">`;
-  svg += `<defs>${['#0ca30c', '#7DBE4A', '#C9A400', '#E8761F', '#d03b3b'].map((c, i) => `<marker id="pnArr${i}" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="${c}"/></marker>`).join('')}</defs>`;
-  // Field: goal line, cage, crease, alleys (field layout only).
-  if (pnLayout !== 'circle') svg += `<line x1="${padX}" y1="${fy(0)}" x2="${W - padX}" y2="${fy(0)}" stroke="#fff" stroke-opacity=".7"/>`;
-  if (pnLayout !== 'circle') svg += `<circle cx="${fx(0)}" cy="${fy(0)}" r="${3 / 38 * (W - 2 * padX)}" fill="#fff" fill-opacity=".08" stroke="#fff" stroke-opacity=".6"/>`;
-  if (pnLayout !== 'circle') svg += `<rect x="${fx(-1)}" y="${fy(0) - 5}" width="${fx(1) - fx(-1)}" height="5" fill="#E8621F"/>`;
-  if (pnLayout !== 'circle') [-8, 8].forEach(L => { svg += `<line x1="${fx(L)}" y1="${fy(0)}" x2="${fx(L)}" y2="${fy(20)}" stroke="#fff" stroke-opacity=".35" stroke-dasharray="6 5"/>`; });
-  if (noSpot.length) svg += `<text x="${padX}" y="14" font-family="Helvetica Neue, Arial, sans-serif" font-size="10.5" fill="#fff" fill-opacity=".75">Feeders with no shot location</text>`;
-  const colors = ['#0ca30c', '#7DBE4A', '#C9A400', '#E8761F', '#d03b3b'];
-  edges.sort((a, b) => a.n - b.n).forEach(e => {
-    const [x1, y1] = pos[e.from], [x2, y2] = pos[e.to];
-    const c = pnColor(e.xgPer, data.teamXg), ci = colors.indexOf(c);
-    const mx = (x1 + x2) / 2 + (y2 - y1) * 0.15, my = (y1 + y2) / 2 - (x2 - x1) * 0.15;
-    const w = 1.5 + 6 * Math.sqrt(e.n / maxN);
-    svg += `<path d="M${x1.toFixed(1)},${y1.toFixed(1)} Q${mx.toFixed(1)},${my.toFixed(1)} ${x2.toFixed(1)},${y2.toFixed(1)}" fill="none" stroke="${c}" stroke-width="${w.toFixed(1)}" stroke-opacity=".85" marker-end="url(#pnArr${ci})"><title>${escapeHtml(jerseyLabel(e.from, season))} → ${escapeHtml(jerseyLabel(e.to, season))}: ${e.n} feeds, ${e.g} goals, ${num(e.xgPer, 2)} xG per feed</title></path>`;
+  const noSpot = players.filter(p => !data.mainZone[p] && !data.spot[p]);
+  players.filter(p => !noSpot.includes(p)).forEach(p => {
+    const [L, D] = spotOf(p);
+    pos[p] = [fx(Math.max(-18, Math.min(18, L))), fy(D)];
   });
-  players.forEach(j => {
-    const [x, y] = pos[j], r = 6 + Math.min(10, Math.sqrt(data.volume[j] || 1));
-    const mine = PLAYER_MODE && j === pmJersey(season);
-    svg += `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${r.toFixed(1)}" fill="${mine ? '#D4AF37' : pnLayout === 'circle' ? '#4A6FA5' : '#0F1F3D'}" stroke="#fff" stroke-width="1.5"><title>${escapeHtml(jerseyLabel(j, season))}</title></circle>`;
-    svg += `<text x="${x.toFixed(1)}" y="${(y - r - 4).toFixed(1)}" text-anchor="middle" font-family="Helvetica Neue, Arial, sans-serif" font-size="11" font-weight="700" fill="#fff" paint-order="stroke" stroke="#0F1F3D" stroke-width="3">${escapeHtml(nameFor(j, season) === PM_OTHER ? PM_OTHER : '#' + j + ' ' + lastNameOf(nameFor(j, season)))}</text>`;
+  noSpot.forEach((p, i) => { pos[p] = [padX + 60 + i * ((W - 2 * padX - 120) / Math.max(1, noSpot.length - 1)), 30]; });
+  // Nudge apart dots (and their labels) that overlap.
+  const ids = players.filter(p => !noSpot.includes(p)), MIN = 92;
+  for (let it = 0; it < 200; it++) {
+    let moved = false;
+    for (let a = 0; a < ids.length; a++) for (let c = a + 1; c < ids.length; c++) {
+      const p1 = pos[ids[a]], p2 = pos[ids[c]];
+      let dx = p2[0] - p1[0], dy = (p2[1] - p1[1]) * 1.25; const d = Math.hypot(dx, dy);
+      if (d >= MIN) continue;
+      if (d < 0.02) { dx = (a + c) % 2 ? 1 : -1; dy = 0.3; }
+      const len = Math.hypot(dx, dy), push = (MIN - Math.min(d, MIN)) / 2, ux = dx / len, uy = dy / len / 1.25;
+      p1[0] -= ux * push; p1[1] -= uy * push; p2[0] += ux * push; p2[1] += uy * push; moved = true;
+    }
+    if (!moved) break;
+  }
+  ids.forEach(p => { pos[p][0] = Math.max(padX + 20, Math.min(W - padX - 20, pos[p][0])); pos[p][1] = Math.max(top - 6, Math.min(H - 20, pos[p][1])); });
+  const edges = out.concat(inn), maxN = Math.max(1, ...edges.map(e => e.n));
+  const colors = ['#0ca30c', '#7DBE4A', '#C9A400', '#E8761F', '#d03b3b'];
+  let svg = `<svg viewBox="0 0 ${W} ${H}" font-family="Helvetica Neue, Arial, sans-serif" style="background:#2F6B44; border-radius:10px;">`;
+  svg += `<defs>${colors.map((c, i) => `<marker id="pnArr${i}" viewBox="0 0 10 10" refX="9" refY="5" markerUnits="userSpaceOnUse" markerWidth="13" markerHeight="13" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="${c}"/></marker>`).join('')}</defs>`;
+  svg += `<line x1="${padX}" y1="${fy(0)}" x2="${W - padX}" y2="${fy(0)}" stroke="#fff" stroke-opacity=".7"/>`;
+  svg += `<circle cx="${fx(0)}" cy="${fy(0)}" r="${3 / 38 * (W - 2 * padX)}" fill="#fff" fill-opacity=".08" stroke="#fff" stroke-opacity=".6"/>`;
+  svg += `<rect x="${fx(-1)}" y="${fy(0) - 5}" width="${fx(1) - fx(-1)}" height="5" fill="#E8621F"/>`;
+  [-8, 8].forEach(L => { svg += `<line x1="${fx(L)}" y1="${fy(0)}" x2="${fx(L)}" y2="${fy(maxD)}" stroke="#fff" stroke-opacity=".35" stroke-dasharray="6 5"/>`; });
+  if (noSpot.length) svg += `<text x="${padX}" y="14" font-size="10.5" fill="#fff" fill-opacity=".75">No shot location logged</text>`;
+  // Arrows stop short of the dot so the arrowhead stays visible. Passes out
+  // bend one way and passes in the other, so a two-way pair shows as two arrows.
+  const R = p => p === j ? 15 : 10;
+  const labels = [];
+  edges.forEach(e => {
+    const [ax, ay] = pos[e.from], [bx, by] = pos[e.to], len = Math.hypot(bx - ax, by - ay) || 1;
+    const x1 = ax + (bx - ax) / len * R(e.from), y1 = ay + (by - ay) / len * R(e.from), x2 = bx - (bx - ax) / len * (R(e.to) + 3), y2 = by - (by - ay) / len * (R(e.to) + 3);
+    const c = pnColor(e.xgPer, data.teamXg), ci = colors.indexOf(c);
+    const mx = (x1 + x2) / 2 + (y2 - y1) * 0.18, my = (y1 + y2) / 2 - (x2 - x1) * 0.18;
+    const w = 1.5 + 4.5 * Math.sqrt(e.n / maxN);
+    svg += `<path d="M${x1.toFixed(1)},${y1.toFixed(1)} Q${mx.toFixed(1)},${my.toFixed(1)} ${x2.toFixed(1)},${y2.toFixed(1)}" fill="none" stroke="${c}" stroke-width="${w.toFixed(1)}" stroke-opacity=".9" marker-end="url(#pnArr${ci})"><title>${escapeHtml(jerseyLabel(e.from, season))} → ${escapeHtml(jerseyLabel(e.to, season))}: ${e.n} passes, ${e.g} goals</title></path>`;
+    // Count sits on the arrow near the teammate's end, so it reads as his.
+    const t = e.from === j ? 0.72 : 0.28, qx = (1 - t) * (1 - t) * x1 + 2 * t * (1 - t) * mx + t * t * x2, qy = (1 - t) * (1 - t) * y1 + 2 * t * (1 - t) * my + t * t * y2;
+    labels.push(`<circle cx="${qx.toFixed(1)}" cy="${qy.toFixed(1)}" r="9" fill="#0F1F3D" stroke="${c}" stroke-width="2"/><text x="${qx.toFixed(1)}" y="${(qy + 4).toFixed(1)}" text-anchor="middle" font-size="11" font-weight="700" fill="#fff">${e.n}</text>`);
+  });
+  svg += labels.join('');
+  players.forEach(p => {
+    const [x, y] = pos[p], me = p === j;
+    svg += `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${R(p)}" fill="${me ? '#D4AF37' : '#0F1F3D'}" stroke="#fff" stroke-width="1.5"><title>${escapeHtml(jerseyLabel(p, season))}</title></circle>`;
+    svg += `<text x="${x.toFixed(1)}" y="${(y - R(p) - 5).toFixed(1)}" text-anchor="middle" font-size="${me ? 13 : 11.5}" font-weight="700" fill="#fff" paint-order="stroke" stroke="#0F1F3D" stroke-width="3">${escapeHtml(nameFor(p, season) === PM_OTHER ? PM_OTHER : '#' + p + ' ' + lastNameOf(nameFor(p, season)))}</text>`;
   });
   return svg + '</svg>';
 }
@@ -9089,8 +9229,29 @@ function renderPassingNetwork() {
   const wrap = document.getElementById('pnNetWrap');
   if (!wrap) return;
   const season = EFF_SEASON, data = pnData();
-  document.getElementById('pnSub').textContent = `${season} ${EFF_CTX_WORD()}: ${data.fedCount} of ${data.shotCount} shots have a WLU passer logged. Each arrow goes from the passer to the shooter; thicker = more feeds (${PN_MIN_FEEDS}+ to show). Color = look quality: expected goals per feed vs the team's average shot (${num(data.teamXg, 2)}) — green creates better looks, red worse. ${pnLayout === 'circle' ? 'Players around the circle, busiest first from the top.' : 'Each player sits in the zone he shoots from most.'}`;
-  wrap.innerHTML = pnNetworkSvg(data, season);
+  document.getElementById('pnSub').textContent = `${season} ${EFF_CTX_WORD()}: ${data.fedCount} of ${data.shotCount} shots have a WLU passer logged. Pick a player: arrows go to the 5 teammates he passes to most and come in from the 5 who pass to him most. The number on each arrow = passes that led to a shot (it sits at the teammate’s end); thicker = more. Color = how good those shots were (green = better looks than our average shot, red = worse).`;
+  // Players with any logged pass, busiest passer first.
+  const given = {}, got = {};
+  data.rows.forEach(r => { given[r.from] = (given[r.from] || 0) + r.n; got[r.to] = (got[r.to] || 0) + r.n; });
+  const js = Array.from(new Set(data.rows.flatMap(r => [r.from, r.to]))).sort((a, b) => (given[b] || 0) - (given[a] || 0) || (got[b] || 0) - (got[a] || 0));
+  if (PLAYER_MODE) pnPlayer = pmJersey(season) || '';
+  else if (!js.includes(pnPlayer)) pnPlayer = js.length ? js[0] : '';
+  const pills = document.getElementById('pnPlayerPills');
+  pills.style.display = PLAYER_MODE ? 'none' : '';
+  pills.innerHTML = js.map(p => `<button type="button" class="pill${p === pnPlayer ? ' active' : ''}" data-j="${escapeHtml(p)}">#${escapeHtml(p)} ${escapeHtml(lastNameOf(nameFor(p, season)))}</button>`).join('');
+  pills.querySelectorAll('.pill').forEach(b => b.addEventListener('click', () => { pnPlayer = b.dataset.j; renderPassingNetwork(); }));
+  const out = data.rows.filter(r => r.from === pnPlayer).sort((a, b) => b.n - a.n || b.g - a.g).slice(0, 5);
+  const inn = data.rows.filter(r => r.to === pnPlayer).sort((a, b) => b.n - a.n || b.g - a.g).slice(0, 5);
+  if (!pnPlayer || (!out.length && !inn.length)) {
+    wrap.innerHTML = '<p class="sans" style="color:var(--muted); font-size:13px;">No passes logged for this player yet.</p>';
+    document.getElementById('pnPlayerWrap').innerHTML = '';
+  } else {
+    wrap.innerHTML = pnPlayerSvg(data, season, pnPlayer, out, inn);
+    const li = (r, other, dir) => `<li><b>${dir} ${escapeHtml(jerseyLabel(other, season))}</b>: ${r.n} pass${r.n === 1 ? '' : 'es'} &rarr; ${r.g} goal${r.g === 1 ? '' : 's'}, <span style="color:${pnColor(r.xgPer, data.teamXg)}; font-weight:700;">${pnLookWord(r.xgPer, data.teamXg)}</span></li>`;
+    document.getElementById('pnPlayerWrap').innerHTML = `
+      <p class="sans" style="font-weight:700; color:var(--navy-3); margin:0 0 4px;">He passes to</p>${out.length ? `<ul class="sans" style="margin:0 0 12px; padding-left:18px; font-size:13px; line-height:1.7;">${out.map(r => li(r, r.to, 'To')).join('')}</ul>` : '<p class="n-note">No passes from him logged yet.</p>'}
+      <p class="sans" style="font-weight:700; color:var(--navy-3); margin:0 0 4px;">Passes to him</p>${inn.length ? `<ul class="sans" style="margin:0; padding-left:18px; font-size:13px; line-height:1.7;">${inn.map(r => li(r, r.from, 'From')).join('')}</ul>` : '<p class="n-note">No passes to him logged yet.</p>'}`;
+  }
   const rows = data.rows.filter(r => r.n >= PN_MIN_FEEDS);
   renderSortableTable('pnTableWrap', [
     { key: 'from', label: 'Passer', type: 'text', value: r => jerseyLabel(r.from, season), format: nameCell },
@@ -9101,25 +9262,8 @@ function renderPassingNetwork() {
     { key: 'xgPer', label: 'xG per Feed', type: 'num', value: r => r.xgPer, format: v => `<b style="color:${pnColor(v, data.teamXg)};">${num(v, 2)}</b>`, title: 'Average look quality of the shots off this connection (grade-based xG).' },
     { key: 'otherSh', label: 'Shooter Sh% Otherwise', type: 'num', value: r => r.otherSh, format: (v, r) => v === null ? '—' : `${pct(v)} <span class="n-note">(${r.otherN})</span>`, title: 'The shooter’s shooting % on all his other shots (not fed by this passer).' },
     { key: 'lift', label: 'Lift', type: 'num', value: r => r.otherSh === null ? null : r.sh - r.otherSh, format: v => v === null ? '—' : `<b style="color:${v >= 0 ? 'var(--good)' : 'var(--critical)'};">${v >= 0 ? '+' : ''}${(v * 100).toFixed(0)} pts</b>`, title: 'How much better (or worse) the shooter finishes off this passer than on his other shots.' },
-  ], rows, { dense: true, defaultSort: { key: 'n', dir: 'desc' }, emptyMsg: `No connection has ${PN_MIN_FEEDS}+ feeds yet.` });
-  // Per player: top targets and top feeders.
-  const sel = document.getElementById('pnPlayerSelect');
-  const js = Array.from(new Set(data.rows.flatMap(r => [r.from, r.to]))).map(j => ({ j, name: nameFor(j, season) })).sort((a, b) => a.name.localeCompare(b.name));
-  sel.innerHTML = js.length ? js.map(p => `<option value="${escapeHtml(p.j)}">#${escapeHtml(p.j)} ${escapeHtml(p.name)}</option>`).join('') : '<option value="">No passers yet</option>';
-  if (!js.some(p => p.j === pnPlayer)) pnPlayer = js.length ? js[0].j : '';
-  sel.value = pnPlayer;
-  if (PLAYER_MODE) pnPlayer = pmLockSelect(sel);
-  const out = data.rows.filter(r => r.from === pnPlayer).sort((a, b) => b.n - a.n).slice(0, 3);
-  const inn = data.rows.filter(r => r.to === pnPlayer).sort((a, b) => b.n - a.n).slice(0, 3);
-  const li = (r, other) => `<li><b>${escapeHtml(jerseyLabel(other, season))}</b>: ${r.n} feed${r.n === 1 ? '' : 's'}, ${r.g} goal${r.g === 1 ? '' : 's'}, <span style="color:${pnColor(r.xgPer, data.teamXg)}; font-weight:700;">${num(r.xgPer, 2)} xG per feed</span></li>`;
-  document.getElementById('pnPlayerWrap').innerHTML = !pnPlayer || pnPlayer === '__NONE__' ? '<p class="sans n-note">No passes logged for this player yet.</p>' : `
-    <div style="display:flex; gap:24px; flex-wrap:wrap;" class="sans">
-      <div style="flex:1 1 260px;"><p style="font-weight:700; color:var(--navy-3); margin:0 0 4px;">He feeds most</p>${out.length ? `<ul style="margin:0; padding-left:18px; font-size:13px; line-height:1.7;">${out.map(r => li(r, r.to)).join('')}</ul>` : '<p class="n-note">No feeds logged yet.</p>'}</div>
-      <div style="flex:1 1 260px;"><p style="font-weight:700; color:var(--navy-3); margin:0 0 4px;">Feeds him most</p>${inn.length ? `<ul style="margin:0; padding-left:18px; font-size:13px; line-height:1.7;">${inn.map(r => li(r, r.from)).join('')}</ul>` : '<p class="n-note">No feeds to him logged yet.</p>'}</div>
-    </div>`;
+  ], PLAYER_MODE ? rows.filter(r => r.from === pnPlayer || r.to === pnPlayer) : rows, { dense: true, defaultSort: { key: 'n', dir: 'desc' }, emptyMsg: `No connection has ${PN_MIN_FEEDS}+ feeds yet.` });
 }
-document.getElementById('pnPlayerSelect').addEventListener('change', e => { pnPlayer = e.target.value; renderPassingNetwork(); });
-setupPillGroup('pnLayoutPills', [{ value: 'zones', label: 'Field zones' }, { value: 'circle', label: 'Circle' }], 'zones', v => { pnLayout = v || 'zones'; if (!v) setPillGroupValue('pnLayoutPills', 'zones'); renderPassingNetwork(); });
 
 // ---------------- Efficiency > xG Model (objective expected goals) ----------------
 // A second, objective xG: regularized logistic regression on this season's
@@ -9414,7 +9558,7 @@ function renderXg2Cone() {
     }
     XG2C.size();
     drawXg2Cone(true);
-  }).catch(() => { XG2C = null; wrap.innerHTML = '<p class="sans" style="color:#fff; font-size:13px; padding:14px;">The 3D view couldn&rsquo;t start in this browser (3D graphics are turned off, or there&rsquo;s no internet connection). Everything above still works.</p>'; });
+  }).catch(e => { XG2C = null; wrap.innerHTML = threeFailMsg(e, '#fff'); });
 }
 function drawXg2Cone(redrawHeat) {
   if (!XG2C || !XG2_LAST || XG2_LAST.r.tooFew) return;
@@ -9464,6 +9608,16 @@ setupPillGroup('xg2PlanePills', ['Overhand', 'Sidearm', 'Underhand'], 'Overhand'
 
 // ---- 3D shot map (three.js from jsDelivr, loaded on first use) ----
 let THREE_LOADING = null;
+// Why a 3D view failed, in words a coach can act on.
+function threeFailMsg(err, color) {
+  let webgl = false;
+  try { const c = document.createElement('canvas'); webgl = !!(c.getContext('webgl2') || c.getContext('webgl')); } catch (e) { /* no canvas */ }
+  if (err) console.error('3D view failed', err);
+  const why = !webgl ? '3D graphics are turned off in this browser. In Chrome: Settings &rarr; System &rarr; turn on &ldquo;Use graphics acceleration when available&rdquo; &rarr; Relaunch.'
+    : !window.THREE ? 'Couldn&rsquo;t download the 3D library &mdash; check the internet connection and reload.'
+    : 'The 3D view hit an error: ' + escapeHtml(String(err && err.message || err)) + '.';
+  return `<p class="sans" style="color:${color}; font-size:13px; padding:14px; line-height:1.5;">${why} Everything else on this page still works.</p>`;
+}
 function loadThree() {
   if (window.THREE && window.THREE.OrbitControls) return Promise.resolve();
   if (THREE_LOADING) return THREE_LOADING;
@@ -9766,7 +9920,7 @@ function renderAngle3D(xgOf) {
     ANG3D.size();
     ANG3D.last = { all, model, xgOf };
     drawAng3D(ANG3D.last);
-  }).catch(() => { wrap.innerHTML = '<p class="sans" style="color:var(--muted); font-size:13px; padding:14px;">The 3D view couldn&rsquo;t load (no internet connection?). Everything above still works.</p>'; });
+  }).catch(e => { wrap.innerHTML = threeFailMsg(e, 'var(--muted)'); });
 }
 function drawAng3D({ all, model }) {
   const T = ANG3D.T;
@@ -10202,7 +10356,6 @@ function renderEfficiencyView() {
   renderXg2Tab();
   renderPassingNetwork();
   renderGoalsAdded();
-  renderProjections();
   renderWinProb();
 }
 setupPillGroup('effSeasonPills', ADV_SEASONS, EFF_SEASON, v => {
@@ -10583,6 +10736,7 @@ setupSeasonPills('playerSeasonPills', (s) => {
   heatSeason = s;
   populatePlayerSelectForSeason(heatSeason);
   renderPlayerHeat();
+  renderSkaterProjections();
   renderShooterScore();
   renderRosterManager();
   renderShootingTrends();
@@ -10717,6 +10871,7 @@ setupSeasonPills('goalieSeasonPills', (s) => {
   goalieHeatSeason = s;
   populateGoalieSelectForSeason(goalieHeatSeason);
   renderGoalieHeat();
+  renderGoalieProjections();
   renderGoalieSummary();
   renderGoalieTrends();
   renderGoalieAdvanced();
