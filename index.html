@@ -443,6 +443,120 @@
   }
   @media print { header.sd-top { display: none !important; } }
 </style>
+<style>
+  /* ================= Stats Desk navigation (Phase 2) ================= */
+  nav.tabs, .nav-hidden { display: none !important; }
+  .sd-secs { display: flex; flex: 1; min-width: 0; height: 100%; overflow-x: auto; scrollbar-width: none; margin-left: 8px; }
+  .sd-secs::-webkit-scrollbar { display: none; }
+  .sd-secs button { border: 0; background: none; color: var(--chrome-mute); font-family: var(--display); font-weight: 700; font-size: 15px; letter-spacing: .06em; text-transform: uppercase; padding: 0 10px; cursor: pointer; white-space: nowrap; position: relative; }
+  .sd-secs button:hover { color: var(--chrome-ink); }
+  .sd-secs button.on { color: var(--chrome-ink); background: var(--chrome-2); }
+  .sd-secs button.on::after { content: ''; position: absolute; left: 0; right: 0; bottom: -3px; height: 3px; background: #E3A92B; }
+  .sd-secs button.lab { color: #E3A92B; }
+  .sd-strip { position: sticky; top: calc(52px + env(safe-area-inset-top, 0px)); z-index: 38; display: flex; align-items: center; gap: 16px; height: 50px; padding: 0 20px; background: var(--card); border-bottom: 1px solid var(--line); overflow-x: auto; scrollbar-width: none; }
+  .sd-strip::-webkit-scrollbar { display: none; }
+  .sd-crumb { display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--muted); white-space: nowrap; }
+  .sd-crumb button { border: 0; background: none; padding: 0; color: var(--muted); cursor: pointer; font: inherit; }
+  .sd-crumb button:hover { color: var(--ink); text-decoration: underline; }
+  .sd-crumb .back { border: 1px solid var(--line); padding: 2px 8px; color: var(--ink); }
+  .sd-crumb .cur { color: var(--ink); font-weight: 600; }
+  .sd-search { flex: 1; min-width: 210px; max-width: 540px; margin: 0 auto; position: relative; display: flex; align-items: center; }
+  .sd-search .si { position: absolute; left: 11px; color: var(--muted); pointer-events: none; font-size: 13px; }
+  .sd-search input[type=search] { width: 100%; height: 34px; border: 1px solid var(--ink); border-radius: 0; background: var(--card); color: var(--ink); padding: 0 50px 0 32px; font: 500 13.5px var(--text); outline: none; -webkit-appearance: none; }
+  .sd-search input[type=search]:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+  .sd-search kbd { position: absolute; right: 8px; font: 11px var(--mono); color: var(--muted); border: 1px solid var(--line); padding: 0 5px; pointer-events: none; }
+  .sd-drop { position: fixed; z-index: 80; background: var(--card); border: 1px solid var(--ink); box-shadow: 0 18px 40px rgba(0,0,0,.22); max-height: 62vh; overflow-y: auto; }
+  .sd-drop ul { list-style: none; margin: 0; padding: 0; }
+  .sd-drop li button { width: 100%; display: grid; grid-template-columns: 76px 1fr; gap: 10px; text-align: left; border: 0; border-bottom: 1px solid var(--line-2); background: none; padding: 9px 14px; color: var(--ink); cursor: pointer; font: 13px var(--text); }
+  .sd-drop li button.sel, .sd-drop li button:hover { background: var(--accent-soft); }
+  .sd-drop li small { font-size: 9.5px; letter-spacing: .14em; text-transform: uppercase; color: var(--muted); padding-top: 2px; }
+  .sd-drop li em { display: block; font-style: normal; font-size: 11.5px; color: var(--muted); }
+  .sd-drop .none { padding: 14px; color: var(--muted); font: 12.5px var(--text); }
+  .sd-filters { display: flex; align-items: center; gap: 8px; white-space: nowrap; }
+  .sd-filters .cap, .sd-rail .cap { font-size: 10px; letter-spacing: .14em; text-transform: uppercase; font-weight: 700; color: var(--muted); }
+  .sd-filters .tog { display: inline-flex; border: 1px solid var(--line); }
+  .sd-filters .tog button { border: 0; background: var(--card); color: var(--ink); padding: 5px 9px; font: 500 11.5px var(--text); cursor: pointer; }
+  .sd-filters .tog button + button { border-left: 1px solid var(--line); }
+  .sd-filters .tog button.on { background: var(--ink); color: var(--card); }
+  .sd-frame { display: grid; grid-template-columns: 236px minmax(0, 1fr); align-items: start; }
+  .sd-rail { position: sticky; top: calc(102px + env(safe-area-inset-top, 0px)); height: calc(100vh - 102px); overflow-y: auto; background: var(--card); border-right: 1px solid var(--line); padding: 4px 0 40px; }
+  .sd-rail .rg { padding: 14px 14px 6px; }
+  .sd-rail .rg b { font-family: var(--display); font-size: 17px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; }
+  .sd-rail ul { list-style: none; margin: 0; padding: 0; }
+  .sd-rail .rl > li > button { width: 100%; text-align: left; border: 0; border-left: 3px solid transparent; background: none; color: var(--ink); padding: 7px 14px; font: 13px var(--text); cursor: pointer; display: flex; justify-content: space-between; gap: 8px; }
+  .sd-rail .rl > li > button:hover { background: var(--paper); }
+  .sd-rail .rl > li > button.on { border-left-color: var(--accent); background: var(--accent-soft); font-weight: 700; }
+  .sd-rail .rs { font-size: 10.5px; color: var(--muted); font-weight: 400; }
+  .sd-rail .rsub button { width: 100%; text-align: left; border: 0; background: none; color: var(--muted); padding: 4px 14px 4px 28px; font: 12px var(--text); cursor: pointer; }
+  .sd-rail .rsub button:hover { color: var(--accent); }
+  .sd-rail hr { border: 0; border-top: 1px solid var(--line); margin: 10px 0 0; }
+  .rnote { padding: 6px 14px; font-size: 11.5px; color: var(--muted); list-style: none; }
+  #mainRoot { max-width: 1340px; width: 100%; margin: 0; padding: 18px 26px 90px; min-width: 0; }
+  .view-bar { top: calc(102px + env(safe-area-inset-top, 0px)); border-bottom: 1px solid var(--line); }
+  .sd-ph { display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; flex-wrap: wrap; padding-bottom: 10px; margin-bottom: 16px; border-bottom: 2px solid var(--ink); }
+  .sd-ph .k { color: var(--accent); font-size: 10.5px; letter-spacing: .16em; text-transform: uppercase; font-weight: 700; }
+  .sd-ph h1 { margin: 2px 0 0; font-family: var(--display); font-weight: 900; font-size: 40px; line-height: .95; letter-spacing: .01em; text-transform: uppercase; }
+  .sd-note { margin: 6px 0 0; font-size: 12px; color: var(--muted); }
+  .sd-pin { border: 1px solid var(--ink); background: var(--card); color: var(--ink); padding: 6px 12px; font: 600 12px var(--text); cursor: pointer; }
+  .sd-pin.on { background: rgba(227,169,43,.16); border-color: #E3A92B; color: var(--gold-ink); }
+  .sd-top .sd-btn.all { margin-left: 4px; }
+  .sd-scrim { position: fixed; inset: 0; z-index: 70; background: rgba(4,10,20,.5); }
+  .sd-mega { position: fixed; left: 0; right: 0; top: calc(52px + env(safe-area-inset-top, 0px)); z-index: 71; background: var(--card); border-bottom: 3px solid var(--ink); max-height: calc(100vh - 52px); overflow-y: auto; }
+  .sd-mega .mh { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; padding: 14px 20px; border-bottom: 1px solid var(--line); }
+  .sd-mega .mh b { font-family: var(--display); font-size: 26px; font-weight: 900; text-transform: uppercase; }
+  .sd-mega .mh span { color: var(--muted); font-size: 12px; }
+  .sd-mega .mg { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); }
+  .sd-mega .col { padding: 14px 16px 18px; border-right: 1px solid var(--line-2); border-bottom: 1px solid var(--line-2); }
+  .sd-mega h6 { margin: 0 0 8px; font-family: var(--display); font-size: 16px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; color: var(--accent); }
+  .sd-mega .col > button { display: block; border: 0; background: none; padding: 3px 0; text-align: left; color: var(--ink); cursor: pointer; font: 600 13px var(--text); }
+  .sd-mega .col > button:hover, .sd-mega a:hover { color: var(--accent); }
+  .sd-mega p { margin: 0 0 6px; font-size: 11px; line-height: 1.5; }
+  .sd-mega a { color: var(--muted); text-decoration: none; }
+  .sd-sheet, .sd-drawer { position: fixed; z-index: 71; background: var(--card); overflow-y: auto; display: flex; flex-direction: column; }
+  .sd-sheet { left: 0; right: 0; bottom: 0; max-height: 70vh; border-top: 3px solid var(--ink); padding: 12px 0 calc(64px + env(safe-area-inset-bottom, 0px)); }
+  .sd-drawer { left: 0; top: 0; bottom: 0; width: min(320px, 86vw); padding: calc(14px + env(safe-area-inset-top, 0px)) 0 80px; border-right: 3px solid var(--ink); }
+  .sd-sheet .sh, .sd-drawer .sh { padding: 4px 16px 10px; font-family: var(--display); font-size: 22px; text-transform: uppercase; }
+  .sd-sheet button, .sd-drawer button { border: 0; border-bottom: 1px solid var(--line-2); background: none; text-align: left; padding: 12px 16px; font: 14px var(--text); color: var(--ink); cursor: pointer; display: flex; justify-content: space-between; }
+  .sd-sheet button span { color: var(--muted); font-size: 12px; }
+  .sd-drawer details summary { padding: 12px 16px; font: 700 13px var(--text); letter-spacing: .08em; text-transform: uppercase; cursor: pointer; border-bottom: 1px solid var(--line); }
+  .sd-drawer details button { padding-left: 28px; }
+  .sd-drawer button.on { font-weight: 700; background: var(--accent-soft); }
+  .sd-drawer .all { margin-top: 10px; font-weight: 700; color: var(--accent); }
+  .sd-bottom { display: none; }
+  /* Analytics Lab + Where pages */
+  .lab-row { margin-bottom: 24px; }
+  .lab-row h4 { margin: 0 0 10px; font-family: var(--display); font-weight: 800; font-size: 22px; letter-spacing: .05em; text-transform: uppercase; display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+  .lab-row h4 small { font: 500 12px var(--text); letter-spacing: 0; text-transform: none; color: var(--muted); }
+  .lab-tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); border-top: 1px solid var(--line); border-left: 1px solid var(--line); }
+  .lab-tile { border: 0; border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); background: var(--card); padding: 14px; display: flex; flex-direction: column; gap: 8px; cursor: pointer; text-align: left; color: var(--ink); font: 13px var(--text); }
+  .lab-tile:hover { background: var(--paper); }
+  .lab-tile .t { font-family: var(--display); font-weight: 800; font-size: 20px; letter-spacing: .03em; text-transform: uppercase; line-height: 1; }
+  .lab-tile .q { color: var(--muted); line-height: 1.45; }
+  .lab-tile .w { margin-top: auto; font-size: 11px; color: var(--accent); }
+  .lab-tile .pv { display: block; margin: -14px -14px 2px; height: 110px; overflow: hidden; }
+  .lab-tile .pv svg { width: 100%; height: 100%; display: block; }
+  .lab-chips { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); border-top: 1px solid var(--line); border-left: 1px solid var(--line); }
+  .lab-chips button { border: 0; border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); background: var(--card); padding: 10px 14px; text-align: left; cursor: pointer; color: var(--ink); font: 12px var(--text); }
+  .lab-chips button:hover { background: var(--paper); }
+  .lab-chips b { display: block; font: 600 14px var(--mono); }
+  .lab-chips span { color: var(--muted); }
+  @media (max-width: 1100px) { .sd-frame { grid-template-columns: 200px minmax(0, 1fr); } }
+  @media (max-width: 760px) {
+    .sd-secs, .sd-top .sd-btn.all, .sd-rail, .sd-crumb { display: none !important; }
+    .sd-top #themeBtn { margin-left: auto; }
+    .sd-frame { display: block; }
+    #mainRoot { padding: 14px 14px 96px; }
+    .sd-strip { padding: 0 12px; gap: 10px; }
+    .sd-search { min-width: 180px; }
+    .sd-search kbd { display: none; }
+    .sd-ph h1 { font-size: 30px; }
+    .sd-bottom { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; position: fixed; z-index: 60; left: 0; right: 0; bottom: 0; background: var(--chrome); border-top: 3px solid var(--accent); padding-bottom: env(safe-area-inset-bottom, 0px); }
+    .sd-bottom button { border: 0; background: none; color: var(--chrome-mute); padding: 10px 0 9px; font-family: var(--display); font-weight: 700; font-size: 14px; letter-spacing: .06em; text-transform: uppercase; cursor: pointer; }
+    .sd-bottom button.on { color: #E3A92B; }
+  }
+  @media print { .sd-strip, .sd-rail, .sd-bottom, .sd-ph .sd-pin { display: none !important; } .sd-frame { display: block; } }
+</style>
+
 
 </head>
 <body>
@@ -456,10 +570,13 @@
 <div id="appRoot" style="display:none;">
 <header class="sd-top">
   <div class="sd-logo"><div class="sd-w">W<span>&amp;</span>L</div><div class="sd-sub">Generals<br>Stats Desk</div></div>
-  <div class="sd-fill"></div>
+  <nav class="sd-secs" id="sdSecs" aria-label="Sections"></nav>
+  <button type="button" class="sd-btn all" id="sdAll">All pages</button>
   <button type="button" class="sd-btn" id="themeBtn">Dark</button>
   <button type="button" class="pm-open-btn" id="pmOpenBtn">Player View &rarr;</button>
 </header>
+<div class="sd-strip" id="sdStrip"><div class="sd-crumb" id="sdCrumb"></div><div class="sd-search"><span class="si">&#9906;</span><input type="search" id="sdQ" placeholder="Search anything, or ask: &ldquo;who wins our faceoffs?&rdquo;" autocomplete="off" aria-label="Search the tracker"><kbd>&#8984;K</kbd></div><div class="sd-filters" id="sdFilters"></div></div>
+<div class="sd-drop" id="sdDrop" hidden></div>
 <div id="pmBanner">
   <span>Player View: <b id="pmBannerName"></b> &mdash; only his data, other players hidden</span>
   <div class="pm-actions" id="pmExitWrap"><button type="button" class="btn secondary" id="pmExitBtn" style="background:var(--card);">Exit Player View</button></div>
@@ -492,7 +609,10 @@
   <button class="tab-btn" data-view="boardView">Board</button>
 </nav>
 
+<div class="sd-frame">
+<aside class="sd-rail" id="sdRail" aria-label="Pages"></aside>
 <main id="mainRoot">
+  <div class="sd-ph" id="sdPh"></div>
   <div id="loadingBox" class="loading">Loading shot data&hellip;</div>
   <div id="accessBanner" class="msg err" style="display:none;"></div>
   <div id="syncBanner" class="msg err" style="display:none;">Live sync isn&rsquo;t available in this view &mdash; open this page from its published link so changes save and share with the team.</div>
@@ -2042,9 +2162,20 @@
     </div>
   </section>
 
+  <section id="labView" class="view">
+    <p class="view-intro">The shortcut to all the advanced work: every model, the 3D views and the advanced metrics. Each one also lives on its own page in its section.</p>
+    <div id="labWrap"></div>
+  </section>
+  <section id="whereView" class="view">
+    <p class="view-intro">Every page from the old tabs, and where it lives now. Nothing was removed.</p>
+    <div class="panel"><div id="whereWrap"></div></div>
+  </section>
 </main>
+</div>
 
 <footer>Live data, restricted to signed-in WLU coaching staff.</footer>
+<nav class="sd-bottom" id="sdBottom" aria-label="Quick"></nav>
+<div id="sdLayer"></div>
 </div>
 
 <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-app-compat.js"></script>
@@ -3335,6 +3466,7 @@ function switchTab(viewId) {
   if (viewId === 'opponentView') renderOpponent();
   if (viewId === 'recruitsView') { renderRecruits(); renderTrends(); }
   if (viewId === 'boardView') renderBoard();
+  if (typeof navOnSwitch === 'function') navOnSwitch(viewId);
 }
 document.querySelectorAll('.tab-btn').forEach(btn => {
   btn.addEventListener('click', () => switchTab(btn.dataset.view));
@@ -3356,6 +3488,7 @@ function showSubpage(viewId, label) {
   pages.forEach(p => p.classList.toggle('active', p === page));
   view.querySelectorAll('.subtab-btn').forEach(b => b.classList.toggle('active', b.dataset.label === page.dataset.label));
   try { localStorage.setItem('wluSubtab:' + viewId, page.dataset.label); } catch (e) { /* storage unavailable */ }
+  if (typeof navOnSwitch === 'function' && document.getElementById(viewId).classList.contains('active')) navOnSwitch(viewId);
 }
 function initSubtabs() {
   document.querySelectorAll('.subtabs[data-view]').forEach(strip => {
@@ -3453,6 +3586,7 @@ function pmExit() {
   pmRerenderAll();
   document.getElementById('comparePlayersPanel').style.display = compareMode === 'players' ? '' : 'none';
   document.getElementById('compareSeasonsPanel').style.display = compareMode === 'seasons' ? '' : 'none';
+  if (window.__navReady) { const p = NAV_PAGES[NAV_ST.cur]; if (p && !navVisible(p)) goNav('logshot', null, true); else drawNav(); }
 }
 // Exit asks once on the page (no browser dialog) so a tap can't drop the
 // player into the full staff view by accident.
@@ -12436,6 +12570,298 @@ document.getElementById('exportRecruitsBtn').addEventListener('click', () => {
 });
 
 // ---------------- Init ----------------
+// ================= Stats Desk navigation (Phase 2) =================
+// A navigation layer over the existing views: every page below is an
+// existing view (and sub-tab, and optionally a panel to scroll to). Nothing
+// moves in the DOM, so every renderer, the Player View sweep and the
+// remembered sub-tabs keep working. Sections follow phase of play.
+// [id, page name, view, sub-tab label, panel title to scroll to]
+const NAV = [
+  { id: 'cc', name: 'Command Center', pages: [['reports', 'Reports', 'reportsView'], ['flags', 'Development Flags', 'efficiencyView', 'Flags']] },
+  { id: 'log', name: 'Log', pages: [['logshot', 'Log Shot', 'logView']] },
+  { id: 'off', name: 'Offense', pages: [
+    ['shooter', 'Shooter Score', 'playerView', 'Shooter Score'], ['heat', 'Heat Map', 'playerView', 'Heat Map'], ['quality', 'Shot Quality', 'playerView', 'Shot Quality'],
+    ['shottypes', 'Shot Types', 'efficiencyView', 'Shot Types'], ['angles', 'Shooting Angles', 'efficiencyView', 'Angles'], ['eff', 'Efficiency', 'efficiencyView', 'Players'],
+    ['pertouch', 'Per Touch', 'efficiencyView', 'Per Touch'], ['persession', 'Per Session', 'efficiencyView', 'Per Session'], ['passing', 'Passing', 'efficiencyView', 'Passing'],
+    ['dominoes', 'Dominoes', 'efficiencyView', 'Dominoes'], ['triggers', 'Triggers', 'efficiencyView', 'Triggers'], ['situations', 'Situations', 'playerView', 'Situations'],
+    ['picks', 'Picks', 'efficiencyView', 'Picks'], ['lineups', 'Lineups', 'efficiencyView', 'Lineups'], ['trends', 'Trends', 'playerView', 'Trends'], ['deepdive', 'Deep Dive', 'playerView', 'Deep Dive']] },
+  { id: 'def', name: 'Defense', pages: [['defense', 'Individual Defense', 'defenseView'], ['pickdef', 'Pick Defenders', 'efficiencyView', 'Picks', 'Pick Defenders'], ['deflineups', 'Defensive Lineups', 'efficiencyView', 'Lineups', 'Defensive Lineups']] },
+  { id: 'gk', name: 'Goaltending', pages: [
+    ['gscore', 'Goalie Score', 'goalieView', 'Goalie Score'], ['surface', 'Save Surface', 'goalieView', 'Save Surface'], ['savemap', 'Save Map', 'goalieView', 'Save Map'],
+    ['gsummary', 'Summary', 'goalieView', 'Summary'], ['gadv', 'Advanced', 'goalieView', 'Advanced'], ['gadj', 'Shooter-Adjusted', 'goalieView', 'Shooter-Adjusted'], ['gtrends', 'Goalie Trends', 'goalieView', 'Trends']] },
+  { id: 'fo', name: 'Faceoffs', pages: [['fosum', 'Faceoff Summary', 'faceoffView', 'Summary'], ['foh2h', 'Head-to-Head', 'faceoffView', 'Head-to-Head'], ['fotrends', 'Trends', 'faceoffView', 'Trends'], ['folog', 'Faceoff Log', 'faceoffView', 'Log']] },
+  { id: 'games', name: 'Games', pages: [['opp', 'Opponent History', 'opponentView', 'History'], ['wp', 'Win Probability', 'opponentView', 'Win Probability']] },
+  { id: 'lab', name: 'Analytics Lab', pages: [
+    ['labhome', 'Lab Home', 'labView'], ['xg', 'xG Model', 'efficiencyView', 'xG Model'], ['xgover', 'Expected-Goals Overview', 'efficiencyView', 'Overview'],
+    ['ga', 'Goals Added', 'efficiencyView', 'Goals Added'], ['projsk', 'Skater Projections', 'playerView', 'Projections'], ['projgk', 'Goalie Projections', 'goalieView', 'Projections']] },
+  { id: 'pers', name: 'Personnel', pages: [['compare', 'Compare', 'compareView'], ['depth', 'Depth Chart', 'depthView'], ['roster', 'Roster', 'playerView', 'Roster']] },
+  { id: 'rec', name: 'Recruiting', pages: [['recruits', 'Recruits', 'recruitsView'], ['board', 'Board', 'boardView']] },
+  { id: 'data', name: 'Data', pages: [['shotlog', 'Shot Log', 'tableView'], ['health', 'Data Health', 'healthView'], ['where', 'Where Did It Go?', 'whereView']] },
+];
+const NAV_PAGES = {};
+NAV.forEach(s => s.pages.forEach(([id, name, view, sub, anchor]) => { NAV_PAGES[id] = { id, name, view, sub: sub || null, anchor: anchor || null, sec: s }; }));
+// Where each page lived before the redesign (for "Where Did It Go?").
+const NAV_OLD = { logView: 'Log Shot', playerView: 'Player Heat Maps', goalieView: 'Goalie Heat Maps', defenseView: 'Defense', efficiencyView: 'Efficiency', faceoffView: 'Faceoffs', tableView: 'Shot Log', compareView: 'Compare', opponentView: 'Opponent', reportsView: 'Reports', depthView: 'Depth Chart', healthView: 'Data Health', recruitsView: 'Recruits', boardView: 'Board' };
+// Each view's own season / session pill groups, driven by the global control.
+// s = any season, a = 2027+ only, c = sessions, sel = heat-map filter select.
+const NAV_FILTERS = {
+  playerView: { s: 'playerSeasonPills', sel: 'pf_context' }, goalieView: { s: 'goalieSeasonPills', c: 'goalieAdvContextPills', sel: 'gf_context' },
+  faceoffView: { s: 'faceoffSeasonPills' }, compareView: { s: 'cpSeasonPills' }, opponentView: { s: 'oppSeasonPills' },
+  efficiencyView: { a: 'effSeasonPills', c: 'effContextPills' }, defenseView: { a: 'defSeasonPills', c: 'defContextPills' },
+  depthView: { a: 'depthSeasonPills' }, healthView: { a: 'healthSeasonPills' },
+};
+const NAV_ST = { cur: null, history: [], season: null, ctx: 'All', pins: [], busy: false, open: {} };
+try { const g = JSON.parse(localStorage.getItem('wluGlobal') || 'null'); if (g) { NAV_ST.season = g.season || null; NAV_ST.ctx = g.ctx || 'All'; } } catch (e) { /* storage unavailable */ }
+try { const p = JSON.parse(localStorage.getItem('wluPins') || '[]'); if (Array.isArray(p)) NAV_ST.pins = p.filter(id => NAV_PAGES[id]); } catch (e) { /* storage unavailable */ }
+
+function navVisible(p) {
+  const v = document.getElementById(p.view);
+  if (!v || v.classList.contains('owner-off')) return false;
+  if (PLAYER_MODE && (v.classList.contains('pm-off') || p.id === 'roster' || p.view === 'labView' || p.view === 'whereView')) return false;
+  return true;
+}
+function navFirstVisible() { for (const s of NAV) for (const [id] of s.pages) if (navVisible(NAV_PAGES[id])) return NAV_PAGES[id]; return NAV_PAGES.logshot; }
+// Panel titles inside a page: the rail's sub-items and part of search.
+function navContainer(p) { const v = document.getElementById(p.view); if (!v) return null; return p.sub ? v.querySelector(`:scope > .subpage[data-label="${CSS.escape(p.sub)}"]`) : v; }
+function navTitleText(el) { const own = [...el.childNodes].filter(n => n.nodeType === 3).map(n => n.textContent).join(' ').replace(/\s+/g, ' ').trim(); return own || el.textContent.replace(/\s+/g, ' ').trim(); }
+function navPanels(p) {
+  const c = navContainer(p); if (!c) return [];
+  return [...new Set([...c.querySelectorAll('.panel-title')].filter(el => !(PLAYER_MODE && el.closest('.pm-hide'))).map(navTitleText).filter(t => t && t.length < 60))];
+}
+function navScrollTo(p, title) {
+  const c = navContainer(p); if (!c) return;
+  const el = [...c.querySelectorAll('.panel-title')].find(e => navTitleText(e) === title); if (!el) return;
+  const d = el.closest('details'); if (d && !d.open) d.open = true;
+  const box = el.closest('.panel') || el, bar = document.querySelector('.view.active .view-bar:not(.nav-hidden)');
+  window.scrollTo({ top: box.getBoundingClientRect().top + window.scrollY - 112 - (bar ? bar.offsetHeight : 0), behavior: 'smooth' });
+}
+function navSave() { try { localStorage.setItem('wluPage', NAV_ST.cur || ''); localStorage.setItem('wluGlobal', JSON.stringify({ season: NAV_ST.season, ctx: NAV_ST.ctx })); } catch (e) { /* storage unavailable */ } }
+
+// ---- global season / sessions ----
+function navPick(groupId, label) {
+  const btn = [...document.querySelectorAll('#' + groupId + ' .pill')].find(b => b.textContent === label);
+  if (btn && !btn.classList.contains('active')) btn.click();
+  return !!btn;
+}
+function navApplyFilters(viewId) {
+  const f = NAV_FILTERS[viewId], notes = []; if (!f) return notes;
+  const season = NAV_ST.season, ctx = NAV_ST.ctx;
+  if (f.s) navPick(f.s, season);
+  if (f.a) { const t = ADV_SEASONS.includes(season) ? season : currentAdvSeason(); navPick(f.a, t); if (t !== season) notes.push(`This page starts in ${ADV_FIRST_SEASON} — showing ${t}.`); }
+  if (f.c) { const opts = [...document.querySelectorAll('#' + f.c + ' .pill')].map(b => b.textContent), t = opts.includes(ctx) ? ctx : 'All'; navPick(f.c, t); if (t !== ctx) notes.push(`No ${ctx.toLowerCase()} split on this page — showing all sessions.`); }
+  if (f.sel) { const sel = document.getElementById(f.sel), want = ctx === 'All' ? '' : ctx; if (sel && sel.value !== want && [...sel.options].some(o => o.value === want)) { sel.value = want; sel.dispatchEvent(new Event('change')); } }
+  return notes;
+}
+function navSetGlobal(season, ctx) {
+  if (season) NAV_ST.season = season; if (ctx) NAV_ST.ctx = ctx;
+  navSave();
+  const p = NAV_PAGES[NAV_ST.cur]; NAV_ST.notes = p ? navApplyFilters(p.view) : [];
+  drawNav();
+}
+
+// ---- going places ----
+function goNav(id, anchor, fromHistory) {
+  let p = NAV_PAGES[id]; if (!p || !navVisible(p)) p = navFirstVisible();
+  if (!fromHistory && NAV_ST.cur && NAV_ST.cur !== p.id) NAV_ST.history.push(NAV_ST.cur);
+  NAV_ST.cur = p.id; NAV_ST.busy = true;
+  try {
+    if (p.view === 'labView') renderLabHome();
+    if (p.view === 'whereView') renderWhere();
+    NAV_ST.notes = navApplyFilters(p.view);
+    switchTab(p.view);
+    if (p.sub) showSubpage(p.view, p.sub);
+  } finally { NAV_ST.busy = false; }
+  navSave(); navCloseLayer(); drawNav();
+  const a = anchor || p.anchor;
+  if (a) setTimeout(() => navScrollTo(p, a), 30); else window.scrollTo(0, 0);
+}
+function navBack() { const id = NAV_ST.history.pop(); if (id) goNav(id, null, true); }
+// Code elsewhere still calls switchTab / showSubpage directly (Player View,
+// links inside pages): keep the chrome in step with wherever we landed.
+function navOnSwitch(viewId) {
+  if (NAV_ST.busy || !window.__navReady) return;
+  const v = document.getElementById(viewId), active = v && v.querySelector(':scope > .subpage.active');
+  const label = active ? active.dataset.label : null;
+  const p = Object.values(NAV_PAGES).find(x => x.view === viewId && (x.sub || null) === label && !x.anchor) || Object.values(NAV_PAGES).find(x => x.view === viewId);
+  if (p) { NAV_ST.cur = p.id; NAV_ST.notes = navApplyFilters(viewId); navSave(); drawNav(); }
+}
+
+// ---- drawing the chrome ----
+const navEsc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+function drawNav() {
+  const p = NAV_PAGES[NAV_ST.cur] || navFirstVisible(), sec = p.sec;
+  const secs = NAV.filter(s => s.pages.some(([id]) => navVisible(NAV_PAGES[id])));
+  document.getElementById('sdSecs').innerHTML = secs.map(s => `<button type="button" class="${s === sec ? 'on' : ''}${s.id === 'lab' ? ' lab' : ''}" data-nsec="${s.id}">${s.name}</button>`).join('');
+  document.getElementById('sdCrumb').innerHTML = `${NAV_ST.history.length ? '<button type="button" class="back" data-nback="1">&larr; Back</button>' : ''}<button type="button" data-nsec="${sec.id}">${sec.name}</button><span>/</span><span class="cur">${navEsc(p.name)}</span>`;
+  document.getElementById('sdFilters').innerHTML = `<span class="cap">Season</span><div class="tog">${[...SEASONS, 'All Seasons'].map(v => `<button type="button" class="${NAV_ST.season === v ? 'on' : ''}" data-nseason="${v}">${v === 'All Seasons' ? 'All' : v}</button>`).join('')}</div><span class="cap">Sessions</span><div class="tog">${['All', 'Practice', 'Scrimmage', 'Game'].map(v => `<button type="button" class="${NAV_ST.ctx === v ? 'on' : ''}" data-nctx="${v}">${v}</button>`).join('')}</div>`;
+  const pins = NAV_ST.pins.filter(id => NAV_PAGES[id] && navVisible(NAV_PAGES[id]));
+  const panels = navPanels(p);
+  document.getElementById('sdRail').innerHTML = (PLAYER_MODE ? '' : `<div class="rg"><span class="cap">&#9733; Pinned</span></div><ul class="rl">${pins.map(id => `<li><button type="button" data-npage="${id}" class="${id === p.id ? 'on' : ''}">${NAV_PAGES[id].name}<span class="rs">${NAV_PAGES[id].sec.name}</span></button></li>`).join('') || '<li class="rnote">Pin any page with the &#9734; button by its title.</li>'}</ul><hr>`) +
+    `<div class="rg"><b>${sec.name}</b></div><ul class="rl">${sec.pages.filter(([id]) => navVisible(NAV_PAGES[id])).map(([id, name]) => `<li><button type="button" data-npage="${id}" class="${id === p.id ? 'on' : ''}">${name}</button>${id === p.id && panels.length > 1 ? `<ul class="rsub">${panels.map(t => `<li><button type="button" data-npage="${id}" data-nanchor="${navEsc(t)}">${navEsc(t)}</button></li>`).join('')}</ul>` : ''}</li>`).join('')}</ul>`;
+  const pinned = NAV_ST.pins.includes(p.id);
+  document.getElementById('sdPh').innerHTML = `<div><div class="cap k">${sec.name}${p.anchor ? ' · ' + navEsc(NAV_OLD[p.view] || '') : ''}</div><h1>${navEsc(p.name)}</h1>${(NAV_ST.notes || []).map(n => `<p class="sd-note">${n}</p>`).join('')}</div>${PLAYER_MODE ? '' : `<button type="button" class="sd-pin${pinned ? ' on' : ''}" data-npin="${p.id}">${pinned ? '&#9733; Pinned' : '&#9734; Pin'}</button>`}`;
+  document.getElementById('sdBottom').innerHTML = [['logshot', 'Log'], ['__search', 'Search'], ['labhome', 'Lab'], ['__pins', 'Pinned'], ['__menu', 'Menu']].filter(([id]) => !(PLAYER_MODE && (id === 'logshot' || id === 'labhome' || id === '__pins'))).map(([id, l]) => `<button type="button" data-nbottom="${id}" class="${id === p.id || (id === 'labhome' && sec.id === 'lab') ? 'on' : ''}">${l}</button>`).join('');
+}
+
+// ---- search ----
+const NAV_KW = {
+  reports: 'report practice report week weekly recap session summary print pdf standouts', flags: 'flags development alerts concerns slumping needs work warning',
+  logshot: 'log enter record input shot possession faceoff sideline lineup units entry add', shooter: 'best shooter shooting score scorer finishing sniper rank shooters leaderboard composite',
+  heat: 'heat map where shoot from zones spots location shot chart filters', quality: 'shot quality gold silver bronze grade good looks bad looks share',
+  shottypes: 'shot type types mechanism overhand sidearm underhand bounce', angles: 'angle angles stick plane hand side lefty righty where to aim 3d shot map recipe best spot',
+  eff: 'efficiency xg expected goals g-xg finishing xa expected assists assists turnovers a/to possession man up man down emo extra man', pertouch: 'per touch touches usage rate',
+  persession: 'per session rate box score session box per game', passing: 'passing passes feeds feeder assists connections who feeds who chemistry lift',
+  dominoes: 'dominoes advantage slide slides created who starts', triggers: 'triggers plays sets what works best play',
+  situations: 'situations man up rebound catch dodge dodging mechanism trigger efficiency', picks: 'pick picks screen screens pick and roll two man game coverage switch slip get screener user mismatch',
+  lineups: 'lineup lineups combinations units pairs who plays well together chemistry', trends: 'trends trending hot cold streak improving slumping form recent',
+  deepdive: 'deep dive one player breakdown', defense: 'defense defender on ball beaten slides slide help off ball breakdown who got beat 1v1 defending matchups',
+  pickdef: 'pick defense defending picks screens switch who defends picks', deflineups: 'defensive lineups defense units pairs',
+  gscore: 'best goalie goalie score goaltending keeper netminder who should start in goal', surface: 'save surface 3d cage net where goalie saves strong weak holes corners high low',
+  savemap: 'save map goalie heat map where shots beat goalie', gsummary: 'goalie summary save percentage', gadv: 'gsax saves above expected rebounds outlets clears goalie advanced where when shot profiles',
+  gadj: 'shooter adjusted sae good shooters saves vs our shooters day by day progress', gtrends: 'goalie trends hot cold goalie improving',
+  fosum: 'faceoff faceoffs fogo draws wins x faceoff man who wins draws', foh2h: 'faceoff head to head rating matchup fogo', fotrends: 'faceoff trends fogo', folog: 'faceoff log draws list',
+  opp: 'opponent opponents scouting scout team history versus vs game prep', wp: 'win probability chance to win leverage clutch big moments swing games late game wpa',
+  labhome: 'lab models analytics advanced metrics 3d all models', xg: 'xg expected goals model shot cone 3d how likely score look chance how it works',
+  xgover: 'expected goals overview model', ga: 'goals added value credit impact contribution who helps most',
+  projsk: 'projections projected projection forecast 17 games goals assists points season predict true level role bump', projgk: 'goalie projections projected saves forecast',
+  compare: 'compare comparison side by side versus two players seasons', depth: 'depth chart lines starters first line second line rotation who starts',
+  roster: 'roster players list jerseys numbers add player', recruits: 'recruits recruiting prospects evaluations ratings high school', board: 'board recruiting board top targets',
+  shotlog: 'shot log all shots raw data edit delete entries list', health: 'data health coverage missing logging quality reps needed sample size', where: 'where did it go old tab moved find old page map',
+};
+const NAV_QUESTIONS = [['Who is our best shooter?', 'shooter'], ['Who is our best goalie?', 'gscore'], ['Who wins our faceoffs?', 'fosum'], ['Where does our goalie struggle?', 'surface'], ['Where should we shoot from?', 'angles'], ['Who creates the most for others?', 'passing'], ['Who turns the ball over most?', 'eff'], ['Which lineup works best?', 'lineups'], ['Who is hot right now?', 'trends'], ['Who gets beat on defense?', 'defense'], ['How do we defend picks?', 'pickdef'], ['Which plays work best?', 'triggers'], ['What happened last practice?', 'reports'], ['Who should start?', 'depth'], ['What will he score this season?', 'projsk'], ['Which moments swung the game?', 'wp'], ['How is xG calculated?', 'xg'], ['What are our shot types?', 'shottypes']];
+const NAV_METRICS = [['GSAx', 'Goals saved above expected', 'gadv'], ['SAE', 'Saves above expected, shooter-adjusted', 'gadj'], ['G−xG', 'Finishing vs look quality', 'eff'], ['xG', 'Expected goals', 'xg'], ['xA', 'Expected assists', 'eff'], ['A/TO', 'Assists per turnover', 'eff'], ['On-Goal Sh%', 'Shooting % on shots on cage', 'eff'], ['Look Value', 'Average quality of looks', 'shooter'], ['Leverage', 'How much one goal swings win chance', 'wp'], ['WPA', 'Win probability added', 'wp'], ['Clutch', 'Top 20% leverage moments', 'wp'], ['Goals Added', 'Credit for every action in a possession', 'ga'], ['True Level', 'Rates pulled toward the team with ranges', 'projsk'], ['Reps Needed', 'Sample size before a stat is trustworthy', 'health'], ['Faceoff Rating', 'Opponent-adjusted faceoff strength', 'foh2h'], ['Shooter Score', '0–100 shooting composite', 'shooter'], ['Goalie Score', '0–100 goaltending composite', 'gscore'], ['Dominoes', 'Advantage created, slides forced', 'dominoes'], ['Lift', 'Shooter finishes better off this passer', 'passing']];
+const NAV_STOP = new Set('the a an is are our we do does did of to for in on at by with and or who what which where when how why should can me my show find get go page tab his her he him their it this that most best'.split(' '));
+const navNorm = t => String(t).toLowerCase().replace(/[^a-z0-9%#\-\/\s]/g, ' ');
+const navStem = w => w.replace(/(ing|ers|er|es|s)$/, '');
+function navItems() {
+  const items = [], vis = Object.values(NAV_PAGES).filter(navVisible);
+  vis.forEach(p => {
+    items.push({ k: 'Page', t: p.name, s: p.sec.name, kw: (NAV_KW[p.id] || '') + ' ' + (NAV_OLD[p.view] || ''), go: () => goNav(p.id) });
+    if (!p.anchor) navPanels(p).forEach(t => { if (t !== p.name) items.push({ k: 'Section', t, s: p.sec.name + ' › ' + p.name, kw: NAV_KW[p.id] || '', go: () => goNav(p.id, t) }); });
+  });
+  NAV_QUESTIONS.forEach(([q, id]) => { const p = NAV_PAGES[id]; if (p && navVisible(p)) items.push({ k: 'Question', t: q, s: '→ ' + p.sec.name + ' › ' + p.name, kw: NAV_KW[id] || '', go: () => goNav(id) }); });
+  NAV_METRICS.forEach(([m, d, id]) => { const p = NAV_PAGES[id]; if (p && navVisible(p)) items.push({ k: 'Metric', t: m + ' — ' + d, s: p.sec.name + ' › ' + p.name, kw: NAV_KW[id] || '', go: () => goNav(id) }); });
+  if (!PLAYER_MODE) {
+    const season = currentLogSeason ? currentLogSeason() : SEASONS[SEASONS.length - 1];
+    (ROSTERS[season] || []).filter(r => r.name && r.jersey).forEach(r => items.push({ k: 'Player', t: `#${r.jersey} ${r.name}`, s: 'Opens his heat map', kw: 'player', go: () => { goNav('heat'); const sel = document.getElementById('playerSelect'); if (sel && [...sel.options].some(o => o.value === r.jersey)) { sel.value = r.jersey; sel.dispatchEvent(new Event('change')); } } }));
+  }
+  return items;
+}
+// Whole-word matching, ranked: title words count most, then the page's
+// vocabulary, then where it lives. A page that covers every word beats one
+// of its sections; a typed question favors the matching coach question.
+function navFind(items, q) {
+  const raw = navNorm(q).trim(); if (!raw) return [];
+  const all = raw.split(/\s+/), words = all.filter(w => !NAV_STOP.has(w)), use = words.length ? words : all;
+  return items.map(it => {
+    const wT = navNorm(it.t).split(/\s+/), wK = navNorm(it.kw || '').split(/\s+/), wS = navNorm(it.s || '').split(/\s+/);
+    // A word matches a word that starts with it, or the same root with a plain ending (goals ~ goal, not goalie).
+    const has = (list, w) => { const st = navStem(w); return list.some(x => x.startsWith(w) || (st.length > 2 && /^(|s|es|ing|er|ers|ed)$/.test(x.startsWith(st) ? x.slice(st.length) : '#'))); };
+    let score = 0, hit = 0;
+    use.forEach(w => { if (has(wT, w)) { score += 6; hit++; } else if (has(wK, w)) { score += 3; hit++; } else if (has(wS, w)) { score += 1; hit++; } });
+    if (!hit || hit < Math.ceil(use.length / 2)) return null;
+    const T = navNorm(it.t); if (T.startsWith(raw)) score += 8; else if (T.includes(raw)) score += 4;
+    if (it.k === 'Question' && all.length > 2) score += 3;
+    if (it.k === 'Page') score += hit === use.length ? 5 : 1;
+    return { it, score: score + hit * 2 };
+  }).filter(Boolean).sort((a, b) => b.score - a.score).slice(0, 12).map(x => x.it);
+}
+function navWireSearch() {
+  const inp = document.getElementById('sdQ'), dd = document.getElementById('sdDrop'); let items = null, f = [], sel = 0;
+  const place = () => { const r = inp.getBoundingClientRect(), w = Math.min(innerWidth - 16, Math.max(r.width, 440)); dd.style.top = (r.bottom + 6) + 'px'; dd.style.left = Math.max(8, Math.min(r.left, innerWidth - w - 8)) + 'px'; dd.style.width = w + 'px'; };
+  const draw = () => {
+    items = items || navItems();
+    f = inp.value.trim() ? navFind(items, inp.value) : items.filter(i => i.k === 'Question').slice(0, 8); sel = 0;
+    dd.innerHTML = f.length ? `<ul>${f.map((x, k) => `<li><button type="button" data-k="${k}" class="${k === sel ? 'sel' : ''}"><small>${x.k}</small><span>${navEsc(x.t)}<em>${navEsc(x.s)}</em></span></button></li>`).join('')}</ul>` : '<div class="none">Nothing matches. Try a player, a page, or a metric like GSAx.</div>';
+    place(); dd.hidden = false;
+  };
+  const mark = () => dd.querySelectorAll('button[data-k]').forEach(b => b.classList.toggle('sel', +b.dataset.k === sel));
+  const go = it => { inp.value = ''; dd.hidden = true; inp.blur(); it.go(); };
+  inp.addEventListener('focus', () => { items = null; draw(); });
+  inp.addEventListener('input', draw);
+  inp.addEventListener('keydown', e => {
+    if (e.key === 'ArrowDown') { sel = Math.min(f.length - 1, sel + 1); mark(); e.preventDefault(); }
+    else if (e.key === 'ArrowUp') { sel = Math.max(0, sel - 1); mark(); e.preventDefault(); }
+    else if (e.key === 'Enter' && f[sel]) go(f[sel]);
+    else if (e.key === 'Escape') { inp.value = ''; dd.hidden = true; inp.blur(); }
+  });
+  dd.addEventListener('mousedown', e => { const b = e.target.closest('button[data-k]'); if (b) { e.preventDefault(); go(f[b.dataset.k]); } });
+  inp.addEventListener('blur', () => setTimeout(() => { dd.hidden = true; }, 150));
+  document.addEventListener('keydown', e => { if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); inp.focus(); inp.select(); } });
+}
+
+// ---- overlays: All pages, pinned sheet, phone menu ----
+function navCloseLayer() { document.getElementById('sdLayer').innerHTML = ''; document.body.classList.remove('sd-menu-open'); }
+function navOpenAll() {
+  const secs = NAV.map(s => [s, s.pages.filter(([id]) => navVisible(NAV_PAGES[id]))]).filter(([, ps]) => ps.length);
+  const n = secs.reduce((a, [, ps]) => a + ps.length, 0);
+  document.getElementById('sdLayer').innerHTML = `<div class="sd-scrim" data-nclose="1"></div><div class="sd-mega"><div class="mh"><b>All pages</b><span>${secs.length} sections &middot; ${n} pages. Every page and the sections inside it are one click away.</span></div><div class="mg">${secs.map(([s, ps]) => `<div class="col"><h6>${s.name}</h6>${ps.map(([id, name]) => { const sub = NAV_PAGES[id].anchor ? [] : navPanels(NAV_PAGES[id]).filter(t => t !== name); return `<button type="button" data-npage="${id}">${name}</button>${sub.length ? `<p>${sub.map(t => `<a href="#" data-npage="${id}" data-nanchor="${navEsc(t)}">${navEsc(t)}</a>`).join(' · ')}</p>` : ''}`; }).join('')}</div>`).join('')}</div></div>`;
+}
+function navOpenPins() {
+  const pins = NAV_ST.pins.filter(id => NAV_PAGES[id] && navVisible(NAV_PAGES[id]));
+  document.getElementById('sdLayer').innerHTML = `<div class="sd-scrim" data-nclose="1"></div><div class="sd-sheet"><b class="sh">&#9733; Pinned</b>${pins.map(id => `<button type="button" data-npage="${id}">${NAV_PAGES[id].name}<span>${NAV_PAGES[id].sec.name}</span></button>`).join('') || '<p class="rnote">Pin any page with the &#9734; button by its title.</p>'}</div>`;
+}
+function navOpenMenu() {
+  document.body.classList.add('sd-menu-open');
+  const p = NAV_PAGES[NAV_ST.cur] || navFirstVisible();
+  document.getElementById('sdLayer').innerHTML = `<div class="sd-scrim" data-nclose="1"></div><div class="sd-drawer"><b class="sh">Sections</b>${NAV.filter(s => s.pages.some(([id]) => navVisible(NAV_PAGES[id]))).map(s => `<details${s === p.sec ? ' open' : ''}><summary>${s.name}</summary>${s.pages.filter(([id]) => navVisible(NAV_PAGES[id])).map(([id, name]) => `<button type="button" data-npage="${id}" class="${id === p.id ? 'on' : ''}">${name}</button>`).join('')}</details>`).join('')}<button type="button" class="all" data-nall="1">All pages</button></div>`;
+}
+
+// ---- Analytics Lab home and "Where did it go?" ----
+function renderLabHome() {
+  const wrap = document.getElementById('labWrap'); if (!wrap) return;
+  const models = [['xG Model', 'xg', 'How likely is this look to score, for an average shooter?'], ['Goals Added', 'ga', 'Who created or cost goals, action by action?'], ['Win Probability', 'wp', 'Which plays actually swung games?'], ['Skater Projections', 'projsk', 'What will each player produce over 17 games?'], ['Goalie Projections', 'projgk', 'What will each goalie save over 17 games?'], ['Shooter Score', 'shooter', 'Who is our best shooter, all things considered?'], ['Goalie Score', 'gscore', 'Which goalie is actually performing best?'], ['Shooter-Adjusted Saves', 'gadj', 'Is he stopping our good shooters?'], ['Shooting Angles', 'angles', 'Where and how should each player shoot?']];
+  const views = [['3D Shot Cone', 'xg', '3D Shot Cone', 'Stand anywhere; see the cage the shooter sees and the model’s chance.', 'cone'], ['3D Save Surface', 'surface', null, 'The cage from any spot, colored by save % vs the team.', 'surface'], ['3D Shot Map', 'angles', '3D Shot Map', 'Every shot as a line to the cage, filterable.', 'map']];
+  const art = { cone: '<svg viewBox="0 0 230 110"><rect width="230" height="110" fill="#123A25"/><line x1="10" y1="26" x2="220" y2="26" stroke="#fff" opacity=".5"/><polygon points="150,92 106,20 124,20" fill="#4D8DFF" opacity=".45"/><rect x="104" y="14" width="22" height="12" fill="none" stroke="#FF6A3D" stroke-width="2"/><circle cx="150" cy="94" r="5" fill="#E3A92B"/></svg>', surface: '<svg viewBox="0 0 230 110"><rect width="230" height="110" fill="#0B2416"/><rect x="85" y="14" width="60" height="60" fill="none" stroke="#FF5A36" stroke-width="4"/>' + [0, 1, 2, 3, 4, 5, 6, 7, 8].map(i => `<rect x="${89 + (i % 3) * 18}" y="${18 + Math.floor(i / 3) * 18}" width="16" height="16" fill="${['#1E9E48', '#D03B3B', '#C9CED6'][(i * 5) % 3]}" opacity=".75"/>`).join('') + '<ellipse cx="115" cy="92" rx="70" ry="12" fill="none" stroke="#fff" opacity=".3"/></svg>', map: '<svg viewBox="0 0 230 110"><rect width="230" height="110" fill="#123A25"/><line x1="10" y1="22" x2="220" y2="22" stroke="#fff" opacity=".5"/>' + Array.from({ length: 50 }, (_, i) => `<line x1="${30 + (i * 37) % 170}" y1="${40 + (i * 23) % 65}" x2="${108 + (i % 7)}" y2="22" stroke="${i % 3 ? '#9AA7BA' : '#34C759'}" stroke-opacity=".55"/>`).join('') + '</svg>' };
+  const tile = (n, id, q, extra) => navVisible(NAV_PAGES[id]) ? `<button type="button" class="lab-tile" data-npage="${id}"${extra || ''}>${q[1] || ''}<span class="t">${n}</span><span class="q">${q[0]}</span><span class="w">${NAV_PAGES[id].sec.name} › ${NAV_PAGES[id].name}</span></button>` : '';
+  wrap.innerHTML = `<div class="lab-row"><h4>Models <small>the questions they answer</small></h4><div class="lab-tiles">${models.map(([n, id, q]) => tile(n, id, [q])).join('')}</div></div>
+    <div class="lab-row"><h4>3D Views <small>drag to turn, tap to stand somewhere</small></h4><div class="lab-tiles">${views.map(([n, id, anchor, q, a]) => tile(n, id, [q, `<span class="pv">${art[a]}</span>`], (anchor ? ` data-nanchor="${anchor}"` : '') + (a === 'surface' ? ' data-n3d="1"' : ''))).join('')}</div></div>
+    <div class="lab-row"><h4>Advanced Metrics <small>tap one to open where it lives</small></h4><div class="lab-chips">${NAV_METRICS.filter(([, , id]) => navVisible(NAV_PAGES[id])).map(([mn, d, id]) => `<button type="button" data-npage="${id}"><b>${navEsc(mn)}</b><span>${navEsc(d)}</span></button>`).join('')}</div></div>`;
+}
+function renderWhere() {
+  const wrap = document.getElementById('whereWrap'); if (!wrap) return;
+  const rows = Object.values(NAV_PAGES).filter(p => NAV_OLD[p.view] && navVisible(p));
+  wrap.innerHTML = `<input type="text" id="whereQ" placeholder="Filter, e.g. Shooter-Adjusted, Picks, Roster" style="max-width:380px; margin-bottom:12px;"><div class="table-wrap"><table class="shotlog"><thead><tr><th>Before</th><th>Now</th><th></th></tr></thead><tbody>${rows.map(p => `<tr data-q="${navEsc((NAV_OLD[p.view] + ' ' + (p.sub || '') + ' ' + p.name + ' ' + p.sec.name).toLowerCase())}"><td style="font-family:var(--text)">${navEsc(NAV_OLD[p.view])}${p.sub ? ' › ' + navEsc(p.sub) : ''}${p.anchor ? ' › ' + navEsc(p.anchor) : ''}</td><td style="font-family:var(--text)"><b>${p.sec.name}</b> › ${navEsc(p.name)}</td><td><button type="button" class="btn secondary" data-npage="${p.id}" style="padding:4px 10px;">Open</button></td></tr>`).join('')}</tbody></table></div>`;
+  document.getElementById('whereQ').addEventListener('input', e => { const q = e.target.value.toLowerCase(); wrap.querySelectorAll('tbody tr').forEach(r => { r.hidden = !r.dataset.q.includes(q); }); });
+}
+
+// ---- events + boot ----
+document.addEventListener('click', e => {
+  const t = e.target.closest('[data-npage],[data-nsec],[data-nback],[data-nseason],[data-nctx],[data-npin],[data-nbottom],[data-nclose],[data-nall]');
+  if (!t) return;
+  if (t.tagName === 'A') e.preventDefault();
+  if (t.dataset.nclose) return navCloseLayer();
+  if (t.dataset.nall) { navCloseLayer(); return navOpenAll(); }
+  if (t.dataset.npage) { const id = t.dataset.npage; goNav(id, t.dataset.nanchor || null); if (t.dataset.n3d) { const b = [...document.querySelectorAll('#surfModePills .pill')].find(x => x.textContent === '3D'); if (b && !b.classList.contains('active')) b.click(); } return; }
+  if (t.dataset.nsec) { const s = NAV.find(x => x.id === t.dataset.nsec); const first = s && s.pages.find(([id]) => navVisible(NAV_PAGES[id])); if (first) goNav(first[0]); return; }
+  if (t.dataset.nback) return navBack();
+  if (t.dataset.nseason) return navSetGlobal(t.dataset.nseason, null);
+  if (t.dataset.nctx) return navSetGlobal(null, t.dataset.nctx);
+  if (t.dataset.npin) { const id = t.dataset.npin; NAV_ST.pins = NAV_ST.pins.includes(id) ? NAV_ST.pins.filter(x => x !== id) : NAV_ST.pins.concat(id); try { localStorage.setItem('wluPins', JSON.stringify(NAV_ST.pins)); } catch (err) { /* storage unavailable */ } return drawNav(); }
+  if (t.dataset.nbottom) { const b = t.dataset.nbottom; if (b === '__search') { const q = document.getElementById('sdQ'); q.focus(); return; } if (b === '__pins') return navOpenPins(); if (b === '__menu') return navOpenMenu(); return goNav(b); }
+});
+document.getElementById('sdAll').addEventListener('click', navOpenAll);
+document.addEventListener('keydown', e => { if (e.key === 'Escape') navCloseLayer(); });
+// Hide what the new navigation replaces: each view's title, sub-tab strip
+// and its own season / session pills (still on the page, driven globally),
+// then any view bar left with nothing in it.
+function navHideOldControls() {
+  Object.values(NAV_FILTERS).forEach(f => [f.s, f.a, f.c].filter(Boolean).forEach(id => { const el = document.getElementById(id); if (el) (el.closest('.control-group') || el).classList.add('nav-hidden'); }));
+  document.querySelectorAll('.view-bar').forEach(bar => {
+    bar.querySelectorAll('.view-title, .subtabs').forEach(el => el.classList.add('nav-hidden'));
+    const left = [...bar.querySelectorAll('.view-bar-row > *')].filter(el => !el.classList.contains('nav-hidden'));
+    if (!left.length) bar.classList.add('nav-hidden');
+  });
+}
+function navBoot() {
+  if (!NAV_ST.season || ![...SEASONS, 'All Seasons'].includes(NAV_ST.season)) NAV_ST.season = defaultViewSeason();
+  navHideOldControls();
+  navWireSearch();
+  window.__navReady = true;
+  let start = null; try { start = localStorage.getItem('wluPage'); } catch (e) { start = null; }
+  goNav(NAV_PAGES[start] ? start : 'logshot', null, true);
+}
+
 async function init() {
   await loadAll();
   document.getElementById('loadingBox').style.display = 'none';
@@ -12475,6 +12901,7 @@ async function init() {
   renderEfficiencyView();
   renderOpponent();
   window.__appReady = true;
+  navBoot();
   onSessionChanged();
   renderUnitsPanel();
   if (LIVE_SHOTS_TUPLES.length) migrateShotsInbox(LIVE_SHOTS_TUPLES);
