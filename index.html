@@ -556,6 +556,97 @@
   }
   @media print { .sd-strip, .sd-rail, .sd-bottom, .sd-ph .sd-pin { display: none !important; } .sd-frame { display: block; } }
 </style>
+<style>
+  /* ================= Stats Desk Phase 3: brief, profile, methods ================= */
+  .bv-grid { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); border: 1px solid var(--line); background: var(--card); margin-bottom: 18px; }
+  .bv { border: 0; border-right: 1px solid var(--line-2); background: none; text-align: left; padding: 12px 14px 8px; display: flex; flex-direction: column; gap: 3px; cursor: pointer; color: var(--ink); min-width: 0; font-family: var(--text); }
+  .bv:last-child { border-right: 0; }
+  .bv:hover { background: var(--card-2); }
+  .bv .cap, .bs .cap, .pf-k .cap, .md .cap { font-size: 10.5px; letter-spacing: .14em; text-transform: uppercase; font-weight: 700; color: var(--muted); }
+  .bv .v { font-family: var(--num); font-weight: 700; font-size: 42px; line-height: 1; letter-spacing: -.01em; font-variant-numeric: tabular-nums; }
+  .bv .d { font-family: var(--mono); font-size: 12px; line-height: 1.3; min-height: 32px; }
+  .bv .d.up { color: var(--good); } .bv .d.down { color: var(--critical); } .bv .d.flat { color: var(--muted); }
+  .bv .sp { width: 100%; height: 24px; display: block; margin-top: 2px; }
+  .b-row21 { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr); gap: 16px; }
+  .b-row2 { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; }
+  .bp .panel-title { display: flex; justify-content: space-between; align-items: center; }
+  .bp-open { border: 0; background: none; color: var(--chrome-mute); font: 600 11.5px var(--text); letter-spacing: .04em; cursor: pointer; text-transform: none; }
+  .bp-open:hover { color: #fff; }
+  .bk { display: grid; grid-template-columns: 30px 1fr auto; gap: 12px; align-items: start; padding: 11px 0; border-bottom: 1px solid var(--line-2); font-family: var(--text); }
+  .bk:last-of-type { border-bottom: 0; }
+  .bk .n { font-family: var(--display); font-weight: 900; font-size: 32px; line-height: .9; color: var(--accent); }
+  .bk b { display: block; margin-bottom: 2px; font-size: 14px; }
+  .bk span { color: var(--muted); font-size: 13px; line-height: 1.5; }
+  .lnk { border: 0; background: none; color: var(--accent); font: 600 12px var(--text); cursor: pointer; padding: 0; white-space: nowrap; }
+  .lnk:hover { text-decoration: underline; }
+  .bk-none { font: 12.5px var(--text); color: var(--muted); margin: 8px 0 0; }
+  .bhc-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0 14px; }
+  .bhc-h { margin: 0 0 4px; font: 700 10.5px var(--text); letter-spacing: .14em; text-transform: uppercase; }
+  .bhc-h.up, .bhc .dl.up { color: var(--good); } .bhc-h.down, .bhc .dl.down { color: var(--critical); }
+  .bhc { width: 100%; display: grid; grid-template-columns: 1fr auto 38px; gap: 6px; align-items: baseline; padding: 8px 0; border: 0; border-top: 1px solid var(--line-2); background: none; text-align: left; cursor: pointer; color: var(--ink); font: 13px var(--text); }
+  .bhc:hover .nm { color: var(--accent); }
+  .bhc .nm { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .bhc .sc { font-family: var(--mono); color: var(--muted); } .bhc .sc b { color: var(--ink); }
+  .bhc .dl { font-family: var(--num); font-weight: 700; font-size: 17px; text-align: right; }
+  .bl-grid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); border-top: 1px solid var(--line-2); }
+  .bl { border-right: 1px solid var(--line-2); padding: 0 12px; min-width: 0; }
+  .bl:last-child { border-right: 0; }
+  .bl-h { display: flex; justify-content: space-between; align-items: baseline; gap: 6px; margin: 10px 0 4px; font: 700 10px var(--text); letter-spacing: .12em; text-transform: uppercase; color: var(--muted); }
+  .bl-r { width: 100%; display: grid; grid-template-columns: 16px 1fr auto; gap: 6px; padding: 7px 0; border: 0; border-top: 1px solid var(--line-2); background: none; text-align: left; color: var(--ink); cursor: pointer; font: 13px var(--text); }
+  .bl-r .rk { color: var(--muted); font-family: var(--mono); font-size: 11.5px; }
+  .bl-r .nm { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .bl-r .v { font-family: var(--mono); font-weight: 600; }
+  .bl-r.first .v { color: var(--gold-ink); }
+  .bl-r:hover .nm { color: var(--accent); }
+  .bs-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .bs { border: 0; border-right: 1px solid var(--line-2); background: none; text-align: left; padding: 6px 12px; display: flex; flex-direction: column; gap: 3px; cursor: pointer; color: var(--ink); min-width: 0; font-family: var(--text); }
+  .bs:last-child { border-right: 0; }
+  .bs .w { font-weight: 700; font-size: 14px; }
+  .bs .b { font-family: var(--num); font-weight: 700; font-size: 36px; line-height: 1; color: var(--good); }
+  .bs .l { font-size: 12px; color: var(--muted); line-height: 1.4; }
+  .pf-pick { display: flex; flex-wrap: wrap; border-top: 1px solid var(--line); border-left: 1px solid var(--line); margin-bottom: 14px; }
+  .pf-pick button { border: 0; border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); background: var(--card); padding: 6px 10px; font: 12px var(--text); color: var(--ink); cursor: pointer; }
+  .pf-pick button.on { background: var(--ink); color: var(--card); }
+  .pf-hero { display: grid; grid-template-columns: auto 1fr auto; gap: 18px; align-items: center; background: var(--chrome); color: #F2F5FA; padding: 18px 22px; margin-bottom: 14px; }
+  .pf-hero .pf-j { width: 66px; height: 66px; background: #E3A92B; color: #081A33; display: grid; place-items: center; font-family: var(--num); font-weight: 700; font-size: 34px; }
+  .pf-hero h2 { margin: 0; font-family: var(--display); font-weight: 900; font-size: 34px; line-height: 1; text-transform: uppercase; letter-spacing: .02em; }
+  .pf-meta { margin-top: 5px; color: #8FA3C2; font-size: 13px; }
+  .pf-hero .btn { background: var(--accent); }
+  .pf-ks { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); border: 1px solid var(--line); background: var(--card); margin-bottom: 16px; }
+  .pf-k { padding: 12px 14px; border-right: 1px solid var(--line-2); display: flex; flex-direction: column; gap: 3px; font-family: var(--text); }
+  .pf-k:last-child { border-right: 0; }
+  .pf-k .v { font-family: var(--num); font-weight: 700; font-size: 38px; line-height: 1; }
+  .pf-k .d { font-family: var(--mono); font-size: 12px; color: var(--muted); }
+  .pf-tree { font-family: var(--text); }
+  .pf-n { display: grid; grid-template-columns: minmax(0, 1fr) 160px 70px; gap: 12px; align-items: center; padding: 7px 0; border-bottom: 1px solid var(--line-2); }
+  .pf-n .gl { border: 0; background: none; padding: 0; text-align: left; color: var(--ink); font: inherit; display: flex; gap: 6px; align-items: center; cursor: default; }
+  .pf-n.has .gl { cursor: pointer; font-weight: 700; }
+  .pf-n .car { display: inline-block; width: 12px; color: var(--muted); transition: transform .15s; }
+  .pf-n.shut .car { transform: rotate(-90deg); }
+  .pf-n.d0 { border-bottom: 2px solid var(--ink); }
+  .pf-n.d0 .gl { font-family: var(--display); font-weight: 800; font-size: 20px; text-transform: uppercase; letter-spacing: .04em; }
+  .pf-n.d2 .gl { padding-left: 28px; color: var(--muted); }
+  .pf-n .gv { font-family: var(--mono); font-weight: 600; text-align: right; font-size: 13px; }
+  .pf-bar { position: relative; height: 8px; background: var(--line-2); display: block; }
+  .pf-bar i { position: absolute; top: 0; bottom: 0; }
+  .pf-bar b { position: absolute; left: 50%; top: -3px; bottom: -3px; width: 1px; background: var(--muted); }
+  .pf-r { display: grid; grid-template-columns: 1fr 120px 32px; gap: 10px; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--line-2); font: 13px var(--text); }
+  .pf-r .trk { height: 6px; background: var(--line-2); position: relative; display: block; }
+  .pf-r .trk i { position: absolute; left: 0; top: 0; bottom: 0; }
+  .pf-r b { font-family: var(--mono); text-align: right; }
+  .md { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); gap: 28px; font-family: var(--text); }
+  .md .mt { font-size: 15px; line-height: 1.6; margin: 6px 0 16px; max-width: 66ch; }
+  .md ol { margin: 6px 0 0; padding-left: 20px; line-height: 1.7; color: var(--ink); font-size: 13.5px; }
+  .md .mx { background: var(--card-2); border-left: 3px solid var(--accent); padding: 10px 12px; line-height: 1.6; font-size: 13.5px; margin: 6px 0 16px; }
+  @media (max-width: 1100px) { .bv-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } .bv:nth-child(3) { border-right: 0; } .bv:nth-child(-n+3) { border-bottom: 1px solid var(--line-2); } .bl-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+  @media (max-width: 900px) { .b-row21, .b-row2, .md { grid-template-columns: 1fr; } .pf-ks { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  @media (max-width: 760px) {
+    .bv-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .bv { border-right: 1px solid var(--line-2) !important; border-bottom: 1px solid var(--line-2); } .bv:nth-child(even) { border-right: 0 !important; }
+    .bv .v { font-size: 34px; } .bl-grid, .bs-grid, .bhc-grid { grid-template-columns: 1fr; } .bl, .bs { border-right: 0; }
+    .pf-hero { grid-template-columns: auto 1fr; } .pf-hero .btn { grid-column: 1 / -1; } .pf-n { grid-template-columns: minmax(0, 1fr) 80px 60px; }
+  }
+</style>
+
 
 
 </head>
@@ -2037,6 +2128,7 @@
       </div>
     </div>
     <p class="view-intro">How completely each field is being logged, and how many reps each key stat needs before it mostly reflects skill instead of luck. Use it to see which numbers to trust and what to log more of. 2027 and later.</p>
+    <div class="panel"><p class="panel-title">Model Health</p><p class="panel-sub">How far to trust each model today. Only you see this page.</p><div id="mhWrap"></div></div>
     <div class="view-tiles trend-grid" id="healthTiles"></div>
     <div class="panel">
       <p class="panel-title">Field Coverage</p>
@@ -2162,6 +2254,12 @@
     </div>
   </section>
 
+  <section id="briefView" class="view"><div id="briefWrap"></div></section>
+  <section id="profileView" class="view"><div id="profileWrap"></div></section>
+  <section id="methodsView" class="view">
+    <p class="view-intro">How each model is built, in plain English, with a worked example from your own live numbers.</p>
+    <div id="methodsWrap"></div>
+  </section>
   <section id="labView" class="view">
     <p class="view-intro">The shortcut to all the advanced work: every model, the 3D views and the advanced metrics. Each one also lives on its own page in its section.</p>
     <div id="labWrap"></div>
@@ -3563,7 +3661,7 @@ function pmEnter(p) {
   const mine = s => s && Object.keys(p.seasons).some(ss => p.seasons[ss] === s);
   const isDefender = allShotEntries().some(s => (mine(s.defender) && s.defender === p.seasons[seasonForDate(s.date)]) || (mine(s.slideDefender) && s.slideDefender === p.seasons[seasonForDate(s.date)]) || (mine(s.offBallFault) && s.offBallFault === p.seasons[seasonForDate(s.date)]))
     || allShotEntries().concat(POSSESSIONS).some(e => [e.pickScreenerDef, e.pickUserDef].some(j => j && j === p.seasons[seasonForDate(e.date)]));
-  const show = { logView: false, playerView: isPlayer, goalieView: isGoalie, defenseView: isDefender, efficiencyView: isPlayer, faceoffView: PLAYER_MODE.fogo,
+  const show = { briefView: false, methodsView: false, labView: false, whereView: false, profileView: isPlayer, logView: false, playerView: isPlayer, goalieView: isGoalie, defenseView: isDefender, efficiencyView: isPlayer, faceoffView: PLAYER_MODE.fogo,
     tableView: true, compareView: isPlayer, opponentView: false, reportsView: true, depthView: false, healthView: false, recruitsView: false, boardView: false };
   Object.keys(show).forEach(id => {
     document.querySelectorAll(`.tab-btn[data-view="${id}"]`).forEach(b => b.classList.toggle('pm-off', !show[id]));
@@ -7925,6 +8023,7 @@ function renderDataHealth() {
   const wrap = document.getElementById('healthFieldWrap');
   if (!wrap) return;
   const season = healthSeason;
+  renderModelHealth(season);
   const rows = healthFieldRows(season);
   const applicable = rows.filter(r => r.n);
   const green = applicable.filter(r => r.p >= 0.8), red = applicable.filter(r => r.p < 0.4);
@@ -8016,6 +8115,18 @@ function rptSlice(mode, keys) {
   const { S, O, P } = rptAllEntries();
   const inK = e => keys.includes(mode === 'practice' ? sessKey(e) : rptMonday(e.date));
   return { S: S.filter(inK), O: O.filter(inK), P: P.filter(inK) };
+}
+// Top finisher (G−xG, 5+ shots), best goalie (saves vs expected, 8+ faced) and
+// best creator (xA, 3+ shots set up) for a slice of entries.
+function rptStandouts(cur, season) {
+  const xm = xgModelFor(season), fm = facedXgModelFor(season);
+  const byShooter = {}; cur.S.forEach(s => { (byShooter[s.shooterJersey] = byShooter[s.shooterJersey] || []).push(s); });
+  const fin = Object.keys(byShooter).filter(j => byShooter[j].length >= 5).map(j => { const l = byShooter[j], g = l.filter(s => s.goal === 1).length; return { j, n: l.length, g, d: g - xgSum(l, xm) }; }).sort((a, b) => b.d - a.d)[0];
+  const byGoalie = {}; rptFaced(cur).forEach(s => { (byGoalie[s.goalieJersey] = byGoalie[s.goalieJersey] || []).push(s); });
+  const gk = Object.keys(byGoalie).filter(j => byGoalie[j].length >= 8).map(j => { const l = byGoalie[j], ga = l.filter(s => s.goal === 1).length; return { j, n: l.length, sv: l.length - ga, d: xgSum(l, fm) - ga }; }).sort((a, b) => b.d - a.d)[0];
+  const byPasser = {}; cur.S.filter(s => s.assistJersey && !isOppJersey(s.assistJersey)).forEach(s => { (byPasser[s.assistJersey] = byPasser[s.assistJersey] || []).push(s); });
+  const cr = Object.keys(byPasser).filter(j => byPasser[j].length >= 3).map(j => { const l = byPasser[j]; return { j, n: l.length, a: l.filter(s => s.goal === 1).length, xa: xgSum(l, xm) }; }).sort((a, b) => b.xa - a.xa)[0];
+  return { fin, gk, cr };
 }
 function rptFaced(d) { return d.S.filter(s => s.context === 'Practice' && s.goalieJersey && s.onKeeper === 1).concat(d.O.filter(s => s.goalieJersey && s.onKeeper === 1)); }
 // Team numbers for a slice, each as { v, num, den } so trends can test noise.
@@ -8120,13 +8231,7 @@ function renderReports() {
     return `<tr><td>${label}</td><td><b>${rptFmt(k, c.v)}</b>${c.kind === 'rate' && c.den ? ` <span class="n-note">(${c.num}/${c.den})</span>` : ''}</td><td>${b && b.kind === 'count' ? (bv === null ? '—' : num(bv, 1)) : rptFmt(k, bv)}</td><td>${flag ? `<b style="color:${good ? 'var(--good)' : 'var(--critical)'};">${flag === 'up' ? '▲ up' : '▼ down'}</b>` : '<span class="n-note">normal range</span>'}</td></tr>`;
   }).join('');
   // Standouts.
-  const xm = xgModelFor(season), fm = facedXgModelFor(season);
-  const byShooter = {}; cur.S.forEach(s => { (byShooter[s.shooterJersey] = byShooter[s.shooterJersey] || []).push(s); });
-  const fin = Object.keys(byShooter).filter(j => byShooter[j].length >= 5).map(j => { const l = byShooter[j], g = l.filter(s => s.goal === 1).length; return { j, n: l.length, g, d: g - xgSum(l, xm) }; }).sort((a, b) => b.d - a.d)[0];
-  const byGoalie = {}; rptFaced(cur).forEach(s => { (byGoalie[s.goalieJersey] = byGoalie[s.goalieJersey] || []).push(s); });
-  const gk = Object.keys(byGoalie).filter(j => byGoalie[j].length >= 8).map(j => { const l = byGoalie[j], ga = l.filter(s => s.goal === 1).length; return { j, n: l.length, sv: l.length - ga, d: xgSum(l, fm) - ga }; }).sort((a, b) => b.d - a.d)[0];
-  const byPasser = {}; cur.S.filter(s => s.assistJersey && !isOppJersey(s.assistJersey)).forEach(s => { (byPasser[s.assistJersey] = byPasser[s.assistJersey] || []).push(s); });
-  const cr = Object.keys(byPasser).filter(j => byPasser[j].length >= 3).map(j => { const l = byPasser[j]; return { j, n: l.length, a: l.filter(s => s.goal === 1).length, xa: xgSum(l, xm) }; }).sort((a, b) => b.xa - a.xa)[0];
+  const { fin, gk, cr } = rptStandouts(cur, season);
   const who = j => escapeHtml(jerseyLabel(j, season));
   const stand = [
     fin ? `<li><b>Top finisher:</b> ${who(fin.j)} &mdash; ${fin.g} goals on ${fin.n} shots, ${fin.d >= 0 ? '+' : ''}${fin.d.toFixed(1)} vs what those looks usually produce.</li>` : `<li class="n-note">Top finisher: nobody had 5+ shots.</li>`,
@@ -12577,7 +12682,7 @@ document.getElementById('exportRecruitsBtn').addEventListener('click', () => {
 // remembered sub-tabs keep working. Sections follow phase of play.
 // [id, page name, view, sub-tab label, panel title to scroll to]
 const NAV = [
-  { id: 'cc', name: 'Command Center', pages: [['reports', 'Reports', 'reportsView'], ['flags', 'Development Flags', 'efficiencyView', 'Flags']] },
+  { id: 'cc', name: 'Command Center', pages: [['brief', 'Head Coach Brief', 'briefView'], ['reports', 'Reports', 'reportsView'], ['flags', 'Development Flags', 'efficiencyView', 'Flags']] },
   { id: 'log', name: 'Log', pages: [['logshot', 'Log Shot', 'logView']] },
   { id: 'off', name: 'Offense', pages: [
     ['shooter', 'Shooter Score', 'playerView', 'Shooter Score'], ['heat', 'Heat Map', 'playerView', 'Heat Map'], ['quality', 'Shot Quality', 'playerView', 'Shot Quality'],
@@ -12592,9 +12697,9 @@ const NAV = [
   { id: 'fo', name: 'Faceoffs', pages: [['fosum', 'Faceoff Summary', 'faceoffView', 'Summary'], ['foh2h', 'Head-to-Head', 'faceoffView', 'Head-to-Head'], ['fotrends', 'Trends', 'faceoffView', 'Trends'], ['folog', 'Faceoff Log', 'faceoffView', 'Log']] },
   { id: 'games', name: 'Games', pages: [['opp', 'Opponent History', 'opponentView', 'History'], ['wp', 'Win Probability', 'opponentView', 'Win Probability']] },
   { id: 'lab', name: 'Analytics Lab', pages: [
-    ['labhome', 'Lab Home', 'labView'], ['xg', 'xG Model', 'efficiencyView', 'xG Model'], ['xgover', 'Expected-Goals Overview', 'efficiencyView', 'Overview'],
+    ['labhome', 'Lab Home', 'labView'], ['methods', 'Methods', 'methodsView'], ['xg', 'xG Model', 'efficiencyView', 'xG Model'], ['xgover', 'Expected-Goals Overview', 'efficiencyView', 'Overview'],
     ['ga', 'Goals Added', 'efficiencyView', 'Goals Added'], ['projsk', 'Skater Projections', 'playerView', 'Projections'], ['projgk', 'Goalie Projections', 'goalieView', 'Projections']] },
-  { id: 'pers', name: 'Personnel', pages: [['compare', 'Compare', 'compareView'], ['depth', 'Depth Chart', 'depthView'], ['roster', 'Roster', 'playerView', 'Roster']] },
+  { id: 'pers', name: 'Personnel', pages: [['profile', 'Player Profile', 'profileView'], ['compare', 'Compare', 'compareView'], ['depth', 'Depth Chart', 'depthView'], ['roster', 'Roster', 'playerView', 'Roster']] },
   { id: 'rec', name: 'Recruiting', pages: [['recruits', 'Recruits', 'recruitsView'], ['board', 'Board', 'boardView']] },
   { id: 'data', name: 'Data', pages: [['shotlog', 'Shot Log', 'tableView'], ['health', 'Data Health', 'healthView'], ['where', 'Where Did It Go?', 'whereView']] },
 ];
@@ -12617,7 +12722,7 @@ try { const p = JSON.parse(localStorage.getItem('wluPins') || '[]'); if (Array.i
 function navVisible(p) {
   const v = document.getElementById(p.view);
   if (!v || v.classList.contains('owner-off')) return false;
-  if (PLAYER_MODE && (v.classList.contains('pm-off') || p.id === 'roster' || p.view === 'labView' || p.view === 'whereView')) return false;
+  if (PLAYER_MODE && (v.classList.contains('pm-off') || p.id === 'roster' || ['labView', 'whereView', 'briefView', 'methodsView'].includes(p.view))) return false;
   return true;
 }
 function navFirstVisible() { for (const s of NAV) for (const [id] of s.pages) if (navVisible(NAV_PAGES[id])) return NAV_PAGES[id]; return NAV_PAGES.logshot; }
@@ -12666,6 +12771,9 @@ function goNav(id, anchor, fromHistory) {
   NAV_ST.cur = p.id; NAV_ST.busy = true;
   try {
     if (p.view === 'labView') renderLabHome();
+    if (p.view === 'briefView') renderBrief();
+    if (p.view === 'profileView') renderProfile();
+    if (p.view === 'methodsView') renderMethods();
     if (p.view === 'whereView') renderWhere();
     NAV_ST.notes = navApplyFilters(p.view);
     switchTab(p.view);
@@ -12705,6 +12813,9 @@ function drawNav() {
 
 // ---- search ----
 const NAV_KW = {
+  brief: 'head coach brief home dashboard summary overview one page this week vitals hot cold leaders standouts what matters three things',
+  profile: 'player profile card one player individual goals added breakdown present to player',
+  methods: 'methods how built how it works explain explanation one pager bayesian true level research',
   reports: 'report practice report week weekly recap session summary print pdf standouts', flags: 'flags development alerts concerns slumping needs work warning',
   logshot: 'log enter record input shot possession faceoff sideline lineup units entry add', shooter: 'best shooter shooting score scorer finishing sniper rank shooters leaderboard composite',
   heat: 'heat map where shoot from zones spots location shot chart filters', quality: 'shot quality gold silver bronze grade good looks bad looks share',
@@ -12728,7 +12839,7 @@ const NAV_KW = {
   roster: 'roster players list jerseys numbers add player', recruits: 'recruits recruiting prospects evaluations ratings high school', board: 'board recruiting board top targets',
   shotlog: 'shot log all shots raw data edit delete entries list', health: 'data health coverage missing logging quality reps needed sample size', where: 'where did it go old tab moved find old page map',
 };
-const NAV_QUESTIONS = [['Who is our best shooter?', 'shooter'], ['Who is our best goalie?', 'gscore'], ['Who wins our faceoffs?', 'fosum'], ['Where does our goalie struggle?', 'surface'], ['Where should we shoot from?', 'angles'], ['Who creates the most for others?', 'passing'], ['Who turns the ball over most?', 'eff'], ['Which lineup works best?', 'lineups'], ['Who is hot right now?', 'trends'], ['Who gets beat on defense?', 'defense'], ['How do we defend picks?', 'pickdef'], ['Which plays work best?', 'triggers'], ['What happened last practice?', 'reports'], ['Who should start?', 'depth'], ['What will he score this season?', 'projsk'], ['Which moments swung the game?', 'wp'], ['How is xG calculated?', 'xg'], ['What are our shot types?', 'shottypes']];
+const NAV_QUESTIONS = [['What should I know this week?', 'brief'], ['Who is heating up?', 'brief'], ['Who is our best shooter?', 'shooter'], ['Who is our best goalie?', 'gscore'], ['Who wins our faceoffs?', 'fosum'], ['Where does our goalie struggle?', 'surface'], ['Where should we shoot from?', 'angles'], ['Who creates the most for others?', 'passing'], ['Who turns the ball over most?', 'eff'], ['Which lineup works best?', 'lineups'], ['Who is hot right now?', 'trends'], ['Who gets beat on defense?', 'defense'], ['How do we defend picks?', 'pickdef'], ['Which plays work best?', 'triggers'], ['What happened last practice?', 'reports'], ['Who should start?', 'depth'], ['What will he score this season?', 'projsk'], ['Which moments swung the game?', 'wp'], ['How is xG calculated?', 'xg'], ['What are our shot types?', 'shottypes']];
 const NAV_METRICS = [['GSAx', 'Goals saved above expected', 'gadv'], ['SAE', 'Saves above expected, shooter-adjusted', 'gadj'], ['G−xG', 'Finishing vs look quality', 'eff'], ['xG', 'Expected goals', 'xg'], ['xA', 'Expected assists', 'eff'], ['A/TO', 'Assists per turnover', 'eff'], ['On-Goal Sh%', 'Shooting % on shots on cage', 'eff'], ['Look Value', 'Average quality of looks', 'shooter'], ['Leverage', 'How much one goal swings win chance', 'wp'], ['WPA', 'Win probability added', 'wp'], ['Clutch', 'Top 20% leverage moments', 'wp'], ['Goals Added', 'Credit for every action in a possession', 'ga'], ['True Level', 'Rates pulled toward the team with ranges', 'projsk'], ['Reps Needed', 'Sample size before a stat is trustworthy', 'health'], ['Faceoff Rating', 'Opponent-adjusted faceoff strength', 'foh2h'], ['Shooter Score', '0–100 shooting composite', 'shooter'], ['Goalie Score', '0–100 goaltending composite', 'gscore'], ['Dominoes', 'Advantage created, slides forced', 'dominoes'], ['Lift', 'Shooter finishes better off this passer', 'passing']];
 const NAV_STOP = new Set('the a an is are our we do does did of to for in on at by with and or who what which where when how why should can me my show find get go page tab his her he him their it this that most best'.split(' '));
 const navNorm = t => String(t).toLowerCase().replace(/[^a-z0-9%#\-\/\s]/g, ' ');
@@ -12743,7 +12854,7 @@ function navItems() {
   NAV_METRICS.forEach(([m, d, id]) => { const p = NAV_PAGES[id]; if (p && navVisible(p)) items.push({ k: 'Metric', t: m + ' — ' + d, s: p.sec.name + ' › ' + p.name, kw: NAV_KW[id] || '', go: () => goNav(id) }); });
   if (!PLAYER_MODE) {
     const season = currentLogSeason ? currentLogSeason() : SEASONS[SEASONS.length - 1];
-    (ROSTERS[season] || []).filter(r => r.name && r.jersey).forEach(r => items.push({ k: 'Player', t: `#${r.jersey} ${r.name}`, s: 'Opens his heat map', kw: 'player', go: () => { goNav('heat'); const sel = document.getElementById('playerSelect'); if (sel && [...sel.options].some(o => o.value === r.jersey)) { sel.value = r.jersey; sel.dispatchEvent(new Event('change')); } } }));
+    (ROSTERS[season] || []).filter(r => r.name && r.jersey).forEach(r => items.push({ k: 'Player', t: `#${r.jersey} ${r.name}`, s: 'Player profile', kw: 'player profile', go: () => profileOpen(r.jersey) }));
   }
   return items;
 }
@@ -12861,6 +12972,292 @@ function navBoot() {
   let start = null; try { start = localStorage.getItem('wluPage'); } catch (e) { start = null; }
   goNav(NAV_PAGES[start] ? start : 'logshot', null, true);
 }
+
+// ================= Stats Desk Phase 3: Head Coach Brief, profiles, Methods, Model Health =================
+// Every number here is one the tracker already computes (Reports, Shooter /
+// Goalie Score, Goals Added, Projections, Faceoffs, Defense); these pages
+// only gather them. Windows: the last 14 days vs the rest of the season.
+const BRIEF_DAYS = 14, BRIEF_Z = 1.5, BRIEF_HOT_MIN = 10;
+function briefSeason() { const s = (typeof NAV_ST !== 'undefined' && NAV_ST.season) || currentAdvSeason(); return isAdvSeason(s) ? s : currentAdvSeason(); }
+function briefCtxOk(e) { const c = typeof NAV_ST !== 'undefined' ? NAV_ST.ctx : 'All'; return c === 'All' || e.context === c; }
+function briefFrom() { const d = new Date(); d.setDate(d.getDate() - BRIEF_DAYS + 1); return localDateStr(d); }
+// Season entries split into the last 14 days and the rest.
+function briefSlices(season) {
+  const all = rptAllEntries(), from = briefFrom(), inS = e => seasonForDate(e.date) === season && briefCtxOk(e);
+  const pick = f => ({ S: all.S.filter(e => inS(e) && f(e)), O: all.O.filter(e => inS(e) && f(e)), P: all.P.filter(e => inS(e) && f(e)) });
+  return { season: pick(() => true), recent: pick(e => e.date >= from), rest: pick(e => e.date < from), from };
+}
+// How far beyond normal noise a recent value sits vs a baseline (z). null = not enough reps.
+function briefZ(cur, base) {
+  if (!cur || !base || cur.v === null || base.v === null || cur.v === undefined || base.v === undefined) return null;
+  if (cur.kind === 'rate') { if (cur.den < RPT_MIN_N) return null; const se = Math.sqrt(Math.max(base.v * (1 - base.v), 0.01) / cur.den); return (cur.v - base.v) / se; }
+  if (cur.kind === 'mean') { if (cur.n < RPT_MIN_N || !base.sd) return null; return (cur.v - base.v) / (base.sd / Math.sqrt(cur.n)); }
+  return null;
+}
+const briefRate = (num, den) => ({ v: den ? num / den : null, num, den, kind: 'rate' });
+// Turnovers come only from logged no-shot possessions, so (as on Reports) the
+// rate only counts sessions where any possessions were logged.
+function briefToRate(sl, season) {
+  const keys = new Set(sl.P.map(sessKey)); if (!keys.size) return { v: null, kind: 'rate', num: 0, den: 0 };
+  return rptTeamMetrics({ S: sl.S.filter(e => keys.has(sessKey(e))), O: [], P: sl.P }, season).toRate;
+}
+function briefFaceoffRate(season, f) { const l = faceoffsForSeason(season).filter(x => briefCtxOk(x) && f(x)); return briefRate(l.filter(x => x.won === 1).length, l.length); }
+
+// ---- 1. Vitals ----
+const BRIEF_VITALS = [['shPct', 'Shot %', 'eff'], ['onCage', 'On Cage', 'eff'], ['xgPer', 'xG / Shot', 'xg'], ['save', 'Save %', 'gsummary'], ['fo', 'Faceoff %', 'fosum'], ['toRate', 'Turnover Rate', 'eff']];
+function briefVitals(season, sl) {
+  const ms = rptTeamMetrics(sl.season, season), mr = rptTeamMetrics(sl.recent, season), mb = rptTeamMetrics(sl.rest, season);
+  ['season', 'recent', 'rest'].forEach((k, i) => { const m = [ms, mr, mb][i]; m.fo = briefFaceoffRate(season, k === 'season' ? () => true : k === 'recent' ? x => x.date >= sl.from : x => x.date < sl.from); });
+  ms.toRate = briefToRate(sl.season, season); mr.toRate = briefToRate(sl.recent, season); mb.toRate = briefToRate(sl.rest, season);
+  // Weekly values for the spark (Monday-Sunday weeks, oldest first).
+  const weeks = rptPeriods('week').filter(p => seasonForDate(p.date) === season).reverse().slice(-8);
+  const weekly = weeks.map(p => { const d = rptSlice('week', [p.key]); const f = e => briefCtxOk(e); const dd = { S: d.S.filter(f), O: d.O.filter(f), P: d.P.filter(f) }, m = rptTeamMetrics(dd, season); m.toRate = briefToRate(dd, season); m.fo = briefFaceoffRate(season, x => rptMonday(x.date) === p.key); return m; });
+  return BRIEF_VITALS.map(([k, label, page]) => {
+    const z = briefZ(mr[k], mb[k]), lowerBetter = !!RPT_LOWER_BETTER[k];
+    const tone = z === null || Math.abs(z) < BRIEF_Z ? 'flat' : ((z > 0) !== lowerBetter ? 'up' : 'down');
+    const fmt = v => v === null || v === undefined ? '—' : k === 'xgPer' ? num(v, 3).replace(/^0/, '') : pct(v);
+    const diff = mr[k].v === null || mb[k].v === null ? null : mr[k].v - mb[k].v;
+    const dTxt = ms[k].v === null ? (k === 'fo' ? 'No faceoffs logged yet' : 'Nothing logged yet') : diff === null ? 'not enough in the last 14 days' : `${fmt(mr[k].v)} last 14 days (${diff >= 0 ? '+' : '−'}${k === 'xgPer' ? Math.abs(diff).toFixed(3) : (Math.abs(diff) * 100).toFixed(1)}${tone === 'flat' ? ', within noise' : ''})`;
+    return { k, label, page, season: ms[k], recent: mr[k], z, tone, html: `<button type="button" class="bv" data-npage="${page}"><span class="cap">${label}</span><span class="v">${fmt(ms[k].v)}</span><span class="d ${tone}">${dTxt}</span>${briefSpark(weekly.map(w => w[k] && w[k].v).filter(v => v !== null && v !== undefined), tone)}</button>` };
+  });
+}
+function briefSpark(vals, tone) {
+  if (vals.length < 2) return '<svg class="sp" viewBox="0 0 140 24"></svg>';
+  const w = 140, h = 24, mn = Math.min(...vals), mx = Math.max(...vals), r = mx - mn || 1;
+  const pts = vals.map((v, i) => [i / (vals.length - 1) * (w - 4) + 2, h - 3 - (v - mn) / r * (h - 8)]);
+  const d = pts.map((p, i) => (i ? 'L' : 'M') + p[0].toFixed(1) + ',' + p[1].toFixed(1)).join(' '), l = pts[pts.length - 1];
+  const col = tone === 'up' ? 'var(--good)' : tone === 'down' ? 'var(--critical)' : 'var(--muted)';
+  return `<svg class="sp" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" aria-hidden="true"><line x1="0" x2="${w}" y1="${h - 1}" y2="${h - 1}" stroke="var(--line)"/><path d="${d}" fill="none" stroke="${col}" stroke-width="1.6"/><circle cx="${l[0]}" cy="${l[1]}" r="2.6" fill="${col}"/></svg>`;
+}
+
+// ---- 2. Three things to know ----
+// Every candidate is scored by how far beyond normal noise it is (z); the
+// three biggest with |z| >= 1.5 are shown.
+function briefCandidates(season, sl) {
+  const out = [], who = j => escapeHtml(jerseyLabel(j, season));
+  const add = (z, title, body, page, anchor, player) => { if (z !== null && isFinite(z) && Math.abs(z) >= BRIEF_Z) out.push({ z, title, body, page, anchor, player }); };
+  // Team trends.
+  const mr = rptTeamMetrics(sl.recent, season), mb = rptTeamMetrics(sl.rest, season);
+  mr.toRate = briefToRate(sl.recent, season); mb.toRate = briefToRate(sl.rest, season);
+  const trendPage = { shPct: ['eff'], onCage: ['eff'], xgPer: ['xg'], gold: ['quality'], save: ['gsummary'], toRate: ['eff', 'Possession Stats'], open: ['eff'], light: ['eff'], heavy: ['eff'], catchSh: ['situations'], dodgeSh: ['situations'] };
+  RPT_TREND.forEach(([k, label]) => {
+    const z = briefZ(mr[k], mb[k]); if (z === null) return;
+    const good = (z > 0) !== !!RPT_LOWER_BETTER[k];
+    add(z, `${label} is ${z > 0 ? 'up' : 'down'} the last 14 days.`, `${rptFmt(k, mr[k].v)}${mr[k].kind === 'rate' ? ` (${mr[k].num} of ${mr[k].den})` : ''} vs ${rptFmt(k, mb[k].v)} earlier this season — ${good ? 'a good sign' : 'worth a look'}.`, ...(trendPage[k] || ['eff']));
+  });
+  // Player hot / cold: his Sh% the last 14 days vs his own earlier shots.
+  const byP = (list) => { const m = {}; list.forEach(s => { if (s.shooterJersey) (m[s.shooterJersey] = m[s.shooterJersey] || []).push(s); }); return m; };
+  const rP = byP(sl.recent.S), bP = byP(sl.rest.S);
+  Object.keys(rP).forEach(j => {
+    const r = rP[j], b = bP[j] || []; if (r.length < BRIEF_HOT_MIN || b.length < BRIEF_HOT_MIN) return;
+    const rg = r.filter(s => s.goal === 1).length, bg = b.filter(s => s.goal === 1).length;
+    const z = briefZ(briefRate(rg, r.length), briefRate(bg, b.length));
+    add(z, `${who(j)} is ${z > 0 ? 'hot' : 'cold'}.`, `${rg} of ${r.length} (${pct(rg / r.length)}) the last 14 days vs ${pct(bg / b.length)} on his ${b.length} earlier shots.`, 'profile', null, j);
+  });
+  // Goalie gaps: save % the last 14 days vs his own earlier shots faced.
+  const byG = (d) => { const m = {}; rptFaced(d).forEach(s => { (m[s.goalieJersey] = m[s.goalieJersey] || []).push(s); }); return m; };
+  const rG = byG(sl.recent), bG = byG(sl.rest);
+  Object.keys(rG).forEach(j => {
+    const r = rG[j], b = bG[j] || []; if (r.length < RPT_MIN_N || b.length < RPT_MIN_N) return;
+    const rs = r.filter(s => s.goal !== 1).length, bs = b.filter(s => s.goal !== 1).length;
+    const z = briefZ(briefRate(rs, r.length), briefRate(bs, b.length));
+    add(z, `${who(j)} is ${z > 0 ? 'separating in goal' : 'struggling in goal'}.`, `Saving ${pct(rs / r.length)} (${rs} of ${r.length}) the last 14 days vs ${pct(bs / b.length)} earlier.`, 'gscore');
+  });
+  // Tactical spots: goals per possession for a coverage, man situation or
+  // trigger vs the matching baseline, this season.
+  const d = effDataFor(season), poss = (d.possList || teamPossessions(d)).filter(p => briefCtxOk(p.e));
+  const rateOf = l => briefRate(l.filter(p => p.goal).length, l.length);
+  const grp = (list, keyOf) => { const m = {}; list.forEach(p => { const k = keyOf(p); if (k) (m[k] = m[k] || []).push(p); }); return m; };
+  const wlu = poss.filter(p => p.team === 'WLU'), opp = poss.filter(p => p.team === 'OPP');
+  const withPick = wlu.filter(p => p.pick && p.pick.coverage), base = rateOf(withPick);
+  Object.entries(grp(withPick, p => p.pick.coverage)).forEach(([cov, l]) => { const r = rateOf(l), z = briefZ(r, base); add(z, `Our picks ${z > 0 ? 'beat' : 'stall against'} ${escapeHtml(cov.toLowerCase())} coverage.`, `${r.num} goals on ${r.den} pick possessions (${pct(r.v)}) vs ${pct(base.v)} on all our picks.`, 'picks'); });
+  const even = rateOf(wlu.filter(p => p.man === 'Even'));
+  const mu = rateOf(wlu.filter(p => p.man === 'Man-Up')), zmu = briefZ(mu, even);
+  add(zmu, `Man-up offense is ${zmu > 0 ? 'cashing in' : 'not converting'}.`, `${mu.num} goals on ${mu.den} man-up possessions (${pct(mu.v)}) vs ${pct(even.v)} at even strength.`, 'eff', 'Man-Up / Man-Down');
+  const oEven = rateOf(opp.filter(p => p.man === 'Even')), md = rateOf(opp.filter(p => p.man === 'Man-Up')), zmd = briefZ(md, oEven);
+  add(zmd === null ? null : -zmd, `Man-down defense is ${zmd < 0 ? 'holding up' : 'leaking'}.`, `Opponents scored on ${md.num} of ${md.den} man-up chances (${pct(md.v)}) vs ${pct(oEven.v)} at even strength.`, 'eff', 'Man-Up / Man-Down');
+  const allW = rateOf(wlu);
+  Object.entries(grp(wlu, p => (p.shots[0] && p.shots[0].trigger) || p.e.trigger || null)).forEach(([t, l]) => { const r = rateOf(l), z = briefZ(r, allW); add(z, `The ${escapeHtml(t)} trigger is ${z > 0 ? 'working' : 'not working'}.`, `${r.num} goals on ${r.den} possessions (${pct(r.v)}) vs ${pct(allW.v)} overall.`, 'triggers'); });
+  return out.sort((a, b) => Math.abs(b.z) - Math.abs(a.z));
+}
+
+// ---- 3-6. Hot & Cold, Leaders, Standouts, Last session ----
+function briefHotCold(season) {
+  const all = computeShooterScores(season, 'shooting').list, rec = computeShooterScores(season, 'shooting', briefFrom()).list;
+  const base = Object.fromEntries(all.map(r => [r.jersey, r]));
+  const moves = rec.filter(r => r.score !== null && r.shots >= BRIEF_HOT_MIN && base[r.jersey] && base[r.jersey].score !== null).map(r => ({ j: r.jersey, from: Math.round(base[r.jersey].score), to: Math.round(r.score), d: Math.round(r.score) - Math.round(base[r.jersey].score) }));
+  moves.sort((a, b) => b.d - a.d);
+  return { up: moves.filter(m => m.d > 0).slice(0, 3), down: moves.filter(m => m.d < 0).slice(-3).reverse(), n: moves.length };
+}
+function briefLeaders(season) {
+  const ss = computeShooterScores(season, 'shooting').list.filter(r => r.score !== null).slice(0, 3).map(r => [r.jersey, Math.round(r.score)]);
+  const gs = computeGoalieScores(season).filter(r => r.score !== null).slice(0, 3).map(r => [r.jersey, Math.round(r.score)]);
+  const fo = computeFaceoffSummary(faceoffsForSeason(season).filter(briefCtxOk)).filter(r => r.taken >= 10).sort((a, b) => b.winPct - a.winPct).slice(0, 3).map(r => [r.jersey, pct(r.winPct)]);
+  const c0 = defContext; defContext = (typeof NAV_ST !== 'undefined' && ['Practice', 'Game'].includes(NAV_ST.ctx)) ? NAV_ST.ctx : 'All';
+  let dshots; try { dshots = defShotsFor(season); } finally { defContext = c0; }
+  const byD = {}; dshots.filter(s => s.defender && !isOppJersey(s.defender) && (s.defBeaten === 'Yes' || s.defBeaten === 'No')).forEach(s => { (byD[s.defender] = byD[s.defender] || []).push(s); });
+  const df = Object.keys(byD).filter(j => byD[j].length >= 5).map(j => ({ j, r: byD[j].filter(s => s.defBeaten === 'Yes').length / byD[j].length })).sort((a, b) => a.r - b.r).slice(0, 3).map(x => [x.j, pct(x.r)]);
+  const s0 = EFF_SEASON, c1 = EFF_CONTEXT; EFF_SEASON = season; EFF_CONTEXT = (typeof NAV_ST !== 'undefined' && NAV_ST.ctx) || 'All';
+  let ga; try { ga = computeGoalsAdded(); } finally { EFF_SEASON = s0; EFF_CONTEXT = c1; }
+  const cr = ga.rows.slice().sort((a, b) => b.total - a.total).slice(0, 3).map(r => [r.jersey, (r.total >= 0 ? '+' : '') + r.total.toFixed(2)]);
+  return [['Offense · Shooter Score', 'shooter', ss, true], ['Goaltending · Goalie Score', 'gscore', gs, false], ['Faceoffs · Win %', 'fosum', fo, true], ['Defense · Beaten % (low = good)', 'defense', df, true], ['Creation · Goals Added', 'ga', cr, true]];
+}
+// The Reports weekly standouts for this week, or last week if this week has none yet.
+function briefStandouts(season) {
+  const weeks = rptPeriods('week').filter(p => seasonForDate(p.date) === season);
+  for (const w of weeks.slice(0, 2)) { const st = rptStandouts(rptSlice('week', [w.key]), season); if (st.fin || st.gk || st.cr) return Object.assign({ week: w }, st); }
+  return null;
+}
+function briefLastSession(season) {
+  const periods = rptPeriods('practice').filter(p => seasonForDate(p.date) === season);
+  if (!periods.length) return null;
+  const cur = rptSlice('practice', [periods[0].key]), prior = periods.slice(1, 1 + RPT_PRIOR_SESSIONS);
+  const cm = rptTeamMetrics(cur, season), bm = prior.length ? rptTeamMetrics(rptSlice('practice', prior.map(p => p.key)), season) : null;
+  if (bm) { const wp = prior.filter(p => rptSlice('practice', [p.key]).P.length > 0); bm.toRate = wp.length ? rptTeamMetrics(rptSlice('practice', wp.map(p => p.key)), season).toRate : { v: null, kind: 'rate', num: 0, den: 0 }; if (!cur.P.length) cm.toRate = { v: null, kind: 'rate', num: 0, den: 0 }; }
+  return { period: periods[0], prior: prior.length, rows: [['shPct', 'Shot %'], ['onCage', 'On cage'], ['gold', 'Gold looks'], ['toRate', 'Turnovers / poss.'], ['save', 'Save %']].map(([k, label]) => { const flag = bm ? rptFlag(cm[k], bm[k]) : null; const good = flag && ((flag === 'up') !== !!RPT_LOWER_BETTER[k]); return { k, label, c: cm[k], b: bm ? bm[k] : null, flag, good }; }), shots: cur.S.length, poss: cur.P.length };
+}
+function renderBrief() {
+  const wrap = document.getElementById('briefWrap'); if (!wrap) return;
+  const season = briefSeason(), sl = briefSlices(season), who = j => escapeHtml(jerseyLabel(j, season));
+  const sec = (title, page, body, sub) => `<div class="panel bp"><p class="panel-title">${title}${page ? `<button type="button" class="bp-open" data-npage="${page}">Open &rsaquo;</button>` : ''}</p>${sub ? `<p class="panel-sub">${sub}</p>` : ''}${body}</div>`;
+  if (!sl.season.S.length) { wrap.innerHTML = `<p class="view-intro">No ${escapeHtml(season)} shots logged yet. The brief fills in as you log.</p>`; return; }
+  const vit = briefVitals(season, sl);
+  const things = briefCandidates(season, sl).slice(0, 3);
+  const thingsHtml = things.map((t, i) => `<div class="bk"><span class="n">${i + 1}</span><div><b>${t.title}</b><span>${t.body}</span></div><button type="button" class="lnk" ${t.player ? `data-nprofile="${escapeHtml(t.player)}"` : `data-npage="${t.page}"${t.anchor ? ` data-nanchor="${escapeHtml(t.anchor)}"` : ''}`}>See why &rsaquo;</button></div>`).join('') + (things.length < 3 ? `<p class="bk-none">${things.length ? 'Nothing else is' : 'Nothing is'} beyond normal noise this week.</p>` : '');
+  const hc = briefHotCold(season), row = (m, hot) => `<button type="button" class="bhc" data-nprofile="${escapeHtml(m.j)}"><span class="nm">${who(m.j)}</span><span class="sc">${m.from} &rarr; <b>${m.to}</b></span><span class="dl ${hot ? 'up' : 'down'}">${m.d > 0 ? '+' : '−'}${Math.abs(m.d)}</span></button>`;
+  const hcHtml = hc.n ? `<div class="bhc-grid"><div><p class="bhc-h up">&#9650; Heating up</p>${hc.up.map(m => row(m, true)).join('') || '<p class="bk-none">Nobody up yet.</p>'}</div><div><p class="bhc-h down">&#9660; Cooling off</p>${hc.down.map(m => row(m, false)).join('') || '<p class="bk-none">Nobody down yet.</p>'}</div></div>` : `<p class="bk-none">Nobody has ${BRIEF_HOT_MIN}+ shots in the last 14 days yet.</p>`;
+  const lead = briefLeaders(season).map(([title, page, rows, players]) => `<div class="bl"><p class="bl-h"><span>${title}</span><button type="button" class="lnk" data-npage="${page}">All &rsaquo;</button></p>${rows.length ? rows.map(([j, v], i) => `<button type="button" class="bl-r${i === 0 ? ' first' : ''}" ${players ? `data-nprofile="${escapeHtml(j)}"` : `data-npage="${page}"`}><span class="rk">${i + 1}</span><span class="nm">${who(j)}</span><span class="v">${v}</span></button>`).join('') : '<p class="bk-none">Not enough logged yet.</p>'}</div>`).join('');
+  const st = briefStandouts(season);
+  const so = (lab, x, big, line, page) => x ? `<button type="button" class="bs" ${page ? `data-npage="${page}"` : `data-nprofile="${escapeHtml(x.j)}"`}><span class="cap">${lab}</span><span class="w">${who(x.j)}</span><span class="b">${big}</span><span class="l">${line}</span></button>` : `<div class="bs"><span class="cap">${lab}</span><span class="l">Nobody qualified yet.</span></div>`;
+  const stHtml = st ? `<div class="bs-grid">${so('Top finisher', st.fin, st.fin ? (st.fin.d >= 0 ? '+' : '−') + Math.abs(st.fin.d).toFixed(1) : '', st.fin ? `goals over expected · ${st.fin.g} of ${st.fin.n}` : '')}${so('Best goalie', st.gk, st.gk ? (st.gk.d >= 0 ? '+' : '−') + Math.abs(st.gk.d).toFixed(1) : '', st.gk ? `saves above expected · ${st.gk.sv} of ${st.gk.n}` : '', 'gscore')}${so('Best creator', st.cr, st.cr ? st.cr.xa.toFixed(1) : '', st.cr ? `expected assists · ${st.cr.n} shots set up` : '')}</div>` : '<p class="bk-none">No standouts yet.</p>';
+  const ls = briefLastSession(season);
+  const lsHtml = ls ? `<div class="table-wrap" style="max-height:none;"><table class="shotlog dense"><thead><tr><th>${escapeHtml(rptLabel('practice', ls.period))}</th><th>Value</th><th>Prev ${ls.prior}</th><th>Read</th></tr></thead><tbody>${ls.rows.map(r => `<tr><td style="font-family:var(--text)">${r.label}</td><td><b>${rptFmt(r.k, r.c.v)}</b></td><td>${r.b ? rptFmt(r.k, r.b.v) : '—'}</td><td style="font-family:var(--text); color:${r.flag ? (r.good ? 'var(--good)' : 'var(--critical)') : 'var(--muted)'}">${r.flag ? (r.flag === 'up' ? 'Above' : 'Below') + ' normal range' : r.b ? 'Within noise' : '—'}</td></tr>`).join('')}</tbody></table></div>` : '<p class="bk-none">No practice logged yet.</p>';
+  const ctx = typeof NAV_ST !== 'undefined' ? NAV_ST.ctx : 'All';
+  wrap.innerHTML = `<p class="view-intro">${escapeHtml(season)} &middot; ${ctx === 'All' ? 'practice + games' : ctx.toLowerCase()} &middot; last ${BRIEF_DAYS} days vs the rest of the season. Every block opens the page behind it. <button type="button" class="btn secondary print-hide" onclick="window.print()" style="padding:4px 10px; margin-left:6px;">Print</button></p>
+    <div class="bv-grid">${vit.map(v => v.html).join('')}</div>
+    <div class="b-row21">${sec('Three things to know', null, thingsHtml, 'The three biggest moves beyond normal noise: team trends, players, goalies and tactics.')}${sec('Hot &amp; Cold', 'trends', hcHtml, `Shooter Score, season &rarr; last ${BRIEF_DAYS} days (${BRIEF_HOT_MIN}+ shots). Tap a name for his profile.`)}</div>
+    ${sec('Leaders by phase', null, `<div class="bl-grid">${lead}</div>`)}
+    <div class="b-row2">${sec('This week&rsquo;s standouts', 'reports', stHtml, st ? escapeHtml(rptLabel('week', st.week)) : '')}${sec('Last session', 'reports', lsHtml, ls ? `${ls.shots} shots${ls.poss ? `, ${ls.poss} possessions` : ''} vs the previous ${ls.prior}` : '')}</div>`;
+}
+
+// ---- Player profile ----
+let profilePlayer = '';
+function profileOpen(j) { profilePlayer = j; goNav('profile'); }
+const PF_SPLITS = {
+  phase: { label: 'Offense / Defense', groups: [['Offense', ['adv', 'look', 'screen', 'finish', 'security']], ['Defense', ['takeaway', 'onball', 'goalie']]] },
+  role: { label: 'Create / Finish / Keep / Defend', groups: [['Create', ['adv', 'look', 'screen']], ['Finish', ['finish']], ['Keep the ball', ['security', 'takeaway']], ['Defend', ['onball', 'goalie']]] },
+};
+let pfSplit = 'phase', pfShut = {};
+function renderProfile() {
+  const wrap = document.getElementById('profileWrap'); if (!wrap) return;
+  const season = briefSeason();
+  const shots = SHOTS.filter(s => seasonForDate(s.date) === season && !s.seed && s.team !== 'OPP');
+  if (PLAYER_MODE) profilePlayer = pmJersey(season) || '';
+  const roster = (ROSTERS[season] || []).filter(r => r.jersey && shots.some(s => s.shooterJersey === r.jersey || s.assistJersey === r.jersey));
+  if (!roster.some(r => r.jersey === profilePlayer)) { const top = computeShooterScores(season, 'shooting').list[0]; profilePlayer = top ? top.jersey : (roster[0] ? roster[0].jersey : ''); }
+  const picker = PLAYER_MODE ? '' : `<div class="pf-pick">${roster.map(r => `<button type="button" class="${r.jersey === profilePlayer ? 'on' : ''}" data-nprofile="${escapeHtml(r.jersey)}">#${escapeHtml(r.jersey)} ${escapeHtml(lastNameOf(nameFor(r.jersey, season)))}</button>`).join('')}</div>`;
+  const j = profilePlayer;
+  if (!j) { wrap.innerHTML = `<p class="view-intro">No ${escapeHtml(season)} players with shots yet.</p>`; return; }
+  const mine = shots.filter(s => s.shooterJersey === j), goals = mine.filter(s => s.goal === 1).length, assists = shots.filter(s => s.assistJersey === j && s.goal === 1).length;
+  const ssList = computeShooterScores(season, 'shooting').list, ss = ssList.find(r => r.jersey === j);
+  const recList = computeShooterScores(season, 'shooting', briefFrom()).list, rec = recList.find(r => r.jersey === j);
+  const s0 = EFF_SEASON, c0 = EFF_CONTEXT; EFF_SEASON = season; EFF_CONTEXT = 'All';
+  let ga; try { ga = computeGoalsAdded(); } finally { EFF_SEASON = s0; EFF_CONTEXT = c0; }
+  const gaRow = ga.rows.find(r => r.jersey === j);
+  const pj = computeProjections(season), pp = pj.players.find(p => p.jersey === j);
+  const pos = (POSITIONS[season] || {})[j], posName = pos === 'A' ? 'Attack' : pos === 'M' ? 'Midfield' : pos === 'X' ? 'Defense / specialist' : 'Position not set';
+  const roleName = pp && pp.role ? ({ S: 'Starter', R: 'Rotation', B: 'Reserve', N: 'Won’t play' })[pp.role] : 'Role not set';
+  const pctile = (v, arr) => { const a = arr.filter(x => x !== null && x !== undefined && isFinite(x)).sort((x, y) => x - y); if (v === null || v === undefined || !a.length) return null; return Math.round((a.filter(x => x < v).length + a.filter(x => x === v).length / 2) / a.length * 100); };
+  const kpi = (label, v, sub) => `<div class="pf-k"><span class="cap">${label}</span><span class="v">${v}</span><span class="d">${sub}</span></div>`;
+  const ssRank = ss ? ssList.indexOf(ss) + 1 : null;
+  const gaP = gaRow ? pctile(gaRow.total, ga.rows.map(r => r.total)) : null;
+  const k1 = kpi('Shooter Score', ss && ss.score !== null ? Math.round(ss.score) : '—', ss ? `#${ssRank} of ${ssList.length} · ${pctile(ss.score, ssList.map(r => r.score))}th pct` : `needs ${SS_MIN_SHOTS}+ shots`);
+  const k2 = kpi('Goals Added', gaRow ? (gaRow.total >= 0 ? '+' : '−') + Math.abs(gaRow.total).toFixed(2) : '—', gaP !== null ? `${gaP}th pct on the team` : 'no possessions yet');
+  const k3 = kpi('True Sh%', pp ? pct(pp.sh.m) : '—', pp ? `likely ${pct(pp.sh.lo)}–${pct(pp.sh.hi)} · raw ${mine.length ? pct(goals / mine.length) : '—'}` : 'needs shots');
+  const k4 = kpi('17-Game Projection', pp && pp.pts17 ? Math.round(pp.pts17.m) + ' pts' : '—', pp && pp.pts17 ? `${Math.round(pp.goals17.m)} G · ${Math.round(pp.ast17.m)} A` : 'set his role on Skater Projections');
+  // Goals Added tree: every row is the exact sum of the rows under it.
+  let tree = '<p class="bk-none">No Goals Added yet.</p>';
+  if (gaRow) {
+    const part = k => gaRow[k] || 0, label = Object.fromEntries(GA_PARTS);
+    const max = Math.max(0.5, ...GA_PARTS.map(([k]) => Math.abs(part(k))), Math.abs(gaRow.total));
+    const bar = v => { const w = Math.min(50, Math.abs(v) / max * 50); return `<span class="pf-bar"><i style="${v >= 0 ? `left:50%;width:${w}%;background:var(--good)` : `left:${50 - w}%;width:${w}%;background:var(--critical)`}"></i><b></b></span>`; };
+    const fmt = v => (v > 0 ? '+' : v < 0 ? '−' : '') + Math.abs(v).toFixed(2);
+    const node = (txt, v, d, key) => `<div class="pf-n d${d}${key ? ' has' : ''}${key && pfShut[key] ? ' shut' : ''}"><button type="button" class="gl"${key ? ` data-pfshut="${key}"` : ''}>${key ? '<span class="car">▾</span>' : ''}${txt}</button>${bar(v)}<span class="gv" style="color:${v >= 0 ? 'var(--good)' : 'var(--critical)'}">${fmt(v)}</span></div>`;
+    const groups = PF_SPLITS[pfSplit].groups.map(([g, keys], i) => { const key = pfSplit + i, sum = keys.reduce((a, k) => a + part(k), 0); return node(g, sum, 1, key) + (pfShut[key] ? '' : keys.map(k => node(label[k], part(k), 2)).join('')); }).join('');
+    tree = `<div class="seg" style="margin-bottom:12px;">${Object.entries(PF_SPLITS).map(([k, s]) => `<button type="button" class="${pfSplit === k ? 'active' : ''}" data-pfsplit="${k}">${s.label}</button>`).join('')}</div><div class="pf-tree">${node('Goals Added', gaRow.total, 0)}${groups}</div><p class="n-note" style="margin-top:8px;">Every row is the exact sum of the rows under it. Same total, two ways to read it. Tap a group to fold it.</p>`;
+  }
+  const ranks = ss ? [['Finishing', ss.parts.fin.points], ['Goalie-adjusted', ss.parts.gadj.points], ['Look quality', ss.parts.quality.points], ['Accuracy', ss.parts.acc.points], ['Goals Added', gaP], [`Last ${BRIEF_DAYS} days score`, rec ? pctile(rec.score, recList.map(r => r.score)) : null]] : [['Goals Added', gaP]];
+  const rankHtml = ranks.map(([l, v]) => `<div class="pf-r"><span>${l}</span><span class="trk">${v === null || v === undefined ? '' : `<i style="width:${Math.round(v)}%;background:${v >= 70 ? 'var(--good)' : v <= 30 ? 'var(--critical)' : 'var(--muted)'}"></i>`}</span><b>${v === null || v === undefined ? '—' : Math.round(v)}</b></div>`).join('');
+  wrap.innerHTML = `${picker}
+    <div class="pf-hero"><div class="pf-j">${escapeHtml(j)}</div><div><h2>${escapeHtml(nameFor(j, season))}</h2><div class="pf-meta">${posName} · ${roleName} · ${mine.length} shots, ${goals} goals, ${assists} assists (${escapeHtml(season)})</div></div>${PLAYER_MODE ? '' : `<button type="button" class="btn print-hide" data-npresent="${escapeHtml(j)}">Present to player &rarr;</button>`}</div>
+    <div class="pf-ks">${k1}${k2}${k3}${k4}</div>
+    <div class="b-row21"><div class="panel"><p class="panel-title">Goals Added, broken down</p><p class="panel-sub">Goals created (+) or cost (−) vs an average possession, ${escapeHtml(season)}. How it works: <button type="button" class="lnk" data-npage="methods" data-nmethod="ga">Methods &rsaquo;</button></p>${tree}</div>
+    <div class="panel"><p class="panel-title">Where he ranks</p><p class="panel-sub">Team percentile; 50 = middle of the team.</p>${rankHtml}</div></div>`;
+}
+
+// ---- Methods one-pagers (written from the code; live worked examples) ----
+let methodKey = 'xg';
+function renderMethods() {
+  const wrap = document.getElementById('methodsWrap'); if (!wrap) return;
+  const season = briefSeason(), who = j => escapeHtml(jerseyLabel(j, season));
+  const ss = computeShooterScores(season, 'shooting').list.find(r => r.score !== null), gs = computeGoalieScores(season).find(r => r.score !== null);
+  const s0 = EFF_SEASON, c0 = EFF_CONTEXT; EFF_SEASON = season; EFF_CONTEXT = 'All'; let ga; try { ga = computeGoalsAdded(); } finally { EFF_SEASON = s0; EFF_CONTEXT = c0; }
+  const xm = xgModelFor(season), sh = advShots(season).filter(s => s.shooterJersey), xgPer = sh.length ? xgSum(sh, xm) / sh.length : null;
+  const rates = typeof wpRates === 'function' ? wpRates(season) : null;
+  const M = {
+    xg: { t: 'xG Model', page: 'xg', q: 'How likely is this look to score, for an average shooter?',
+      what: 'Expected goals (xG) is the chance an average shooter scores a given look. Summed over a player&rsquo;s shots it says what his looks were worth; goals minus xG is his finishing.',
+      steps: ['Every logged shot is one example: distance, angle, how much of the cage is visible, catch or dodge, contest, shooting hand vs field side, mechanism, bounce, man situation, rebound, practice vs game.', 'A regularized logistic regression is fit to this season&rsquo;s shots in the browser and refit live as you log.', 'The Gold/Silver/Bronze grade is left out on purpose, so the model can check the grades. The stats you see elsewhere still use the grade-based xG until you decide to switch.'],
+      ex: xgPer !== null ? `This season&rsquo;s ${sh.length} shots average ${num(xgPer, 3)} xG per shot by the grade-based model the tracker uses today.` : 'Fills in once shots are logged.' },
+    ga: { t: 'Goals Added', page: 'ga', q: 'How many goals did each player create or cost?',
+      what: 'Every possession starts worth the average possession. Each action moves that value, and whoever moved it gets the change, in goals. The team&rsquo;s credits add up to its goals minus the average.',
+      steps: ['Starting the dominoes moves a possession from the average to the average with dominoes.', 'The shot sets it to that look&rsquo;s xG: the passer and shooter split the look 50/50, or 40/30/30 with the screener on an off-ball pick.', 'The finish is goal minus xG, to the shooter. A turnover drops the value to zero: minus to the player, plus to the defender who caused it.', 'Goalies get saves above expected; on-ball defenders get xG minus goals on their man&rsquo;s shots.'],
+      ex: `This season an average possession is worth <b>${num(ga.V, 2)}</b> goals and one with dominoes started <b>${num(ga.Vadv, 2)}</b>, so starting dominoes is worth ${num(ga.Vadv - ga.V, 2)} goals to whoever starts them.` },
+    ss: { t: 'Shooter Score', page: 'shooter', q: 'Who is our best shooter, all things considered?',
+      what: 'A 0&ndash;100 composite where 50 is a team-average shooter, built from four parts. Each part is compared with the team and pulled toward 50 when the sample is small.',
+      steps: SS_PARTS.shooting.map(p => `${p.label}: ${p.weight}%.`).concat(['Each part becomes a 0&ndash;100 score vs the team; a small sample is pulled toward 50 (the same Bayesian idea as Projections&rsquo; true level).']),
+      ex: ss ? `${who(ss.jersey)}: ${SS_PARTS.shooting.map(p => `${p.label} ${ss.parts[p.key].points === null ? '—' : Math.round(ss.parts[p.key].points)}`).join(', ')} &rarr; weighted together = <b>${Math.round(ss.score)}</b>.` : 'Fills in once a player has 10+ shots.' },
+    gs: { t: 'Goalie Score', page: 'gscore', q: 'Which goalie is actually performing best?',
+      what: 'A 0&ndash;100 composite weighted heavily to saves above expected (GSAx) and shooter-adjusted saves (SAE), with smaller parts for rebounds, consistency, tough situations and outlets.',
+      steps: GS_PARTS.map(p => `${p.label}: ${p.weight}%.`).concat(['Situation parts need 5+ shots to count; small samples are pulled toward 50.']),
+      ex: gs ? `${who(gs.jersey)}: ${GS_PARTS.filter(p => gs.parts[p.key] && gs.parts[p.key].points !== null).map(p => `${p.label} ${Math.round(gs.parts[p.key].points)}`).join(', ')} &rarr; <b>${Math.round(gs.score)}</b>.` : 'Fills in once goalies have faced shots.' },
+    wp: { t: 'Win Probability', page: 'wp', q: 'Which plays actually swung games?',
+      what: 'Our chance to win at every moment, from the score and the time left. Each team scores at its usual rate per minute; a tie after regulation goes to sudden death. Leverage is how much one goal would swing it right then.',
+      steps: ['Scoring rates come from this season&rsquo;s games once 3 or more are logged, and from last season&rsquo;s until then.', 'Each Goals Added credit is weighted by the leverage of its moment: Win Probability Added.', 'Clutch = the top 20% of moments by leverage.'],
+      ex: rates ? `Right now the model uses ${num(rates.lw * 60, 1)} goals a game for us and ${num(rates.lo * 60, 1)} for opponents${rates.own ? ', from this season&rsquo;s games' : ', from last season (not enough games logged yet)'}.` : 'Fills in once games are logged.' },
+    pj: { t: 'Projections', page: 'projsk', q: 'What will each player produce over 17 games?',
+      what: 'Forecasts built on playing time and true efficiency, with ranges. The &ldquo;true level&rdquo; is a Bayesian idea: start from the team average and trust a player&rsquo;s own results more as his sample grows.',
+      steps: ['Volume: last season&rsquo;s official shots per game, scaled by the role you set (Starter / Rotation / Reserve), plus your bump. New players use the role average.', 'Efficiency: his true fall shooting %, his own rate blended with the team&rsquo;s by how many shots he has (the reps-needed estimate from Data Health).', 'Ranges: about 4 times in 5 he lands inside them.', 'Later, once a season of game lineups is logged: an impact rating that uses Goals Added as the starting estimate and adjusts it by how the team does with him on the field (like LUMA&rsquo;s ARC).'],
+      ex: 'A freshman who goes 8 for 12 (67%) is treated as close to the team average for now, because 12 shots is little evidence; by about 60 shots his own rate carries most of the weight.' },
+  };
+  if (!M[methodKey]) methodKey = 'xg';
+  const m = M[methodKey];
+  wrap.innerHTML = `<div class="pf-pick">${Object.entries(M).map(([k, x]) => `<button type="button" class="${k === methodKey ? 'on' : ''}" data-nmethod="${k}" data-npage="methods">${x.t}</button>`).join('')}</div>
+    <div class="panel"><p class="panel-title">${m.t}</p><p class="panel-sub">${m.q}</p>
+    <div class="md"><div><p class="cap">What it is</p><p class="mt">${m.what}</p><p class="cap">How it&rsquo;s built</p><ol>${m.steps.map(s => `<li>${s}</li>`).join('')}</ol></div><div><p class="cap">Worked example (live)</p><p class="mx">${m.ex}</p><p class="cap">Where you see it</p><p><button type="button" class="lnk" data-npage="${m.page}">${NAV_PAGES[m.page].sec.name} &rsaquo; ${NAV_PAGES[m.page].name} &rsaquo;</button></p></div></div></div>`;
+}
+
+// ---- Model Health (Data Health; owner only, like the page) ----
+function renderModelHealth(season) {
+  const wrap = document.getElementById('mhWrap'); if (!wrap) return;
+  const reps = Object.fromEntries(healthRepsRows(season).map(r => [r.stat, r]));
+  const fromReps = stat => { const r = reps[stat]; if (!r) return ['Growing', 'no reliability data yet']; const x = r.res; if (x.status !== 'ok') return ['Growing', x.status === 'few' ? `only ${x.players} players with enough reps to measure` : 'too noisy to measure yet']; // Reliable once a third of players have enough reps.
+    const ok = x.total > 0 && x.past / x.total >= 1 / 3; return [ok ? 'Reliable' : 'Growing', `${stat}: ${Math.round(x.n)} ${r.unit} needed · ${x.past} of ${x.total} players past it`]; };
+  const wp = typeof computeWinProb === 'function' ? computeWinProb(season) : null, timed = wp ? wp.games.filter(g => wp.timeline[g.id] && wp.timeline[g.id].pts.length > 1).length : 0;
+  const pj = computeProjections(season), need = pj.players.filter(p => p.shots >= 5), unset = need.filter(p => !p.role).length;
+  const rows = [['xG Model', 'xg', ...fromReps('Finishing (G−xG per shot)')], ['Shooter Score', 'shooter', ...fromReps('Shot % (Sh%)')], ['Goalie Score', 'gscore', ...fromReps('Saved vs. Expected (per shot)')], ['Shooter-Adjusted Saves', 'gadj', ...fromReps('SAE (per shot)')], ['Goals Added', 'ga', ...fromReps('Turnovers per touch')], ['Shooting Angles', 'angles', ...fromReps('Shot % (Sh%)')],
+    ['Win Probability', 'wp', timed >= 3 ? 'Reliable' : 'Needs games', `${timed} timed game${timed === 1 ? '' : 's'} (3+ needed)`], ['Projections', 'projsk', unset ? 'Set roles' : 'Reliable', unset ? `${unset} of ${need.length} players with 5+ shots have no role` : `all ${need.length} players with 5+ shots have a role`]];
+  const tone = l => l === 'Reliable' ? 'var(--good)' : l === 'Growing' ? 'var(--gold-ink)' : 'var(--critical)';
+  wrap.innerHTML = `<div class="table-wrap" style="max-height:none;"><table class="shotlog dense"><thead><tr><th>Model</th><th>Trust</th><th>Why</th></tr></thead><tbody>${rows.map(([n, page, l, why]) => `<tr><td style="font-family:var(--text)"><button type="button" class="lnk" data-npage="${page}">${n}</button></td><td><b style="color:${tone(l)}; font-family:var(--text); font-size:11px; letter-spacing:.1em; text-transform:uppercase;">${l}</b></td><td style="font-family:var(--text); color:var(--muted)">${escapeHtml(why)}</td></tr>`).join('')}</tbody></table></div>`;
+}
+document.addEventListener('click', e => {
+  const t = e.target.closest('[data-nprofile],[data-pfsplit],[data-pfshut],[data-npresent],[data-nmethod]'); if (!t) return;
+  if (t.dataset.nmethod) { methodKey = t.dataset.nmethod; if (NAV_ST.cur === 'methods') renderMethods(); return; }
+  if (t.dataset.nprofile) return profileOpen(t.dataset.nprofile);
+  if (t.dataset.pfsplit) { pfSplit = t.dataset.pfsplit; return renderProfile(); }
+  if (t.dataset.pfshut) { pfShut[t.dataset.pfshut] = !pfShut[t.dataset.pfshut]; return renderProfile(); }
+  if (t.dataset.npresent) { const j = t.dataset.npresent, season = briefSeason(), name = nameFor(j, season); pmPickerOpen(); const b = [...document.querySelectorAll('#pmPickerList .pm-pick')].find(x => x.textContent.includes(name)); if (b) b.click(); }
+});
 
 async function init() {
   await loadAll();
