@@ -2051,6 +2051,11 @@
       </div>
       <div class="subtabs" data-view="opponentView"></div>
     </div>
+    <div class="subpage" data-label="Scouting">
+      <!-- LR + ScoreBreak scouting profile. The page holds no data: it reads Firestore (lrTeams, lrPlayers,
+           app/lrMeta, filmTags, filmSessions) through this window's signed-in DB once the staff gate has passed. -->
+      <iframe id="scoutFrame" title="Opponent scouting" style="width:100%; height:calc(100vh - 150px); height:calc(100dvh - 150px); min-height:520px; border:0; display:block; background:var(--card);"></iframe>
+    </div>
     <div class="subpage" data-label="History">
     <div class="panel print-hide">
       <p class="panel-title">Our History vs an Opponent</p>
@@ -2128,6 +2133,13 @@
       </div>
     </div>
     <p class="view-intro">How completely each field is being logged, and how many reps each key stat needs before it mostly reflects skill instead of luck. Use it to see which numbers to trust and what to log more of. 2027 and later.</p>
+    <div class="panel">
+      <p class="panel-title">Import LR Data</p>
+      <p class="panel-sub">Loads the scouting files built on Bobby&rsquo;s Mac (the <code>lr_import</code> folder: lr_import_meta, _teams_NN, _players_NN, _tags) into Firestore for Opponent &rarr; Scouting. Pick all of the files at once. Re-importing replaces each team and player record; staff film tags are merged, never erased. Only you see this.</p>
+      <div class="controls-row"><div class="control-group"><input type="file" id="lrImportFiles" accept=".json,application/json" multiple></div>
+        <div class="control-group"><button class="btn" id="lrImportBtn" type="button">Import</button></div></div>
+      <p class="panel-sub" id="lrImportLog" style="white-space:pre-line;"></p>
+    </div>
     <div class="panel"><p class="panel-title">Model Health</p><p class="panel-sub">How far to trust each model today. Only you see this page.</p><div id="mhWrap"></div></div>
     <div class="view-tiles trend-grid" id="healthTiles"></div>
     <div class="panel">
@@ -8019,6 +8031,37 @@ function healthRepsRows(season) {
   ];
 }
 function roundReps(n) { return n < 50 ? Math.max(5, Math.round(n / 5) * 5) : n < 1000 ? Math.round(n / 10) * 10 : null; }
+// Owner-only: write the lr_import_*.json bundles to Firestore in batches of 400.
+async function importLrData() {
+  const log = document.getElementById('lrImportLog'), btn = document.getElementById('lrImportBtn');
+  if (!IS_DH_OWNER) { log.textContent = 'Only the Data Health owner can import.'; return; }
+  const files = [...document.getElementById('lrImportFiles').files];
+  if (!files.length) { log.textContent = 'Pick the lr_import files first.'; return; }
+  const COL = { meta: 'app', teams: 'lrTeams', players: 'lrPlayers', tags: 'filmTags' };
+  btn.disabled = true; const lines = []; const say = t => { lines.push(t); log.textContent = lines.join('\n'); };
+  // meta last, so the Scouting page only sees an import once every record is in place
+  files.sort((a, b) => (a.name.includes('meta') ? 1 : 0) - (b.name.includes('meta') ? 1 : 0) || a.name.localeCompare(b.name));
+  try {
+    for (const f of files) {
+      const bundle = JSON.parse(await f.text());
+      const col = COL[bundle.kind];
+      if (!col || !bundle.docs) { say(`${f.name}: skipped (not an LR import file)`); continue; }
+      const entries = Object.entries(bundle.docs);
+      const per = bundle.kind === 'teams' ? 10 : 400;   // team records run up to ~250 KB, so fewer per batch
+      for (let i = 0; i < entries.length; i += per) {
+        const batch = DB.batch();
+        entries.slice(i, i + per).forEach(([id, doc]) => batch.set(DB.collection(col).doc(id), doc, bundle.kind === 'tags' ? { merge: true } : {}));
+        await batch.commit();   // waits for the server, so a rules or quota error stops the import here
+      }
+      say(`${f.name}: ${entries.length} ${bundle.kind === 'players' ? 'player cards' : bundle.kind === 'teams' ? 'teams' : 'records'} ✓`);
+    }
+    say('Done. Opponent → Scouting will load the new data on its next open.');
+    const sf = document.getElementById('scoutFrame'); if (sf && sf.getAttribute('src')) sf.contentWindow.location.reload();
+  } catch (e) { console.error(e); say('Stopped: ' + (e.message || e) + (String(e).includes('permission') ? ' — the Firestore rules need lrTeams, lrPlayers, filmTags, filmSessions and app/lrMeta (see the PR notes).' : '')); }
+  btn.disabled = false;
+}
+document.getElementById('lrImportBtn').addEventListener('click', importLrData);
+
 function renderDataHealth() {
   const wrap = document.getElementById('healthFieldWrap');
   if (!wrap) return;
@@ -11840,6 +11883,8 @@ function renderOpponentReport() {
 }
 
 function renderOpponent() {
+  const sf = document.getElementById('scoutFrame');
+  if (sf && !sf.getAttribute('src') && DB && firebase.auth().currentUser) sf.setAttribute('src', 'opponent-scout.html');
   if (!document.getElementById('opp_select')) return;
   populateOpponentSelect();
   renderOpponentReport();
@@ -12695,7 +12740,7 @@ const NAV = [
     ['gscore', 'Goalie Score', 'goalieView', 'Goalie Score'], ['surface', 'Save Surface', 'goalieView', 'Save Surface'], ['savemap', 'Save Map', 'goalieView', 'Save Map'],
     ['gsummary', 'Summary', 'goalieView', 'Summary'], ['gadv', 'Advanced', 'goalieView', 'Advanced'], ['gadj', 'Shooter-Adjusted', 'goalieView', 'Shooter-Adjusted'], ['gtrends', 'Goalie Trends', 'goalieView', 'Trends']] },
   { id: 'fo', name: 'Faceoffs', pages: [['fosum', 'Faceoff Summary', 'faceoffView', 'Summary'], ['foh2h', 'Head-to-Head', 'faceoffView', 'Head-to-Head'], ['fotrends', 'Trends', 'faceoffView', 'Trends'], ['folog', 'Faceoff Log', 'faceoffView', 'Log']] },
-  { id: 'games', name: 'Games', pages: [['opp', 'Opponent History', 'opponentView', 'History'], ['wp', 'Win Probability', 'opponentView', 'Win Probability']] },
+  { id: 'games', name: 'Games', pages: [['scout', 'Opponent Scouting', 'opponentView', 'Scouting'], ['opp', 'Opponent History', 'opponentView', 'History'], ['wp', 'Win Probability', 'opponentView', 'Win Probability']] },
   { id: 'lab', name: 'Analytics Lab', pages: [
     ['labhome', 'Lab Home', 'labView'], ['methods', 'Methods', 'methodsView'], ['xg', 'xG Model', 'efficiencyView', 'xG Model'], ['xgover', 'Expected-Goals Overview', 'efficiencyView', 'Overview'],
     ['ga', 'Goals Added', 'efficiencyView', 'Goals Added'], ['projsk', 'Skater Projections', 'playerView', 'Projections'], ['projgk', 'Goalie Projections', 'goalieView', 'Projections']] },
