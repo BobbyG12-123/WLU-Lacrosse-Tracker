@@ -1,0 +1,171 @@
+<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Train the Tagger</title>
+<style>
+:root { --bg:#F4F6FA; --card:#FFFFFF; --ink:#0F1F3D; --muted:#5B6B85; --line:#DCE2EC; --accent:#1D4ED8; --good:#1E9E55; --critical:#D9381A; --gold:#E3A92B; --sel:#0F1F3D; --selink:#fff; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --bg:#0B1220; --card:#121B2E; --ink:#E8EEF7; --muted:#8B98AE; --line:#22304A; --sel:#E8EEF7; --selink:#0B1220; color-scheme:dark; } }
+:root[data-theme="dark"] { --bg:#0B1220; --card:#121B2E; --ink:#E8EEF7; --muted:#8B98AE; --line:#22304A; --sel:#E8EEF7; --selink:#0B1220; color-scheme:dark; }
+body { background:var(--bg); color:var(--ink); font:14px/1.4 -apple-system, system-ui, sans-serif; margin:0; padding:12px 16px 40px; }
+h1 { font-size:18px; margin:0; } .sub { color:var(--muted); font-size:12px; }
+.top { display:flex; flex-wrap:wrap; gap:10px; align-items:center; justify-content:space-between; margin-bottom:10px; }
+.wrap { display:grid; grid-template-columns:minmax(0,1.6fr) minmax(0,1fr); gap:14px; }
+@media (max-width:900px) { .wrap { grid-template-columns:1fr; } }
+.card { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:12px; }
+video { width:100%; background:#000; border-radius:8px; aspect-ratio:16/9; }
+.vbar { display:flex; flex-wrap:wrap; gap:6px; margin-top:6px; align-items:center; }
+button { font:inherit; border:1px solid var(--line); background:var(--card); color:var(--ink); border-radius:999px; padding:6px 12px; cursor:pointer; }
+button.on { background:var(--sel); color:var(--selink); border-color:var(--sel); }
+button.yes.on { background:var(--good); border-color:var(--good); color:#fff; } button.no.on { background:var(--critical); border-color:var(--critical); color:#fff; }
+button.pri { background:var(--accent); border-color:var(--accent); color:#fff; }
+.row { margin:10px 0; } .row b { display:block; font-size:12px; color:var(--muted); text-transform:uppercase; letter-spacing:.04em; margin-bottom:4px; }
+.pills { display:flex; flex-wrap:wrap; gap:6px; }
+kbd { font-size:10px; color:var(--muted); margin-left:4px; }
+.guess { font-size:13px; padding:8px 10px; border-radius:8px; background:var(--bg); border:1px dashed var(--line); }
+.prog { height:6px; background:var(--line); border-radius:3px; overflow:hidden; margin-top:6px; } .prog i { display:block; height:100%; background:var(--good); }
+svg.field { width:100%; max-width:420px; display:block; cursor:crosshair; background:#2E7D4F; border-radius:8px; }
+.note { color:var(--muted); font-size:12px; }
+.list { max-height:260px; overflow:auto; font-size:12px; } .list div { padding:3px 6px; border-radius:4px; cursor:pointer; display:flex; justify-content:space-between; } .list div.cur { background:var(--bg); font-weight:700; } .list .done { color:var(--good); }
+</style>
+<div class="top"><div><h1 id="title">Train the Tagger</h1><div class="sub" id="sub">Loading…</div></div>
+  <div class="pills"><select id="game" style="font:inherit;padding:6px 10px;border:1px solid var(--line);border-radius:999px;background:var(--card);color:var(--ink)"></select><span class="note" id="saved"></span></div></div>
+<div class="prog"><i id="progbar" style="width:0"></i></div>
+<div id="msg" class="note" style="margin-top:10px"></div>
+<div class="wrap" id="main" style="margin-top:10px" hidden>
+ <div class="card">
+  <video id="v" playsinline muted preload="auto"></video>
+  <div class="vbar"><button id="replay">↺ Replay <kbd>R</kbd></button><button id="pp">⏯ <kbd>space</kbd></button><button id="slow">½ speed</button>
+   <button id="mark">📍 Shot is right now <kbd>.</kbd></button><span class="note" id="clock"></span></div>
+  <div class="guess" style="margin-top:8px" id="guess"></div>
+  <div class="vbar" style="justify-content:space-between"><button id="prev">← Prev</button><span class="note" id="pos"></span><button id="next" class="pri">Next →</button></div>
+ </div>
+ <div class="card">
+  <div class="row"><b>Is this a shot?</b><div class="pills"><button class="yes" data-k="shot" data-v="1">Shot <kbd>1</kbd></button><button class="no" data-k="shot" data-v="0">Not a shot <kbd>0</kbd></button></div></div>
+  <div id="detail">
+   <div class="row"><b>Shooting team</b><div class="pills" id="teams"></div></div>
+   <div class="row"><b>Result</b><div class="pills">
+     <button data-k="result" data-v="goal">Goal <kbd>G</kbd></button><button data-k="result" data-v="saved">Saved <kbd>S</kbd></button><button data-k="result" data-v="missed">Missed <kbd>M</kbd></button><button data-k="result" data-v="blocked">Blocked <kbd>B</kbd></button><button data-k="result" data-v="pipe">Pipe <kbd>P</kbd></button></div></div>
+   <div class="row"><b>Contest (nearest defender + his stick at release)</b><div class="pills">
+     <button data-k="contest" data-v="Open">Open <kbd>Q</kbd></button><button data-k="contest" data-v="Light">Light <kbd>W</kbd></button><button data-k="contest" data-v="Heavy">Heavy <kbd>E</kbd></button></div>
+     <div class="note">Open = no defender within ~3 yd · Light = 1–3 yd or stick in the lane · Heavy = within ~1 yd, stick on the hands or body contact</div></div>
+   <div class="row"><b>Where the shot came from</b><svg class="field" id="field" viewBox="0 0 400 230"></svg><div class="note" id="loc">Click where the shooter released it (goal at top).</div></div>
+  </div>
+  <div class="row"><b>Queue</b><div class="list" id="list"></div></div>
+ </div>
+</div>
+<script>
+// Reads trainQueues/<film> and reads/writes trainShots/<film> through the tracker's signed-in firebase app.
+// Every click saves at once; each coach's answers are kept separately (keyed by email).
+const HOST = (() => { try { const P = window.parent; return P !== window && P.firebase && P.firebase.apps.length && P.firebase.auth().currentUser ? P : null; } catch (e) { return null; } })();
+const DBX = window.__STUB_DB || (HOST && HOST.firebase.firestore());
+const ME = ((HOST && HOST.firebase.auth().currentUser.email) || window.__STUB_ME || 'staff').toLowerCase();
+const MEK = ME.replace(/[^a-z0-9]/g, '_');
+let D = null, S = {}, OTHERS = {};
+const save = () => {};
+function saveAns(id) {
+  const a = Object.assign({}, S[id], { by: ME });
+  DBX.collection('trainShots').doc(D.key).set({ a: { [id]: { [MEK]: a } }, updatedAt: new Date().toISOString() }, { merge: true })
+    .then(() => { $('saved').textContent = 'Saved ✓'; }).catch(e => { console.error(e); $('saved').textContent = 'Not saved — check connection'; });
+}
+const $ = id => document.getElementById(id);
+const mmss = v => `${Math.floor(v / 60)}:${String(Math.floor(v % 60)).padStart(2, '0')}`;
+const teamName = side => side === 'p' ? D.names[0] : side === 'o' ? D.names[1] : '?';
+const PRE = 5, POST = 2.5;
+let i = 0;
+function header() { $('sub').textContent = `${D.game} · ${D.date} · ${D.items.length} clips · model's least-sure calls first · every click saves for the staff`; }
+function teamsBar() { $('teams').innerHTML = ['p', 'o'].map(s => `<button data-k="team" data-v="${s}">${teamName(s)} <kbd>${s === 'p' ? 'A' : 'Z'}</kbd></button>`).join(''); }
+// flat half-field: goal at top center, lateral -19..19 yd -> x, distance 0..20 yd -> y
+const X = lat => 200 + lat * 10, Y = d => 20 + d * 10;
+$('field').innerHTML = `<rect x="10" y="20" width="380" height="200" fill="none" stroke="#fff" stroke-opacity=".5"/>
+  ${[5, 10, 15].map(d => `<line x1="10" x2="390" y1="${Y(d)}" y2="${Y(d)}" stroke="#fff" stroke-opacity=".18" stroke-dasharray="4 4"/><text x="16" y="${Y(d) - 3}" fill="#fff" fill-opacity=".6" font-size="10">${d} yd</text>`).join('')}
+  <line x1="10" x2="390" y1="20" y2="20" stroke="#fff" stroke-width="2"/>
+  <circle cx="200" cy="20" r="30" fill="none" stroke="#fff" stroke-width="1.5"/><rect x="190" y="12" width="20" height="8" fill="#fff"/>
+  <g id="dot" style="display:none"><circle r="9" fill="#E3A92B" opacity=".4"/><circle r="5" fill="#0F1F3D" stroke="#fff" stroke-width="1.5"/></g>`;
+$('field').addEventListener('click', e => {
+  const svg = $('field'), pt = svg.createSVGPoint(); pt.x = e.clientX; pt.y = e.clientY;
+  const p = pt.matrixTransform(svg.getScreenCTM().inverse());
+  const lat = Math.max(-19, Math.min(19, (p.x - 200) / 10)), dist = Math.max(0, Math.min(20, (p.y - 20) / 10));
+  ans().lateralYds = Math.round(lat * 10) / 10; ans().distanceYds = Math.round(dist * 10) / 10; ans().at = Date.now(); saveAns(it().id); draw();
+});
+const it = () => D.items[i];
+const ans = () => (S[it().id] = S[it().id] || {});
+const done = x => { const a = S[x.id] || OTHERS[x.id]; return a && (a.shot === '0' || (a.shot === '1' && a.contest && a.distanceYds != null)); };
+const v = $('v');
+function load() {
+  const x = it(); const a = S[x.id] || {};
+  const center = a.moment ?? x.t;
+  v.src = `${D.mp4}#t=${Math.max(0, center - PRE)},${center + POST}`;
+  v.currentTime = Math.max(0, center - PRE); v.play().catch(() => {});
+  draw();
+}
+function draw() {
+  const x = it(), a = S[x.id] || {};
+  const pre = { shot: a.shot ?? (x.src === 'tagged' ? '1' : null), team: a.team ?? x.team, result: a.result ?? x.result, contest: a.contest };
+  document.querySelectorAll('[data-k]').forEach(b => b.classList.toggle('on', String(pre[b.dataset.k]) === b.dataset.v));
+  $('detail').style.opacity = pre.shot === '0' ? .35 : 1;
+  const dot = $('dot');
+  if (a.distanceYds != null) { dot.style.display = ''; dot.setAttribute('transform', `translate(${X(a.lateralYds)},${Y(a.distanceYds)})`); $('loc').textContent = `${a.distanceYds} yd from goal, ${a.lateralYds} yd lateral`; }
+  else { dot.style.display = 'none'; $('loc').textContent = 'Click where the shooter released it (goal at top).'; }
+  $('guess').innerHTML = x.src === 'model'
+    ? `<b>Model's guess:</b> a shot (${Math.round(x.p * 100)}% sure) that nobody tagged. Is it?`
+    : `<b>Tagged shot</b> (${teamName(x.team)}${x.result ? ' · ' + x.result : ''}) · the model gave it ${Math.round(x.p * 100)}%${x.p < .35 ? ' — it would have missed this one' : ''}. Confirm, then add contest + origin.`;
+  $('pos').textContent = `${i + 1} / ${D.items.length}` + (OTHERS[x.id] && !S[x.id] ? ` · answered by ${OTHERS[x.id].by.split('@')[0]}` : '');
+  const n = D.items.filter(done).length; $('progbar').style.width = (100 * n / D.items.length) + '%';
+  $('list').innerHTML = D.items.map((y, k) => `<div data-i="${k}" class="${k === i ? 'cur' : ''}"><span>${k + 1}. ${mmss(y.t)} · ${y.src === 'model' ? 'model guess' : teamName(y.team) + ' ' + (y.result || '')}</span><span class="${done(y) ? 'done' : ''}">${done(y) ? '✓' : ''}</span></div>`).join('');
+  $('list').querySelector('.cur')?.scrollIntoView({ block: 'nearest' });
+}
+function set(k, val) {
+  const x = it(), a = ans();
+  if (a.shot == null && x.src === 'tagged') a.shot = '1';
+  if (a.team == null && x.team) a.team = x.team;
+  if (a.result == null && x.result) a.result = x.result;
+  a[k] = val; a.at = Date.now(); saveAns(x.id); draw();
+}
+document.addEventListener('click', e => {
+  const b = e.target.closest('[data-k]'); if (b) { set(b.dataset.k, b.dataset.v); return; }
+  const l = e.target.closest('[data-i]'); if (l) { i = +l.dataset.i; load(); }
+});
+v.addEventListener('timeupdate', () => { const c = (S[it().id] || {}).moment ?? it().t; $('clock').textContent = `film ${mmss(v.currentTime)}`; if (v.currentTime > c + POST) { v.pause(); } });
+$('replay').onclick = () => { const c = (S[it().id] || {}).moment ?? it().t; v.currentTime = Math.max(0, c - PRE); v.play(); };
+$('pp').onclick = () => v.paused ? v.play() : v.pause();
+$('slow').onclick = e => { v.playbackRate = v.playbackRate === 1 ? .5 : 1; e.target.classList.toggle('on', v.playbackRate !== 1); };
+$('mark').onclick = () => { ans().moment = Math.round(v.currentTime * 10) / 10; saveAns(it().id); $('clock').textContent = 'shot moment set at ' + mmss(v.currentTime); };
+$('prev').onclick = () => { i = Math.max(0, i - 1); load(); };
+$('next').onclick = () => { i = Math.min(D.items.length - 1, i + 1); load(); };
+const KEYS = { '1': ['shot', '1'], '0': ['shot', '0'], g: ['result', 'goal'], s: ['result', 'saved'], m: ['result', 'missed'], b: ['result', 'blocked'], p: ['result', 'pipe'], q: ['contest', 'Open'], w: ['contest', 'Light'], e: ['contest', 'Heavy'], a: ['team', 'p'], z: ['team', 'o'] };
+document.addEventListener('keydown', e => {
+  if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT' || !D) return;
+  const k = e.key.toLowerCase();
+  if (KEYS[k]) { set(...KEYS[k]); }
+  else if (k === 'arrowright' || k === 'enter') $('next').click();
+  else if (k === 'arrowleft') $('prev').click();
+  else if (k === 'r') $('replay').click();
+  else if (k === ' ') { e.preventDefault(); $('pp').click(); }
+  else if (k === '.') $('mark').click();
+});
+async function openGame(key) {
+  const [q, ans] = await Promise.all([DBX.collection('trainQueues').doc(key).get(), DBX.collection('trainShots').doc(key).get()]);
+  if (!q.exists) return;
+  D = JSON.parse(q.data().j); S = {}; OTHERS = {};
+  const A = ans.exists ? (ans.data().a || {}) : {};
+  for (const [id, byUser] of Object.entries(A)) {
+    if (byUser[MEK]) S[id] = Object.assign({}, byUser[MEK]);
+    const other = Object.entries(byUser).filter(([k]) => k !== MEK).map(([, v]) => v).sort((a, b) => (b.at || 0) - (a.at || 0))[0];
+    if (other) OTHERS[id] = other;
+  }
+  try { localStorage.setItem('wluTrainGame', key); } catch (e) {}
+  header(); teamsBar(); $('main').hidden = false; $('msg').textContent = '';
+  i = Math.max(0, D.items.findIndex(x => !done(x))); load();
+}
+(async function boot() {
+  if (!DBX) { $('msg').textContent = 'Open this from the tracker (Games → Train the Tagger) while signed in.'; return; }
+  try { const t = HOST && HOST.document.documentElement.dataset.theme; if (t) document.documentElement.dataset.theme = t; } catch (e) {}
+  try {
+    const qs = await DBX.collection('trainQueues').get(); const games = [];
+    qs.forEach(d => { const m = d.data(); games.push({ key: d.id, label: m.label || d.id }); });
+    if (!games.length) { $('msg').textContent = 'No games loaded for training yet. The owner adds them from Data Health → Import LR Data.'; $('sub').textContent = ''; return; }
+    $('game').innerHTML = games.map(g => `<option value="${g.key}">${g.label}</option>`).join('');
+    $('game').onchange = e => openGame(e.target.value);
+    let want = null; try { want = localStorage.getItem('wluTrainGame'); } catch (e) {}
+    const k = games.some(g => g.key === want) ? want : games[0].key; $('game').value = k; await openGame(k);
+  } catch (e) { console.error(e); $('msg').textContent = 'Could not load: ' + (e.message || e) + (String(e).includes('permission') ? ' — the Firestore rules need trainQueues and trainShots.' : ''); }
+})();
+</script>

@@ -2056,6 +2056,11 @@
            app/lrMeta, filmTags, filmSessions) through this window's signed-in DB once the staff gate has passed. -->
       <iframe id="scoutFrame" title="Opponent scouting" style="width:100%; height:calc(100vh - 150px); height:calc(100dvh - 150px); min-height:520px; border:0; display:block; background:var(--card);"></iframe>
     </div>
+    <div class="subpage" data-label="Train the Tagger">
+      <!-- Staff teach the film auto-tagger: confirm shots, contest level and origin clip by clip. Reads trainQueues and
+           saves each click to trainShots (per coach) through this window's signed-in firebase app. No data in the page. -->
+      <iframe id="trainFrame" title="Train the tagger" style="width:100%; height:calc(100vh - 150px); height:calc(100dvh - 150px); min-height:560px; border:0; display:block; background:var(--card);"></iframe>
+    </div>
     <div class="subpage" data-label="History">
     <div class="panel print-hide">
       <p class="panel-title">Our History vs an Opponent</p>
@@ -8037,7 +8042,7 @@ async function importLrData() {
   if (!IS_DH_OWNER) { log.textContent = 'Only the Data Health owner can import.'; return; }
   const files = [...document.getElementById('lrImportFiles').files];
   if (!files.length) { log.textContent = 'Pick the lr_import files first.'; return; }
-  const COL = { meta: 'app', teams: 'lrTeams', players: 'lrPlayers', tags: 'filmTags' };
+  const COL = { meta: 'app', teams: 'lrTeams', players: 'lrPlayers', tags: 'filmTags', trainq: 'trainQueues' };
   btn.disabled = true; const lines = []; const say = t => { lines.push(t); log.textContent = lines.join('\n'); };
   // meta last, so the Scouting page only sees an import once every record is in place
   files.sort((a, b) => (a.name.includes('meta') ? 1 : 0) - (b.name.includes('meta') ? 1 : 0) || a.name.localeCompare(b.name));
@@ -8056,8 +8061,8 @@ async function importLrData() {
       say(`${f.name}: ${entries.length} ${bundle.kind === 'players' ? 'player cards' : bundle.kind === 'teams' ? 'teams' : 'records'} ✓`);
     }
     say('Done. Opponent → Scouting will load the new data on its next open.');
-    const sf = document.getElementById('scoutFrame'); if (sf && sf.getAttribute('src')) sf.contentWindow.location.reload();
-  } catch (e) { console.error(e); say('Stopped: ' + (e.message || e) + (String(e).includes('permission') ? ' — the Firestore rules need lrTeams, lrPlayers, filmTags, filmSessions and app/lrMeta (see the PR notes).' : '')); }
+    ['scoutFrame', 'trainFrame'].forEach(id => { const f = document.getElementById(id); if (f && f.getAttribute('src')) f.contentWindow.location.reload(); });
+  } catch (e) { console.error(e); say('Stopped: ' + (e.message || e) + (String(e).includes('permission') ? ' — the Firestore rules need lrTeams, lrPlayers, filmTags, filmSessions, trainQueues and app/lrMeta (see the PR notes).' : '')); }
   btn.disabled = false;
 }
 document.getElementById('lrImportBtn').addEventListener('click', importLrData);
@@ -11885,6 +11890,8 @@ function renderOpponentReport() {
 function renderOpponent() {
   const sf = document.getElementById('scoutFrame');
   if (sf && !sf.getAttribute('src') && DB && firebase.auth().currentUser) sf.setAttribute('src', 'opponent-scout.html');
+  const tf = document.getElementById('trainFrame');
+  if (tf && !tf.getAttribute('src') && DB && firebase.auth().currentUser) tf.setAttribute('src', 'train-tagger.html');
   if (!document.getElementById('opp_select')) return;
   populateOpponentSelect();
   renderOpponentReport();
@@ -12740,7 +12747,7 @@ const NAV = [
     ['gscore', 'Goalie Score', 'goalieView', 'Goalie Score'], ['surface', 'Save Surface', 'goalieView', 'Save Surface'], ['savemap', 'Save Map', 'goalieView', 'Save Map'],
     ['gsummary', 'Summary', 'goalieView', 'Summary'], ['gadv', 'Advanced', 'goalieView', 'Advanced'], ['gadj', 'Shooter-Adjusted', 'goalieView', 'Shooter-Adjusted'], ['gtrends', 'Goalie Trends', 'goalieView', 'Trends']] },
   { id: 'fo', name: 'Faceoffs', pages: [['fosum', 'Faceoff Summary', 'faceoffView', 'Summary'], ['foh2h', 'Head-to-Head', 'faceoffView', 'Head-to-Head'], ['fotrends', 'Trends', 'faceoffView', 'Trends'], ['folog', 'Faceoff Log', 'faceoffView', 'Log']] },
-  { id: 'games', name: 'Games', pages: [['scout', 'Opponent Scouting', 'opponentView', 'Scouting'], ['opp', 'Opponent History', 'opponentView', 'History'], ['wp', 'Win Probability', 'opponentView', 'Win Probability']] },
+  { id: 'games', name: 'Games', pages: [['scout', 'Opponent Scouting', 'opponentView', 'Scouting'], ['train', 'Train the Tagger', 'opponentView', 'Train the Tagger'], ['opp', 'Opponent History', 'opponentView', 'History'], ['wp', 'Win Probability', 'opponentView', 'Win Probability']] },
   { id: 'lab', name: 'Analytics Lab', pages: [
     ['labhome', 'Lab Home', 'labView'], ['methods', 'Methods', 'methodsView'], ['xg', 'xG Model', 'efficiencyView', 'xG Model'], ['xgover', 'Expected-Goals Overview', 'efficiencyView', 'Overview'],
     ['ga', 'Goals Added', 'efficiencyView', 'Goals Added'], ['projsk', 'Skater Projections', 'playerView', 'Projections'], ['projgk', 'Goalie Projections', 'goalieView', 'Projections']] },
