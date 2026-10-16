@@ -156,8 +156,9 @@ td.h { font-weight:600; } .h0{background:var(--d0)} .h1{background:var(--d1)} .h
 <aside class="drawer" id="drawer" aria-label="Player card"></aside>
 <script>
 // ---------- data: read from Firestore through the tracker that hosts this page (staff sign-in) ----------
-const HOST = (() => { try { return window.parent !== window && window.parent.DB ? window.parent : null; } catch (e) { return null; } })();
-const DBX = window.__STUB_DB || (HOST && HOST.DB);
+// the tracker's DB variable is script-scoped, so connect through its firebase app (same signed-in user)
+const HOST = (() => { try { const P = window.parent; return P !== window && P.firebase && P.firebase.apps.length && P.firebase.auth().currentUser ? P : null; } catch (e) { return null; } })();
+const DBX = window.__STUB_DB || (HOST && HOST.firebase.firestore());
 const ME = (HOST && HOST.firebase && HOST.firebase.auth().currentUser && HOST.firebase.auth().currentUser.email) || window.__STUB_ME || 'staff';
 let D = { opp: null, wl: null, cards: {}, meta: null, pinned: [] };
 let T = null, LEAGUE_N = 0, TEAMNAME = {}, FILMS = {};
