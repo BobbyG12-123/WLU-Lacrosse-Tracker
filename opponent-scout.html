@@ -162,10 +162,12 @@ const ME = (HOST && HOST.firebase && HOST.firebase.auth().currentUser && HOST.fi
 let D = { opp: null, wl: null, cards: {}, meta: null, pinned: [] };
 let T = null, LEAGUE_N = 0, TEAMNAME = {}, FILMS = {};
 const WL_ID = 410;
-async function getDoc(col, id) { const d = await DBX.collection(col).doc(String(id)).get(); return d.exists ? d.data() : null; }
+// records are stored as one JSON string field 'j' (Firestore can't hold the nested arrays in game logs and clip lists)
+const unpack = x => (x && typeof x.j === 'string' ? JSON.parse(x.j) : x);
+async function getDoc(col, id) { const d = await DBX.collection(col).doc(String(id)).get(); return d.exists ? unpack(d.data()) : null; }
 async function getCards(teamId) {
   const qs = await DBX.collection('lrPlayers').where('team', '==', teamId).get();
-  const out = {}; qs.forEach(d => { const c = d.data(); out[c.id] = c; }); return out;
+  const out = {}; qs.forEach(d => { const c = unpack(d.data()); out[c.id] = c; }); return out;
 }
 // theme follows the tracker
 function syncTheme() { try { const t = HOST && HOST.document.documentElement.dataset.theme; if (t) document.documentElement.dataset.theme = t; else delete document.documentElement.dataset.theme; } catch (e) {} }
