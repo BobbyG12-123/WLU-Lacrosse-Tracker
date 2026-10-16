@@ -7303,7 +7303,8 @@ function renderScreenPPP(d, wp, small) {
     const on = (onField[k] || []).length;
     const advOn = (onField[k] || []).reduce((a, pp) => a + advOf(pp).filter(x => x.s === k).length, 0);
     return Object.assign({ jersey: k, name: nameFor(k, EFF_SEASON), set: screensSet[k] || 0, created: advSet[k] || 0, advRate: ratio(advSet[k] || 0, screensSet[k] || 0),
-      on, per10: on >= 10 ? 10 * advOn / on : null, otherN: other.n, otherGpp: other.n >= 5 ? other.gpp : null, edge: st.gpp !== null && other.n >= 5 ? st.gpp - other.gpp : null }, st);
+      // only when most of his advantage screens sit on lineup-logged possessions, or the rate would undercount him
+      on, per10: on >= 10 && advOn >= 0.8 * (advSet[k] || 0) ? 10 * advOn / on : null, otherN: other.n, otherGpp: other.n >= 5 ? other.gpp : null, edge: st.gpp !== null && other.n >= 5 ? st.gpp - other.gpp : null }, st);
   }).filter(r => r.n >= effPickMin);
   const d2 = v => num(v, 2), sgn = v => v === null ? '—' : (v >= 0 ? '+' : '') + num(v, 2);
   const liftStyle = (v, r) => small(r.n) || (v === null ? '' : `color:${v >= 0 ? 'var(--good)' : 'var(--critical)'}; font-weight:700;`);
@@ -7323,7 +7324,7 @@ function renderScreenPPP(d, wp, small) {
     { key: 'edge', label: 'Screen Edge', type: 'num', value: r => r.edge, format: sgn, group: 'His other possessions', cellStyle: (v, r) => small(Math.min(r.n, r.otherN)) || (v === null ? '' : `color:${v >= 0 ? 'var(--good)' : 'var(--critical)'}; font-weight:700;`), title: 'His screen-advantage goals/poss minus his other on-field possessions.' });
   if (effScrView === 'screener') cols.splice(who.length, 0,
     { key: 'created', label: 'Advantages Created', type: 'num', value: r => r.created, title: 'Screens he set that created an advantage.' },
-    { key: 'per10', label: 'Adv. per 10 Poss', type: 'num', value: r => r.per10, format: v => v === null ? '—' : num(v, 1), title: 'Advantages his screens created per 10 possessions he was on the field. Counts only possessions with the lineup bar logged; shows once he has 10+ of them.' },
+    { key: 'per10', label: 'Adv. per 10 Poss', type: 'num', value: r => r.per10, format: v => v === null ? '—' : num(v, 1), title: 'Advantages his screens created per 10 possessions he was on the field. Counts only possessions with the lineup bar logged; shows once he has 10+ of them and most of his advantage screens have a lineup logged.' },
     { key: 'set', label: 'Screens Set', type: 'num', value: r => r.set },
     { key: 'advRate', label: 'Advantage %', type: 'num', value: r => r.advRate, format: v => pct(v), title: 'Share of his screens that created an advantage.' });
   renderSortableTable('effScrWrap', cols, rows, { dense: true, defaultSort: { key: effScrView === 'screener' ? 'created' : 'lift', dir: 'desc' }, emptyMsg: `No ${effScrView === 'pair' ? 'pair' : 'player'} has ${effPickMin}+ screen-advantage possessions yet.` });
