@@ -954,6 +954,16 @@
               <div class="readout" id="fPickUserDefResolve"></div>
             </div>
           </div>
+          <div class="field-grid" style="margin-top:12px;">
+            <div class="span-2">
+              <label>Screens on this possession? <span class="n-note">every screen &mdash; feeds Screen-Generated PPP</span></label>
+              <div class="pill-row" id="f_screens"></div>
+            </div>
+          </div>
+          <div id="fScreensBody" style="display:none; margin-top:8px;">
+            <div id="fScreenRows"></div>
+            <button type="button" class="btn secondary" id="fScreenAdd" style="margin-top:6px;">+ Screen</button>
+          </div>
         </div>
 
         <details class="log-card more-card">
@@ -1130,6 +1140,16 @@
               <input type="text" id="p_pick_user_def" inputmode="numeric" maxlength="3" placeholder="Jersey #">
               <div class="readout" id="pPickUserDefResolve"></div>
             </div>
+          </div>
+          <div class="field-grid" style="margin-top:12px;">
+            <div class="span-2">
+              <label>Screens on this possession? <span class="n-note">every screen &mdash; feeds Screen-Generated PPP</span></label>
+              <div class="pill-row" id="p_screens"></div>
+            </div>
+          </div>
+          <div id="pScreensBody" style="display:none; margin-top:8px;">
+            <div id="pScreenRows"></div>
+            <button type="button" class="btn secondary" id="pScreenAdd" style="margin-top:6px;">+ Screen</button>
           </div>
         </div>
 
@@ -1740,6 +1760,13 @@
     </div>
     </div>
     <div class="subpage" data-label="Picks">
+    <div class="panel">
+      <p class="panel-title">Screen-Generated PPP</p>
+      <p class="panel-sub" id="effScrSub"></p>
+      <div class="trend-grid" id="effScrTiles" style="margin:8px 0 12px;"></div>
+      <div class="controls-row" style="margin-bottom:8px;"><div class="control-group"><label>Show</label><div class="pill-row" id="effScrViewPills"></div></div></div>
+      <div class="table-wrap" id="effScrWrap"></div>
+    </div>
     <div class="trend-grid view-tiles" id="effPickTiles"></div>
     <div class="panel">
       <p class="panel-sub" id="effPickSub"></p>
@@ -2360,7 +2387,9 @@ const COLS =["id","date","practiceId","context","shooterJersey","goalieJersey","
   // Who defended the pick / get (2027+).
   "pickScreenerDef","pickUserDef",
   // Game time (2027+ games): quarter '1'-'4' / 'OT' and clock left 'm:ss'.
-  "quarter","clock"];
+  "quarter","clock",
+  // Every screen on the possession (2027+): JSON [{s: screener, u: user, adv: 'Yes'|'No'}].
+  "screens"];
 // team: 'OPP' marks an opponent shot on a WLU goalie (games). Those never go
 // into SHOTS (every shooting stat assumes a WLU shooter); they live in
 // OPP_SHOTS and feed only the goalie views. Opponent jerseys are stored as
@@ -2373,7 +2402,7 @@ const POSS_END_OPTIONS = ["Turnover","Failed clear","End of period"];
 // from shots so no shot math changes; lineup/turnover/dominoes stats read both.
 const POSS_COLS = ["id","date","context","opponent","team","possStart","possStartJersey","dominoes","advCreator","advType","manSituation","end","turnoverBy","causedBy","stintId",
   "pick","pickType","pickSpot","pickScreener","pickUser","pickCoverage","pickResult","pickMismatch","pickAction",
-  "pickScreenerDef","pickUserDef","quarter","clock"];
+  "pickScreenerDef","pickUserDef","quarter","clock","screens"];
 // Shot Outcome (one required pill pick) replaces the old On Goal/On
 // Keeper/Goal Scored/Blocked checkboxes. Rather than rewriting every
 // existing analytics function that reads onGoal/onKeeper/goal/blocked
@@ -4211,6 +4240,79 @@ function readPickFields(x, team) {
 setupPickCard('f');
 setupPickCard('p');
 
+// ---- Screens (2027+): every screen on the possession, one row each ----
+// Feeds Screen-Generated PPP. The Pick card above still describes the one
+// screen that created the advantage in detail (coverage, spot, result).
+const SCREEN_ADV_RESULTS = ['Freed ball carrier', 'Screener open', 'Shooter open', 'Mismatch created', 'Forced slide'];
+const screenSeq = { f: 0, p: 0 };
+function addScreenRow(x, v) {
+  const k = ++screenSeq[x], id = x + '_scr' + k;
+  const row = document.createElement('div');
+  row.className = 'field-grid screen-row'; row.dataset.k = k;
+  row.style.cssText = 'align-items:end; gap:8px; padding:6px 0; border-top:1px solid var(--line);';
+  row.innerHTML = `<div><label for="${id}_s">Screener (#)</label><input type="text" id="${id}_s" inputmode="numeric" maxlength="3" placeholder="Jersey #"><div class="readout" id="${id}_sR"></div></div>
+    <div><label for="${id}_u">Used By (#)</label><input type="text" id="${id}_u" inputmode="numeric" maxlength="3" placeholder="Jersey #"><div class="readout" id="${id}_uR"></div></div>
+    <div><label>Advantage?</label><div class="pill-row" id="${id}_adv"></div></div>
+    <div><button type="button" class="btn secondary" data-screen-del="${k}" title="Remove this screen">✕</button></div>`;
+  document.getElementById(x + 'ScreenRows').appendChild(row);
+  setupPillGroup(id + '_adv', ['Yes', 'No'], (v && v.adv) || null);
+  const strip = j => j ? String(j).replace(/^o/, '') : '';
+  document.getElementById(id + '_s').value = strip(v && v.s);
+  document.getElementById(id + '_u').value = strip(v && v.u);
+  bindJerseyReadout(id + '_s', id + '_sR', () => currentTeam());
+  bindJerseyReadout(id + '_u', id + '_uR', () => currentTeam());
+  [id + '_s', id + '_u'].forEach(i => document.getElementById(i).__updateReadout());
+  row.querySelector('[data-screen-del]').addEventListener('click', () => { row.remove(); if (!document.getElementById(x + 'ScreenRows').children.length) setPillGroupValue(x + '_screens', 'No'), updateScreens(x); });
+}
+// First row starts from the Pick card, so the usual one-screen possession needs no extra typing.
+function screenFromPickCard(x) {
+  if (pillVal(x + '_pick') !== 'Yes') return null;
+  const s = document.getElementById(x + '_pick_screener').value.trim(), u = document.getElementById(x + '_pick_user').value.trim();
+  const r = pillVal(x + '_pickresult');
+  if (!s && !u) return null;
+  return { s, u, adv: r ? (SCREEN_ADV_RESULTS.includes(r) ? 'Yes' : 'No') : null };
+}
+function updateScreens(x) {
+  const yes = pillVal(x + '_screens') === 'Yes';
+  document.getElementById(x + 'ScreensBody').style.display = yes ? '' : 'none';
+  const rows = document.getElementById(x + 'ScreenRows');
+  if (yes && !rows.children.length) addScreenRow(x, screenFromPickCard(x));
+  if (!yes) rows.innerHTML = '';
+}
+function setupScreens(x) {
+  setupPillGroup(x + '_screens', ['Yes', 'No'], null, () => updateScreens(x));
+  document.getElementById(x + 'ScreenAdd').addEventListener('click', () => addScreenRow(x, null));
+}
+function resetScreens(x) { setPillGroupValue(x + '_screens', null); updateScreens(x); }
+function fillScreens(x, e) {
+  let list = null; try { list = e.screens ? JSON.parse(e.screens) : null; } catch (er) { list = null; }
+  setPillGroupValue(x + '_screens', list && list.length ? 'Yes' : (e.screens === '[]' ? 'No' : null));
+  document.getElementById(x + 'ScreenRows').innerHTML = '';
+  updateScreens(x);
+  if (list && list.length) { document.getElementById(x + 'ScreenRows').innerHTML = ''; list.forEach(v => addScreenRow(x, v)); }
+}
+// Returns { ok, why, value } — value is the JSON string for the screens column (null when not logged).
+function readScreens(x, team) {
+  const on = pillVal(x + '_screens');
+  if (on === 'No') return { ok: true, value: '[]' };
+  if (on !== 'Yes') return { ok: true, value: null };
+  const out = [];
+  for (const row of document.getElementById(x + 'ScreenRows').children) {
+    const id = x + '_scr' + row.dataset.k;
+    const sc = readJerseyField(id + '_s', team), us = readJerseyField(id + '_u', team);
+    if (!sc.ok) return { ok: false, why: 'Screen screener: ' + sc.why };
+    if (!us.ok) return { ok: false, why: 'Screen used by: ' + us.why };
+    const adv = pillVal(id + '_adv');
+    if (!sc.value && !us.value && !adv) continue;          // empty row
+    if (!sc.value) return { ok: false, why: 'Screens: type the screener’s number on every screen (or remove the row).' };
+    if (!adv) return { ok: false, why: 'Screens: tap Advantage Yes or No on every screen.' };
+    out.push({ s: sc.value, u: us.value, adv });
+  }
+  return { ok: true, value: out.length ? JSON.stringify(out) : '[]' };
+}
+setupScreens('f');
+setupScreens('p');
+
 function toggleJerseyWrap(wrapId, inputId, show) {
   document.getElementById(wrapId).style.display = show ? '' : 'none';
   if (!show) { const el = document.getElementById(inputId); el.value = ''; el.dispatchEvent(new Event('input')); }
@@ -4692,7 +4794,7 @@ function resetShotFields() {
   document.getElementById('assistResolve').innerHTML = '';
   document.getElementById('advCreatorWrap').style.display = 'none';
   document.getElementById('possStartJerseyWrap').style.display = 'none';
-  resetPickFields('f');
+  resetPickFields('f'); resetScreens('f');
   refreshJerseyReadouts();
   updateResultFields();
   pendingField = { distanceYds: null, lateralYds: null };
@@ -4766,7 +4868,7 @@ function startEditShot(id, returnTo) {
   setPillGroupValue('f_possstart', shot.possStart || null);
   toggleJerseyWrap('possStartJerseyWrap', 'f_possstart_jersey', !!shot.possStart);
   document.getElementById('f_possstart_jersey').value = shot.possStartJersey ? shot.possStartJersey.replace(/^o/, '') : '';
-  fillPickFields('f', shot);
+  fillPickFields('f', shot); fillScreens('f', shot);
   document.getElementById('f_defender').value = shot.defender ? shot.defender.replace(/^o/, '') : '';
   document.getElementById('f_slide_defender').value = shot.slideDefender ? shot.slideDefender.replace(/^o/, '') : '';
   setPillGroupValue('f_defbeaten', shot.defBeaten || null);
@@ -4839,6 +4941,9 @@ document.getElementById('submitShotBtn').addEventListener('click', async () => {
   if (!ps.ok) { showMsg('Possession started by: ' + ps.why, false); return; }
   const pk = readPickFields('f', team);
   if (!pk.ok) { showMsg(pk.why, false); return; }
+  const scr = readScreens('f', team);
+  if (!scr.ok) { showMsg(scr.why, false); return; }
+  pk.data.screens = scr.value;
   const defOn = readJerseyField('f_defender', otherTeam(team));
   if (!defOn.ok) { showMsg('On-ball defender: ' + defOn.why, false); return; }
   const defSlide = readJerseyField('f_slide_defender', otherTeam(team));
@@ -4943,7 +5048,7 @@ function resetPossFields() {
   setPillGroupValue('p_mansituation', 'Even');
   ['p_turnover_by','p_caused_by','p_adv_creator','p_possstart_jersey'].forEach(id => { document.getElementById(id).value = ''; });
   ['pTurnoverWrap','pCausedWrap','pAdvCreatorWrap','pPossStartJerseyWrap'].forEach(id => { document.getElementById(id).style.display = 'none'; });
-  resetPickFields('p');
+  resetPickFields('p'); resetScreens('p');
   refreshJerseyReadouts();
 }
 function exitPossEditMode() {
@@ -4977,7 +5082,7 @@ function startEditPoss(id) {
   setPillGroupValue('p_possstart', p.possStart || null);
   toggleJerseyWrap('pPossStartJerseyWrap', 'p_possstart_jersey', !!p.possStart);
   document.getElementById('p_possstart_jersey').value = strip(p.possStartJersey);
-  fillPickFields('p', p);
+  fillPickFields('p', p); fillScreens('p', p);
   refreshJerseyReadouts();
   document.getElementById('submitPossBtn').textContent = `Update Possession #${id}`;
   document.getElementById('cancelPossEditBtn').style.display = '';
@@ -5005,6 +5110,9 @@ document.getElementById('submitPossBtn').addEventListener('click', async () => {
   if (dominoes === 'Yes' && !adv.value) { showMsg('Type who started the dominoes, or set Created Dominoes to No.', false); return; }
   const pk = readPickFields('p', team);
   if (!pk.ok) { showMsg(pk.why, false); return; }
+  const scr = readScreens('p', team);
+  if (!scr.ok) { showMsg(scr.why, false); return; }
+  pk.data.screens = scr.value;
   const isEdit = editingPossId !== null;
   if (!isEdit && decorateChips().length) { showMsg('Fix the lineup bar first (marked in red), or clear it.', false); return; }
   const possStart = document.getElementById('p_possstart').dataset.value || null;
@@ -6502,13 +6610,20 @@ function pickInfo(e) {
     coverage: e.pickCoverage, result: e.pickResult || null, mismatch: e.pickMismatch || null, trigger: e.trigger || null,
     screenerDef: e.pickScreenerDef || null, userDef: e.pickUserDef || null };
 }
+// Screens on one entry: the logged Screens rows, or for older entries the
+// single Pick card read as one screen (advantage = an advantage result).
+function screensOf(e) {
+  if (e.screens) { try { const l = JSON.parse(e.screens); if (Array.isArray(l)) return l.filter(x => x && x.s).map(x => ({ s: x.s, u: x.u || null, adv: x.adv === 'Yes' ? 'Yes' : 'No' })); } catch (er) { /* fall through */ } }
+  if (e.pick === 'Yes' && e.pickScreener) return [{ s: e.pickScreener, u: e.pickUser || null, adv: SCREEN_ADV_RESULTS.includes(e.pickResult) ? 'Yes' : 'No' }];
+  return [];
+}
 // ---- Team possessions (used by Overview, Man-up, Dominoes, Lineups, Picks) ----
 function teamPossessions(d) {
   const list = []; // { team, entries:[shot|poss], shots:[], goals, xg, to, dominoes, man, stint, context }
   const push = (team, e, isShot) => {
     list.push({ team, e, shots: isShot ? [e] : [], goal: isShot && e.goal === 1 ? 1 : 0, xg: isShot ? d.xgOf(e) : 0,
       to: !isShot && e.end === 'Turnover' ? 1 : 0, failedClear: !isShot && e.end === 'Failed clear' ? 1 : 0, dom: e.dominoes === 'Yes' ? 1 : 0,
-      creator: e.dominoes === 'Yes' ? (e.advCreator || null) : null, man: e.manSituation || 'Even', pick: pickInfo(e) });
+      creator: e.dominoes === 'Yes' ? (e.advCreator || null) : null, man: e.manSituation || 'Even', pick: pickInfo(e), screens: screensOf(e) });
   };
   // Rebound shots add to the most recent shot possession of that team in the same session.
   const bySess = {};
@@ -6522,6 +6637,7 @@ function teamPossessions(d) {
       last.xg += d.xgOf(x.e);
       if (x.e.dominoes === 'Yes') { last.dom = 1; if (!last.creator) last.creator = x.e.advCreator || null; }
       if (!last.pick) last.pick = pickInfo(x.e);
+      screensOf(x.e).forEach(sc => { if (!last.screens.some(y => y.s === sc.s && y.u === sc.u)) last.screens.push(sc); });
       return;
     }
     push(x.team, x.e, x.shot);
@@ -7132,6 +7248,64 @@ function renderEffPicks(d, possList) {
     { key: 'freed', label: 'Freed %', type: 'num', value: r => r.freed, format: v => pct(v), cellStyle: (v, r) => small(r.n), title: 'Share of these picks that freed the ball carrier.' },
     { key: 'xp', label: 'xP Allowed / Poss', type: 'num', value: r => r.xp, format: d2, cellStyle: (v, r) => small(r.n), title: 'Expected points (xG + xA) the offense got per possession on picks he defended.' },
   ], pickDefenderRows(picks, d.xgOf, EFF_SEASON), { dense: true, defaultSort: { key: 'n', dir: 'desc' }, emptyMsg: 'No pick defenders logged yet. Fill in Screener’s Defender / Ball Carrier’s Defender on the Pick / Get card.' });
+  renderScreenPPP(d, wp, small);
+}
+
+// ---- Screen-Generated PPP ----
+// Goals per possession on possessions where a screen created an advantage
+// (Freed ball carrier / Screener open / Shooter open / Mismatch / Forced slide).
+// Goals = the team's goals on the possession, whoever scored (college: 1 goal =
+// 1 point). A possession counts once per player; team totals count it once.
+let effScrView = 'screener';
+function scrStats(list, base) {
+  const n = list.length, g = list.reduce((a, pp) => a + pp.goal, 0), xg = list.reduce((a, pp) => a + pp.xg, 0);
+  const gpp = ratio(g, n);
+  return { n, goals: g, gpp, xgpp: ratio(xg, n), goalPct: ratio(list.filter(pp => pp.goal > 0).length, n), lift: gpp !== null && base !== null ? gpp - base : null };
+}
+function renderScreenPPP(d, wp, small) {
+  if (!document.getElementById('effScrWrap')) return;
+  const advOf = pp => (pp.screens || []).filter(x => x.adv === 'Yes');
+  const withAdv = wp.filter(pp => advOf(pp).length), without = wp.filter(pp => !advOf(pp).length);
+  const base = scrStats(without, null).gpp;
+  const T = scrStats(withAdv, base), B = scrStats(without, null);
+  const logged = wp.filter(pp => pp.e.screens != null).length;
+  document.getElementById('effScrTiles').innerHTML = [
+    statTile('Screen-Advantage Poss.', T.n.toLocaleString(), `${pct(ratio(T.n, wp.length))} of ${wp.length} WLU possessions`),
+    statTile('Goals / Poss (screen adv.)', num(T.gpp, 2), `${num(T.xgpp, 2)} xG/poss · scored on ${pct(T.goalPct)}`, 'Team goals per possession when at least one screen created an advantage.'),
+    statTile('Goals / Poss (no screen adv.)', num(B.gpp, 2), `${num(B.xgpp, 2)} xG/poss · ${B.n} possessions`),
+    statTile('Screen Lift', T.lift === null ? '—' : (T.lift >= 0 ? '+' : '') + num(T.lift, 2), 'Goals per possession added when a screen creates an advantage', 'Goals/poss with a screen advantage minus goals/poss without one.'),
+  ].join('');
+  document.getElementById('effScrSub').textContent = `${EFF_SEASON} ${EFF_CTX_WORD()}: possessions where a screen created an advantage (freed the ball carrier, screener or shooter open, mismatch, forced slide). Goals are the team’s goals on the possession, whoever scored; a player gets each possession once even if he set two advantage screens. Lift = his goals/poss minus the team’s goals/poss on possessions without a screen advantage. ${logged} possession(s) have every screen logged; older entries count only the one screen on the Pick card, and only possessions logged with a pick, so log screens on no-shot possessions too.`;
+  // Group possessions per screener / user / pair (a possession once per key).
+  const groups = {}, screensSet = {}, advSet = {};
+  const add = (k, pp) => { const g = (groups[k] = groups[k] || new Set()); g.add(pp); };
+  wp.forEach(pp => {
+    (pp.screens || []).forEach(x => { if (isOppJersey(x.s)) return; screensSet[x.s] = (screensSet[x.s] || 0) + 1; if (x.adv === 'Yes') advSet[x.s] = (advSet[x.s] || 0) + 1; });
+    advOf(pp).forEach(x => {
+      if (effScrView === 'screener' && x.s && !isOppJersey(x.s)) add(x.s, pp);
+      if (effScrView === 'user' && x.u && !isOppJersey(x.u)) add(x.u, pp);
+      if (effScrView === 'pair' && x.s && x.u && !isOppJersey(x.s) && !isOppJersey(x.u)) add(x.s + '>' + x.u, pp);
+    });
+  });
+  const lbl = j => '#' + escapeHtml(j) + ' ' + escapeHtml(lastNameOf(nameFor(j, EFF_SEASON) || ''));
+  const rows = Object.keys(groups).map(k => {
+    const st = scrStats([...groups[k]], base);
+    if (effScrView === 'pair') { const [a, b] = k.split('>'); return Object.assign({ key: `${lbl(a)} → ${lbl(b)}` }, st); }
+    return Object.assign({ jersey: k, name: nameFor(k, EFF_SEASON), set: screensSet[k] || 0, advRate: ratio(advSet[k] || 0, screensSet[k] || 0) }, st);
+  }).filter(r => r.n >= effPickMin);
+  const d2 = v => num(v, 2), sgn = v => v === null ? '—' : (v >= 0 ? '+' : '') + num(v, 2);
+  const liftStyle = (v, r) => small(r.n) || (v === null ? '' : `color:${v >= 0 ? 'var(--good)' : 'var(--critical)'}; font-weight:700;`);
+  const who = effScrView === 'pair' ? [{ key: 'key', label: 'Screener → User', type: 'text', value: r => r.key, format: v => v }]
+    : [{ key: 'jersey', label: '#', type: 'text', value: r => r.jersey }, { key: 'name', label: 'Name', type: 'text', value: r => r.name, format: nameCell }];
+  const cols = who.concat([
+    { key: 'n', label: effScrView === 'user' ? 'Adv. Screens Used' : 'Adv. Possessions', type: 'num', value: r => r.n, title: 'Possessions where his screen (or this pair’s) created an advantage.' },
+    { key: 'gpp', label: 'Goals/Poss', type: 'num', value: r => r.gpp, format: d2, cellStyle: (v, r) => small(r.n) },
+    { key: 'xgpp', label: 'xG/Poss', type: 'num', value: r => r.xgpp, format: d2, cellStyle: (v, r) => small(r.n), title: 'Expected goals per possession from the shot quality we got — steadier than goals in small samples.' },
+    { key: 'goalPct', label: 'Scored %', type: 'num', value: r => r.goalPct, format: v => pct(v), cellStyle: (v, r) => small(r.n) },
+    { key: 'lift', label: 'Lift', type: 'num', value: r => r.lift, format: sgn, cellStyle: liftStyle, title: 'His goals/poss minus the team’s goals/poss on possessions without a screen advantage.' },
+  ]);
+  if (effScrView === 'screener') cols.push({ key: 'set', label: 'Screens Set', type: 'num', value: r => r.set }, { key: 'advRate', label: 'Advantage %', type: 'num', value: r => r.advRate, format: v => pct(v), title: 'Share of his screens that created an advantage.' });
+  renderSortableTable('effScrWrap', cols, rows, { dense: true, defaultSort: { key: 'lift', dir: 'desc' }, emptyMsg: `No ${effScrView === 'pair' ? 'pair' : 'player'} has ${effPickMin}+ screen-advantage possessions yet.` });
 }
 function renderEffFilmMetrics() {
   if (!document.getElementById('effTeamTiles')) return;
@@ -7972,6 +8146,7 @@ function healthFieldRows(season) {
     row('Offense trigger', S, s => filled(s.trigger), 'Trigger tables'),
     row('Dominoes yes/no', S.concat(P.filter(p => p.team !== 'OPP')), e => e.dominoes === 'Yes' || e.dominoes === 'No', 'Dominoes tab, Creation'),
     row('Pick / get yes/no', S.concat(P.filter(p => p.team !== 'OPP')), e => e.pick === 'Yes' || e.pick === 'No', 'Picks tab, Pick Defense'),
+    row('Screens (every screen)', S.concat(P.filter(p => p.team !== 'OPP')), e => e.screens != null, 'Screen-Generated PPP (Picks tab)'),
     row('Lineup', SO.concat(P), e => filled(e.stintId), 'On/Off, Lineups, per-session apps, depth-chart Chemistry'),
     row('Possession start', S.filter(s => s.rebound !== 'Yes').concat(P), e => filled(e.possStart), 'Ground balls, FO wins, clears'),
     row('Turnover by (turnover possessions)', P.filter(p => p.end === 'Turnover'), p => filled(p.turnoverBy), 'Ball security, A/TO, turnover %'),
@@ -10876,6 +11051,11 @@ setupPillGroup('effTouchMinPills', [{ value: '5', label: '5+' }, { value: '10', 
   if (!v) setPillGroupValue('effTouchMinPills', '10');
   renderEffFilmMetrics();
 });
+setupPillGroup('effScrViewPills', [{ value: 'screener', label: 'As screener' }, { value: 'user', label: 'As user' }, { value: 'pair', label: 'Pairs' }], 'screener', v => {
+  effScrView = v || 'screener';
+  if (!v) setPillGroupValue('effScrViewPills', 'screener');
+  renderEffFilmMetrics();
+});
 setupPillGroup('effPickMinPills', [{ value: '1', label: '1+' }, { value: '3', label: '3+' }, { value: '5', label: '5+' }, { value: '10', label: '10+' }], '3', v => {
   effPickMin = Number(v) || 3;
   if (!v) setPillGroupValue('effPickMinPills', '3');
@@ -13305,6 +13485,10 @@ function renderMethods() {
       what: 'Our chance to win at every moment, from the score and the time left. Each team scores at its usual rate per minute; a tie after regulation goes to sudden death. Leverage is how much one goal would swing it right then.',
       steps: ['Scoring rates come from this season&rsquo;s games once 3 or more are logged, and from last season&rsquo;s until then.', 'Each Goals Added credit is weighted by the leverage of its moment: Win Probability Added.', 'Clutch = the top 20% of moments by leverage.'],
       ex: rates ? `Right now the model uses ${num(rates.lw * 60, 1)} goals a game for us and ${num(rates.lo * 60, 1)} for opponents${rates.own ? ', from this season&rsquo;s games' : ', from last season (not enough games logged yet)'}.` : 'Fills in once games are logged.' },
+    scr: { t: 'Screen-Generated PPP', page: 'picks', q: 'Which players make the offense better with their screens, even without the stats?',
+      what: 'Team goals per possession on possessions where a screen created an advantage, credited to the screener, the user and the pair. Goals are the team&rsquo;s goals on the possession, whoever scored, so a screener who never shoots still gets credit for what his screens produce.',
+      steps: ['Advantage = the screen freed the ball carrier, got the screener open, left a shooter open, created a mismatch or forced a slide. Covered and turnovers are not advantages.', 'Every screen is logged on the shot or no-shot possession (Screens rows); older entries count the single Pick card as one screen.', 'A possession counts once per player even if he set two advantage screens; team totals count it once.', 'Lift = his goals/poss minus the team&rsquo;s goals/poss on possessions without a screen advantage. xG/poss is shown beside it because it steadies faster than goals.'],
+      ex: 'If #22 sets an advantage screen on 20 possessions and we score on 9 of them, he is at 0.45 goals/poss; with the team at 0.30 on possessions without a screen advantage, his lift is +0.15.' },
     pj: { t: 'Projections', page: 'projsk', q: 'What will each player produce over 17 games?',
       what: 'Forecasts built on playing time and true efficiency, with ranges. The &ldquo;true level&rdquo; is a Bayesian idea: start from the team average and trust a player&rsquo;s own results more as his sample grows.',
       steps: ['Volume: last season&rsquo;s official shots per game, scaled by the role you set (Starter / Rotation / Reserve), plus your bump. New players use the role average.', 'Efficiency: his true fall shooting %, his own rate blended with the team&rsquo;s by how many shots he has (the reps-needed estimate from Data Health).', 'Ranges: about 4 times in 5 he lands inside them.', 'Later, once a season of game lineups is logged: an impact rating that uses Goals Added as the starting estimate and adjusts it by how the team does with him on the field (like LUMA&rsquo;s ARC).'],
