@@ -100,7 +100,8 @@ $('field').addEventListener('click', e => {
 });
 // Gold / Silver / Bronze from Bobby's definitions (shot-quality.md + Oct 16):
 //   good angle = between the hashes; a light contest can still be Gold;
-//   outside the hashes: stick to the inside can be Silver, stick to the outside is always Bronze.
+//   outside the hashes: stick to the inside can be Silver, stick to the outside is always Bronze;
+//   on the run between the hashes is Gold within 6 yd when uncontested.
 // Shooter faces the cage (top of the field), so his right is the diagram's right (lateralYds > 0).
 function shotGrade(a) {
   if (a.shot !== '1' || !a.contest || !a.feet || !a.hand || a.distanceYds == null) return null;
@@ -108,7 +109,7 @@ function shotGrade(a) {
   const inside = Math.abs(lat) <= HASH, stickOut = (a.hand === 'R' && lat > 0) || (a.hand === 'L' && lat < 0);
   if (d >= 13 || a.contest === 'Heavy') return 'Bronze';
   if (!inside) return stickOut || run ? 'Bronze' : 'Silver';
-  if (d <= 3 || (d <= 8 && !run)) return 'Gold';
+  if (d <= 3 || (d <= 8 && !run) || (run && d <= 6 && a.contest === 'Open')) return 'Gold';   // close on-the-run shot, uncontested (Oct 16)
   return 'Silver';
 }
 const GCOL = { Gold: '#E3A92B', Silver: '#9AA1A9', Bronze: '#B0703A' };
