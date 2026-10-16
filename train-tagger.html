@@ -24,6 +24,7 @@ kbd { font-size:10px; color:var(--muted); margin-left:4px; }
 svg.field { width:100%; max-width:420px; display:block; cursor:crosshair; background:#2E7D4F; border-radius:8px; }
 .note { color:var(--muted); font-size:12px; }
 .list { max-height:260px; overflow:auto; font-size:12px; } .list div { padding:3px 6px; border-radius:4px; cursor:pointer; display:flex; justify-content:space-between; } .list div.cur { background:var(--bg); font-weight:700; } .list .done { color:var(--good); }
+[hidden] { display:none !important; }
 </style>
 <div class="top"><div><h1 id="title">Train the Tagger</h1><div class="sub" id="sub">Loading…</div></div>
   <div class="pills"><select id="game" style="font:inherit;padding:6px 10px;border:1px solid var(--line);border-radius:999px;background:var(--card);color:var(--ink)"></select><span class="note" id="saved"></span></div></div>
@@ -32,7 +33,7 @@ svg.field { width:100%; max-width:420px; display:block; cursor:crosshair; backgr
 <div class="wrap" id="main" style="margin-top:10px" hidden>
  <div class="card">
   <video id="v" playsinline muted preload="auto"></video>
-  <div class="vbar"><button id="replay">↺ Replay <kbd>R</kbd></button><button id="pp">⏯ <kbd>space</kbd></button><button id="slow">½ speed</button>
+  <div class="vbar"><button id="replay">↺ Replay <kbd>X</kbd></button><button id="pp">⏯ <kbd>space</kbd></button><button id="slow">½ speed</button>
    <button id="mark">📍 Shot is right now <kbd>.</kbd></button><span class="note" id="clock"></span></div>
   <div class="guess" style="margin-top:8px" id="guess"></div>
   <div class="vbar" style="justify-content:space-between"><button id="prev">← Prev</button><span class="note" id="pos"></span><button id="next" class="pri">Next →</button></div>
@@ -43,6 +44,8 @@ svg.field { width:100%; max-width:420px; display:block; cursor:crosshair; backgr
    <div class="row"><b>Shooting team</b><div class="pills" id="teams"></div></div>
    <div class="row"><b>Result</b><div class="pills">
      <button data-k="result" data-v="goal">Goal <kbd>G</kbd></button><button data-k="result" data-v="saved">Saved <kbd>S</kbd></button><button data-k="result" data-v="missed">Missed <kbd>M</kbd></button><button data-k="result" data-v="blocked">Blocked <kbd>B</kbd></button><button data-k="result" data-v="pipe">Pipe <kbd>P</kbd></button></div></div>
+   <div class="row"><b>Feet at release</b><div class="pills">
+     <button data-k="feet" data-v="run">On the run <kbd>R</kbd></button><button data-k="feet" data-v="set">Set feet / step-down <kbd>T</kbd></button></div></div>
    <div class="row"><b>Contest (nearest defender + his stick at release)</b><div class="pills">
      <button data-k="contest" data-v="Open">Open <kbd>Q</kbd></button><button data-k="contest" data-v="Light">Light <kbd>W</kbd></button><button data-k="contest" data-v="Heavy">Heavy <kbd>E</kbd></button></div>
      <div class="note">Open = no defender within ~3 yd · Light = 1–3 yd or stick in the lane · Heavy = within ~1 yd, stick on the hands or body contact</div></div>
@@ -94,7 +97,7 @@ $('field').addEventListener('click', e => {
 });
 const it = () => D.items[i];
 const ans = () => (S[it().id] = S[it().id] || {});
-const done = x => { const a = S[x.id] || OTHERS[x.id]; return a && (a.shot === '0' || (a.shot === '1' && a.contest && a.distanceYds != null)); };
+const done = x => { const a = S[x.id] || OTHERS[x.id]; return a && (a.shot === '0' || (a.shot === '1' && a.contest && a.feet && a.distanceYds != null)); };
 const v = $('v');
 function load() {
   const x = it(); const a = S[x.id] || {};
@@ -105,7 +108,7 @@ function load() {
 }
 function draw() {
   const x = it(), a = S[x.id] || {};
-  const pre = { shot: a.shot ?? (x.src === 'tagged' ? '1' : null), team: a.team ?? x.team, result: a.result ?? x.result, contest: a.contest };
+  const pre = { shot: a.shot ?? (x.src === 'tagged' ? '1' : null), team: a.team ?? x.team, result: a.result ?? x.result, contest: a.contest, feet: a.feet };
   document.querySelectorAll('[data-k]').forEach(b => b.classList.toggle('on', String(pre[b.dataset.k]) === b.dataset.v));
   $('detail').style.opacity = pre.shot === '0' ? .35 : 1;
   const dot = $('dot');
@@ -137,14 +140,14 @@ $('slow').onclick = e => { v.playbackRate = v.playbackRate === 1 ? .5 : 1; e.tar
 $('mark').onclick = () => { ans().moment = Math.round(v.currentTime * 10) / 10; saveAns(it().id); $('clock').textContent = 'shot moment set at ' + mmss(v.currentTime); };
 $('prev').onclick = () => { i = Math.max(0, i - 1); load(); };
 $('next').onclick = () => { i = Math.min(D.items.length - 1, i + 1); load(); };
-const KEYS = { '1': ['shot', '1'], '0': ['shot', '0'], g: ['result', 'goal'], s: ['result', 'saved'], m: ['result', 'missed'], b: ['result', 'blocked'], p: ['result', 'pipe'], q: ['contest', 'Open'], w: ['contest', 'Light'], e: ['contest', 'Heavy'], a: ['team', 'p'], z: ['team', 'o'] };
+const KEYS = { '1': ['shot', '1'], '0': ['shot', '0'], g: ['result', 'goal'], s: ['result', 'saved'], m: ['result', 'missed'], b: ['result', 'blocked'], p: ['result', 'pipe'], r: ['feet', 'run'], t: ['feet', 'set'], q: ['contest', 'Open'], w: ['contest', 'Light'], e: ['contest', 'Heavy'], a: ['team', 'p'], z: ['team', 'o'] };
 document.addEventListener('keydown', e => {
   if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT' || !D) return;
   const k = e.key.toLowerCase();
   if (KEYS[k]) { set(...KEYS[k]); }
   else if (k === 'arrowright' || k === 'enter') $('next').click();
   else if (k === 'arrowleft') $('prev').click();
-  else if (k === 'r') $('replay').click();
+  else if (k === 'x') $('replay').click();
   else if (k === ' ') { e.preventDefault(); $('pp').click(); }
   else if (k === '.') $('mark').click();
 });
