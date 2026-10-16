@@ -2139,6 +2139,12 @@
     </div>
     <p class="view-intro">How completely each field is being logged, and how many reps each key stat needs before it mostly reflects skill instead of luck. Use it to see which numbers to trust and what to log more of. 2027 and later.</p>
     <div class="panel">
+      <p class="panel-title">Export All Data</p>
+      <p class="panel-sub">Saves everything the staff has entered in Firestore &mdash; logged shots and possessions, roster, player evaluations, film tags, film sessions, tagger training answers &mdash; as one file in Chrome’s download folder (Lacrosse_Code), so the next “Backup Lacrosse Data” copies it to Google Drive. Scouting records are left out because they rebuild from the files on the Mac. Only you see this.</p>
+      <div class="controls-row"><div class="control-group"><button class="btn" id="fsExportBtn" type="button">Export all data</button></div></div>
+      <p class="panel-sub" id="fsExportLog"></p>
+    </div>
+    <div class="panel">
       <p class="panel-title">Import LR Data</p>
       <p class="panel-sub">Loads the scouting files built on Bobby&rsquo;s Mac (the <code>lr_import</code> folder: lr_import_meta, _teams_NN, _players_NN, _tags) into Firestore for Opponent &rarr; Scouting. Pick all of the files at once. Re-importing replaces each team and player record; staff film tags are merged, never erased. Only you see this.</p>
       <div class="controls-row"><div class="control-group"><input type="file" id="lrImportFiles" accept=".json,application/json" multiple></div>
@@ -8066,6 +8072,28 @@ async function importLrData() {
   btn.disabled = false;
 }
 document.getElementById('lrImportBtn').addEventListener('click', importLrData);
+
+// Owner-only: one JSON file of every staff-entered Firestore collection (not the rebuildable lr* scouting records).
+async function exportAllData() {
+  const log = document.getElementById('fsExportLog');
+  if (!IS_DH_OWNER) { log.textContent = 'Only the Data Health owner can export.'; return; }
+  const cols = ['app', 'sessions', 'evalPlayers', 'evalRatings', 'filmTags', 'filmSessions', 'trainQueues', 'trainShots'];
+  const out = { exportedAt: new Date().toISOString(), by: firebase.auth().currentUser.email, collections: {} };
+  log.textContent = 'Reading…';
+  try {
+    for (const c of cols) {
+      const qs = await DB.collection(c).get();
+      out.collections[c] = {};
+      qs.forEach(d => { if (!(c === 'app' && d.id === 'lrMeta')) out.collections[c][d.id] = d.data(); });
+    }
+    const blob = new Blob([JSON.stringify(out)], { type: 'application/json' });
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
+    a.download = `wlu_tracker_backup_${out.exportedAt.slice(0, 10)}.json`; a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+    log.textContent = 'Saved ' + cols.map(c => `${c} ${Object.keys(out.collections[c]).length}`).join(' · ') + ` (${(blob.size / 1e6).toFixed(1)} MB).`;
+  } catch (e) { console.error(e); log.textContent = 'Stopped: ' + (e.message || e); }
+}
+document.getElementById('fsExportBtn').addEventListener('click', exportAllData);
 
 function renderDataHealth() {
   const wrap = document.getElementById('healthFieldWrap');
