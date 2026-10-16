@@ -7257,25 +7257,28 @@ function renderEffPicks(d, possList) {
 // Goals = the team's goals on the possession, whoever scored (college: 1 goal =
 // 1 point). A possession counts once per player; team totals count it once.
 let effScrView = 'screener';
-function scrStats(list, base) {
+// Points = goals + assisted goals on the possession (the tracker's usual possession points).
+function scrStats(list, base, xgOf) {
   const n = list.length, g = list.reduce((a, pp) => a + pp.goal, 0), xg = list.reduce((a, pp) => a + pp.xg, 0);
+  const pts = xgOf ? list.reduce((a, pp) => a + possPoints(pp, xgOf).pts, 0) : null;
   const gpp = ratio(g, n);
-  return { n, goals: g, gpp, xgpp: ratio(xg, n), goalPct: ratio(list.filter(pp => pp.goal > 0).length, n), lift: gpp !== null && base !== null ? gpp - base : null };
+  return { n, goals: g, gpp, ppp: pts === null ? null : ratio(pts, n), xgpp: ratio(xg, n), goalPct: ratio(list.filter(pp => pp.goal > 0).length, n), lift: gpp !== null && base !== null ? gpp - base : null };
 }
 function renderScreenPPP(d, wp, small) {
   if (!document.getElementById('effScrWrap')) return;
   const advOf = pp => (pp.screens || []).filter(x => x.adv === 'Yes');
   const withAdv = wp.filter(pp => advOf(pp).length), without = wp.filter(pp => !advOf(pp).length);
   const base = scrStats(without, null).gpp;
-  const T = scrStats(withAdv, base), B = scrStats(without, null);
+  const T = scrStats(withAdv, base, d.xgOf), B = scrStats(without, null, d.xgOf);
   const logged = wp.filter(pp => pp.e.screens != null).length;
   document.getElementById('effScrTiles').innerHTML = [
     statTile('Screen-Advantage Poss.', T.n.toLocaleString(), `${pct(ratio(T.n, wp.length))} of ${wp.length} WLU possessions`),
-    statTile('Goals / Poss (screen adv.)', num(T.gpp, 2), `${num(T.xgpp, 2)} xG/poss · scored on ${pct(T.goalPct)}`, 'Team goals per possession when at least one screen created an advantage.'),
-    statTile('Goals / Poss (no screen adv.)', num(B.gpp, 2), `${num(B.xgpp, 2)} xG/poss · ${B.n} possessions`),
+    statTile('Goals / Poss (screen adv.)', num(T.gpp, 2), `${num(T.ppp, 2)} points/poss · ${num(T.xgpp, 2)} xG/poss · scored on ${pct(T.goalPct)}`, 'Team goals per possession when at least one screen created an advantage. Points = goals + assisted goals.'),
+    statTile('Goals / Poss (no screen adv.)', num(B.gpp, 2), `${num(B.ppp, 2)} points/poss · ${num(B.xgpp, 2)} xG/poss · ${B.n} possessions`),
     statTile('Screen Lift', T.lift === null ? '—' : (T.lift >= 0 ? '+' : '') + num(T.lift, 2), 'Goals per possession added when a screen creates an advantage', 'Goals/poss with a screen advantage minus goals/poss without one.'),
   ].join('');
-  document.getElementById('effScrSub').textContent = `${EFF_SEASON} ${EFF_CTX_WORD()}: possessions where a screen created an advantage (freed the ball carrier, screener or shooter open, mismatch, forced slide). Goals are the team’s goals on the possession, whoever scored; a player gets each possession once even if he set two advantage screens. Lift = his goals/poss minus the team’s goals/poss on possessions without a screen advantage. ${logged} possession(s) have every screen logged; older entries count only the one screen on the Pick card, and only possessions logged with a pick, so log screens on no-shot possessions too.`;
+  const lineupN = wp.filter(pp => wluOnField(pp.e)).length;
+  document.getElementById('effScrSub').textContent = `${EFF_SEASON} ${EFF_CTX_WORD()}: possessions where a screen created an advantage (freed the ball carrier, screener or shooter open, mismatch, forced slide). Goals are the team’s goals on the possession, whoever scored; a player gets each possession once even if he set two advantage screens. Lift = his goals/poss minus the team’s goals/poss on possessions without a screen advantage. ${logged} possession(s) have every screen logged; older entries count only the one screen on the Pick card, and only possessions logged with a pick, so log screens on no-shot possessions too. Adv. per 10 Poss and His Other Possessions need the lineup bar: ${lineupN} of ${wp.length} possessions have it logged.`;
   // Group possessions per screener / user / pair (a possession once per key).
   const groups = {}, screensSet = {}, advSet = {};
   const add = (k, pp) => { const g = (groups[k] = groups[k] || new Set()); g.add(pp); };
@@ -7288,10 +7291,19 @@ function renderScreenPPP(d, wp, small) {
     });
   });
   const lbl = j => '#' + escapeHtml(j) + ' ' + escapeHtml(lastNameOf(nameFor(j, EFF_SEASON) || ''));
+  // On-field possessions per player (needs the lineup bar logged on the entry).
+  const onField = {};
+  wp.forEach(pp => { const f = wluOnField(pp.e); if (f) f.offense.forEach(j => (onField[j] = onField[j] || []).push(pp)); });
   const rows = Object.keys(groups).map(k => {
-    const st = scrStats([...groups[k]], base);
+    const mine = groups[k], st = scrStats([...mine], base, d.xgOf);
     if (effScrView === 'pair') { const [a, b] = k.split('>'); return Object.assign({ key: `${lbl(a)} → ${lbl(b)}` }, st); }
-    return Object.assign({ jersey: k, name: nameFor(k, EFF_SEASON), set: screensSet[k] || 0, advRate: ratio(advSet[k] || 0, screensSet[k] || 0) }, st);
+    // His other possessions: he was on the field, but not one where his screen (or the screen he used) got the advantage.
+    const other = scrStats((onField[k] || []).filter(pp => !mine.has(pp)), null, d.xgOf);
+    // Per-10 rate uses only possessions with the lineup logged, on both top and bottom.
+    const on = (onField[k] || []).length;
+    const advOn = (onField[k] || []).reduce((a, pp) => a + advOf(pp).filter(x => x.s === k).length, 0);
+    return Object.assign({ jersey: k, name: nameFor(k, EFF_SEASON), set: screensSet[k] || 0, created: advSet[k] || 0, advRate: ratio(advSet[k] || 0, screensSet[k] || 0),
+      on, per10: on >= 10 ? 10 * advOn / on : null, otherN: other.n, otherGpp: other.n >= 5 ? other.gpp : null, edge: st.gpp !== null && other.n >= 5 ? st.gpp - other.gpp : null }, st);
   }).filter(r => r.n >= effPickMin);
   const d2 = v => num(v, 2), sgn = v => v === null ? '—' : (v >= 0 ? '+' : '') + num(v, 2);
   const liftStyle = (v, r) => small(r.n) || (v === null ? '' : `color:${v >= 0 ? 'var(--good)' : 'var(--critical)'}; font-weight:700;`);
@@ -7300,12 +7312,21 @@ function renderScreenPPP(d, wp, small) {
   const cols = who.concat([
     { key: 'n', label: effScrView === 'user' ? 'Adv. Screens Used' : 'Adv. Possessions', type: 'num', value: r => r.n, title: 'Possessions where his screen (or this pair’s) created an advantage.' },
     { key: 'gpp', label: 'Goals/Poss', type: 'num', value: r => r.gpp, format: d2, cellStyle: (v, r) => small(r.n) },
+    { key: 'ppp', label: 'Points/Poss', type: 'num', value: r => r.ppp, format: d2, cellStyle: (v, r) => small(r.n), title: 'Points (goals + assisted goals) per possession where the screen created an advantage.' },
     { key: 'xgpp', label: 'xG/Poss', type: 'num', value: r => r.xgpp, format: d2, cellStyle: (v, r) => small(r.n), title: 'Expected goals per possession from the shot quality we got — steadier than goals in small samples.' },
     { key: 'goalPct', label: 'Scored %', type: 'num', value: r => r.goalPct, format: v => pct(v), cellStyle: (v, r) => small(r.n) },
     { key: 'lift', label: 'Lift', type: 'num', value: r => r.lift, format: sgn, cellStyle: liftStyle, title: 'His goals/poss minus the team’s goals/poss on possessions without a screen advantage.' },
   ]);
-  if (effScrView === 'screener') cols.push({ key: 'set', label: 'Screens Set', type: 'num', value: r => r.set }, { key: 'advRate', label: 'Advantage %', type: 'num', value: r => r.advRate, format: v => pct(v), title: 'Share of his screens that created an advantage.' });
-  renderSortableTable('effScrWrap', cols, rows, { dense: true, defaultSort: { key: 'lift', dir: 'desc' }, emptyMsg: `No ${effScrView === 'pair' ? 'pair' : 'player'} has ${effPickMin}+ screen-advantage possessions yet.` });
+  if (effScrView !== 'pair') cols.push(
+    { key: 'otherGpp', label: 'Goals/Poss Otherwise', type: 'num', value: r => r.otherGpp, format: d2, group: 'His other possessions', cellStyle: (v, r) => small(r.otherN), title: 'Goals per possession when he was on the field but it wasn’t his advantage screen. Needs the lineup bar logged; shows once there are 5+ such possessions.' },
+    { key: 'otherN', label: 'Poss', type: 'num', value: r => r.otherN, group: 'His other possessions' },
+    { key: 'edge', label: 'Screen Edge', type: 'num', value: r => r.edge, format: sgn, group: 'His other possessions', cellStyle: (v, r) => small(Math.min(r.n, r.otherN)) || (v === null ? '' : `color:${v >= 0 ? 'var(--good)' : 'var(--critical)'}; font-weight:700;`), title: 'His screen-advantage goals/poss minus his other on-field possessions.' });
+  if (effScrView === 'screener') cols.splice(who.length, 0,
+    { key: 'created', label: 'Advantages Created', type: 'num', value: r => r.created, title: 'Screens he set that created an advantage.' },
+    { key: 'per10', label: 'Adv. per 10 Poss', type: 'num', value: r => r.per10, format: v => v === null ? '—' : num(v, 1), title: 'Advantages his screens created per 10 possessions he was on the field. Counts only possessions with the lineup bar logged; shows once he has 10+ of them.' },
+    { key: 'set', label: 'Screens Set', type: 'num', value: r => r.set },
+    { key: 'advRate', label: 'Advantage %', type: 'num', value: r => r.advRate, format: v => pct(v), title: 'Share of his screens that created an advantage.' });
+  renderSortableTable('effScrWrap', cols, rows, { dense: true, defaultSort: { key: effScrView === 'screener' ? 'created' : 'lift', dir: 'desc' }, emptyMsg: `No ${effScrView === 'pair' ? 'pair' : 'player'} has ${effPickMin}+ screen-advantage possessions yet.` });
 }
 function renderEffFilmMetrics() {
   if (!document.getElementById('effTeamTiles')) return;
@@ -13488,7 +13509,7 @@ function renderMethods() {
     scr: { t: 'Screen-Generated PPP', page: 'picks', q: 'Which players make the offense better with their screens, even without the stats?',
       what: 'Team goals per possession on possessions where a screen created an advantage, credited to the screener, the user and the pair. Goals are the team&rsquo;s goals on the possession, whoever scored, so a screener who never shoots still gets credit for what his screens produce.',
       steps: ['Advantage = the screen freed the ball carrier, got the screener open, left a shooter open, created a mismatch or forced a slide. Covered and turnovers are not advantages.', 'Every screen is logged on the shot or no-shot possession (Screens rows); older entries count the single Pick card as one screen.', 'A possession counts once per player even if he set two advantage screens; team totals count it once.', 'Lift = his goals/poss minus the team&rsquo;s goals/poss on possessions without a screen advantage. xG/poss is shown beside it because it steadies faster than goals.'],
-      ex: 'If #22 sets an advantage screen on 20 possessions and we score on 9 of them, he is at 0.45 goals/poss; with the team at 0.30 on possessions without a screen advantage, his lift is +0.15.' },
+      ex: 'If #22 sets an advantage screen on 20 possessions and we score on 9 of them, he is at 0.45 goals/poss; with the team at 0.30 on possessions without a screen advantage, his lift is +0.15. If we score 0.25 on his other on-field possessions, his Screen Edge is +0.20. Points/Poss also counts the assist on each assisted goal. Advantages Created ranks who breaks the defense with screens most often; per 10 possessions adjusts for playing time.' },
     pj: { t: 'Projections', page: 'projsk', q: 'What will each player produce over 17 games?',
       what: 'Forecasts built on playing time and true efficiency, with ranges. The &ldquo;true level&rdquo; is a Bayesian idea: start from the team average and trust a player&rsquo;s own results more as his sample grows.',
       steps: ['Volume: last season&rsquo;s official shots per game, scaled by the role you set (Starter / Rotation / Reserve), plus your bump. New players use the role average.', 'Efficiency: his true fall shooting %, his own rate blended with the team&rsquo;s by how many shots he has (the reps-needed estimate from Data Health).', 'Ranges: about 4 times in 5 he lands inside them.', 'Later, once a season of game lineups is logged: an impact rating that uses Goals Added as the starting estimate and adjusts it by how the team does with him on the field (like LUMA&rsquo;s ARC).'],
