@@ -933,6 +933,8 @@ function renderSess() {
   s.querySelectorAll('[data-down]').forEach(x => x.onclick = () => { const i = +x.dataset.down; if (i < SESS.clips.length - 1) { [SESS.clips[i + 1], SESS.clips[i]] = [SESS.clips[i], SESS.clips[i + 1]]; saveSess(); renderSess(); } });
   s.querySelectorAll('[data-del]').forEach(x => x.onclick = () => { SESS.clips.splice(+x.dataset.del, 1); saveSess(); renderSess(); });
 }
+// The tracker's search can ask this page to open a team ("Scout: York").
+window.addEventListener('message', e => { if (e.origin === location.origin && e.data && e.data.openTeam && D.meta && (!T || +e.data.openTeam !== T.id)) openTeam(+e.data.openTeam); });
 // ---------- boot ----------
 (async function boot() {
   if (!DBX) { $('#app').innerHTML = '<p class="warnbox">Open this from the tracker (Opponent → Scouting) while signed in.</p>'; return; }
