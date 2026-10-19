@@ -8746,7 +8746,7 @@ function renderDepthChart() {
   const chip = (j, extra) => {
     const g = scoreOf[j];
     const pos = posOf(j);
-    const alt = posAltJ(season, j);
+    const alt0 = posAltJ(season, j), alt = alt0 && alt0 !== pos ? alt0 : null;
     const btns = `<button type="button" class="depth-pos" data-edit="${escapeHtml(j)}" title="Tap to set position">${pos ? DEPTH_POS_LABEL[pos] + (alt ? ' / ' + DEPTH_POS_LABEL[alt] : '') : 'Set position'} &#9662;</button>`;
     const editor = depthEditJ === j ? `<div class="depth-edit" style="grid-column:1 / -1; display:flex; flex-direction:column; gap:6px; margin-top:6px;">
         <div style="display:flex; flex-wrap:wrap; gap:4px;"><span class="n-note" style="font-style:normal; min-width:52px;">Position</span>${POS_CODES.map(c => `<button type="button" class="pill${pos === c ? ' active' : ''}" data-j="${escapeHtml(j)}" data-set="${c}" style="padding:2px 9px; font-size:11.5px;">${DEPTH_POS_LABEL[c]}</button>`).join('')}<button type="button" class="pill" data-j="${escapeHtml(j)}" data-set="" style="padding:2px 9px; font-size:11.5px;">Clear</button></div>
