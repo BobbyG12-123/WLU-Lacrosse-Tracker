@@ -13556,7 +13556,14 @@ async function saAskAi(q) {
 }
 // Validate the AI's plan against the menu and turn it into the same plan the rules make.
 function saPlanFromAi(j, map, q) {
-  const today = new Date(), F = j.filters || {}, filters = saFilters(q);   // plain-word filters still apply
+  const today = new Date(), F = Object.assign({}, j.filters || {}), filters = saFilters(q);   // plain-word filters still apply
+  // The AI sometimes adds filters nobody asked for: keep one only if the question mentions it.
+  const ql = q.toLowerCase();
+  if (!/\b(game|games|practice|practices|scrimmage|scrimmages)\b/.test(ql)) delete F.ctx;
+  if (!/\b(20\d\d|year|season)\b/.test(ql)) delete F.season;
+  if (!/\b(day|days|week|weeks|month|lately|recent|recently|now|this)\b/.test(ql)) delete F.lastDays;
+  if (!/\bsince\b/.test(ql)) delete F.since;
+  if (!/\b(attack\w*|middie\w*|middy|midfield\w*|mids|defense\w*|poles|d-?men)\b/.test(ql)) delete F.position;
   if (F.ctx && ['Game', 'Practice', 'Scrimmage'].includes(F.ctx)) { filters.ctx = F.ctx; }
   if (F.season && SEASONS.includes(String(F.season))) filters.season = String(F.season);
   if (F.lastDays && !filters.from) { const dt = new Date(today); dt.setDate(dt.getDate() - Math.min(365, Number(F.lastDays) || 0)); filters.from = localDateStr(dt); filters.words.push(`last ${F.lastDays} days`); }
