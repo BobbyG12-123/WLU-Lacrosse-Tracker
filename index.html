@@ -2599,6 +2599,15 @@ function rebuildShots() {
 function allShotEntries() { return SHOTS.concat(OPP_SHOTS); }
 // Shots a WLU goalie faced: practice shots carry a WLU goalie, and in games
 // the opponent's shots (team 'OPP') do. WLU game shots have no WLU goalie.
+// Shots taken with a goalie in net that never reached the cage: missed (incl. pipes) and blocked.
+// Reference only: not part of Faced, Save % or any goalie model.
+function goalieMissedBy(shots) {
+  const m = {};
+  shots.forEach(s => { if (!s.goalieJersey || s.onKeeper === 1) return; const r = (m[s.goalieJersey] = m[s.goalieJersey] || { missed: 0, blocked: 0 }); if (s.blocked === 1) r.blocked++; else r.missed++; });
+  return m;
+}
+const MISSED_COL = m => ({ key: 'missed', label: 'Missed Cage', type: 'num', value: r => (m[r.jersey] || {}).missed || 0, title: 'Shots with him in net that missed the cage (pipes included). For reference only; not in Faced or Save %.' });
+const BLOCKED_COL = m => ({ key: 'blockedShots', label: 'Blocked', type: 'num', value: r => (m[r.jersey] || {}).blocked || 0, title: 'Shots with him in net that a defender blocked. For reference only; not in Faced or Save %.' });
 function goalieShotsForSeason(season) {
   const pool = allShotEntries().filter(s => s.goalieJersey);
   return season === 'All Seasons' ? pool : pool.filter(s => seasonForDate(s.date) === season);
@@ -6080,10 +6089,11 @@ function renderGoalieSummary() {
   if (!isAdvSeason(goalieHeatSeason)) {
     if (noteEl) noteEl.textContent = 'Faced = shots where OnKeeper = 1.';
     if (xgNoteEl) xgNoteEl.style.display = 'none';
-    const rows = computeGoalieSummary(goalieShotsForSeason(goalieHeatSeason));
-    let html = '<table class="shotlog"><thead><tr><th>Jersey</th><th>Name</th><th>Faced</th><th>Saves</th><th>Goals Allowed</th><th>Save %</th></tr></thead><tbody>';
+    const gs = goalieShotsForSeason(goalieHeatSeason), rows = computeGoalieSummary(gs), mb = goalieMissedBy(gs);
+    let html = '<table class="shotlog"><thead><tr><th>Jersey</th><th>Name</th><th>Faced</th><th>Saves</th><th>Goals Allowed</th><th>Save %</th><th title="Shots with him in net that missed the cage (pipes included). Reference only.">Missed Cage</th><th title="Shots a defender blocked. Reference only.">Blocked</th></tr></thead><tbody>';
     rows.forEach(r => {
-      html += `<tr><td>${r.jersey}</td><td>${r.name}</td><td>${r.faced}</td><td>${r.saves}</td><td>${r.goalsAllowed}</td><td>${pct(r.savePct)}</td></tr>`;
+      const m = mb[r.jersey] || {};
+      html += `<tr><td>${r.jersey}</td><td>${r.name}</td><td>${r.faced}</td><td>${r.saves}</td><td>${r.goalsAllowed}</td><td>${pct(r.savePct)}</td><td>${m.missed || 0}</td><td>${m.blocked || 0}</td></tr>`;
     });
     html += '</tbody></table>';
     wrap.innerHTML = html;
@@ -6093,6 +6103,7 @@ function renderGoalieSummary() {
   // 2027 and later: tiered breakdown + GSAx, live as new shots are logged.
   const season = goalieHeatSeason;
   const shots = goalieShotsForSeason(season);
+  const missed = goalieMissedBy(shots);
   const facedTotal = shots.filter(s => s.onKeeper === 1 && s.goalieJersey).length;
   if (noteEl) noteEl.textContent = `Faced = ${season} shots where OnKeeper = 1 (${facedTotal} so far). Save % by tier shows whether a goalie is stopping the shots he should and stealing the ones he shouldn't.`;
 
@@ -6106,6 +6117,7 @@ function renderGoalieSummary() {
       { key: 'saves', label: 'Saves', type: 'num', value: r => r.saves },
       { key: 'goalsAllowed', label: 'Goals Allowed', type: 'num', value: r => r.goalsAllowed },
       { key: 'savePct', label: 'Save %', type: 'num', value: r => r.savePct, format: v => pct(v) },
+      MISSED_COL(missed), BLOCKED_COL(missed),
     ];
     renderSortableTable('goalieSummaryWrap', cols, rows, {
       defaultSort: { key: 'faced', dir: 'desc' },
@@ -6140,6 +6152,7 @@ function renderGoalieSummary() {
     { key: 'saves', label: 'Saves', type: 'num', value: r => r.saves },
     { key: 'goalsAllowed', label: 'GA', type: 'num', value: r => r.goalsAllowed },
     { key: 'savePct', label: 'Save %', type: 'num', value: r => r.savePct, format: v => pct(v) },
+    MISSED_COL(missed), BLOCKED_COL(missed),
   ].concat(tierCols).concat([
     { key: 'xGA', label: 'Exp. Goals Allowed', type: 'num', value: r => r.xGA, format: v => v.toFixed(1), title: 'Goals a goalie would be expected to allow, given the mix of shot quality he faced' },
     { key: 'gsax', label: 'Saved vs. Expected', type: 'num', value: r => r.faced >= 25 ? r.gsax : null, format: (v, r) => r.faced >= 25 ? deltaChip(v, { format: 'decimal', digits: 1 }) : '—', title: 'Exp. Goals Allowed minus goals actually allowed (needs 25+ faced)' },
@@ -6681,6 +6694,9 @@ function renderEffPlayers(d) {
   const teamShots = d.shots.length;
   const teamGoals = d.shots.filter(s => s.goal === 1).length;
   const teamRate = ratio(teamGoals, teamShots) || 0;
+  // Usage shares add up to 100% across the team (an assisted shot counts once for the
+  // shooter and once for the passer, so the denominator counts both sides).
+  const all = Object.values(d.players), teamFeeds = all.reduce((a, p) => a + p.potAst, 0), teamTo = all.reduce((a, p) => a + p.to, 0);
   const rows = Object.values(d.players).filter(p => p.shots >= 5 || p.potAst >= 5).map(p => {
     const lookFed = p.fedShots.length ? lookValue(p.fedShots, d.model) : null;
     const assistedGoals = p.ownShots.filter(s => s.goal === 1 && s.assistJersey).length;
@@ -6691,7 +6707,7 @@ function renderEffPlayers(d) {
       shotPct: ratio(p.goals, p.shots), regPct: p.shots ? (p.goals + REGRESS_K * teamRate) / (p.shots + REGRESS_K) : null,
       lookVal: p.ownShots.length ? lookValue(p.ownShots, d.model) : null,
       xg: p.xg, gmx: p.goals - p.xg, potAst: p.potAst, xa: p.xa, chance: lookFed, amx: p.assists - p.xa, xp, pmx: pts - xp,
-      usage: ratio(p.shots + p.potAst, teamShots), assistedPct: ratio(assistedGoals, p.goals),
+      usage: ratio(p.shots + p.potAst, teamShots + teamFeeds), possUsed: ratio(p.shots + p.to, teamShots + teamTo), assistedPct: ratio(assistedGoals, p.goals),
       onKeeperPct: ratio(p.onGoal, p.shots), onGoalShPct: ratio(p.goals, p.onGoal), onCageN: p.onGoal,
       to: p.to, ato: atoValue(p.assists, p.to), pato: atoValue(p.potAst, p.to),
     };
@@ -6720,7 +6736,8 @@ function renderEffPlayers(d) {
     { key: 'points', label: 'P', type: 'num', value: r => r.points, group: 'Points' },
     { key: 'xp', label: 'xP', type: 'num', value: r => r.xp, format: d1, group: 'Points', title: 'Expected points = xG + xA.' },
     { key: 'pmx', label: 'P−xP', type: 'num', value: r => r.pmx, format: v => signed(v), group: 'Points', title: 'Points above (+) or below (−) expected.' },
-    { key: 'usage', label: 'Usage', type: 'num', value: r => r.usage, format: v => pct(v), group: 'Role', title: 'Share of team shots he either took or set up (shots + potential assists ÷ team shots).' },
+    { key: 'usage', label: 'Usage', type: 'num', value: r => r.usage, format: v => pct(v), group: 'Role', title: 'His share of the team’s shot involvement: (his shots + shots he set up) ÷ (team shots + team set-ups). Adds up to 100% across the team.' },
+    { key: 'possUsed', label: 'Poss. Used', type: 'num', value: r => r.possUsed, format: v => pct(v), group: 'Role', title: 'Share of our possessions that end in his hands: (his shots + turnovers) ÷ (team shots + turnovers). Adds up to 100% across the team.' },
     { key: 'assistedPct', label: 'Assisted G%', type: 'num', value: r => r.assistedPct, format: v => pct(v), group: 'Role', title: 'Share of his goals that came off a pass. Low = he creates his own.' },
     { key: 'onKeeperPct', label: 'On Cage', type: 'num', value: r => r.onKeeperPct, format: v => pct(v), group: 'Role' },
     { key: 'onGoalShPct', label: 'On-Goal Sh%', type: 'num', value: r => r.onGoalShPct, format: (v, r) => v === null ? '—' : `<span style="white-space:nowrap;">${pct(v)} <span class="n-note">(${r.goals}/${r.onCageN})</span></span>`, group: 'Role', title: 'Goals ÷ shots on cage: when he puts it on the goalie, how often it goes in.' },
@@ -6996,6 +7013,7 @@ function renderEffLineups(d, possList) {
 let effTouchMin = 10;
 function renderEffPerTouch(d) {
   const teamShots = d.shots.length;
+  const all = Object.values(d.players), teamFeeds = all.reduce((a, p) => a + p.potAst, 0), teamTo = all.reduce((a, p) => a + p.to, 0);
   const rows = Object.values(d.players).map(p => {
     const touches = p.shots + p.potAst + p.to;
     const xp = p.xg + p.xa, pts = p.goals + p.assists;
@@ -7004,7 +7022,7 @@ function renderEffPerTouch(d) {
       xgT: ratio(p.xg, touches), xaT: ratio(p.xa, touches), xpT: ratio(xp, touches),
       gT: ratio(p.goals, touches), aT: ratio(p.assists, touches), pT: ratio(pts, touches),
       pmxT: ratio(pts - xp, touches), toT: ratio(p.to, touches),
-      usage: ratio(p.shots + p.potAst, teamShots),
+      usage: ratio(p.shots + p.potAst, teamShots + teamFeeds), possUsed: ratio(p.shots + p.to, teamShots + teamTo),
     };
   }).filter(r => r.touches >= effTouchMin);
   document.getElementById('effTouchSub').textContent = `${EFF_SEASON} ${EFF_CTX_WORD()}. A touch is any logged shot he took, shot he fed, or turnover he committed, so a player who does a lot with a few touches ranks next to one who has the ball all the time. Players need ${effTouchMin}+ touches; gray italic rows have under ${effTouchMin * 2}, so treat them as early reads.`;
@@ -7025,7 +7043,8 @@ function renderEffPerTouch(d) {
     { key: 'pT', label: 'P/T', type: 'num', value: r => r.pT, format: d2, cellStyle: small, group: 'Actual per touch' },
     { key: 'pmxT', label: 'P−xP/T', type: 'num', value: r => r.pmxT, format: v => signed(v, 2), cellStyle: small, group: 'Actual per touch', title: 'Points above (+) or below (−) expected, per touch.' },
     { key: 'toT', label: 'TO/T', type: 'num', value: r => r.toT, format: v => pct(v), cellStyle: small, group: 'Role', title: 'Share of his touches that ended in a turnover.' },
-    { key: 'usage', label: 'Usage', type: 'num', value: r => r.usage, format: v => pct(v), group: 'Role', title: 'Share of team shots he took or set up — shown for context, not used in the per-touch numbers.' },
+    { key: 'usage', label: 'Usage', type: 'num', value: r => r.usage, format: v => pct(v), group: 'Role', title: 'His share of the team’s shot involvement: (his shots + shots he set up) ÷ (team shots + team set-ups). Adds up to 100%. Shown for context, not used in the per-touch numbers.' },
+    { key: 'possUsed', label: 'Poss. Used', type: 'num', value: r => r.possUsed, format: v => pct(v), group: 'Role', title: 'Share of our possessions that end in his hands: (his shots + turnovers) ÷ (team shots + turnovers). Adds up to 100%.' },
   ];
   renderSortableTable('effTouchWrap', cols, rows, { dense: true, defaultSort: { key: 'xpT', dir: 'desc' }, emptyMsg: `No player has ${effTouchMin}+ ${EFF_SEASON} ${EFF_CTX_WORD()} touches yet.` });
 }
