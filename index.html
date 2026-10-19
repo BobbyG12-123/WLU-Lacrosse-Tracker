@@ -9727,10 +9727,12 @@ function renderGoalieProjections() {
 //  3. The finish: goal (1) or not (0) minus xG, to the shooter.
 //  Turnover: value drops to 0: minus to the player who turned it over, plus
 //  to the defender who caused it. Each possession's offense credits add up
-//  to (goals - V). On top: goalies' saves above expected and on-ball
-//  defenders' expected minus actual goals on their man's shots.
+//  to (goals - V). Defense credits (takeaways, goalies' saves above expected,
+//  on-ball defenders' expected minus actual goals) are on top, so the team
+//  total is not zero: in practice both sides are WLU. Shown as Offense / Defense.
 // Uses the grade-based xG like the rest of the tracker. Triggers don't
 // change the split; Goals Added is also shown by trigger.
+const GA_OFF = ['adv', 'look', 'screen', 'finish', 'security'], GA_DEF = ['takeaway', 'onball', 'goalie'];
 const GA_PARTS = [['adv', 'Advantage'], ['look', 'Look creation'], ['screen', 'Screening'], ['finish', 'Finishing'], ['security', 'Ball security'], ['takeaway', 'Takeaways'], ['onball', 'On-ball D'], ['goalie', 'Goalie']];
 function gaOffPick(s) { return s.pick === 'Yes' && s.pickAction !== 'Get' && s.pickType === 'Off-ball' && s.pickScreener && !isOppJersey(s.pickScreener) && s.pickScreener !== s.shooterJersey ? s.pickScreener : null; }
 function computeGoalsAdded(onCredit) {
@@ -9799,20 +9801,24 @@ function computeGoalsAdded(onCredit) {
   goalieShotsForSeason(EFF_SEASON).filter(s => s.onKeeper === 1 && s.goalieJersey && effContextOk(s)).forEach(s => { curSid = sessKey(s); curEnt = s; add(s.goalieJersey, 'goalie', xgForShot(s, fm) - (s.goal === 1 ? 1 : 0)); });
   const sessions = j => (d.players[j] ? d.players[j].sessions.size : 0) || new Set(d.shots.filter(s => s.shooterJersey === j || s.assistJersey === j || s.goalieJersey === j || s.defender === j).map(sessKey)).size;
   const rows = Object.values(P).map(r => Object.assign(r, { name: nameFor(r.jersey, EFF_SEASON), apps: sessions(r.jersey) }));
-  rows.forEach(r => { r.perApp = r.apps ? r.total / r.apps : null; });
-  return { V, Vadv, poss: wp.length, rows, triggers: Object.values(trig) };
+  rows.forEach(r => { r.perApp = r.apps ? r.total / r.apps : null; r.off = GA_OFF.reduce((a, k) => a + (r[k] || 0), 0); r.def = GA_DEF.reduce((a, k) => a + (r[k] || 0), 0); });
+  const goals = wp.filter(p => p.goal).length;
+  return { V, Vadv, poss: wp.length, goals, rows, triggers: Object.values(trig) };
 }
 function renderGoalsAdded() {
   const wrap = document.getElementById('gaWrap');
   if (!wrap) return;
   const r = computeGoalsAdded();
-  document.getElementById('gaSub').innerHTML = `${escapeHtml(EFF_SEASON)} ${EFF_CTX_WORD()}: ${r.poss} WLU possessions. An average possession is worth <b>${num(r.V, 2)}</b> goals; with dominoes started, <b>${num(r.Vadv, 2)}</b>. Each player gets credit for how much he moved the value of the possessions he touched &mdash; starting the advantage, creating the look (split with the passer, and the screener on an off-ball pick), finishing it, or losing it (turnover). Defenders get the possession value for turnovers they cause and the goals their man didn&rsquo;t score vs expected; goalies get saves above expected. <b>+1.0 = one goal more</b> than an average player would produce with the same chances. In practice both sides are WLU, so one player&rsquo;s plus can be a teammate&rsquo;s minus.`;
+  document.getElementById('gaSub').innerHTML = `${escapeHtml(EFF_SEASON)} ${EFF_CTX_WORD()}: ${r.poss} WLU possessions. An average possession is worth <b>${num(r.V, 2)}</b> goals; with dominoes started, <b>${num(r.Vadv, 2)}</b>. Each player gets credit for how much he moved the value of the possessions he touched &mdash; starting the advantage, creating the look (split with the passer, and the screener on an off-ball pick), finishing it, or losing it (turnover). Defenders get the possession value for turnovers they cause and the goals their man didn&rsquo;t score vs expected; goalies get saves above expected. <b>+1.0 = one goal more</b> than an average player would produce with the same chances. In practice both sides are WLU, so one player&rsquo;s plus can be a teammate&rsquo;s minus.`
+    + ` <b>Offense</b> credits add up to ${signed(r.rows.reduce((a, x) => a + x.off, 0))} (our ${r.goals} goals minus ${num(r.V * r.poss, 1)} for average possessions = ${signed(r.goals - r.V * r.poss)}; the gap is turnovers with no player logged and possessions that end without a shot or turnover). <b>Defense</b> credits (takeaways, on-ball D, goalie) are counted on top, ${signed(r.rows.reduce((a, x) => a + x.def, 0))} &mdash; in practice the defense is WLU too, so the two don&rsquo;t net to zero.`;
   const cell = v => v === null || v === undefined ? '<span class="n-note">—</span>' : signed(v);
   renderSortableTable('gaWrap', [
     { key: 'jersey', label: '#', type: 'text', value: x => x.jersey },
     { key: 'name', label: 'Name', type: 'text', value: x => x.name, format: nameCell },
     { key: 'total', label: 'Goals Added', type: 'num', value: x => x.total, format: v => `<b>${signed(v)}</b>`, title: 'The sum of every part to the right.' },
     { key: 'perApp', label: 'Per Session', type: 'num', value: x => x.perApp, format: v => signed(v, 2), title: 'Goals added per session he appeared in.' },
+    { key: 'off', label: 'Offense', type: 'num', value: x => x.off, format: v => signed(v), title: 'Advantage + look creation + screening + finishing + ball security.' },
+    { key: 'def', label: 'Defense', type: 'num', value: x => x.def, format: v => signed(v), title: 'Takeaways + on-ball D + goalie.' },
   ].concat(GA_PARTS.map(([k, label]) => ({ key: k, label, type: 'num', value: x => x[k] === undefined ? null : x[k], format: cell, group: 'Where it came from' }))),
   r.rows, { dense: true, defaultSort: { key: 'total', dir: 'desc' }, emptyMsg: 'No possessions logged yet.' });
   const tRows = r.triggers.filter(t => t.n >= 5).map(t => Object.assign({ per: t.total / t.n }, t));
@@ -13500,7 +13506,7 @@ function renderMethods() {
       steps: ['Every logged shot is one example: distance, angle, how much of the cage is visible, catch or dodge, contest, shooting hand vs field side, mechanism, bounce, man situation, rebound, practice vs game.', 'A regularized logistic regression is fit to this season&rsquo;s shots in the browser and refit live as you log.', 'The Gold/Silver/Bronze grade is left out on purpose, so the model can check the grades. The stats you see elsewhere still use the grade-based xG until you decide to switch.'],
       ex: xgPer !== null ? `This season&rsquo;s ${sh.length} shots average ${num(xgPer, 3)} xG per shot by the grade-based model the tracker uses today.` : 'Fills in once shots are logged.' },
     ga: { t: 'Goals Added', page: 'ga', q: 'How many goals did each player create or cost?',
-      what: 'Every possession starts worth the average possession. Each action moves that value, and whoever moved it gets the change, in goals. The team&rsquo;s credits add up to its goals minus the average.',
+      what: 'Every possession starts worth the average possession. Each action moves that value, and whoever moved it gets the change, in goals. Goals Added is shown split into Offense and Defense. Offense credits add up to our goals minus what average possessions would score (any gap is turnovers with no player logged and possessions that end without a shot). Defense credits (takeaways, on-ball D, goalie) are counted on top; in practice both sides are WLU, so offense and defense don&rsquo;t net to zero.',
       steps: ['Starting the dominoes moves a possession from the average to the average with dominoes.', 'The shot sets it to that look&rsquo;s xG: the passer and shooter split the look 50/50, or 40/30/30 with the screener on an off-ball pick.', 'The finish is goal minus xG, to the shooter. A turnover drops the value to zero: minus to the player, plus to the defender who caused it.', 'Goalies get saves above expected; on-ball defenders get xG minus goals on their man&rsquo;s shots.'],
       ex: `This season an average possession is worth <b>${num(ga.V, 2)}</b> goals and one with dominoes started <b>${num(ga.Vadv, 2)}</b>, so starting dominoes is worth ${num(ga.Vadv - ga.V, 2)} goals to whoever starts them.` },
     ss: { t: 'Shooter Score', page: 'shooter', q: 'Who is our best shooter, all things considered?',
