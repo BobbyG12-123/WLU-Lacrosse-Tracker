@@ -13288,6 +13288,9 @@ function saMap(d, f) { const m = {}; saPlayers(d).forEach(p => { const r = f(p);
 function saTier(d, tier, rate) {
   return saMap(d, p => { const l = p.ownShots.filter(s => s.shotQuality === tier); const g = l.filter(s => s.goal === 1).length; return l.length ? { v: rate ? g / l.length : l.length, n: l.length, extra: `${g} of ${l.length}` } : null; });
 }
+function saShotSub(d, keep, rate, min) {
+  return saMap(d, p => { const l = p.ownShots.filter(keep); const g = l.filter(s => s.goal === 1).length; return l.length ? { v: rate ? g / l.length : g, n: l.length, extra: `${g} of ${l.length}` } : null; });
+}
 function saScreens(d) {
   const adv = {}, set = {};
   d.possList.filter(pp => pp.team === 'WLU').forEach(pp => (pp.screens || []).forEach(x => { if (!x.s || isOppJersey(x.s)) return; set[x.s] = (set[x.s] || 0) + 1; if (x.adv === 'Yes') adv[x.s] = (adv[x.s] || 0) + 1; }));
@@ -13306,6 +13309,12 @@ const SA_CATALOG = [
   { id: 'shots', label: 'Shots', words: 'shots taken, shot attempts, most shots, volume', page: 'eff', fmt: SA_NUM(0), f: d => saMap(d, p => p.shots ? { v: p.shots, n: p.shots } : null) },
   { id: 'shpct', label: 'Shooting %', words: 'shooting percentage, shooting %, shooting%, sh%, finishing rate, shoot the best', min: 15, page: 'eff', fmt: SA_PCT, f: d => saMap(d, p => p.shots ? { v: p.goals / p.shots, n: p.shots, extra: `${p.goals} of ${p.shots}` } : null) },
   { id: 'gmx', label: 'Goals above expected (G−xG)', words: 'above expected, g-xg, gxg, finishing, efficient', min: 15, page: 'eff', fmt: SA_SGN(1), f: d => saMap(d, p => p.shots ? { v: p.goals - p.xg, n: p.shots } : null) },
+  { id: 'outsideSh', label: 'Shooting % from 12+ yards', words: 'from distance, distance, long range, from deep, outside shooter, outside shooting, outside, 12 yards, step down', min: 8, page: 'heat', fmt: SA_PCT, f: d => saShotSub(d, s => Number(s.distanceYds) >= 12, true) },
+  { id: 'insideSh', label: 'Shooting % inside 8 yards', words: 'close range, inside, in tight, crease, doorstep, point blank', min: 8, page: 'heat', fmt: SA_PCT, f: d => saShotSub(d, s => s.distanceYds != null && Number(s.distanceYds) < 8, true) },
+  { id: 'dodgeG', label: 'Goals off the dodge', words: 'off the dodge, dodge goals, dodging goals, scores off the dodge', page: 'situations', fmt: SA_NUM(0), f: d => saShotSub(d, s => Number(s.offDodge) === 1, false) },
+  { id: 'catchG', label: 'Goals off the catch', words: 'off the catch, catch and shoot, catch-and-shoot, catch goals', page: 'situations', fmt: SA_NUM(0), f: d => saShotSub(d, s => Number(s.offDodge) !== 1, false) },
+  { id: 'transG', label: 'Transition goals', words: 'transition, fast break, unsettled, in transition, off the faceoff', page: 'situations', fmt: SA_NUM(0), f: d => saShotSub(d, s => s.transition === 'FO' || s.transition === 'OTOD', false) },
+  { id: 'manupG', label: 'Man-up goals', words: 'man up, man-up, emo, extra man, power play', page: 'eff', fmt: SA_NUM(0), f: d => saShotSub(d, s => s.manSituation === 'Man-Up', false) },
   { id: 'xg', label: 'Expected goals (xG)', words: 'xg, expected goals, look quality, best looks, chances', page: 'eff', fmt: SA_NUM(1), f: d => saMap(d, p => p.shots ? { v: p.xg, n: p.shots } : null) },
   { id: 'xa', label: 'Expected assists (xA)', words: 'xa, expected assists, playmaker, creator for others, passing, passer', page: 'eff', fmt: SA_NUM(1), f: d => saMap(d, p => p.potAst ? { v: p.xa, n: p.potAst } : null) },
   { id: 'feeds', label: 'Shots set up', words: 'feeds, potential assists, set up, setups, sets up', page: 'eff', fmt: SA_NUM(0), f: d => saMap(d, p => p.potAst ? { v: p.potAst, n: p.potAst } : null) },
@@ -13372,6 +13381,8 @@ function saFilters(q) {
   const since = t.match(/\bsince (\d{1,2})\/(\d{1,2})\b/) || t.match(/\bsince ([a-z]{3})[a-z]* (\d{1,2})\b/);
   if (since) { const mo = isNaN(since[1]) ? SA_MONTHS.indexOf(since[1]) + 1 : Number(since[1]), day = Number(since[2]); if (mo > 0) { const y = mo > today.getMonth() + 1 ? today.getFullYear() - 1 : today.getFullYear(); f.from = `${y}-${String(mo).padStart(2, '0')}-${String(day).padStart(2, '0')}`; f.words.push('since ' + f.from.slice(5)); } }
   const vs = t.match(/\b(?:vs\.?|versus|against) ([a-z .&'-]{3,30})/);
+  const pos = t.match(/\b(attack(?:man|men|ers)|middies|middie|middy|midfielders?|mids|defense(?:men|man)|poles|d-?men)\b/);
+  if (pos) { f.pos = /^att/.test(pos[1]) ? 'A' : /^mid/.test(pos[1]) ? 'M' : 'X'; f.words.push({ A: 'attack', M: 'middies', X: 'defense' }[f.pos]); }
   if (vs) { const opps = [...new Set(allShotEntries().concat(POSSESSIONS).map(e => e.opponent).filter(Boolean))]; const want = vs[1].trim(); const hit = opps.find(o => o.toLowerCase().startsWith(want) || want.startsWith(o.toLowerCase())); if (hit) { f.opp = hit; f.words.push('vs ' + hit); } }
   return f;
 }
@@ -13411,18 +13422,21 @@ function saRun(plan) {
   EFF_CONTEXT = f.ctx || (NAV_ST && NAV_ST.ctx) || 'All'; EFF_FROM = f.from; EFF_TO = f.to; EFF_OPP = f.opp;
   try {
     const d = buildEffData(), season = EFF_SEASON, ctx = EFF_CONTEXT;
-    const filt = [season, ctx === 'All' ? 'all sessions' : ctx.toLowerCase() + 's'].concat(f.words.filter(w => !/^20\d\d$|games|practice|scrimmages/.test(w))).join(' · ');
+    const filt = [season, ctx === 'All' ? 'all sessions' : ctx.toLowerCase() + 's'].concat(f.words.filter(w => !/^20\d\d$|^games$|^practice$|^scrimmages$/.test(w))).join(' · ');
     if (plan.type === 'lineup') return { title: 'Who to start on offense', filt, rows: [], note: 'The starting-six model isn’t built yet. We’ll agree on what goes into it first (finishing, creation, screens, ball security, Goals Added, on-field impact). Until then, open Goals Added for the closest single number.', page: 'ga' };
+    const out0 = {};
     const P = plan.pick, isC = P.kind === 'concept', meta = P.c;
     const raw = isC ? saConcept(meta, d) : meta.f(d);
     const min = isC ? meta.minN : (meta.min || 0);
     const better = isC ? 'high' : (meta.dir || 'high');
     let rows = Object.keys(raw).map(j => Object.assign({ jersey: j, name: nameFor(j, season) || ('#' + j) }, raw[j])).filter(r => r.n >= min);
+    if (f.pos) { const P0 = POSITIONS[season] || {}; if (Object.keys(P0).length) rows = rows.filter(r => P0[r.jersey] === f.pos); else out0.note = 'Positions aren’t set yet (Personnel › Depth Chart), so this shows everyone.'; }
     const asc = (better === 'low') !== (plan.dir === 'worst');
     rows.sort((a, b) => asc ? a.v - b.v : b.v - a.v);
     rows.forEach((r, i) => { r.rank = i + 1; });
     const fmt = isC ? (v => (v >= 0 ? '+' : '') + v.toFixed(2) + ' vs team') : meta.fmt;
     const out = { title: meta.label, filt, fmt, page: meta.page, minNote: min ? `min ${min} ${isC ? 'actions' : 'attempts'}` : '', total: rows.length };
+    if (out0.note) out.note = out0.note;
     if (meta.seasonOnly && (f.ctx || f.from || f.opp)) out.note = `${meta.label} is built from the whole ${season} season, so the other filters weren’t applied.`;
     if (plan.type === 'player') out.rows = rows.filter(r => plan.players.includes(r.jersey)), out.missing = plan.players.filter(j => !rows.some(r => r.jersey === j)).map(j => nameFor(j, season) || '#' + j);
     else out.rows = rows.slice(0, Math.min(10, plan.n)), out.dir = plan.dir;
@@ -13470,7 +13484,7 @@ const SA_AI_RULES = `You turn a lacrosse coach's question into a JSON plan for t
  "blend":{"label":"<2-5 words>","parts":[{"id":"<stat id>","weight":1}]},
  "players":["P1"],
  "n":3, "dir":"best"|"worst",
- "filters":{"ctx":"Game"|"Practice"|"Scrimmage","season":"2026"|"2027","lastDays":21,"since":"YYYY-MM-DD","opponent":"<team>"},
+ "filters":{"ctx":"Game"|"Practice"|"Scrimmage","season":"2026"|"2027","lastDays":21,"since":"YYYY-MM-DD","opponent":"<team>","position":"attack"|"midfield"|"defense"},
  "page":"<page id>",
  "why":"<one short sentence on how you read the question>"}
 Rules: use only ids from the menu. Pick the single stat that answers the question; if none fits, use a role; if no role fits, build a blend of 2-4 stats (weight -1 for stats where lower is better, like toTouch). "player" = the question names P1/P2; "rank" = who is best/worst/top N. "who would you start" or "starting lineup" = "lineup". A question that just wants a page = "page". Off-topic = "none". "right now"/"lately" = lastDays 21. Never invent players or numbers.`;
@@ -13544,6 +13558,7 @@ function saPlanFromAi(j, map, q) {
   if (F.ctx && ['Game', 'Practice', 'Scrimmage'].includes(F.ctx)) { filters.ctx = F.ctx; }
   if (F.season && SEASONS.includes(String(F.season))) filters.season = String(F.season);
   if (F.lastDays && !filters.from) { const dt = new Date(today); dt.setDate(dt.getDate() - Math.min(365, Number(F.lastDays) || 0)); filters.from = localDateStr(dt); filters.words.push(`last ${F.lastDays} days`); }
+  if (F.position && !filters.pos) { const k = String(F.position).toLowerCase(); filters.pos = k.startsWith('att') ? 'A' : k.startsWith('mid') ? 'M' : k.startsWith('def') ? 'X' : null; if (filters.pos) filters.words.push(k); }
   if (F.since && /^\d{4}-\d{2}-\d{2}$/.test(F.since) && !filters.from) { filters.from = F.since; filters.words.push('since ' + F.since.slice(5)); }
   const why = typeof j.why === 'string' ? j.why.slice(0, 160) : '';
   if (j.type === 'lineup') return { type: 'lineup', filters, why };
