@@ -467,6 +467,12 @@
   .sd-search kbd { position: absolute; right: 8px; font: 11px var(--mono); color: var(--muted); border: 1px solid var(--line); padding: 0 5px; pointer-events: none; }
   .sd-drop { position: fixed; z-index: 80; background: var(--card); border: 1px solid var(--ink); box-shadow: 0 18px 40px rgba(0,0,0,.22); max-height: 62vh; overflow-y: auto; }
   .sd-drop ul { list-style: none; margin: 0; padding: 0; }
+  .sd-answer { padding: 10px 14px 12px; border-bottom: 2px solid var(--ink); background: var(--accent-soft); font: 13px var(--text); }
+  .sd-answer .sa-h { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: baseline; margin-bottom: 6px; } .sd-answer .sa-h b { font-size: 14px; } .sd-answer .sa-h span { color: var(--muted); font-size: 11.5px; }
+  .sd-answer ol { list-style: none; margin: 0; padding: 0; } .sd-answer li { padding: 3px 0; display: flex; flex-wrap: wrap; gap: 2px 10px; align-items: baseline; }
+  .sd-answer li .v { font: 700 13px var(--mono); } .sd-answer li em { color: var(--muted); font-size: 11.5px; font-style: normal; }
+  .sd-answer .sa-n { margin: 6px 0 0; color: var(--muted); font-size: 11.5px; } .sd-answer .sa-open { margin-top: 8px; border: 1px solid var(--ink); background: var(--card); color: var(--ink); padding: 4px 10px; font: 600 12px var(--text); cursor: pointer; }
+  tr.nav-hl td { background: rgba(227,169,43,.22) !important; } tr.nav-hl td:first-child { box-shadow: inset 3px 0 0 #E3A92B; }
   .sd-drop li button { width: 100%; display: grid; grid-template-columns: 76px 1fr; gap: 10px; text-align: left; border: 0; border-bottom: 1px solid var(--line-2); background: none; padding: 9px 14px; color: var(--ink); cursor: pointer; font: 13px var(--text); }
   .sd-drop li button.sel, .sd-drop li button:hover { background: var(--accent-soft); }
   .sd-drop li small { font-size: 9.5px; letter-spacing: .14em; text-transform: uppercase; color: var(--muted); padding-top: 2px; }
@@ -2166,6 +2172,11 @@
     </div>
     <p class="view-intro">How completely each field is being logged, and how many reps each key stat needs before it mostly reflects skill instead of luck. Use it to see which numbers to trust and what to log more of. 2027 and later.</p>
     <div class="panel">
+      <p class="panel-title">AI Search</p>
+      <p class="panel-sub">The search bar’s “Ask AI” line sends only the question to Google’s free Gemini AI, with every player name and #jersey replaced by P1, P2&hellip;, plus a fixed list of stat names. No stats, roster or logged entries are sent; the tracker computes every answer itself. Turn this on to see the exact text sent with each AI answer. Only you see this.</p>
+      <label class="sans" style="display:flex; gap:8px; align-items:center; font-size:13px;"><input type="checkbox" id="aiShowSent"> Show what’s sent to the AI</label>
+    </div>
+    <div class="panel">
       <p class="panel-title">Export All Data</p>
       <p class="panel-sub">Saves everything the staff has entered in Firestore &mdash; logged shots and possessions, roster, player evaluations, film tags, film sessions, tagger training answers &mdash; as one file in Chrome’s download folder (Lacrosse_Code), so the next “Backup Lacrosse Data” copies it to Google Drive. Scouting records are left out because they rebuild from the files on the Mac. Only you see this.</p>
       <div class="controls-row"><div class="control-group"><button class="btn" id="fsExportBtn" type="button">Export all data</button></div></div>
@@ -2913,7 +2924,8 @@ async function loadAll() {
     }, e => console.error('roles sync error', e));
   });
   ADV_SEASONS.forEach(season => DB.doc('app/positions_' + season).onSnapshot(snap => {
-    try { const o = snap.exists ? JSON.parse(snap.data().json || '{}') : {}; const clean = {}; Object.keys(o).forEach(j => { if (validJerseyText(j) && (o[j] === 'A' || o[j] === 'M' || o[j] === 'X')) clean[j] = o[j]; }); POSITIONS[season] = clean; } catch (e) { POSITIONS[season] = {}; }
+    try { const o = snap.exists ? JSON.parse(snap.data().json || '{}') : {}; const clean = {}; Object.keys(o).forEach(j => { if (validJerseyText(j) && POS_OK(o[j])) clean[j] = o[j]; }); POSITIONS[season] = clean;
+      const a = snap.exists && snap.data().alt ? JSON.parse(snap.data().alt) : {}; const ca = {}; Object.keys(a).forEach(j => { if (validJerseyText(j) && POS_CODES.includes(a[j])) ca[j] = a[j]; }); POSITIONS_ALT[season] = ca; } catch (e) { POSITIONS[season] = {}; }
     if (window.__appReady) renderDepthChart();
   }, e => console.error('positions sync error', e)));
   const unitsRef = DB.doc('app/units');
@@ -6511,8 +6523,8 @@ let EFF_SEASON = currentAdvSeason();
 function effContextOk(e) { return EFF_CONTEXT === 'All' || e.context === EFF_CONTEXT; }
 // EFF_FROM: an optional first date (the depth chart's Recent form); null
 // everywhere else, so every other view reads the whole season.
-let EFF_FROM = null;
-const effFromOk = e => !EFF_FROM || (e.date && e.date >= EFF_FROM);
+let EFF_FROM = null, EFF_TO = null, EFF_OPP = null;   // EFF_TO / EFF_OPP: set only by search answers
+const effFromOk = e => (!EFF_FROM || (e.date && e.date >= EFF_FROM)) && (!EFF_TO || (e.date && e.date <= EFF_TO)) && (!EFF_OPP || e.opponent === EFF_OPP);
 function effShots() { return advShots(EFF_SEASON).filter(e => effContextOk(e) && effFromOk(e)); }
 function effOppShots() { return OPP_SHOTS.filter(s => seasonForDate(s.date) === EFF_SEASON && effContextOk(s) && effFromOk(s)); }
 function effPoss() { return POSSESSIONS.filter(p => seasonForDate(p.date) === EFF_SEASON && effContextOk(p) && effFromOk(p)); }
@@ -8318,6 +8330,7 @@ async function exportAllData() {
   } catch (e) { console.error(e); log.textContent = 'Stopped: ' + (e.message || e); }
 }
 document.getElementById('fsExportBtn').addEventListener('click', exportAllData);
+(() => { const cb = document.getElementById('aiShowSent'); try { cb.checked = localStorage.getItem('wluAiShowSent') === '1'; } catch (e) { /* storage unavailable */ } cb.addEventListener('change', () => { try { localStorage.setItem('wluAiShowSent', cb.checked ? '1' : '0'); } catch (e) { /* storage unavailable */ } }); })();
 
 function renderDataHealth() {
   const wrap = document.getElementById('healthFieldWrap');
@@ -8668,12 +8681,20 @@ document.getElementById('rptPrintBtn').addEventListener('click', () => window.pr
 // Offense score, by recent form (the same score on the last 14 days), or by
 // chemistry (which groups of three produce most together, from lineups).
 let DEPTH_SEASON = currentAdvSeason(), depthMode = 'scores';
-let POSITIONS = {}; // { season: { jersey: 'A' | 'M' | 'X' } } set by the coach; X = not offense
+let POSITIONS = {}; // { season: { jersey: code } } set by the coach (see POS_CODES); X = old 'Other'
+let POSITIONS_ALT = {}; // { season: { jersey: code } } second position, e.g. a middie who also plays SSDM
+const POS_CODES = ['A', 'M', 'S', 'L', 'D', 'F', 'G'];
+const POS_OK = c => POS_CODES.includes(c) || c === 'X';
+const posOfJ = (season, j) => (POSITIONS[season] || {})[j] || null;
+const posAltJ = (season, j) => (POSITIONS_ALT[season] || {})[j] || null;
+const posIs = (season, j, codes) => [].concat(codes).some(c => posOfJ(season, j) === c || posAltJ(season, j) === c);
+const isOffensePos = (season, j) => posIs(season, j, ['A', 'M']);
 const DEPTH_RECENT_DAYS = 14, DEPTH_CHEM_MIN_POSS = 30, DEPTH_TRIO_MIN = 5;
-const DEPTH_POS_LABEL = { A: 'Attack', M: 'Midfield', X: 'Other' };
+const DEPTH_POS_LABEL = { A: 'Attack', M: 'Midfield', S: 'SSDM', L: 'LSM', D: 'Defense', F: 'FOGO', G: 'Goalie', X: 'Other' };
+let depthEditJ = null;   // the chip whose position editor is open
 async function persistPositions(season) {
   if (!DB) return false;
-  try { await DB.doc('app/positions_' + season).set({ json: JSON.stringify(POSITIONS[season] || {}) }); } catch (e) { console.error(e); return false; }
+  try { await DB.doc('app/positions_' + season).set({ json: JSON.stringify(POSITIONS[season] || {}), alt: JSON.stringify(POSITIONS_ALT[season] || {}) }); } catch (e) { console.error(e); return false; }
   return true;
 }
 function depthLatestDate(season) { return advShots(season).reduce((m, s) => (s.date && s.date > m ? s.date : m), ''); }
@@ -8725,13 +8746,15 @@ function renderDepthChart() {
   const chip = (j, extra) => {
     const g = scoreOf[j];
     const pos = posOf(j);
-    const btns = pos
-      ? `<button type="button" class="depth-pos" data-j="${escapeHtml(j)}" data-to="${pos === 'A' ? 'M' : pos === 'M' ? 'X' : ''}" title="Tap to change: Attack → Midfield → Other → Unassigned">${DEPTH_POS_LABEL[pos]}</button>`
-      : `<span style="display:flex; gap:4px;">${['A', 'M', 'X'].map(p => `<button type="button" class="depth-pos" data-j="${escapeHtml(j)}" data-to="${p}">${DEPTH_POS_LABEL[p]}</button>`).join('')}</span>`;
+    const alt0 = posAltJ(season, j), alt = alt0 && alt0 !== pos ? alt0 : null;
+    const btns = `<button type="button" class="depth-pos" data-edit="${escapeHtml(j)}" title="Tap to set position">${pos ? DEPTH_POS_LABEL[pos] + (alt ? ' / ' + DEPTH_POS_LABEL[alt] : '') : 'Set position'} &#9662;</button>`;
+    const editor = depthEditJ === j ? `<div class="depth-edit" style="grid-column:1 / -1; display:flex; flex-direction:column; gap:6px; margin-top:6px;">
+        <div style="display:flex; flex-wrap:wrap; gap:4px;"><span class="n-note" style="font-style:normal; min-width:52px;">Position</span>${POS_CODES.map(c => `<button type="button" class="pill${pos === c ? ' active' : ''}" data-j="${escapeHtml(j)}" data-set="${c}" style="padding:2px 9px; font-size:11.5px;">${DEPTH_POS_LABEL[c]}</button>`).join('')}<button type="button" class="pill" data-j="${escapeHtml(j)}" data-set="" style="padding:2px 9px; font-size:11.5px;">Clear</button></div>
+        <div style="display:flex; flex-wrap:wrap; gap:4px;"><span class="n-note" style="font-style:normal; min-width:52px;">Also plays</span>${['', ...POS_CODES].map(c => `<button type="button" class="pill${(alt || '') === c ? ' active' : ''}" data-j="${escapeHtml(j)}" data-alt="${c}" style="padding:2px 9px; font-size:11.5px;">${c ? DEPTH_POS_LABEL[c] : 'None'}</button>`).join('')}</div></div>` : '';
     return `<div class="depth-chip">
       <div><b>#${escapeHtml(j)} ${escapeHtml(nameFor(j, season))}</b>${extra || ''}</div>
       <div class="n-note" style="font-style:normal;">${g && g.score !== null ? `Score <b>${Math.round(g.score)}</b> · ${g.shots} shots` : 'Not ranked yet (too few shots)'}</div>
-      ${btns}
+      ${btns}${editor}
     </div>`;
   };
   const renderGroup = (pos, elId, title) => {
@@ -8760,20 +8783,22 @@ function renderDepthChart() {
   };
   renderGroup('A', 'depthAttack', 'Attack');
   renderGroup('M', 'depthMid', 'Midfield');
-  const unassigned = everyone.filter(j => !posOf(j)), other = everyone.filter(j => posOf(j) === 'X');
+  const unassigned = everyone.filter(j => !posOf(j)), other = everyone.filter(j => posOf(j) && posOf(j) !== 'A' && posOf(j) !== 'M');
   document.getElementById('depthUnassigned').innerHTML = `<p class="panel-title">Unassigned (${unassigned.length})</p>
-    <p class="panel-sub">Tap each player&rsquo;s position once. <b>Other</b> is for defense, goalies and faceoff &mdash; they drop off this offense chart. Saved for everyone.</p>
+    <p class="panel-sub">Tap a player&rsquo;s position to set it (Attack, Midfield, SSDM, LSM, Defense, FOGO, Goalie) and anything else he plays. Only Attack and Midfield are on this offense chart; everyone else is listed below. Saved for every coach.</p>
     ${unassigned.length ? `<div class="depth-rest">${unassigned.map(j => chip(j)).join('')}</div>` : '<p class="sans n-note" style="font-size:12.5px;">Everyone has a position.</p>'}
-    ${other.length ? `<details style="margin-top:10px;"><summary class="panel-sub" style="cursor:pointer;">Other (${other.length}) &mdash; tap to change</summary><div class="depth-rest" style="margin-top:8px;">${other.map(j => chip(j)).join('')}</div></details>` : ''}`;
-  document.querySelectorAll('#depthView .depth-pos').forEach(b => b.addEventListener('click', async () => {
-    const j = b.dataset.j;
-    const next = b.dataset.to || null;
-    const map = Object.assign({}, POSITIONS[season] || {});
+    ${other.length ? `<details style="margin-top:10px;"${depthEditJ && other.includes(depthEditJ) ? ' open' : ''}><summary class="panel-sub" style="cursor:pointer;">SSDM, LSM, defense, FOGO, goalies (${other.length}) &mdash; tap to change</summary><div class="depth-rest" style="margin-top:8px;">${other.sort((a, b) => POS_CODES.indexOf(posOf(a)) - POS_CODES.indexOf(posOf(b))).map(j => chip(j)).join('')}</div></details>` : ''}`;
+  document.querySelectorAll('#depthView [data-edit]').forEach(b => b.addEventListener('click', () => { depthEditJ = depthEditJ === b.dataset.edit ? null : b.dataset.edit; renderDepthChart(); }));
+  document.querySelectorAll('#depthView [data-set], #depthView [data-alt]').forEach(b => b.addEventListener('click', async () => {
+    const j = b.dataset.j, isAlt = b.dataset.alt !== undefined, next = (isAlt ? b.dataset.alt : b.dataset.set) || null;
+    const store = isAlt ? POSITIONS_ALT : POSITIONS;
+    const map = Object.assign({}, store[season] || {});
     if (next) map[j] = next; else delete map[j];
-    const prev = POSITIONS[season];
-    POSITIONS[season] = map;
+    const prev = store[season];
+    store[season] = map;
+    if (!isAlt) depthEditJ = null;
     renderDepthChart();
-    if (!(await persistPositions(season))) { POSITIONS[season] = prev; renderDepthChart(); }
+    if (!(await persistPositions(season))) { store[season] = prev; renderDepthChart(); }
   }));
 }
 setupPillGroup('depthSeasonPills', ADV_SEASONS, DEPTH_SEASON, v => { DEPTH_SEASON = v || DEPTH_SEASON; if (!v) setPillGroupValue('depthSeasonPills', DEPTH_SEASON); renderDepthChart(); });
@@ -13264,18 +13289,363 @@ function navRecent() { try { return JSON.parse(localStorage.getItem('wluSearchRe
 function navRemember(it) { try { const r = navRecent().filter(x => !(x.t === it.t && x.k === it.k)); r.unshift({ t: it.t, k: it.k }); localStorage.setItem('wluSearchRecent', JSON.stringify(r.slice(0, 8))); } catch (e) { /* storage unavailable */ } }
 function navUse() { try { return JSON.parse(localStorage.getItem('wluNavUse') || '{}'); } catch (e) { return {}; } }
 function navUseBonus(it) { const id = it.pageId; if (!id) return 0; const n = navUse()[id] || 0; return Math.min(3, Math.log2(1 + n)); }
+// ---- search answers: understand a question, compute the answer from our own data ----
+// A question becomes a plan { type, metric, players, n, dir, filters } (rules here; later
+// optionally the AI, which only ever sees the question). The numbers always come from
+// the same calculations the pages use, with the same filters, and small samples are left out.
+const SA_PCT = v => v === null || v === undefined ? '—' : (100 * v).toFixed(v >= .995 ? 0 : 1).replace(/\.0$/, '') + '%';
+const SA_NUM = d => v => v === null || v === undefined ? '—' : (+v).toFixed(d);
+const SA_SGN = d => v => v === null || v === undefined ? '—' : (v >= 0 ? '+' : '') + (+v).toFixed(d);
+function saPlayers(d) { return Object.values(d.players).filter(p => p.jersey && !isOppJersey(p.jersey)); }
+function saMap(d, f) { const m = {}; saPlayers(d).forEach(p => { const r = f(p); if (r) m[p.jersey] = r; }); return m; }
+function saTier(d, tier, rate) {
+  return saMap(d, p => { const l = p.ownShots.filter(s => s.shotQuality === tier); const g = l.filter(s => s.goal === 1).length; return l.length ? { v: rate ? g / l.length : l.length, n: l.length, extra: `${g} of ${l.length}` } : null; });
+}
+function saShotSub(d, keep, rate, min) {
+  return saMap(d, p => { const l = p.ownShots.filter(keep); const g = l.filter(s => s.goal === 1).length; return l.length ? { v: rate ? g / l.length : g, n: l.length, extra: `${g} of ${l.length}` } : null; });
+}
+function saScreens(d) {
+  const adv = {}, set = {};
+  d.possList.filter(pp => pp.team === 'WLU').forEach(pp => (pp.screens || []).forEach(x => { if (!x.s || isOppJersey(x.s)) return; set[x.s] = (set[x.s] || 0) + 1; if (x.adv === 'Yes') adv[x.s] = (adv[x.s] || 0) + 1; }));
+  return { adv, set };
+}
+function saCatchXg(d) {   // look value finished off a teammate's feed, catching (not off the dodge)
+  return saMap(d, p => { const l = p.ownShots.filter(s => s.assistJersey && Number(s.offDodge) !== 1); return l.length ? { v: l.reduce((a, s) => a + d.xgOf(s), 0), n: l.length } : null; });
+}
+// Every stat a question can ask for. min = smallest sample shown; dir = which way is better.
+const SA_CATALOG = [
+  { off: true, id: 'shooterScore', label: 'Shooter Score', words: 'shooter score, best shooter, best shooters, shooter, shooters, sniper, snipers', page: 'shooter', fmt: SA_NUM(0), seasonOnly: true, f: () => { const m = {}; computeShooterScores(EFF_SEASON, 'shooting').list.filter(r => r.score !== null).forEach(r => { m[r.jersey] = { v: r.score, n: r.shots }; }); return m; } },
+  { id: 'goalieScore', label: 'Goalie Score', words: 'goalie score, best goalie, goalie, goalies, keeper, netminder', page: 'gscore', fmt: SA_NUM(0), seasonOnly: true, f: () => { const m = {}; computeGoalieScores(EFF_SEASON).filter(r => r.score !== null).forEach(r => { m[r.jersey] = { v: r.score, n: r.faced }; }); return m; } },
+  { off: true, id: 'goals', label: 'Goals', words: 'goals, goal scorer, scorers, scoring', page: 'eff', fmt: SA_NUM(0), f: d => saMap(d, p => p.shots ? { v: p.goals, n: p.shots } : null) },
+  { off: true, id: 'assists', label: 'Assists', words: 'assists, assist', page: 'eff', fmt: SA_NUM(0), f: d => saMap(d, p => (p.potAst || p.assists) ? { v: p.assists, n: p.potAst } : null) },
+  { off: true, id: 'points', label: 'Points (G+A)', words: 'points, production, producer', page: 'eff', fmt: SA_NUM(0), f: d => saMap(d, p => (p.shots || p.potAst) ? { v: p.goals + p.assists, n: p.shots + p.potAst } : null) },
+  { off: true, id: 'shots', label: 'Shots', words: 'shots taken, shot attempts, most shots, volume', page: 'eff', fmt: SA_NUM(0), f: d => saMap(d, p => p.shots ? { v: p.shots, n: p.shots } : null) },
+  { off: true, id: 'shpct', label: 'Shooting %', words: 'shooting percentage, shooting %, shooting%, sh%, finishing rate, shoot the best', min: 15, page: 'eff', fmt: SA_PCT, f: d => saMap(d, p => p.shots ? { v: p.goals / p.shots, n: p.shots, extra: `${p.goals} of ${p.shots}` } : null) },
+  { off: true, id: 'gmx', label: 'Goals above expected (G−xG)', words: 'above expected, g-xg, gxg, finishing, efficient', min: 15, page: 'eff', fmt: SA_SGN(1), f: d => saMap(d, p => p.shots ? { v: p.goals - p.xg, n: p.shots } : null) },
+  { off: true, id: 'outsideSh', label: 'Shooting % from 12+ yards', words: 'from distance, distance, long range, from deep, outside shooter, outside shooting, outside, 12 yards, step down', min: 5, page: 'heat', fmt: SA_PCT, f: d => saShotSub(d, s => Number(s.distanceYds) >= 12, true) },
+  { off: true, id: 'insideSh', label: 'Shooting % inside 8 yards', words: 'close range, inside, in tight, crease, doorstep, point blank', min: 5, page: 'heat', fmt: SA_PCT, f: d => saShotSub(d, s => s.distanceYds != null && Number(s.distanceYds) < 8, true) },
+  { off: true, id: 'dodgeG', label: 'Goals off the dodge', words: 'off the dodge, dodge goals, dodging goals, scores off the dodge', page: 'situations', fmt: SA_NUM(0), f: d => saShotSub(d, s => Number(s.offDodge) === 1, false) },
+  { off: true, id: 'catchG', label: 'Goals off the catch', words: 'off the catch, catch and shoot, catch-and-shoot, catch goals', page: 'situations', fmt: SA_NUM(0), f: d => saShotSub(d, s => Number(s.offDodge) !== 1, false) },
+  { off: true, id: 'transG', label: 'Transition goals', words: 'transition, fast break, unsettled, in transition, off the faceoff', page: 'situations', fmt: SA_NUM(0), f: d => saShotSub(d, s => s.transition === 'FO' || s.transition === 'OTOD', false) },
+  { off: true, id: 'manupG', label: 'Man-up goals', words: 'man up, man-up, emo, extra man, power play', page: 'eff', fmt: SA_NUM(0), f: d => saShotSub(d, s => s.manSituation === 'Man-Up', false) },
+  { off: true, id: 'xg', label: 'Expected goals (xG)', words: 'xg, expected goals, look quality, best looks, chances', page: 'eff', fmt: SA_NUM(1), f: d => saMap(d, p => p.shots ? { v: p.xg, n: p.shots } : null) },
+  { off: true, id: 'xa', label: 'Expected assists (xA)', words: 'xa, expected assists, playmaker, creator for others, passing, passer', page: 'eff', fmt: SA_NUM(1), f: d => saMap(d, p => p.potAst ? { v: p.xa, n: p.potAst } : null) },
+  { off: true, id: 'feeds', label: 'Shots set up', words: 'feeds, potential assists, set up, setups, sets up', page: 'eff', fmt: SA_NUM(0), f: d => saMap(d, p => p.potAst ? { v: p.potAst, n: p.potAst } : null) },
+  { id: 'to', label: 'Turnovers', words: 'turnovers, turnover, giveaways, turns it over, turns the ball over', page: 'eff', fmt: SA_NUM(0), f: d => saMap(d, p => p.to ? { v: p.to, n: p.shots + p.potAst + p.to } : null) },
+  { off: true, id: 'toTouch', label: 'Turnovers per touch', words: 'ball security, protects the ball, protect the ball, takes care of the ball, careless, sloppy, turnover rate, secure', dir: 'low', min: 25, page: 'pertouch', fmt: SA_PCT, f: d => saMap(d, p => { const t = p.shots + p.potAst + p.to; return t ? { v: p.to / t, n: t, extra: `${p.to} in ${t} touches` } : null; }) },
+  { off: true, id: 'usage', label: 'Usage', words: 'usage, involvement, involved, runs through', page: 'eff', fmt: SA_PCT, f: d => { const all = saPlayers(d), T = d.shots.length + all.reduce((a, p) => a + p.potAst, 0); return saMap(d, p => (p.shots + p.potAst) ? { v: (p.shots + p.potAst) / T, n: p.shots + p.potAst } : null); } },
+  { off: true, id: 'possUsed', label: 'Possessions used', words: 'possessions used, ends possessions', page: 'eff', fmt: SA_PCT, f: d => { const all = saPlayers(d), T = d.shots.length + all.reduce((a, p) => a + p.to, 0); return saMap(d, p => (p.shots + p.to) ? { v: (p.shots + p.to) / T, n: p.shots + p.to } : null); } },
+  { id: 'gb', label: 'Ground balls', words: 'ground balls, ground ball, gbs, gb, scrappy', page: 'eff', fmt: SA_NUM(0), f: d => saMap(d, p => p.gb ? { v: p.gb, n: p.gb } : null) },
+  { id: 'ct', label: 'Caused turnovers', words: 'caused turnovers, takeaways, takeaway, steals, forced turnovers', page: 'eff', fmt: SA_NUM(0), f: d => saMap(d, p => p.ct ? { v: p.ct, n: p.ct } : null) },
+  { off: true, id: 'dom', label: 'Dominoes started', words: 'dominoes, starts the dominoes, initiator, initiates, breaks down, dodger, dodgers, dodging, draws slides', page: 'dominoes', fmt: SA_NUM(0), f: d => saMap(d, p => p.dominoes ? { v: p.dominoes, n: p.dominoes } : null) },
+  { off: true, id: 'advCreated', label: 'Screen advantages created', words: 'screen advantages, advantages created, screens, screen, screener, screeners, picks, pick setter', page: 'picks', fmt: SA_NUM(0), f: d => { const s = saScreens(d); const m = {}; Object.keys(s.set).forEach(j => { m[j] = { v: s.adv[j] || 0, n: s.set[j], extra: `${s.adv[j] || 0} of ${s.set[j]} screens` }; }); return m; } },
+  { off: true, id: 'gold', label: 'Shooting % on Gold shots', words: 'gold', min: 8, page: 'quality', fmt: SA_PCT, f: d => saTier(d, '1-Gold', true) },
+  { off: true, id: 'silver', label: 'Shooting % on Silver shots', words: 'silver', min: 8, page: 'quality', fmt: SA_PCT, f: d => saTier(d, '2-Silver', true) },
+  { off: true, id: 'bronze', label: 'Shooting % on Bronze shots', words: 'bronze', min: 8, page: 'quality', fmt: SA_PCT, f: d => saTier(d, '3-Bronze', true) },
+  { id: 'ga', label: 'Goals Added', words: 'goals added, most valuable, value, impact, helps most, contribution', page: 'ga', fmt: SA_SGN(1), f: () => { const r = computeGoalsAdded(); const m = {}; r.rows.forEach(x => { m[x.jersey] = { v: x.total, n: x.apps, extra: `offense ${SA_SGN(1)(x.off)}, defense ${SA_SGN(1)(x.def)}` }; }); return m; } },
+  { off: true, id: 'gaOff', label: 'Goals Added on offense', words: 'offensive value, offense goals added, offensive impact', page: 'ga', fmt: SA_SGN(1), f: () => { const r = computeGoalsAdded(); const m = {}; r.rows.forEach(x => { m[x.jersey] = { v: x.off, n: x.apps }; }); return m; } },
+  { id: 'gaDef', label: 'Goals Added on defense (field players)', words: 'defensive value, defense goals added, defensive impact, best defender, best defenders, defenders', page: 'ga', fmt: SA_SGN(1), f: () => { const r = computeGoalsAdded(); const m = {}; r.rows.forEach(x => { if (x.goalie === undefined) m[x.jersey] = { v: (x.takeaway || 0) + (x.onball || 0), n: x.apps }; }); return m; } },
+  { id: 'fo', label: 'Faceoff win %', words: 'faceoffs, faceoff, fogo, draws, wins draws, wins our faceoffs', min: 10, page: 'fosum', fmt: SA_PCT, goalie: false, f: () => { const m = {}; FACEOFFS.filter(f => f.playerJersey && seasonForDate(f.date) === EFF_SEASON && effContextOk(f) && effFromOk(f)).forEach(f => { const r = (m[f.playerJersey] = m[f.playerJersey] || { w: 0, n: 0 }); r.n++; if (Number(f.won) === 1) r.w++; }); Object.keys(m).forEach(j => { m[j] = { v: m[j].w / m[j].n, n: m[j].n, extra: `${m[j].w}-${m[j].n - m[j].w}` }; }); return m; } },
+  { id: 'savePct', label: 'Save %', words: 'save percentage, save %, save%, saves, stopper', min: 20, page: 'gsummary', fmt: SA_PCT, f: () => { const m = {}; goalieShotsForSeason(EFF_SEASON).filter(s => s.onKeeper === 1 && s.goalieJersey && effContextOk(s) && effFromOk(s)).forEach(s => { const r = (m[s.goalieJersey] = m[s.goalieJersey] || { sv: 0, n: 0 }); r.n++; if (s.goal !== 1) r.sv++; }); Object.keys(m).forEach(j => { m[j] = { v: m[j].sv / m[j].n, n: m[j].n, extra: `${m[j].sv} of ${m[j].n}` }; }); return m; } },
+];
+// Concepts: plain-language roles = a blend of catalog stats, each scored vs the team (z-score).
+const SA_CONCEPTS = [
+  { off: true, id: 'offball', label: 'Off-ball offense', words: 'off ball, off-ball, offball, without the ball, off the ball, screens and cuts', parts: [['advCreated', 1, 'screen advantages'], ['catchXg', 1, 'xG off catches']], page: 'picks', minN: 6 },
+  { off: true, id: 'initiator', label: 'Initiator', words: 'initiator, initiators, creator, creates offense, breaks down', parts: [['dom', 1, 'dominoes started'], ['xa', 1, 'xA']], page: 'dominoes', minN: 8 },
+  { off: true, id: 'finisher', label: 'Finisher', words: 'finisher, finishers, clutch finisher', parts: [['gmx', 1, 'G−xG'], ['shpct', 1, 'Sh%']], page: 'eff', minN: 15 },
+  { off: true, id: 'feeder', label: 'Feeder', words: 'feeder, feeders, quarterback, best passer', parts: [['xa', 1, 'xA'], ['feeds', 1, 'shots set up']], page: 'passing', minN: 8 },
+  { off: true, id: 'secure', label: 'Ball security', words: 'protects the ball best, safest with the ball, most careful', parts: [['toTouch', -1, 'TO per touch']], page: 'pertouch', minN: 25 },
+  { id: 'twoWay', label: 'Two-way value', words: 'two way, two-way, both ends', parts: [['gaOff', 1, 'offense GA'], ['gaDef', 1, 'defense GA']], page: 'ga', minN: 3 },
+];
+const saByIdCompute = { catchXg: d => saCatchXg(d) };
+function saCompute(id, d) { const c = SA_CATALOG.find(x => x.id === id); return c ? c.f(d) : saByIdCompute[id] ? saByIdCompute[id](d) : {}; }
+function saZ(map) {
+  const v = Object.values(map).map(x => x.v); if (v.length < 2) return {};
+  const m = v.reduce((a, b) => a + b, 0) / v.length, sd = Math.sqrt(v.reduce((a, b) => a + (b - m) ** 2, 0) / (v.length - 1)) || 1;
+  const z = {}; Object.keys(map).forEach(j => { z[j] = (map[j].v - m) / sd; }); return z;
+}
+function saConcept(c, d) {
+  const parts = c.parts.map(([id, w, lab]) => { const raw = saCompute(id, d), meta = SA_CATALOG.find(x => x.id === id), min = meta && meta.min ? meta.min : 0; const ok = {}; Object.keys(raw).forEach(j => { if (raw[j].n >= min) ok[j] = raw[j]; }); return { id, w, lab, raw: ok, z: saZ(ok), fmt: meta ? meta.fmt : SA_NUM(1) }; });
+  const ids = new Set(parts.flatMap(p => Object.keys(p.raw)));
+  const out = {};
+  ids.forEach(j => {
+    const have = parts.filter(p => p.z[j] !== undefined); if (!have.length) return;
+    const n = Math.max(...have.map(p => p.raw[j].n)); if (n < c.minN) return;
+    // A missing part counts as team average (0), so one strong part can't carry a tiny sample.
+    const score = parts.reduce((a, p) => a + p.w * (p.z[j] || 0), 0) / parts.length;
+    out[j] = { v: score, n, extra: parts.map(p => p.raw[j] ? `${p.lab} ${p.fmt(p.raw[j].v)}` : null).filter(Boolean).join(' · ') };
+  });
+  return out;
+}
+// ---- reading the question ----
+const SA_NUMS = { one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10 };
+const SA_MONTHS = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
+function saFilters(q) {
+  const f = { ctx: null, season: null, from: null, to: null, opp: null, words: [] }, t = q.toLowerCase(), today = new Date();
+  if (/\b(in |during )?games?\b/.test(t) && !/\bgame week\b/.test(t)) { f.ctx = 'Game'; f.words.push('games'); }
+  else if (/\bpractices?\b/.test(t)) { f.ctx = 'Practice'; f.words.push('practice'); }
+  else if (/\bscrimmages?\b/.test(t)) { f.ctx = 'Scrimmage'; f.words.push('scrimmages'); }
+  const sy = t.match(/\b(20\d\d)\b/); if (sy && SEASONS.includes(sy[1])) { f.season = sy[1]; f.words.push(sy[1]); }
+  else if (/\blast (year|season)\b/.test(t)) { const s = String(Number(currentAdvSeason()) - 1); if (SEASONS.includes(s)) { f.season = s; f.words.push(s); } }
+  const ln = t.match(/\b(?:last|past) (\d+|one|two|three|four|five|six) (day|days|week|weeks)\b/);
+  if (ln) { const k = Number(ln[1]) || SA_NUMS[ln[1]]; const dt = new Date(today); dt.setDate(dt.getDate() - k * (ln[2].startsWith('week') ? 7 : 1)); f.from = localDateStr(dt); f.words.push(`last ${k} ${ln[2]}`); }
+  else if (/\bthis week\b/.test(t)) { const dt = new Date(today); dt.setDate(dt.getDate() - ((dt.getDay() + 6) % 7)); f.from = localDateStr(dt); f.words.push('this week'); }
+  else if (/\b(lately|recently|right now|these days)\b/.test(t)) { const dt = new Date(today); dt.setDate(dt.getDate() - 21); f.from = localDateStr(dt); f.words.push('last 3 weeks'); }
+  const since = t.match(/\bsince (\d{1,2})\/(\d{1,2})\b/) || t.match(/\bsince ([a-z]{3})[a-z]* (\d{1,2})\b/);
+  if (since) { const mo = isNaN(since[1]) ? SA_MONTHS.indexOf(since[1]) + 1 : Number(since[1]), day = Number(since[2]); if (mo > 0) { const y = mo > today.getMonth() + 1 ? today.getFullYear() - 1 : today.getFullYear(); f.from = `${y}-${String(mo).padStart(2, '0')}-${String(day).padStart(2, '0')}`; f.words.push('since ' + f.from.slice(5)); } }
+  const vs = t.match(/\b(?:vs\.?|versus|against) ([a-z .&'-]{3,30})/);
+  const pos = t.match(/\b(attack(?:man|men|ers)|middies|middie|middy|midfielders?|mids|ssdms?|short stick d|lsms?|long sticks?|defense(?:men|man)|d-?men|poles|fogos?|faceoff (?:guys|men)|goalies|goalie|keepers)\b/);
+  if (pos) { const w = pos[1]; f.pos = /^att/.test(w) ? ['A'] : /^mid/.test(w) ? ['M'] : /^(ssdm|short)/.test(w) ? ['S'] : /^(lsm|long)/.test(w) ? ['L'] : /^poles/.test(w) ? ['L', 'D'] : /^(fogo|faceoff)/.test(w) ? ['F'] : /^(goal|keep)/.test(w) ? ['G'] : ['D']; f.words.push(f.pos.map(c => DEPTH_POS_LABEL[c]).join('/')); }
+  if (vs) { const opps = [...new Set(allShotEntries().concat(POSSESSIONS).map(e => e.opponent).filter(Boolean))]; const want = vs[1].trim(); const hit = opps.find(o => o.toLowerCase().startsWith(want) || want.startsWith(o.toLowerCase())); if (hit) { f.opp = hit; f.words.push('vs ' + hit); } }
+  return f;
+}
+function saPlayerIn(q) {
+  const season = currentLogSeason ? currentLogSeason() : SEASONS[SEASONS.length - 1], roster = (ROSTERS[season] || []).filter(r => r.jersey && r.name);
+  const t = q.toLowerCase(), out = [];
+  (t.match(/#\s?(\d{1,3})\b/g) || []).forEach(m => { const j = m.replace(/\D/g, ''); if (roster.some(r => r.jersey === j)) out.push(j); });
+  const words = t.replace(/[^a-z\s'-]/g, ' ').split(/\s+/).filter(w => w.length >= 3 && !NAV_STOP.has(w));
+  roster.forEach(r => { const parts = r.name.toLowerCase().split(/\s+/); if (words.some(w => parts.some(p => p === w || (w.length >= 4 && navNear(w, p))))) out.push(r.jersey); });
+  return [...new Set(out)];
+}
+function saPlan(q) {
+  const t = ' ' + navNorm(q) + ' ', filters = saFilters(q), players = saPlayerIn(q);
+  if (/\bwho (would|should) (you|we|i) start\b|\bstarting (six|6|lineup|offense)\b|\bstart on offense\b/.test(t)) return { type: 'lineup', filters };
+  const topN = t.match(/\btop (\d+|one|two|three|four|five|six|seven|eight|nine|ten)\b/) || t.match(/\bbest (\d+|two|three|four|five|six)\b/);
+  const n = topN ? (Number(topN[1]) || SA_NUMS[topN[1]]) : null;
+  const dir = /\b(worst|least|fewest|lowest|bottom|struggl)/.test(t) ? 'worst' : 'best';
+  const exp = ' ' + navExpand(q).replace(/\s+/g, ' ') + ' ';
+  // Phrases, not loose words: 'protects the ball' must not match 'off ball'. Longer phrases weigh more.
+  const score = words => words.split(',').map(x => x.trim()).filter(Boolean).reduce((a, ph) => a + (exp.includes(' ' + ph + ' ') ? ph.split(' ').length : 0), 0);
+  const concept = SA_CONCEPTS.map(c => ({ c, s: score(c.words) })).sort((a, b) => b.s - a.s)[0];
+  const tier = (t.match(/\b(gold|silver|bronze)\b/) || [])[1];
+  const metric = SA_CATALOG.map(c => ({ c, s: score(c.words) + (tier && c.id === tier ? 5 : 0) })).sort((a, b) => b.s - a.s)[0];
+  const wantCount = /\bmost\b|\bhow many\b/.test(t);
+  let pick = null;
+  if (concept.s && concept.s >= metric.s) pick = { kind: 'concept', c: concept.c };
+  else if (metric.s) { let c = metric.c; if (['gold', 'silver', 'bronze'].includes(c.id) && wantCount) c = Object.assign({}, c, { label: c.label.replace('Shooting % on', 'Most'), fmt: SA_NUM(0), f: d => saTier(d, { gold: '1-Gold', silver: '2-Silver', bronze: '3-Bronze' }[c.id], false), min: 0 }); pick = { kind: 'metric', c }; }
+  if (!pick) return null;
+  if (players.length) return { type: 'player', pick, players, filters };
+  if (!/\b(who|top|best|worst|most|least|fewest|leader|leaders|rank|highest|lowest|better|struggl)/.test(t) && !n) return null;
+  return { type: 'rank', pick, n: n || 3, dir, filters };
+}
+// ---- running a plan ----
+function saRun(plan) {
+  const f = plan.filters, s0 = EFF_SEASON, c0 = EFF_CONTEXT, fr0 = EFF_FROM, to0 = EFF_TO, op0 = EFF_OPP;
+  EFF_SEASON = f.season || ((NAV_ST && isAdvSeason(NAV_ST.season)) ? NAV_ST.season : currentAdvSeason());
+  EFF_CONTEXT = f.ctx || (NAV_ST && NAV_ST.ctx) || 'All'; EFF_FROM = f.from; EFF_TO = f.to; EFF_OPP = f.opp;
+  try {
+    const d = buildEffData(), season = EFF_SEASON, ctx = EFF_CONTEXT;
+    const empty = !d.shots.length && !d.poss.length ? `No ${ctx === 'All' ? '' : ctx.toLowerCase() + ' '}entries logged for ${season}${f.from ? ' in that date range' : ''}${f.opp ? ' vs ' + f.opp : ''} yet.` : '';
+    const filt = [season, ctx === 'All' ? 'all sessions' : ctx.toLowerCase() + 's'].concat(f.words.filter(w => !/^20\d\d$|^games$|^practice$|^scrimmages$/.test(w))).join(' · ');
+    if (plan.type === 'lineup') return { title: 'Who to start on offense', filt, rows: [], note: 'The starting-six model isn’t built yet. We’ll agree on what goes into it first (finishing, creation, screens, ball security, Goals Added, on-field impact). Until then, open Goals Added for the closest single number.', page: 'ga' };
+    const out0 = {};
+    const P = plan.pick, isC = P.kind === 'concept', meta = P.c;
+    const raw = isC ? saConcept(meta, d) : meta.f(d);
+    const min = isC ? meta.minN : (meta.min || 0);
+    const better = isC ? 'high' : (meta.dir || 'high');
+    let rows = Object.keys(raw).map(j => Object.assign({ jersey: j, name: nameFor(j, season) || ('#' + j) }, raw[j])).filter(r => r.n >= min);
+    const posSet = Object.keys(POSITIONS[season] || {}).length > 0;
+    if (f.pos) { if (posSet) rows = rows.filter(r => posIs(season, r.jersey, f.pos)); else out0.note = 'Positions aren’t set yet (Personnel › Depth Chart), so this shows everyone.'; }
+    else if (meta.off && posSet) rows = rows.filter(r => isOffensePos(season, r.jersey));   // offense questions: attack and middies only
+    const asc = (better === 'low') !== (plan.dir === 'worst');
+    rows.sort((a, b) => asc ? a.v - b.v : b.v - a.v);
+    rows.forEach((r, i) => { r.rank = i + 1; });
+    const fmt = isC ? (v => (v >= 0 ? '+' : '') + v.toFixed(2) + ' vs team') : meta.fmt;
+    const out = { title: meta.label, filt, fmt, page: meta.page, minNote: min ? `min ${min} ${isC ? 'actions' : 'attempts'}` : '', total: rows.length };
+    if (out0.note) out.note = out0.note;
+    if (empty) out.note = empty;
+    if (meta.seasonOnly && (f.ctx || f.from || f.opp)) out.note = `${meta.label} is built from the whole ${season} season, so the other filters weren’t applied.`;
+    if (plan.type === 'player') out.rows = rows.filter(r => plan.players.includes(r.jersey)), out.missing = plan.players.filter(j => !rows.some(r => r.jersey === j)).map(j => nameFor(j, season) || '#' + j);
+    else out.rows = rows.slice(0, Math.min(10, plan.n)), out.dir = plan.dir;
+    if (isC) out.how = 'Blend of ' + meta.parts.map(p => p[2]).join(' + ') + ', each scored against the team; small samples left out.';
+    return out;
+  } finally { EFF_SEASON = s0; EFF_CONTEXT = c0; EFF_FROM = fr0; EFF_TO = to0; EFF_OPP = op0; }
+}
+function saCardHtml(a) {
+  const rows = a.rows.map(r => `<li><b>${r.rank ? r.rank + '. ' : ''}#${navEsc(r.jersey)} ${navEsc(r.name)}</b> <span class="v">${a.fmt ? a.fmt(r.v) : ''}</span>${r.extra ? `<em>${navEsc(r.extra)}</em>` : ''}${a.total && r.rank ? `<em>${r.rank} of ${a.total}</em>` : ''}</li>`).join('');
+  return `<div class="sd-answer"><div class="sa-h"><b>${navEsc(a.title)}</b><span>${navEsc(a.filt)}${a.minNote ? ' · ' + navEsc(a.minNote) : ''}</span></div>
+    ${rows ? `<ol>${rows}</ol>` : ''}${a.missing && a.missing.length ? `<p class="sa-n">Not enough data yet for ${navEsc(a.missing.join(', '))}.</p>` : ''}${!rows && !a.note ? '<p class="sa-n">Nobody has enough data for this yet.</p>' : ''}
+    ${a.note ? `<p class="sa-n">${navEsc(a.note)}</p>` : ''}${a.how ? `<p class="sa-n">${navEsc(a.how)}</p>` : ''}
+    ${a.page && NAV_PAGES[a.page] ? `<button type="button" class="sa-open" data-sa-open="1">Open ${navEsc(NAV_PAGES[a.page].name)} ›</button>` : ''}</div>`;
+}
+// Highlight the answer's players on the page it opens.
+function navHighlight(jerseys) {
+  if (!jerseys || !jerseys.length) return;
+  setTimeout(() => {
+    document.querySelectorAll('.nav-hl').forEach(e => e.classList.remove('nav-hl'));
+    const view = document.querySelector('.view.active') || document; let first = null;
+    view.querySelectorAll('tbody tr').forEach(tr => { if (!tr.offsetParent) return; const c = [...tr.children].slice(0, 2).map(td => td.textContent.trim().replace(/^#/, '')); if (jerseys.some(j => c.includes(String(j)))) { tr.classList.add('nav-hl'); first = first || tr; } });
+    if (first) first.scrollIntoView({ block: 'center' });
+  }, 350);
+}
+
+// ---- AI question reader (Firebase AI Logic, free Gemini tier) ----
+// PRIVACY: this is the ONLY code that talks to the AI. It sends three things and nothing else:
+//   1. the coach's question, with every roster name and #jersey replaced by P1, P2, ...;
+//   2. the fixed stat menu below (stat names and meanings, no numbers);
+//   3. fixed instructions.
+// It never sends a roster, a stat, a result or any logged entry. The AI returns only a plan
+// (which stat, which players by P-number, filters); the tracker computes every number itself.
+// A last check refuses to send if a roster name or #jersey is still in the question.
+const SA_AI_MODELS = ['gemini-flash-lite-latest', 'gemini-3.8-flash'];
+const SA_AI_PAGES = ['brief', 'shooter', 'heat', 'quality', 'eff', 'pertouch', 'passing', 'dominoes', 'triggers', 'situations', 'picks', 'lineups', 'trends', 'defense', 'pickdef', 'gscore', 'surface', 'gsummary', 'fosum', 'scout', 'wp', 'ga', 'projsk', 'depth', 'roster', 'reports', 'health'];
+function saAiMenu() {
+  return 'STATS (id: meaning):\n' + SA_CATALOG.map(c => `${c.id}: ${c.label}${c.dir === 'low' ? ' (lower is better)' : ''}`).concat(['catchXg: expected goals on shots taken off a teammate\'s feed (catching, not dodging)']).join('\n')
+    + '\nROLES (id: blend):\n' + SA_CONCEPTS.map(c => `${c.id}: ${c.label} = ${c.parts.map(p => p[0]).join(' + ')}`).join('\n')
+    + '\nPAGES: ' + SA_AI_PAGES.join(', ');
+}
+const SA_AI_RULES = `You turn a lacrosse coach's question into a JSON plan for the team's stats tracker. Reply with JSON only:
+{"type":"rank"|"player"|"lineup"|"page"|"none",
+ "metric":"<stat id>" (or omit when using "role" or "blend"),
+ "role":"<role id>",
+ "blend":{"label":"<2-5 words>","parts":[{"id":"<stat id>","weight":1}]},
+ "players":["P1"],
+ "n":3, "dir":"best"|"worst",
+ "filters":{"ctx":"Game"|"Practice"|"Scrimmage","season":"2026"|"2027","lastDays":21,"since":"YYYY-MM-DD","opponent":"<team>","position":"attack"|"midfield"|"ssdm"|"lsm"|"defense"|"fogo"|"goalie"},
+ "page":"<page id>",
+ "why":"<one short sentence on how you read the question>"}
+Rules: use only ids from the menu. Pick the single stat that answers the question; if none fits, use a role; if no role fits, build a blend of 2-4 stats (weight -1 for stats where lower is better, like toTouch). "player" = the question names P1/P2; "rank" = who is best/worst/top N. "who would you start" or "starting lineup" = "lineup". A question that just wants a page = "page". Off-topic = "none". "right now"/"lately" = lastDays 21. Only include a filter the question actually asks for (no season, games/practice or dates unless stated). n = how many names to show: 3 unless the question asks for a number. Never invent players or numbers.`;
+let SA_AI = null;
+async function saAiModel(name) {
+  if (!SA_AI) {
+    const A = await import('https://www.gstatic.com/firebasejs/12.6.0/firebase-app.js');
+    const I = await import('https://www.gstatic.com/firebasejs/12.6.0/firebase-ai.js');
+    const app = A.getApps().find(a => a.name === 'wluai') || A.initializeApp(firebase.app().options, 'wluai');
+    SA_AI = { I, ai: I.getAI(app, { backend: new I.GoogleAIBackend() }) };
+  }
+  return SA_AI.I.getGenerativeModel(SA_AI.ai, { model: name, generationConfig: { responseMimeType: 'application/json', temperature: 0 }, systemInstruction: SA_AI_RULES + '\n\n' + saAiMenu() });
+}
+// Names / #jerseys -> P1, P2 ... (and back). Returns { text, map: { P1: jersey } }.
+// Names that are also everyday words (Will, Max, Hunter, Chase, Gray, Ford, Jack...) are hidden
+// only when written as a name: capitalized, or next to that player's other name.
+const SA_COMMON = new Set('will max hunter chase gray grey ford jack curry art carter quinn mark miles cole grant reed rich young king brown long short power major hill bell wood stone river field banks lane price love best day knight'.split(' '));
+let SA_VOCAB = null;
+function saVocab() {
+  if (SA_VOCAB) return SA_VOCAB;
+  const txt = Object.values(NAV_KW).join(' ') + ' ' + SA_CATALOG.map(c => c.words + ' ' + c.label).join(' ') + ' ' + SA_CONCEPTS.map(c => c.words + ' ' + c.label).join(' ') + ' ' + Object.keys(NAV_SYN).join(' ') + ' ' + Object.values(NAV_SYN).join(' ')
+    + ' games game practice practices scrimmage middie middies middy attack attackman attackmen defense defenseman offense goalie team players player shooter touches touch more less better worse with without ball season week weeks month today right now best worst most least who what which should would could start starts starting lineup lefty righty hands crease alley wing top behind cage net clears clear ride rides slides slide dodges dodge feed feeds cutter cutters underrated overrated hustle effort tough consistent';
+  SA_VOCAB = new Set(navNorm(txt).split(/\s+/).filter(Boolean));
+  return SA_VOCAB;
+}
+function saMask(q) {
+  const season = currentLogSeason ? currentLogSeason() : SEASONS[SEASONS.length - 1], roster = (ROSTERS[season] || []).filter(r => r.jersey && r.name);
+  const map = {}; let k = 0, text = ' ' + q + ' ';
+  const tag = j => { const have = Object.keys(map).find(p => map[p] === j); if (have) return have; const p = 'P' + (++k); map[p] = j; return p; };
+  text = text.replace(/#\s?(\d{1,3})\b/g, (m, j) => roster.some(r => r.jersey === j) ? tag(j) : m);
+  roster.forEach(r => {
+    const parts = r.name.split(/\s+/).map(x => x.replace(/[^a-z'-]/gi, '')).filter(w => w.length >= 2);
+    if (parts.length >= 2) text = text.replace(new RegExp(`(^|[^a-z])${parts[0]}\\s+${parts[parts.length - 1]}(?=[^a-z]|$)`, 'gi'), (m, a) => a + tag(r.jersey));   // full name first
+    parts.forEach(part => {
+      const common = SA_COMMON.has(part.toLowerCase());
+      text = text.replace(new RegExp(`(^|[^a-z])(${part})(?=[^a-z]|$)`, common ? 'g' : 'gi'), (m, a, w) => (!common || /^[A-Z]/.test(w)) ? a + tag(r.jersey) : m);
+    });
+  });
+  // a misspelled name (one letter off) that isn't an everyday or lacrosse word
+  const V = saVocab();
+  text = text.replace(/[A-Za-z']{5,}/g, w => { if (V.has(w.toLowerCase())) return w; const r = roster.find(r => r.name.split(/\s+/).some(p => p.length >= 5 && !SA_COMMON.has(p.toLowerCase()) && navNear(w.toLowerCase(), p.toLowerCase()))); return r ? tag(r.jersey) : w; });
+  return { text: text.trim().replace(/\b(P\d+)(\s+\1\b)+/g, '$1'), map };
+}
+function saMaskOk(text) {
+  const season = currentLogSeason ? currentLogSeason() : SEASONS[SEASONS.length - 1], roster = ROSTERS[season] || [];
+  if (/#\s?\d/.test(text)) return false;
+  return !roster.some(r => r.name && r.name.split(/\s+/).some(p => p.length >= 3 && (SA_COMMON.has(p.toLowerCase()) ? new RegExp(`\\b${p}\\b`).test(text) : new RegExp(`\\b${p.replace(/[^a-z'-]/gi, '')}\\b`, 'i').test(text))));
+}
+let SA_AI_LAST_SENT = '';
+const SA_AI_CACHE = {};
+async function saAskAi(q) {
+  const m = saMask(q);
+  if (!saMaskOk(m.text)) throw new Error('blocked: the question still had a name in it after masking');
+  const key = navNorm(m.text);
+  SA_AI_LAST_SENT = m.text;
+  let raw = SA_AI_CACHE[key];
+  if (!raw) {
+    let err = null;
+    for (const name of SA_AI_MODELS) {
+      try { const r = await (await saAiModel(name)).generateContent(m.text); raw = r.response.text(); break; } catch (e) { err = e; }
+    }
+    if (!raw) throw err || new Error('no answer');
+    SA_AI_CACHE[key] = raw;
+  }
+  let j; try { j = JSON.parse(raw.replace(/^```json|```$/g, '').trim()); } catch (e) { throw new Error('the AI reply wasn’t a plan'); }
+  return saPlanFromAi(j, m.map, q);
+}
+// Validate the AI's plan against the menu and turn it into the same plan the rules make.
+function saPlanFromAi(j, map, q) {
+  const today = new Date(), F = Object.assign({}, j.filters || {}), filters = saFilters(q);   // plain-word filters still apply
+  // The AI sometimes adds filters nobody asked for: keep one only if the question mentions it.
+  const ql = q.toLowerCase();
+  if (!/\b(game|games|practice|practices|scrimmage|scrimmages)\b/.test(ql)) delete F.ctx;
+  if (!/\b(20\d\d|year|season)\b/.test(ql)) delete F.season;
+  if (!/\b(day|days|week|weeks|month|lately|recent|recently|now|this)\b/.test(ql)) delete F.lastDays;
+  if (!/\bsince\b/.test(ql)) delete F.since;
+  if (!/\b(attack\w*|middie\w*|middy|midfield\w*|mids|defense\w*|poles|d-?men|ssdms?|short stick|lsms?|long stick|fogos?|faceoff|goalies?|keepers?)\b/.test(ql)) delete F.position;
+  if (F.ctx && ['Game', 'Practice', 'Scrimmage'].includes(F.ctx)) { filters.ctx = F.ctx; }
+  if (F.season && SEASONS.includes(String(F.season))) filters.season = String(F.season);
+  if (F.lastDays && !filters.from) { const dt = new Date(today); dt.setDate(dt.getDate() - Math.min(365, Number(F.lastDays) || 0)); filters.from = localDateStr(dt); filters.words.push(`last ${F.lastDays} days`); }
+  if (F.position && !filters.pos) { const k = String(F.position).toLowerCase(); const c = { attack: 'A', midfield: 'M', ssdm: 'S', lsm: 'L', defense: 'D', fogo: 'F', goalie: 'G' }[k]; if (c) { filters.pos = [c]; filters.words.push(DEPTH_POS_LABEL[c]); } }
+  if (F.since && /^\d{4}-\d{2}-\d{2}$/.test(F.since) && !filters.from) { filters.from = F.since; filters.words.push('since ' + F.since.slice(5)); }
+  const why = typeof j.why === 'string' ? j.why.slice(0, 160) : '';
+  if (j.type === 'lineup') return { type: 'lineup', filters, why };
+  if (j.type === 'page' && NAV_PAGES[j.page]) return { type: 'page', page: j.page, filters, why };
+  let pick = null;
+  const metric = SA_CATALOG.find(c => c.id === j.metric), role = SA_CONCEPTS.find(c => c.id === j.role);
+  if (metric) pick = { kind: 'metric', c: metric };
+  else if (role) pick = { kind: 'concept', c: role };
+  else if (j.blend && Array.isArray(j.blend.parts)) {
+    const parts = j.blend.parts.filter(p => SA_CATALOG.some(c => c.id === p.id) || p.id === 'catchXg').slice(0, 4).map(p => { const c = SA_CATALOG.find(x => x.id === p.id); return [p.id, Number(p.weight) < 0 ? -1 : 1, c ? c.label : 'xG off catches']; });
+    if (parts.length) { const first = SA_CATALOG.find(c => c.id === parts[0][0]); pick = { kind: 'concept', c: { id: 'blend', off: parts.every(x => (SA_CATALOG.find(c => c.id === x[0]) || { off: true }).off), label: String(j.blend.label || 'Custom blend').slice(0, 40), parts, page: first ? first.page : 'eff', minN: 8 } }; }
+  }
+  if (!pick) return null;
+  const players = (j.players || []).map(p => map[p]).filter(Boolean);
+  if (j.type === 'player' && players.length) return { type: 'player', pick, players, filters, why };
+  return { type: 'rank', pick, n: Math.max(3, Math.min(10, Number(j.n) || 3)), dir: j.dir === 'worst' ? 'worst' : 'best', filters, why };
+}
+function saShowSent() { try { return IS_DH_OWNER && localStorage.getItem('wluAiShowSent') === '1'; } catch (e) { return false; } }
+
 function navWireSearch() {
   const inp = document.getElementById('sdQ'), dd = document.getElementById('sdDrop'); let items = null, f = [], sel = 0;
   const place = () => { const r = inp.getBoundingClientRect(), w = Math.min(innerWidth - 16, Math.max(r.width, 440)); dd.style.top = (r.bottom + 6) + 'px'; dd.style.left = Math.max(8, Math.min(r.left, innerWidth - w - 8)) + 'px'; dd.style.width = w + 'px'; };
+  let ans = null, ansPlan = null, ansTimer = null;
+  const drawAnswer = () => {
+    const q = inp.value.trim(); ans = null; ansPlan = null;
+    if (q && !PLAYER_MODE) { try { ansPlan = saPlan(q); ans = ansPlan ? saRun(ansPlan) : null; } catch (e) { console.error('search answer', e); ans = null; } }
+    const old = dd.querySelector('.sd-answer'); if (old) old.remove();
+    if (ans) { dd.insertAdjacentHTML('afterbegin', saCardHtml(ans)); const n = dd.querySelector('.none'); if (n) n.remove(); place(); dd.hidden = false; }
+  };
   const draw = () => {
+    clearTimeout(ansTimer); ansTimer = setTimeout(drawAnswer, 220);
     if (!items || (NAV_TEAMS && items.teams !== NAV_TEAMS.length)) { items = navItems(); items.teams = (NAV_TEAMS || []).length; }
     const rec = navRecent().map(r => items.find(i => i.t === r.t && i.k === r.k)).filter(Boolean).map(i => Object.assign({}, i, { k: 'Recent' }));
     f = inp.value.trim() ? navFind(items, inp.value) : rec.slice(0, 5).concat(items.filter(i => i.k === 'Question').slice(0, 8 - Math.min(5, rec.length))); sel = 0;
+    const q0 = inp.value.trim();
+    if (q0.length > 3 && !PLAYER_MODE && DB) {
+      let ruled = null; try { ruled = saPlan(q0); } catch (e) { ruled = null; }
+      const askItem = { k: 'Ask AI', t: q0, s: 'Understands any wording · sends only the question, names hidden', ai: true };
+      if (ruled) f = f.slice(0, 11).concat([askItem]); else f = [askItem].concat(f.slice(0, 11));
+    }
     dd.innerHTML = f.length ? `<ul>${f.map((x, k) => `<li><button type="button" data-k="${k}" class="${k === sel ? 'sel' : ''}"><small>${x.k}</small><span>${navEsc(x.t)}<em>${navEsc(x.s)}</em></span></button></li>`).join('')}</ul>` : '<div class="none">Nothing matches. Try a player, a page, or a metric like GSAx.</div>';
     place(); dd.hidden = false;
   };
   const mark = () => dd.querySelectorAll('button[data-k]').forEach(b => b.classList.toggle('sel', +b.dataset.k === sel));
-  const go = it => { navRemember(it); inp.value = ''; dd.hidden = true; inp.blur(); it.go(); };
+  const askAi = async q => {
+    const old = dd.querySelector('.sd-answer'); if (old) old.remove();
+    dd.insertAdjacentHTML('afterbegin', '<div class="sd-answer"><div class="sa-h"><b>Reading your question…</b><span>only the question is sent, with names hidden</span></div></div>'); place(); dd.hidden = false;
+    let html;
+    try {
+      const plan = await saAskAi(q);
+      const sent = saShowSent() ? `<details class="sa-n"><summary>Sent to Google</summary><code style="white-space:pre-wrap">${navEsc(SA_AI_LAST_SENT)}</code><br><small>plus the fixed stat menu and instructions (no numbers, no roster)</small></details>` : '';
+      if (!plan) { ans = null; html = `<div class="sd-answer"><div class="sa-h"><b>I couldn’t match that to our stats</b></div><p class="sa-n">Try naming the skill or stat, e.g. “who creates the most for others in games”.</p>${sent}</div>`; }
+      else if (plan.type === 'page') { inp.value = ''; dd.hidden = true; inp.blur(); goNav(plan.page); return; }
+      else { ansPlan = plan; ans = saRun(plan); html = saCardHtml(ans).replace('<div class="sd-answer">', `<div class="sd-answer">${plan.why ? `<p class="sa-n" style="margin:0 0 6px">Read as: ${navEsc(plan.why)}</p>` : ''}`).replace(/<\/div>$/, sent + '</div>'); }
+    } catch (e) {
+      console.error('AI search', e);
+      const why = /quota|429/i.test(String(e.message)) ? 'the free AI limit is used up for the moment (try again in a minute)' : /blocked/.test(String(e.message)) ? 'a name couldn’t be hidden, so nothing was sent' : 'the AI isn’t reachable right now';
+      html = `<div class="sd-answer"><div class="sa-h"><b>AI not used</b></div><p class="sa-n">${navEsc(why)}. The results below are from the built-in search.</p></div>`;
+    }
+    const o2 = dd.querySelector('.sd-answer'); if (o2) o2.remove();
+    dd.insertAdjacentHTML('afterbegin', html); place(); dd.hidden = false;
+  };
+  const go = it => { if (it.ai) { navRemember({ t: it.t, k: 'Question' }); askAi(it.t); return; } navRemember(it); inp.value = ''; dd.hidden = true; inp.blur(); it.go(); };
   inp.addEventListener('focus', () => { navLoadTeams(); items = null; draw(); });
   inp.addEventListener('input', draw);
   inp.addEventListener('keydown', e => {
@@ -13284,7 +13654,11 @@ function navWireSearch() {
     else if (e.key === 'Enter' && f[sel]) go(f[sel]);
     else if (e.key === 'Escape') { inp.value = ''; dd.hidden = true; inp.blur(); }
   });
-  dd.addEventListener('mousedown', e => { const b = e.target.closest('button[data-k]'); if (b) { e.preventDefault(); go(f[b.dataset.k]); } });
+  dd.addEventListener('mousedown', e => {
+    const o = e.target.closest('[data-sa-open]');
+    if (o && ans) { e.preventDefault(); const pf = ansPlan.filters, js = ans.rows.map(r => r.jersey), page = ans.page; navRemember({ t: inp.value.trim(), k: 'Question' }); inp.value = ''; dd.hidden = true; inp.blur(); if (pf.season || pf.ctx) navSetGlobal(pf.season, pf.ctx); goNav(page); navHighlight(js); return; }
+    const b = e.target.closest('button[data-k]'); if (b) { e.preventDefault(); go(f[b.dataset.k]); }
+  });
   inp.addEventListener('blur', () => setTimeout(() => { dd.hidden = true; }, 150));
   document.addEventListener('keydown', e => { if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); inp.focus(); inp.select(); } });
 }
@@ -13553,7 +13927,7 @@ function renderProfile() {
   let ga; try { ga = computeGoalsAdded(); } finally { EFF_SEASON = s0; EFF_CONTEXT = c0; }
   const gaRow = ga.rows.find(r => r.jersey === j);
   const pj = computeProjections(season), pp = pj.players.find(p => p.jersey === j);
-  const pos = (POSITIONS[season] || {})[j], posName = pos === 'A' ? 'Attack' : pos === 'M' ? 'Midfield' : pos === 'X' ? 'Defense / specialist' : 'Position not set';
+  const pos = (POSITIONS[season] || {})[j], alt = (POSITIONS_ALT[season] || {})[j], posName = pos ? (pos === 'X' ? 'Defense / specialist' : DEPTH_POS_LABEL[pos]) + (alt ? ' (also ' + DEPTH_POS_LABEL[alt] + ')' : '') : 'Position not set';
   const roleName = pp && pp.role ? ({ S: 'Starter', R: 'Rotation', B: 'Reserve', N: 'Won’t play' })[pp.role] : 'Role not set';
   const pctile = (v, arr) => { const a = arr.filter(x => x !== null && x !== undefined && isFinite(x)).sort((x, y) => x - y); if (v === null || v === undefined || !a.length) return null; return Math.round((a.filter(x => x < v).length + a.filter(x => x === v).length / 2) / a.length * 100); };
   const kpi = (label, v, sub) => `<div class="pf-k"><span class="cap">${label}</span><span class="v">${v}</span><span class="d">${sub}</span></div>`;
