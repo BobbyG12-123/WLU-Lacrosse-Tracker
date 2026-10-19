@@ -467,6 +467,12 @@
   .sd-search kbd { position: absolute; right: 8px; font: 11px var(--mono); color: var(--muted); border: 1px solid var(--line); padding: 0 5px; pointer-events: none; }
   .sd-drop { position: fixed; z-index: 80; background: var(--card); border: 1px solid var(--ink); box-shadow: 0 18px 40px rgba(0,0,0,.22); max-height: 62vh; overflow-y: auto; }
   .sd-drop ul { list-style: none; margin: 0; padding: 0; }
+  .sd-answer { padding: 10px 14px 12px; border-bottom: 2px solid var(--ink); background: var(--accent-soft); font: 13px var(--text); }
+  .sd-answer .sa-h { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: baseline; margin-bottom: 6px; } .sd-answer .sa-h b { font-size: 14px; } .sd-answer .sa-h span { color: var(--muted); font-size: 11.5px; }
+  .sd-answer ol { list-style: none; margin: 0; padding: 0; } .sd-answer li { padding: 3px 0; display: flex; flex-wrap: wrap; gap: 2px 10px; align-items: baseline; }
+  .sd-answer li .v { font: 700 13px var(--mono); } .sd-answer li em { color: var(--muted); font-size: 11.5px; font-style: normal; }
+  .sd-answer .sa-n { margin: 6px 0 0; color: var(--muted); font-size: 11.5px; } .sd-answer .sa-open { margin-top: 8px; border: 1px solid var(--ink); background: var(--card); color: var(--ink); padding: 4px 10px; font: 600 12px var(--text); cursor: pointer; }
+  tr.nav-hl td { background: rgba(227,169,43,.22) !important; } tr.nav-hl td:first-child { box-shadow: inset 3px 0 0 #E3A92B; }
   .sd-drop li button { width: 100%; display: grid; grid-template-columns: 76px 1fr; gap: 10px; text-align: left; border: 0; border-bottom: 1px solid var(--line-2); background: none; padding: 9px 14px; color: var(--ink); cursor: pointer; font: 13px var(--text); }
   .sd-drop li button.sel, .sd-drop li button:hover { background: var(--accent-soft); }
   .sd-drop li small { font-size: 9.5px; letter-spacing: .14em; text-transform: uppercase; color: var(--muted); padding-top: 2px; }
@@ -6511,8 +6517,8 @@ let EFF_SEASON = currentAdvSeason();
 function effContextOk(e) { return EFF_CONTEXT === 'All' || e.context === EFF_CONTEXT; }
 // EFF_FROM: an optional first date (the depth chart's Recent form); null
 // everywhere else, so every other view reads the whole season.
-let EFF_FROM = null;
-const effFromOk = e => !EFF_FROM || (e.date && e.date >= EFF_FROM);
+let EFF_FROM = null, EFF_TO = null, EFF_OPP = null;   // EFF_TO / EFF_OPP: set only by search answers
+const effFromOk = e => (!EFF_FROM || (e.date && e.date >= EFF_FROM)) && (!EFF_TO || (e.date && e.date <= EFF_TO)) && (!EFF_OPP || e.opponent === EFF_OPP);
 function effShots() { return advShots(EFF_SEASON).filter(e => effContextOk(e) && effFromOk(e)); }
 function effOppShots() { return OPP_SHOTS.filter(s => seasonForDate(s.date) === EFF_SEASON && effContextOk(s) && effFromOk(s)); }
 function effPoss() { return POSSESSIONS.filter(p => seasonForDate(p.date) === EFF_SEASON && effContextOk(p) && effFromOk(p)); }
@@ -13264,10 +13270,188 @@ function navRecent() { try { return JSON.parse(localStorage.getItem('wluSearchRe
 function navRemember(it) { try { const r = navRecent().filter(x => !(x.t === it.t && x.k === it.k)); r.unshift({ t: it.t, k: it.k }); localStorage.setItem('wluSearchRecent', JSON.stringify(r.slice(0, 8))); } catch (e) { /* storage unavailable */ } }
 function navUse() { try { return JSON.parse(localStorage.getItem('wluNavUse') || '{}'); } catch (e) { return {}; } }
 function navUseBonus(it) { const id = it.pageId; if (!id) return 0; const n = navUse()[id] || 0; return Math.min(3, Math.log2(1 + n)); }
+// ---- search answers: understand a question, compute the answer from our own data ----
+// A question becomes a plan { type, metric, players, n, dir, filters } (rules here; later
+// optionally the AI, which only ever sees the question). The numbers always come from
+// the same calculations the pages use, with the same filters, and small samples are left out.
+const SA_PCT = v => v === null || v === undefined ? '—' : (100 * v).toFixed(v >= .995 ? 0 : 1).replace(/\.0$/, '') + '%';
+const SA_NUM = d => v => v === null || v === undefined ? '—' : (+v).toFixed(d);
+const SA_SGN = d => v => v === null || v === undefined ? '—' : (v >= 0 ? '+' : '') + (+v).toFixed(d);
+function saPlayers(d) { return Object.values(d.players).filter(p => p.jersey && !isOppJersey(p.jersey)); }
+function saMap(d, f) { const m = {}; saPlayers(d).forEach(p => { const r = f(p); if (r) m[p.jersey] = r; }); return m; }
+function saTier(d, tier, rate) {
+  return saMap(d, p => { const l = p.ownShots.filter(s => s.shotQuality === tier); const g = l.filter(s => s.goal === 1).length; return l.length ? { v: rate ? g / l.length : l.length, n: l.length, extra: `${g} of ${l.length}` } : null; });
+}
+function saScreens(d) {
+  const adv = {}, set = {};
+  d.possList.filter(pp => pp.team === 'WLU').forEach(pp => (pp.screens || []).forEach(x => { if (!x.s || isOppJersey(x.s)) return; set[x.s] = (set[x.s] || 0) + 1; if (x.adv === 'Yes') adv[x.s] = (adv[x.s] || 0) + 1; }));
+  return { adv, set };
+}
+function saCatchXg(d) {   // look value finished off a teammate's feed, catching (not off the dodge)
+  return saMap(d, p => { const l = p.ownShots.filter(s => s.assistJersey && Number(s.offDodge) !== 1); return l.length ? { v: l.reduce((a, s) => a + d.xgOf(s), 0), n: l.length } : null; });
+}
+// Every stat a question can ask for. min = smallest sample shown; dir = which way is better.
+const SA_CATALOG = [
+  { id: 'shooterScore', label: 'Shooter Score', words: 'best shooter shooters shooter score sniper snipers', page: 'shooter', fmt: SA_NUM(0), seasonOnly: true, f: () => { const m = {}; computeShooterScores(EFF_SEASON, 'shooting').list.filter(r => r.score !== null).forEach(r => { m[r.jersey] = { v: r.score, n: r.shots }; }); return m; } },
+  { id: 'goalieScore', label: 'Goalie Score', words: 'best goalie goalies goalie score keeper netminder', page: 'gscore', fmt: SA_NUM(0), seasonOnly: true, f: () => { const m = {}; computeGoalieScores(EFF_SEASON).filter(r => r.score !== null).forEach(r => { m[r.jersey] = { v: r.score, n: r.faced }; }); return m; } },
+  { id: 'goals', label: 'Goals', words: 'goals goal scorer scorers scoring', page: 'eff', fmt: SA_NUM(0), f: d => saMap(d, p => p.shots ? { v: p.goals, n: p.shots } : null) },
+  { id: 'assists', label: 'Assists', words: 'assists assist', page: 'eff', fmt: SA_NUM(0), f: d => saMap(d, p => (p.potAst || p.assists) ? { v: p.assists, n: p.potAst } : null) },
+  { id: 'points', label: 'Points (G+A)', words: 'points point production producer', page: 'eff', fmt: SA_NUM(0), f: d => saMap(d, p => (p.shots || p.potAst) ? { v: p.goals + p.assists, n: p.shots + p.potAst } : null) },
+  { id: 'shots', label: 'Shots', words: 'shots shot attempts volume', page: 'eff', fmt: SA_NUM(0), f: d => saMap(d, p => p.shots ? { v: p.shots, n: p.shots } : null) },
+  { id: 'shpct', label: 'Shooting %', words: 'shooting percentage shooting% sh% sh finishing rate', min: 15, page: 'eff', fmt: SA_PCT, f: d => saMap(d, p => p.shots ? { v: p.goals / p.shots, n: p.shots, extra: `${p.goals} of ${p.shots}` } : null) },
+  { id: 'gmx', label: 'Goals above expected (G−xG)', words: 'finishing above expected g-xg gxg efficient', min: 15, page: 'eff', fmt: SA_SGN(1), f: d => saMap(d, p => p.shots ? { v: p.goals - p.xg, n: p.shots } : null) },
+  { id: 'xg', label: 'Expected goals (xG)', words: 'xg expected goals look quality chances', page: 'eff', fmt: SA_NUM(1), f: d => saMap(d, p => p.shots ? { v: p.xg, n: p.shots } : null) },
+  { id: 'xa', label: 'Expected assists (xA)', words: 'xa expected assists feeder feeding playmaker creator passer passing', page: 'eff', fmt: SA_NUM(1), f: d => saMap(d, p => p.potAst ? { v: p.xa, n: p.potAst } : null) },
+  { id: 'feeds', label: 'Shots set up', words: 'feeds potential assists set up setups', page: 'eff', fmt: SA_NUM(0), f: d => saMap(d, p => p.potAst ? { v: p.potAst, n: p.potAst } : null) },
+  { id: 'to', label: 'Turnovers', words: 'turnovers turnover giveaways', page: 'eff', fmt: SA_NUM(0), f: d => saMap(d, p => p.to ? { v: p.to, n: p.shots + p.potAst + p.to } : null) },
+  { id: 'toTouch', label: 'Turnovers per touch', words: 'ball security secure careless protects protect sloppy turnover rate', dir: 'low', min: 25, page: 'pertouch', fmt: SA_PCT, f: d => saMap(d, p => { const t = p.shots + p.potAst + p.to; return t ? { v: p.to / t, n: t, extra: `${p.to} in ${t} touches` } : null; }) },
+  { id: 'usage', label: 'Usage', words: 'usage involvement involved runs through', page: 'eff', fmt: SA_PCT, f: d => { const all = saPlayers(d), T = d.shots.length + all.reduce((a, p) => a + p.potAst, 0); return saMap(d, p => (p.shots + p.potAst) ? { v: (p.shots + p.potAst) / T, n: p.shots + p.potAst } : null); } },
+  { id: 'possUsed', label: 'Possessions used', words: 'possessions used ends possessions', page: 'eff', fmt: SA_PCT, f: d => { const all = saPlayers(d), T = d.shots.length + all.reduce((a, p) => a + p.to, 0); return saMap(d, p => (p.shots + p.to) ? { v: (p.shots + p.to) / T, n: p.shots + p.to } : null); } },
+  { id: 'gb', label: 'Ground balls', words: 'ground balls ground ball gbs scrappy', page: 'eff', fmt: SA_NUM(0), f: d => saMap(d, p => p.gb ? { v: p.gb, n: p.gb } : null) },
+  { id: 'ct', label: 'Caused turnovers', words: 'caused turnovers takeaways takeaway steals forced', page: 'eff', fmt: SA_NUM(0), f: d => saMap(d, p => p.ct ? { v: p.ct, n: p.ct } : null) },
+  { id: 'dom', label: 'Dominoes started', words: 'dominoes advantage initiator initiates starts breaks down creates slides dodger dodging', page: 'dominoes', fmt: SA_NUM(0), f: d => saMap(d, p => p.dominoes ? { v: p.dominoes, n: p.dominoes } : null) },
+  { id: 'advCreated', label: 'Screen advantages created', words: 'screen screens screener picks pick setter advantages created', page: 'picks', fmt: SA_NUM(0), f: d => { const s = saScreens(d); const m = {}; Object.keys(s.set).forEach(j => { m[j] = { v: s.adv[j] || 0, n: s.set[j], extra: `${s.adv[j] || 0} of ${s.set[j]} screens` }; }); return m; } },
+  { id: 'gold', label: 'Shooting % on Gold shots', words: 'gold', min: 8, page: 'quality', fmt: SA_PCT, f: d => saTier(d, '1-Gold', true) },
+  { id: 'silver', label: 'Shooting % on Silver shots', words: 'silver', min: 8, page: 'quality', fmt: SA_PCT, f: d => saTier(d, '2-Silver', true) },
+  { id: 'bronze', label: 'Shooting % on Bronze shots', words: 'bronze', min: 8, page: 'quality', fmt: SA_PCT, f: d => saTier(d, '3-Bronze', true) },
+  { id: 'ga', label: 'Goals Added', words: 'goals added value impact helps most contribution best player', page: 'ga', fmt: SA_SGN(1), f: () => { const r = computeGoalsAdded(); const m = {}; r.rows.forEach(x => { m[x.jersey] = { v: x.total, n: x.apps, extra: `offense ${SA_SGN(1)(x.off)}, defense ${SA_SGN(1)(x.def)}` }; }); return m; } },
+  { id: 'gaOff', label: 'Goals Added on offense', words: 'offensive value offense impact', page: 'ga', fmt: SA_SGN(1), f: () => { const r = computeGoalsAdded(); const m = {}; r.rows.forEach(x => { m[x.jersey] = { v: x.off, n: x.apps }; }); return m; } },
+  { id: 'gaDef', label: 'Goals Added on defense', words: 'defensive value defense impact defender defenders', page: 'ga', fmt: SA_SGN(1), f: () => { const r = computeGoalsAdded(); const m = {}; r.rows.forEach(x => { m[x.jersey] = { v: x.def, n: x.apps }; }); return m; } },
+  { id: 'fo', label: 'Faceoff win %', words: 'faceoff faceoffs fogo draws draw wins', min: 10, page: 'fosum', fmt: SA_PCT, goalie: false, f: () => { const m = {}; FACEOFFS.filter(f => f.playerJersey && seasonForDate(f.date) === EFF_SEASON && effContextOk(f) && effFromOk(f)).forEach(f => { const r = (m[f.playerJersey] = m[f.playerJersey] || { w: 0, n: 0 }); r.n++; if (Number(f.won) === 1) r.w++; }); Object.keys(m).forEach(j => { m[j] = { v: m[j].w / m[j].n, n: m[j].n, extra: `${m[j].w}-${m[j].n - m[j].w}` }; }); return m; } },
+  { id: 'savePct', label: 'Save %', words: 'save percentage save% saves stopper', min: 20, page: 'gsummary', fmt: SA_PCT, f: () => { const m = {}; goalieShotsForSeason(EFF_SEASON).filter(s => s.onKeeper === 1 && s.goalieJersey && effContextOk(s) && effFromOk(s)).forEach(s => { const r = (m[s.goalieJersey] = m[s.goalieJersey] || { sv: 0, n: 0 }); r.n++; if (s.goal !== 1) r.sv++; }); Object.keys(m).forEach(j => { m[j] = { v: m[j].sv / m[j].n, n: m[j].n, extra: `${m[j].sv} of ${m[j].n}` }; }); return m; } },
+];
+// Concepts: plain-language roles = a blend of catalog stats, each scored vs the team (z-score).
+const SA_CONCEPTS = [
+  { id: 'offball', label: 'Off-ball offense', words: 'off ball offball off-ball without the ball screens cuts', parts: [['advCreated', 1, 'screen advantages'], ['catchXg', 1, 'xG off catches']], page: 'picks', minN: 6 },
+  { id: 'initiator', label: 'Initiator', words: 'initiator creator breaks down dodger dodgers', parts: [['dom', 1, 'dominoes started'], ['xa', 1, 'xA']], page: 'dominoes', minN: 8 },
+  { id: 'finisher', label: 'Finisher', words: 'finisher finishers', parts: [['gmx', 1, 'G−xG'], ['shpct', 1, 'Sh%']], page: 'eff', minN: 15 },
+  { id: 'feeder', label: 'Feeder', words: 'feeder passer playmaker quarterback', parts: [['xa', 1, 'xA'], ['feeds', 1, 'shots set up']], page: 'passing', minN: 8 },
+  { id: 'secure', label: 'Ball security', words: 'protects the ball secure safest careful', parts: [['toTouch', -1, 'TO per touch']], page: 'pertouch', minN: 25 },
+  { id: 'twoWay', label: 'Two-way value', words: 'two way two-way both ends', parts: [['gaOff', 1, 'offense GA'], ['gaDef', 1, 'defense GA']], page: 'ga', minN: 3 },
+];
+const saByIdCompute = { catchXg: d => saCatchXg(d) };
+function saCompute(id, d) { const c = SA_CATALOG.find(x => x.id === id); return c ? c.f(d) : saByIdCompute[id] ? saByIdCompute[id](d) : {}; }
+function saZ(map) {
+  const v = Object.values(map).map(x => x.v); if (v.length < 2) return {};
+  const m = v.reduce((a, b) => a + b, 0) / v.length, sd = Math.sqrt(v.reduce((a, b) => a + (b - m) ** 2, 0) / (v.length - 1)) || 1;
+  const z = {}; Object.keys(map).forEach(j => { z[j] = (map[j].v - m) / sd; }); return z;
+}
+function saConcept(c, d) {
+  const parts = c.parts.map(([id, w, lab]) => { const raw = saCompute(id, d), meta = SA_CATALOG.find(x => x.id === id), min = meta && meta.min ? meta.min : 0; const ok = {}; Object.keys(raw).forEach(j => { if (raw[j].n >= min) ok[j] = raw[j]; }); return { id, w, lab, raw: ok, z: saZ(ok), fmt: meta ? meta.fmt : SA_NUM(1) }; });
+  const ids = new Set(parts.flatMap(p => Object.keys(p.raw)));
+  const out = {};
+  ids.forEach(j => {
+    const have = parts.filter(p => p.z[j] !== undefined); if (!have.length) return;
+    const n = Math.max(...have.map(p => p.raw[j].n)); if (n < c.minN) return;
+    // A missing part counts as team average (0), so one strong part can't carry a tiny sample.
+    const score = parts.reduce((a, p) => a + p.w * (p.z[j] || 0), 0) / parts.length;
+    out[j] = { v: score, n, extra: parts.map(p => p.raw[j] ? `${p.lab} ${p.fmt(p.raw[j].v)}` : null).filter(Boolean).join(' · ') };
+  });
+  return out;
+}
+// ---- reading the question ----
+const SA_NUMS = { one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10 };
+const SA_MONTHS = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
+function saFilters(q) {
+  const f = { ctx: null, season: null, from: null, to: null, opp: null, words: [] }, t = q.toLowerCase(), today = new Date();
+  if (/\b(in |during )?games?\b/.test(t) && !/\bgame week\b/.test(t)) { f.ctx = 'Game'; f.words.push('games'); }
+  else if (/\bpractices?\b/.test(t)) { f.ctx = 'Practice'; f.words.push('practice'); }
+  else if (/\bscrimmages?\b/.test(t)) { f.ctx = 'Scrimmage'; f.words.push('scrimmages'); }
+  const sy = t.match(/\b(20\d\d)\b/); if (sy && SEASONS.includes(sy[1])) { f.season = sy[1]; f.words.push(sy[1]); }
+  else if (/\blast (year|season)\b/.test(t)) { const s = String(Number(currentAdvSeason()) - 1); if (SEASONS.includes(s)) { f.season = s; f.words.push(s); } }
+  const ln = t.match(/\b(?:last|past) (\d+|one|two|three|four|five|six) (day|days|week|weeks)\b/);
+  if (ln) { const k = Number(ln[1]) || SA_NUMS[ln[1]]; const dt = new Date(today); dt.setDate(dt.getDate() - k * (ln[2].startsWith('week') ? 7 : 1)); f.from = localDateStr(dt); f.words.push(`last ${k} ${ln[2]}`); }
+  else if (/\bthis week\b/.test(t)) { const dt = new Date(today); dt.setDate(dt.getDate() - ((dt.getDay() + 6) % 7)); f.from = localDateStr(dt); f.words.push('this week'); }
+  else if (/\b(lately|recently|right now|these days)\b/.test(t)) { const dt = new Date(today); dt.setDate(dt.getDate() - 21); f.from = localDateStr(dt); f.words.push('last 3 weeks'); }
+  const since = t.match(/\bsince (\d{1,2})\/(\d{1,2})\b/) || t.match(/\bsince ([a-z]{3})[a-z]* (\d{1,2})\b/);
+  if (since) { const mo = isNaN(since[1]) ? SA_MONTHS.indexOf(since[1]) + 1 : Number(since[1]), day = Number(since[2]); if (mo > 0) { const y = mo > today.getMonth() + 1 ? today.getFullYear() - 1 : today.getFullYear(); f.from = `${y}-${String(mo).padStart(2, '0')}-${String(day).padStart(2, '0')}`; f.words.push('since ' + f.from.slice(5)); } }
+  const vs = t.match(/\b(?:vs\.?|versus|against) ([a-z .&'-]{3,30})/);
+  if (vs) { const opps = [...new Set(allShotEntries().concat(POSSESSIONS).map(e => e.opponent).filter(Boolean))]; const want = vs[1].trim(); const hit = opps.find(o => o.toLowerCase().startsWith(want) || want.startsWith(o.toLowerCase())); if (hit) { f.opp = hit; f.words.push('vs ' + hit); } }
+  return f;
+}
+function saPlayerIn(q) {
+  const season = currentLogSeason ? currentLogSeason() : SEASONS[SEASONS.length - 1], roster = (ROSTERS[season] || []).filter(r => r.jersey && r.name);
+  const t = q.toLowerCase(), out = [];
+  (t.match(/#\s?(\d{1,3})\b/g) || []).forEach(m => { const j = m.replace(/\D/g, ''); if (roster.some(r => r.jersey === j)) out.push(j); });
+  const words = t.replace(/[^a-z\s'-]/g, ' ').split(/\s+/).filter(w => w.length >= 3 && !NAV_STOP.has(w));
+  roster.forEach(r => { const parts = r.name.toLowerCase().split(/\s+/); if (words.some(w => parts.some(p => p === w || (w.length >= 4 && navNear(w, p))))) out.push(r.jersey); });
+  return [...new Set(out)];
+}
+function saPlan(q) {
+  const t = ' ' + navNorm(q) + ' ', filters = saFilters(q), players = saPlayerIn(q);
+  if (/\bwho (would|should) (you|we|i) start\b|\bstarting (six|6|lineup|offense)\b|\bstart on offense\b/.test(t)) return { type: 'lineup', filters };
+  const topN = t.match(/\btop (\d+|one|two|three|four|five|six|seven|eight|nine|ten)\b/) || t.match(/\bbest (\d+|two|three|four|five|six)\b/);
+  const n = topN ? (Number(topN[1]) || SA_NUMS[topN[1]]) : null;
+  const dir = /\b(worst|least|fewest|lowest|bottom|struggl)/.test(t) ? 'worst' : 'best';
+  const exp = ' ' + navExpand(q) + ' ';
+  const score = words => words.split(' ').filter(w => w.length > 1 && new RegExp('\\b' + w.replace(/[^a-z0-9%-]/g, '') + '\\b').test(exp)).length;
+  const concept = SA_CONCEPTS.map(c => ({ c, s: score(c.words) })).sort((a, b) => b.s - a.s)[0];
+  const metric = SA_CATALOG.map(c => ({ c, s: score(c.words) + (c.id === 'shpct' && /percent|%/.test(t) ? 1 : 0) })).sort((a, b) => b.s - a.s)[0];
+  const wantCount = /\bmost\b|\bhow many\b/.test(t);
+  let pick = null;
+  if (concept.s && concept.s >= metric.s) pick = { kind: 'concept', c: concept.c };
+  else if (metric.s) { let c = metric.c; if (['gold', 'silver', 'bronze'].includes(c.id) && wantCount) c = Object.assign({}, c, { label: c.label.replace('Shooting % on', 'Most'), fmt: SA_NUM(0), f: d => saTier(d, { gold: '1-Gold', silver: '2-Silver', bronze: '3-Bronze' }[c.id], false), min: 0 }); pick = { kind: 'metric', c }; }
+  if (!pick) return null;
+  if (players.length) return { type: 'player', pick, players, filters };
+  if (!/\b(who|top|best|worst|most|least|fewest|leader|leaders|rank|highest|lowest|better|struggl)/.test(t) && !n) return null;
+  return { type: 'rank', pick, n: n || 3, dir, filters };
+}
+// ---- running a plan ----
+function saRun(plan) {
+  const f = plan.filters, s0 = EFF_SEASON, c0 = EFF_CONTEXT, fr0 = EFF_FROM, to0 = EFF_TO, op0 = EFF_OPP;
+  EFF_SEASON = f.season || ((NAV_ST && isAdvSeason(NAV_ST.season)) ? NAV_ST.season : currentAdvSeason());
+  EFF_CONTEXT = f.ctx || (NAV_ST && NAV_ST.ctx) || 'All'; EFF_FROM = f.from; EFF_TO = f.to; EFF_OPP = f.opp;
+  try {
+    const d = buildEffData(), season = EFF_SEASON, ctx = EFF_CONTEXT;
+    const filt = [season, ctx === 'All' ? 'all sessions' : ctx.toLowerCase() + 's'].concat(f.words.filter(w => !/^20\d\d$|games|practice|scrimmages/.test(w))).join(' · ');
+    if (plan.type === 'lineup') return { title: 'Who to start on offense', filt, rows: [], note: 'The starting-six model isn’t built yet. We’ll agree on what goes into it first (finishing, creation, screens, ball security, Goals Added, on-field impact). Until then, open Goals Added for the closest single number.', page: 'ga' };
+    const P = plan.pick, isC = P.kind === 'concept', meta = P.c;
+    const raw = isC ? saConcept(meta, d) : meta.f(d);
+    const min = isC ? meta.minN : (meta.min || 0);
+    const better = isC ? 'high' : (meta.dir || 'high');
+    let rows = Object.keys(raw).map(j => Object.assign({ jersey: j, name: nameFor(j, season) || ('#' + j) }, raw[j])).filter(r => r.n >= min);
+    const asc = (better === 'low') !== (plan.dir === 'worst');
+    rows.sort((a, b) => asc ? a.v - b.v : b.v - a.v);
+    rows.forEach((r, i) => { r.rank = i + 1; });
+    const fmt = isC ? (v => (v >= 0 ? '+' : '') + v.toFixed(2) + ' vs team') : meta.fmt;
+    const out = { title: meta.label, filt, fmt, page: meta.page, minNote: min ? `min ${min} ${isC ? 'actions' : 'attempts'}` : '', total: rows.length };
+    if (meta.seasonOnly && (f.ctx || f.from || f.opp)) out.note = `${meta.label} is built from the whole ${season} season, so the other filters weren’t applied.`;
+    if (plan.type === 'player') out.rows = rows.filter(r => plan.players.includes(r.jersey)), out.missing = plan.players.filter(j => !rows.some(r => r.jersey === j)).map(j => nameFor(j, season) || '#' + j);
+    else out.rows = rows.slice(0, Math.min(10, plan.n)), out.dir = plan.dir;
+    if (isC) out.how = 'Blend of ' + meta.parts.map(p => p[2]).join(' + ') + ', each scored against the team; small samples left out.';
+    return out;
+  } finally { EFF_SEASON = s0; EFF_CONTEXT = c0; EFF_FROM = fr0; EFF_TO = to0; EFF_OPP = op0; }
+}
+function saCardHtml(a) {
+  const rows = a.rows.map(r => `<li><b>${r.rank ? r.rank + '. ' : ''}#${navEsc(r.jersey)} ${navEsc(r.name)}</b> <span class="v">${a.fmt ? a.fmt(r.v) : ''}</span>${r.extra ? `<em>${navEsc(r.extra)}</em>` : ''}${a.total && r.rank ? `<em>${r.rank} of ${a.total}</em>` : ''}</li>`).join('');
+  return `<div class="sd-answer"><div class="sa-h"><b>${navEsc(a.title)}</b><span>${navEsc(a.filt)}${a.minNote ? ' · ' + navEsc(a.minNote) : ''}</span></div>
+    ${rows ? `<ol>${rows}</ol>` : ''}${a.missing && a.missing.length ? `<p class="sa-n">Not enough data yet for ${navEsc(a.missing.join(', '))}.</p>` : ''}${!rows && !a.note ? '<p class="sa-n">Nobody has enough data for this yet.</p>' : ''}
+    ${a.note ? `<p class="sa-n">${navEsc(a.note)}</p>` : ''}${a.how ? `<p class="sa-n">${navEsc(a.how)}</p>` : ''}
+    ${a.page && NAV_PAGES[a.page] ? `<button type="button" class="sa-open" data-sa-open="1">Open ${navEsc(NAV_PAGES[a.page].name)} ›</button>` : ''}</div>`;
+}
+// Highlight the answer's players on the page it opens.
+function navHighlight(jerseys) {
+  if (!jerseys || !jerseys.length) return;
+  setTimeout(() => {
+    document.querySelectorAll('.nav-hl').forEach(e => e.classList.remove('nav-hl'));
+    const view = document.querySelector('.view.active') || document; let first = null;
+    view.querySelectorAll('tbody tr').forEach(tr => { if (!tr.offsetParent) return; const c = [...tr.children].slice(0, 2).map(td => td.textContent.trim().replace(/^#/, '')); if (jerseys.some(j => c.includes(String(j)))) { tr.classList.add('nav-hl'); first = first || tr; } });
+    if (first) first.scrollIntoView({ block: 'center' });
+  }, 350);
+}
+
 function navWireSearch() {
   const inp = document.getElementById('sdQ'), dd = document.getElementById('sdDrop'); let items = null, f = [], sel = 0;
   const place = () => { const r = inp.getBoundingClientRect(), w = Math.min(innerWidth - 16, Math.max(r.width, 440)); dd.style.top = (r.bottom + 6) + 'px'; dd.style.left = Math.max(8, Math.min(r.left, innerWidth - w - 8)) + 'px'; dd.style.width = w + 'px'; };
+  let ans = null, ansPlan = null, ansTimer = null;
+  const drawAnswer = () => {
+    const q = inp.value.trim(); ans = null; ansPlan = null;
+    if (q && !PLAYER_MODE) { try { ansPlan = saPlan(q); ans = ansPlan ? saRun(ansPlan) : null; } catch (e) { console.error('search answer', e); ans = null; } }
+    const old = dd.querySelector('.sd-answer'); if (old) old.remove();
+    if (ans) { dd.insertAdjacentHTML('afterbegin', saCardHtml(ans)); const n = dd.querySelector('.none'); if (n) n.remove(); place(); dd.hidden = false; }
+  };
   const draw = () => {
+    clearTimeout(ansTimer); ansTimer = setTimeout(drawAnswer, 220);
     if (!items || (NAV_TEAMS && items.teams !== NAV_TEAMS.length)) { items = navItems(); items.teams = (NAV_TEAMS || []).length; }
     const rec = navRecent().map(r => items.find(i => i.t === r.t && i.k === r.k)).filter(Boolean).map(i => Object.assign({}, i, { k: 'Recent' }));
     f = inp.value.trim() ? navFind(items, inp.value) : rec.slice(0, 5).concat(items.filter(i => i.k === 'Question').slice(0, 8 - Math.min(5, rec.length))); sel = 0;
@@ -13284,7 +13468,11 @@ function navWireSearch() {
     else if (e.key === 'Enter' && f[sel]) go(f[sel]);
     else if (e.key === 'Escape') { inp.value = ''; dd.hidden = true; inp.blur(); }
   });
-  dd.addEventListener('mousedown', e => { const b = e.target.closest('button[data-k]'); if (b) { e.preventDefault(); go(f[b.dataset.k]); } });
+  dd.addEventListener('mousedown', e => {
+    const o = e.target.closest('[data-sa-open]');
+    if (o && ans) { e.preventDefault(); const pf = ansPlan.filters, js = ans.rows.map(r => r.jersey), page = ans.page; navRemember({ t: inp.value.trim(), k: 'Question' }); inp.value = ''; dd.hidden = true; inp.blur(); if (pf.season || pf.ctx) navSetGlobal(pf.season, pf.ctx); goNav(page); navHighlight(js); return; }
+    const b = e.target.closest('button[data-k]'); if (b) { e.preventDefault(); go(f[b.dataset.k]); }
+  });
   inp.addEventListener('blur', () => setTimeout(() => { dd.hidden = true; }, 150));
   document.addEventListener('keydown', e => { if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); inp.focus(); inp.select(); } });
 }
