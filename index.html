@@ -13485,22 +13485,39 @@ async function saAiModel(name) {
   return SA_AI.I.getGenerativeModel(SA_AI.ai, { model: name, generationConfig: { responseMimeType: 'application/json', temperature: 0 }, systemInstruction: SA_AI_RULES + '\n\n' + saAiMenu() });
 }
 // Names / #jerseys -> P1, P2 ... (and back). Returns { text, map: { P1: jersey } }.
+// Names that are also everyday words (Will, Max, Hunter, Chase, Gray, Ford, Jack...) are hidden
+// only when written as a name: capitalized, or next to that player's other name.
+const SA_COMMON = new Set('will max hunter chase gray grey ford jack curry art carter quinn mark miles cole grant reed rich young king brown long short power major hill bell wood stone river field banks lane price love best day knight'.split(' '));
+let SA_VOCAB = null;
+function saVocab() {
+  if (SA_VOCAB) return SA_VOCAB;
+  const txt = Object.values(NAV_KW).join(' ') + ' ' + SA_CATALOG.map(c => c.words + ' ' + c.label).join(' ') + ' ' + SA_CONCEPTS.map(c => c.words + ' ' + c.label).join(' ') + ' ' + Object.keys(NAV_SYN).join(' ') + ' ' + Object.values(NAV_SYN).join(' ')
+    + ' games game practice practices scrimmage middie middies middy attack attackman attackmen defense defenseman offense goalie team players player shooter touches touch more less better worse with without ball season week weeks month today right now best worst most least who what which should would could start starts starting lineup lefty righty hands crease alley wing top behind cage net clears clear ride rides slides slide dodges dodge feed feeds cutter cutters underrated overrated hustle effort tough consistent';
+  SA_VOCAB = new Set(navNorm(txt).split(/\s+/).filter(Boolean));
+  return SA_VOCAB;
+}
 function saMask(q) {
   const season = currentLogSeason ? currentLogSeason() : SEASONS[SEASONS.length - 1], roster = (ROSTERS[season] || []).filter(r => r.jersey && r.name);
   const map = {}; let k = 0, text = ' ' + q + ' ';
   const tag = j => { const have = Object.keys(map).find(p => map[p] === j); if (have) return have; const p = 'P' + (++k); map[p] = j; return p; };
   text = text.replace(/#\s?(\d{1,3})\b/g, (m, j) => roster.some(r => r.jersey === j) ? tag(j) : m);
-  roster.forEach(r => r.name.split(/\s+/).filter(w => w.length >= 2).forEach(part => {
-    text = text.replace(new RegExp(`(^|[^a-z])(${part.replace(/[^a-z'-]/gi, '')})(?=[^a-z]|$)`, 'gi'), (m, a) => a + tag(r.jersey));
-  }));
-  // typo'd names (one letter off) too
-  text = text.replace(/[a-z']{4,}/gi, w => { const r = roster.find(r => r.name.split(/\s+/).some(p => p.length >= 4 && navNear(w.toLowerCase(), p.toLowerCase()))); return r ? tag(r.jersey) : w; });
+  roster.forEach(r => {
+    const parts = r.name.split(/\s+/).map(x => x.replace(/[^a-z'-]/gi, '')).filter(w => w.length >= 2);
+    if (parts.length >= 2) text = text.replace(new RegExp(`(^|[^a-z])${parts[0]}\\s+${parts[parts.length - 1]}(?=[^a-z]|$)`, 'gi'), (m, a) => a + tag(r.jersey));   // full name first
+    parts.forEach(part => {
+      const common = SA_COMMON.has(part.toLowerCase());
+      text = text.replace(new RegExp(`(^|[^a-z])(${part})(?=[^a-z]|$)`, common ? 'g' : 'gi'), (m, a, w) => (!common || /^[A-Z]/.test(w)) ? a + tag(r.jersey) : m);
+    });
+  });
+  // a misspelled name (one letter off) that isn't an everyday or lacrosse word
+  const V = saVocab();
+  text = text.replace(/[A-Za-z']{5,}/g, w => { if (V.has(w.toLowerCase())) return w; const r = roster.find(r => r.name.split(/\s+/).some(p => p.length >= 5 && !SA_COMMON.has(p.toLowerCase()) && navNear(w.toLowerCase(), p.toLowerCase()))); return r ? tag(r.jersey) : w; });
   return { text: text.trim().replace(/\b(P\d+)(\s+\1\b)+/g, '$1'), map };
 }
 function saMaskOk(text) {
   const season = currentLogSeason ? currentLogSeason() : SEASONS[SEASONS.length - 1], roster = ROSTERS[season] || [];
   if (/#\s?\d/.test(text)) return false;
-  return !roster.some(r => r.name && r.name.split(/\s+/).some(p => p.length >= 3 && new RegExp(`\\b${p.replace(/[^a-z'-]/gi, '')}\\b`, 'i').test(text)));
+  return !roster.some(r => r.name && r.name.split(/\s+/).some(p => p.length >= 3 && (SA_COMMON.has(p.toLowerCase()) ? new RegExp(`\\b${p}\\b`).test(text) : new RegExp(`\\b${p.replace(/[^a-z'-]/gi, '')}\\b`, 'i').test(text))));
 }
 let SA_AI_LAST_SENT = '';
 const SA_AI_CACHE = {};
