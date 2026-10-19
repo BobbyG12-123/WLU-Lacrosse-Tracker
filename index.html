@@ -2158,6 +2158,7 @@
       </div>
     </div>
     <p class="view-intro">Recommended offensive lines, updated live as you log. Set each player&rsquo;s position once below (saved for everyone). <span id="depthSub"></span></p>
+    <div class="panel" id="depthModel"></div>
     <div class="panel" id="depthAttack"></div>
     <div class="panel" id="depthMid"></div>
     <div class="panel" id="depthUnassigned"></div>
@@ -8732,6 +8733,7 @@ function depthChemistry(season, players) {
 function renderDepthChart() {
   const wrap = document.getElementById('depthAttack');
   if (!wrap || !document.getElementById('depthView').classList.contains('active')) return;
+  try { renderStartingOffense(); } catch (e) { console.error('starting offense', e); }
   const season = DEPTH_SEASON;
   const fixes = POSITIONS[season] || {};
   const posOf = j => fixes[j] || null;
@@ -8801,6 +8803,140 @@ function renderDepthChart() {
     if (!(await persistPositions(season))) { store[season] = prev; renderDepthChart(); }
   }));
 }
+// ---------------- Model Starting Offense (Bobby, Oct 19) ----------------
+// Offense Rating (0-100, 50 = team average among qualified attack + middies), from logged data only:
+//   Finishing 20 · Look quality 15 · Creating for others 20 · Off-ball value 15 · Ball security 15
+//   · Two-man game 10 · Consistency 5. The last 3 weeks of practice count 1.5x. 40+ touches to qualify.
+// Lines: 3 attack, then middie Line 1 and Line 2, each the trio with the best
+//   line score = 85% average Offense Rating + 15% chemistry (how the three connect).
+// Shooter Score is not used anywhere in here.
+const SO_W = [['fin', 'Finishing', 20], ['look', 'Look quality', 15], ['create', 'Creating for others', 20], ['offball', 'Off-ball value', 15], ['secure', 'Ball security', 15], ['twoman', 'Two-man game', 10], ['steady', 'Consistency', 5]];
+const SO_MIN_TOUCHES = 40, SO_RECENT_DAYS = 21, SO_RECENT_X = 1.5, SO_CHEM = 0.15;
+function soData(season, from) { const s0 = EFF_SEASON, c0 = EFF_CONTEXT, f0 = EFF_FROM; EFF_SEASON = season; EFF_CONTEXT = 'All'; EFF_FROM = from || null; try { return buildEffData(); } finally { EFF_SEASON = s0; EFF_CONTEXT = c0; EFF_FROM = f0; } }
+function soZ(map) { const ks = Object.keys(map).filter(k => map[k] !== null && isFinite(map[k])); if (ks.length < 2) return {}; const v = ks.map(k => map[k]), m = v.reduce((a, b) => a + b, 0) / v.length, sd = Math.sqrt(v.reduce((a, b) => a + (b - m) ** 2, 0) / (v.length - 1)) || 1; const z = {}; ks.forEach(k => { z[k] = Math.max(-2.5, Math.min(2.5, (map[k] - m) / sd)); }); return z; }
+const soPts = z => Math.max(0, Math.min(100, 50 + 15 * (z || 0)));
+function soPairKey(a, b) { return a < b ? a + '|' + b : b + '|' + a; }
+function computeStartingOffense(season) {
+  const last = depthLatestDate(season);
+  if (!last) return { ready: false, why: 'No practices logged yet this season.' };
+  const rd = new Date(last + 'T00:00:00'); rd.setDate(rd.getDate() - (SO_RECENT_DAYS - 1));
+  const recentFrom = localDateStr(rd);
+  const A = soData(season), R = soData(season, recentFrom), extra = SO_RECENT_X - 1;
+  // Weighted sums per player: everything once, the last 3 weeks counted again at 0.5.
+  const W = {}; const add = (d, k) => Object.values(d.players).forEach(p => { if (!p.jersey || isOppJersey(p.jersey)) return; const w = (W[p.jersey] = W[p.jersey] || { j: p.jersey, shots: 0, goals: 0, xg: 0, potAst: 0, xa: 0, to: 0, dom: 0, catchXg: 0, sessions: 0 });
+    w.shots += k * p.shots; w.goals += k * p.goals; w.xg += k * p.xg; w.potAst += k * p.potAst; w.xa += k * p.xa; w.to += k * p.to; w.dom += k * p.dominoes; w.sessions += k * p.sessions.size;
+    w.catchXg += k * p.ownShots.filter(s => s.assistJersey && Number(s.offDodge) !== 1).reduce((a, s) => a + d.xgOf(s), 0); });
+  add(A, 1); add(R, extra);
+  // Screens: advantages created, and two-man game (team goals on advantage-screen possessions he's in).
+  const scr = {}, two = {}, base = { g: 0, n: 0 };
+  [[A, 1], [R, extra]].forEach(([d, k]) => d.possList.filter(pp => pp.team === 'WLU').forEach(pp => {
+    const adv = (pp.screens || []).filter(x => x.adv === 'Yes');
+    if (!adv.length) { base.g += k * pp.goal; base.n += k; }
+    const inPoss = new Set();
+    adv.forEach(x => { if (x.s && !isOppJersey(x.s)) { scr[x.s] = (scr[x.s] || 0) + k; inPoss.add(x.s); } if (x.u && !isOppJersey(x.u)) inPoss.add(x.u); });
+    inPoss.forEach(j => { const t = (two[j] = two[j] || { g: 0, n: 0 }); t.g += k * pp.goal; t.n += k; });
+  }));
+  const baseG = base.n ? base.g / base.n : 0;
+  // Consistency: per-practice (xG + xA - turnovers x avg possession value) per touch, practices with 5+ touches.
+  const V = A.possList.filter(p => p.team === 'WLU').length ? A.possList.filter(p => p.team === 'WLU' && p.goal).length / A.possList.filter(p => p.team === 'WLU').length : 0.27;
+  const perSess = {};
+  Object.values(A.bySession).forEach(sess => Object.values(sess.players).forEach(b => { const t = b.shots + b.potAst + b.to; if (t < 5 || isOppJersey(b.jersey)) return; (perSess[b.jersey] = perSess[b.jersey] || []).push((b.xg + b.xa - b.to * V) / t); }));
+  // Who qualifies: Attack or Midfield (first position), 40+ touches over the season.
+  const touchesAll = j => { const p = A.players[j]; return p ? p.shots + p.potAst + p.to : 0; };
+  const pos = j => posOfJ(season, j);
+  const pool = Object.keys(W).filter(j => (pos(j) === 'A' || pos(j) === 'M'));
+  const qual = pool.filter(j => touchesAll(j) >= SO_MIN_TOUCHES);
+  const notEnough = pool.filter(j => touchesAll(j) > 0 && touchesAll(j) < SO_MIN_TOUCHES).map(j => ({ j, touches: touchesAll(j) }));
+  if (qual.length < 3) return { ready: false, why: `Only ${qual.length} attack/middies have ${SO_MIN_TOUCHES}+ touches so far.`, notEnough };
+  // Team rates for shrinkage (qualified players).
+  const T = qual.reduce((a, j) => { const w = W[j]; a.shots += w.shots; a.goals += w.goals; a.xg += w.xg; a.xa += w.xa; a.to += w.to; a.dom += w.dom; a.touch += w.shots + w.potAst + w.to; return a; }, { shots: 0, goals: 0, xg: 0, xa: 0, to: 0, dom: 0, touch: 0 });
+  const tXgShot = T.xg / (T.shots || 1), tXaT = T.xa / (T.touch || 1), tDomT = T.dom / (T.touch || 1), tToT = T.to / (T.touch || 1);
+  const raw = { fin: {}, xgs: {}, vol: {}, xat: {}, domt: {}, adv: {}, cxg: {}, sec: {}, two: {}, steady: {} };
+  qual.forEach(j => {
+    const w = W[j], touch = w.shots + w.potAst + w.to, sess = Math.max(1, w.sessions);
+    raw.fin[j] = (w.goals - w.xg) / (w.shots + 20);
+    raw.xgs[j] = (w.xg + 20 * tXgShot) / (w.shots + 20);
+    raw.vol[j] = w.shots / sess;
+    raw.xat[j] = (w.xa + 15 * tXaT) / (touch + 15);
+    raw.domt[j] = (w.dom + 15 * tDomT) / (touch + 15);
+    raw.adv[j] = (scr[j] || 0) / sess;
+    raw.cxg[j] = w.catchXg / sess;
+    raw.sec[j] = -((w.to + 30 * tToT) / (touch + 30));
+    const t = two[j] || { g: 0, n: 0 }; raw.two[j] = (t.g + 8 * baseG) / (t.n + 8) - baseG;
+    const ps = perSess[j] || []; if (ps.length >= 5) { const m = ps.reduce((a, b) => a + b, 0) / ps.length; raw.steady[j] = -Math.sqrt(ps.reduce((a, b) => a + (b - m) ** 2, 0) / (ps.length - 1)); }
+  });
+  const z = {}; Object.keys(raw).forEach(k => { z[k] = soZ(raw[k]); });
+  const comp = j => ({ fin: z.fin[j], look: ((z.xgs[j] || 0) + (z.vol[j] || 0)) / 2, create: ((z.xat[j] || 0) + (z.domt[j] || 0)) / 2, offball: ((z.adv[j] || 0) + (z.cxg[j] || 0)) / 2, secure: z.sec[j], twoman: z.two[j], steady: z.steady[j] });
+  const players = {};
+  qual.forEach(j => {
+    const c = comp(j), parts = {}; let tot = 0;
+    SO_W.forEach(([k, , w]) => { parts[k] = soPts(c[k]); tot += w * parts[k]; });
+    const w = W[j];
+    players[j] = { j, name: nameFor(j, season), pos: pos(j), rating: tot / 100, parts, touches: touchesAll(j),
+      detail: { finishing: `${Math.round(w.goals)} G on ${num(w.xg, 1)} xG`, steady: raw.steady[j] === undefined ? 'needs 5 practices' : '' } };
+  });
+  // Chemistry between two players: feeds between them, screens between them, time on the field together.
+  const feed = {}, pairScr = {}, together = {};
+  let tFeedXg = 0, tFeedN = 0;
+  [[A, 1], [R, extra]].forEach(([d, k]) => {
+    d.shots.forEach(s => { if (!s.assistJersey || isOppJersey(s.assistJersey) || s.assistJersey === s.shooterJersey) return; const key = soPairKey(s.assistJersey, s.shooterJersey); const f = (feed[key] = feed[key] || { xg: 0, n: 0 }); const x = d.xgOf(s); f.xg += k * x; f.n += k; tFeedXg += k * x; tFeedN += k; });
+    d.possList.filter(pp => pp.team === 'WLU').forEach(pp => {
+      (pp.screens || []).filter(x => x.adv === 'Yes' && x.s && x.u).forEach(x => { const key = soPairKey(x.s, x.u); const p = (pairScr[key] = pairScr[key] || { g: 0, n: 0 }); p.g += k * pp.goal; p.n += k; });
+      const on = wluOnField(pp.e); if (on && k === 1) { const o = on.offense.filter(j => players[j]); for (let a = 0; a < o.length; a++) for (let b = a + 1; b < o.length; b++) { const key = soPairKey(o[a], o[b]); const t = (together[key] = together[key] || { xg: 0, n: 0 }); t.xg += pp.xg; t.n += 1; } }
+    });
+  });
+  const tFeed = tFeedN ? tFeedXg / tFeedN : 0, wp = A.possList.filter(p => p.team === 'WLU'), tPossXg = wp.length ? wp.reduce((a, p) => a + p.xg, 0) / wp.length : 0;
+  const rf = {}, rs = {}, rt = {};
+  Object.keys(feed).forEach(k => { const f = feed[k]; rf[k] = (f.xg + 8 * tFeed) / (f.n + 8) - tFeed; });
+  Object.keys(pairScr).forEach(k => { const p = pairScr[k]; rs[k] = (p.g + 6 * baseG) / (p.n + 6) - baseG; });
+  Object.keys(together).forEach(k => { const t = together[k]; if (t.n >= 30) rt[k] = (t.xg + 30 * tPossXg) / (t.n + 30) - tPossXg; });
+  const zf = soZ(rf), zs = soZ(rs), zt = soZ(rt);
+  const pairZ = (a, b) => { const k = soPairKey(a, b), have = [zf[k], zs[k], zt[k]].filter(v => v !== undefined); return have.length ? have.reduce((x, y) => x + y, 0) / have.length : 0; };
+  const pairNote = (a, b) => { const k = soPairKey(a, b), out = []; if (feed[k]) out.push(`${num(feed[k].xg / feed[k].n, 2)} xG per feed on ${Math.round(feed[k].n)}`); if (pairScr[k]) out.push(`${Math.round(pairScr[k].n)} screen advantages together`); if (rt[k] !== undefined) out.push(`${together[k].n} poss. on the field together`); return out.join(', '); };
+  const lineOf = js => { const r = js.reduce((a, j) => a + players[j].rating, 0) / js.length; const pz = [pairZ(js[0], js[1]), pairZ(js[0], js[2]), pairZ(js[1], js[2])]; const chem = soPts(pz.reduce((a, b) => a + b, 0) / 3); return { js, rating: r, chem, score: (1 - SO_CHEM) * r + SO_CHEM * chem }; };
+  const best = list => { let top = null; for (let a = 0; a < list.length; a++) for (let b = a + 1; b < list.length; b++) for (let c = b + 1; c < list.length; c++) { const l = lineOf([list[a], list[b], list[c]]); if (!top || l.score > top.score) top = l; } return top; };
+  const att = qual.filter(j => pos(j) === 'A'), mid = qual.filter(j => pos(j) === 'M');
+  const attack = att.length >= 3 ? best(att) : null;
+  const mid1 = mid.length >= 3 ? best(mid) : null;
+  const mid2 = mid1 && mid.length >= 6 ? best(mid.filter(j => !mid1.js.includes(j))) : null;
+  [attack, mid1, mid2].forEach(l => { if (!l) return; let bk = null, bz = -9; for (let a = 0; a < 3; a++) for (let b = a + 1; b < 3; b++) { const z0 = pairZ(l.js[a], l.js[b]); if (z0 > bz) { bz = z0; bk = [l.js[a], l.js[b]]; } } l.bestPair = bk && pairNote(bk[0], bk[1]) ? { js: bk, note: pairNote(bk[0], bk[1]) } : null; });
+  // Crossover flags: an attackman who'd make a middie line, or a middie who'd crack the attack.
+  const flags = [];
+  const midLine = [mid1, mid2].filter(Boolean).flatMap(l => l.js), lowestMid = midLine.slice().sort((a, b) => players[a].rating - players[b].rating)[0];
+  if (attack && lowestMid) att.filter(j => !attack.js.includes(j) && players[j].rating > players[lowestMid].rating).sort((a, b) => players[b].rating - players[a].rating).forEach(j => {
+    const rank = [...mid, j].sort((a, b) => players[b].rating - players[a].rating).indexOf(j) + 1;
+    flags.push({ j, to: 'M', text: `Consider #${j} ${players[j].name} at midfield: he's not in the top 3 attack, but his ${Math.round(players[j].rating)} would rank ${rank === 1 ? '1st' : rank === 2 ? '2nd' : rank === 3 ? '3rd' : rank + 'th'} among middies, ahead of #${lowestMid} ${players[lowestMid].name} (${Math.round(players[lowestMid].rating)}).` });
+  });
+  if (attack) { const lowAtt = attack.js.slice().sort((a, b) => players[a].rating - players[b].rating)[0]; mid.filter(j => players[j].rating > players[lowAtt].rating).forEach(j => flags.push({ j, to: 'A', text: `#${j} ${players[j].name} (middie, ${Math.round(players[j].rating)}) rates higher than #${lowAtt} ${players[lowAtt].name} (${Math.round(players[lowAtt].rating)}) in the attack trio.` })); }
+  return { ready: true, season, recentFrom, last, players, attack, mid1, mid2, flags, notEnough, att, mid };
+}
+function soReason(p) { const top = SO_W.map(([k, lab]) => [lab, p.parts[k]]).sort((a, b) => b[1] - a[1]).slice(0, 2); return top.map(([lab, v]) => `${lab.toLowerCase()} ${Math.round(v)}`).join(', '); }
+function soLineHtml(title, l, M) {
+  if (!l) return `<div class="depth-line"><div class="depth-line-head">${title}</div><p class="n-note">Not enough qualified players at this position yet.</p></div>`;
+  return `<div class="depth-line"><div class="depth-line-head">${title} &middot; line ${Math.round(l.score)} (players ${Math.round(l.rating)}, chemistry ${Math.round(l.chem)})</div>
+    ${l.js.map(j => { const p = M.players[j]; return `<div class="depth-chip" style="display:block;"><b>#${escapeHtml(j)} ${escapeHtml(p.name)}</b> <span class="n-note" style="font-style:normal;">Offense Rating <b>${Math.round(p.rating)}</b> &middot; best at ${escapeHtml(soReason(p))} &middot; ${p.touches} touches</span></div>`; }).join('')}
+    ${l.bestPair ? `<p class="n-note" style="font-style:normal; margin:4px 0 0;">Best connection: #${escapeHtml(l.bestPair.js[0])} + #${escapeHtml(l.bestPair.js[1])} &mdash; ${escapeHtml(l.bestPair.note)}</p>` : ''}</div>`;
+}
+function renderStartingOffense() {
+  const el = document.getElementById('depthModel'); if (!el) return;
+  const M = computeStartingOffense(DEPTH_SEASON);
+  if (!M.ready) { el.innerHTML = `<p class="panel-title">Model Starting Offense</p><div class="model-note">${escapeHtml(M.why)}</div>`; return; }
+  const rows = Object.values(M.players).sort((a, b) => b.rating - a.rating);
+  el.innerHTML = `<p class="panel-title">Model Starting Offense</p>
+    <p class="panel-sub">From logged data only (no Shooter Score). Offense Rating 0&ndash;100, 50 = average qualified attack/middie: ${SO_W.map(([, l, w]) => `${l} ${w}%`).join(' · ')}. Practices since ${escapeHtml(M.recentFrom)} count 1.5&times;; ${SO_MIN_TOUCHES}+ touches to qualify. Lines are the trios with the best 85% rating + 15% chemistry (feeds, screens and time on the field together between them).</p>
+    <div class="depth-lines">${soLineHtml('Attack', M.attack, M)}${soLineHtml('Middies &middot; Line 1', M.mid1, M)}${soLineHtml('Middies &middot; Line 2', M.mid2, M)}</div>
+    ${M.flags.length ? `<div class="model-note" style="margin-top:10px;">${M.flags.map(f => escapeHtml(f.text)).join('<br>')}</div>` : ''}
+    <details style="margin-top:10px;"><summary class="panel-sub" style="cursor:pointer;">Every qualified player's Offense Rating and parts</summary><div class="table-wrap" id="soTableWrap" style="margin-top:8px;"></div></details>
+    ${M.notEnough.length ? `<p class="panel-sub" style="margin-top:8px;">Not enough data yet (under ${SO_MIN_TOUCHES} touches): ${M.notEnough.sort((a, b) => b.touches - a.touches).map(x => `#${escapeHtml(x.j)} ${escapeHtml(nameFor(x.j, DEPTH_SEASON))} (${x.touches})`).join(', ')}.</p>` : ''}`;
+  renderSortableTable('soTableWrap', [
+    { key: 'j', label: '#', type: 'text', value: r => r.j },
+    { key: 'name', label: 'Name', type: 'text', value: r => r.name, format: nameCell },
+    { key: 'pos', label: 'Pos', type: 'text', value: r => DEPTH_POS_LABEL[r.pos] || '' },
+    { key: 'rating', label: 'Offense Rating', type: 'num', value: r => r.rating, format: v => `<b>${Math.round(v)}</b>` },
+  ].concat(SO_W.map(([k, lab, w]) => ({ key: k, label: `${lab} (${w}%)`, type: 'num', value: r => r.parts[k], format: v => String(Math.round(v)) }))).concat([{ key: 'touches', label: 'Touches', type: 'num', value: r => r.touches }]),
+  rows, { dense: true, defaultSort: { key: 'rating', dir: 'desc' } });
+}
+
 setupPillGroup('depthSeasonPills', ADV_SEASONS, DEPTH_SEASON, v => { DEPTH_SEASON = v || DEPTH_SEASON; if (!v) setPillGroupValue('depthSeasonPills', DEPTH_SEASON); renderDepthChart(); });
 setupPillGroup('depthModePills', [{ value: 'scores', label: 'Scores' }, { value: 'recent', label: 'Recent form' }, { value: 'chem', label: 'Chemistry' }], 'scores', v => { depthMode = v || 'scores'; if (!v) setPillGroupValue('depthModePills', 'scores'); renderDepthChart(); });
 
@@ -13437,7 +13573,13 @@ function saRun(plan) {
     const d = buildEffData(), season = EFF_SEASON, ctx = EFF_CONTEXT;
     const empty = !d.shots.length && !d.poss.length ? `No ${ctx === 'All' ? '' : ctx.toLowerCase() + ' '}entries logged for ${season}${f.from ? ' in that date range' : ''}${f.opp ? ' vs ' + f.opp : ''} yet.` : '';
     const filt = [season, ctx === 'All' ? 'all sessions' : ctx.toLowerCase() + 's'].concat(f.words.filter(w => !/^20\d\d$|^games$|^practice$|^scrimmages$/.test(w))).join(' · ');
-    if (plan.type === 'lineup') return { title: 'Who to start on offense', filt, rows: [], note: 'The starting-six model isn’t built yet. We’ll agree on what goes into it first (finishing, creation, screens, ball security, Goals Added, on-field impact). Until then, open Goals Added for the closest single number.', page: 'ga' };
+    if (plan.type === 'lineup') {
+      const M = computeStartingOffense(season);
+      if (!M.ready) return { title: 'Model Starting Offense', filt: season, rows: [], note: M.why, page: 'depth' };
+      const line = (lab, l) => l ? `<li><b>${lab}</b> <em>line ${Math.round(l.score)}</em><br>${l.js.map(j => `#${navEsc(j)} ${navEsc(M.players[j].name)} <span class="v">${Math.round(M.players[j].rating)}</span>`).join(' · ')}</li>` : '';
+      return { title: 'Model Starting Offense', filt: `${season} · last 3 weeks count 1.5× · 40+ touches`, rows: [], page: 'depth',
+        html: `<ol>${line('Attack', M.attack)}${line('Middies · Line 1', M.mid1)}${line('Middies · Line 2', M.mid2)}</ol>${M.flags.length ? `<p class="sa-n">${M.flags.slice(0, 2).map(f => navEsc(f.text)).join('<br>')}</p>` : ''}<p class="sa-n">Offense Rating from finishing, look quality, creating, off-ball value, ball security, two-man game and consistency, plus 15% chemistry. Not Shooter Score.</p>` };
+    }
     const out0 = {};
     const P = plan.pick, isC = P.kind === 'concept', meta = P.c;
     const raw = isC ? saConcept(meta, d) : meta.f(d);
@@ -13464,7 +13606,7 @@ function saRun(plan) {
 function saCardHtml(a) {
   const rows = a.rows.map(r => `<li><b>${r.rank ? r.rank + '. ' : ''}#${navEsc(r.jersey)} ${navEsc(r.name)}</b> <span class="v">${a.fmt ? a.fmt(r.v) : ''}</span>${r.extra ? `<em>${navEsc(r.extra)}</em>` : ''}${a.total && r.rank ? `<em>${r.rank} of ${a.total}</em>` : ''}</li>`).join('');
   return `<div class="sd-answer"><div class="sa-h"><b>${navEsc(a.title)}</b><span>${navEsc(a.filt)}${a.minNote ? ' · ' + navEsc(a.minNote) : ''}</span></div>
-    ${rows ? `<ol>${rows}</ol>` : ''}${a.missing && a.missing.length ? `<p class="sa-n">Not enough data yet for ${navEsc(a.missing.join(', '))}.</p>` : ''}${!rows && !a.note ? '<p class="sa-n">Nobody has enough data for this yet.</p>' : ''}
+    ${a.html || ''}${rows ? `<ol>${rows}</ol>` : ''}${a.missing && a.missing.length ? `<p class="sa-n">Not enough data yet for ${navEsc(a.missing.join(', '))}.</p>` : ''}${!rows && !a.note && !a.html ? '<p class="sa-n">Nobody has enough data for this yet.</p>' : ''}
     ${a.note ? `<p class="sa-n">${navEsc(a.note)}</p>` : ''}${a.how ? `<p class="sa-n">${navEsc(a.how)}</p>` : ''}
     ${a.page && NAV_PAGES[a.page] ? `<button type="button" class="sa-open" data-sa-open="1">Open ${navEsc(NAV_PAGES[a.page].name)} ›</button>` : ''}</div>`;
 }
@@ -13991,6 +14133,10 @@ function renderMethods() {
       what: 'Team goals per possession on possessions where a screen created an advantage, credited to the screener, the user and the pair. Goals are the team&rsquo;s goals on the possession, whoever scored, so a screener who never shoots still gets credit for what his screens produce.',
       steps: ['Advantage = the screen freed the ball carrier, got the screener open, left a shooter open, created a mismatch or forced a slide. Covered and turnovers are not advantages.', 'Every screen is logged on the shot or no-shot possession (Screens rows); older entries count the single Pick card as one screen.', 'A possession counts once per player even if he set two advantage screens; team totals count it once.', 'Lift = his goals/poss minus the team&rsquo;s goals/poss on possessions without a screen advantage. xG/poss is shown beside it because it steadies faster than goals.'],
       ex: 'If #22 sets an advantage screen on 20 possessions and we score on 9 of them, he is at 0.45 goals/poss; with the team at 0.30 on possessions without a screen advantage, his lift is +0.15. If we score 0.25 on his other on-field possessions, his Screen Edge is +0.20. Points/Poss also counts the assist on each assisted goal. Advantages Created ranks who breaks the defense with screens most often; per 10 possessions adjusts for playing time.' },
+    so: { t: 'Model Starting Offense', page: 'depth', q: 'Who should start on offense, from everything we log?',
+      what: 'An Offense Rating (0–100, 50 = average qualified attackman or middie) from logged data only — not Shooter Score — then the best attack trio and two middie lines, with how the three connect counted in.',
+      steps: ['Finishing 20% (goals minus xG per shot), look quality 15% (xG per shot and shots per practice), creating for others 20% (xA and dominoes started per touch), off-ball value 15% (screen advantages created and xG off teammates’ feeds), ball security 15% (turnovers per touch), two-man game 10% (team goals on advantage-screen possessions he’s in, vs normal), consistency 5% (how steady his per-practice value is; neutral until 5 practices).', 'Small samples are pulled toward the team average; the last 3 weeks of practice count 1.5×; 40+ touches to qualify; positions come from the Depth Chart.', 'Each line is the trio with the best 85% average rating + 15% chemistry: how good the looks are when they feed each other, how they do on screens together, and their offense on the field together once lineups are logged.', 'Crossover flags: an attackman outside the top three who would make a middie line, or a middie who rates above the attack trio.'],
+      ex: 'If #19 is the 4th-best attackman but rates higher than a Line 2 middie, the panel says to consider him at midfield.' },
     pj: { t: 'Projections', page: 'projsk', q: 'What will each player produce over 17 games?',
       what: 'Forecasts built on playing time and true efficiency, with ranges. The &ldquo;true level&rdquo; is a Bayesian idea: start from the team average and trust a player&rsquo;s own results more as his sample grows.',
       steps: ['Volume: last season&rsquo;s official shots per game, scaled by the role you set (Starter / Rotation / Reserve), plus your bump. New players use the role average.', 'Efficiency: his true fall shooting %, his own rate blended with the team&rsquo;s by how many shots he has (the reps-needed estimate from Data Health).', 'Ranges: about 4 times in 5 he lands inside them.', 'Later, once a season of game lineups is logged: an impact rating that uses Goals Added as the starting estimate and adjusts it by how the team does with him on the field (like LUMA&rsquo;s ARC).'],
