@@ -2172,6 +2172,11 @@
     </div>
     <p class="view-intro">How completely each field is being logged, and how many reps each key stat needs before it mostly reflects skill instead of luck. Use it to see which numbers to trust and what to log more of. 2027 and later.</p>
     <div class="panel">
+      <p class="panel-title">AI Search</p>
+      <p class="panel-sub">The search bar’s “Ask AI” line sends only the question to Google’s free Gemini AI, with every player name and #jersey replaced by P1, P2&hellip;, plus a fixed list of stat names. No stats, roster or logged entries are sent; the tracker computes every answer itself. Turn this on to see the exact text sent with each AI answer. Only you see this.</p>
+      <label class="sans" style="display:flex; gap:8px; align-items:center; font-size:13px;"><input type="checkbox" id="aiShowSent"> Show what’s sent to the AI</label>
+    </div>
+    <div class="panel">
       <p class="panel-title">Export All Data</p>
       <p class="panel-sub">Saves everything the staff has entered in Firestore &mdash; logged shots and possessions, roster, player evaluations, film tags, film sessions, tagger training answers &mdash; as one file in Chrome’s download folder (Lacrosse_Code), so the next “Backup Lacrosse Data” copies it to Google Drive. Scouting records are left out because they rebuild from the files on the Mac. Only you see this.</p>
       <div class="controls-row"><div class="control-group"><button class="btn" id="fsExportBtn" type="button">Export all data</button></div></div>
@@ -8324,6 +8329,7 @@ async function exportAllData() {
   } catch (e) { console.error(e); log.textContent = 'Stopped: ' + (e.message || e); }
 }
 document.getElementById('fsExportBtn').addEventListener('click', exportAllData);
+(() => { const cb = document.getElementById('aiShowSent'); try { cb.checked = localStorage.getItem('wluAiShowSent') === '1'; } catch (e) { /* storage unavailable */ } cb.addEventListener('change', () => { try { localStorage.setItem('wluAiShowSent', cb.checked ? '1' : '0'); } catch (e) { /* storage unavailable */ } }); })();
 
 function renderDataHealth() {
   const wrap = document.getElementById('healthFieldWrap');
@@ -13442,6 +13448,104 @@ function navHighlight(jerseys) {
   }, 350);
 }
 
+// ---- AI question reader (Firebase AI Logic, free Gemini tier) ----
+// PRIVACY: this is the ONLY code that talks to the AI. It sends three things and nothing else:
+//   1. the coach's question, with every roster name and #jersey replaced by P1, P2, ...;
+//   2. the fixed stat menu below (stat names and meanings, no numbers);
+//   3. fixed instructions.
+// It never sends a roster, a stat, a result or any logged entry. The AI returns only a plan
+// (which stat, which players by P-number, filters); the tracker computes every number itself.
+// A last check refuses to send if a roster name or #jersey is still in the question.
+const SA_AI_MODELS = ['gemini-flash-lite-latest', 'gemini-3.8-flash'];
+const SA_AI_PAGES = ['brief', 'shooter', 'heat', 'quality', 'eff', 'pertouch', 'passing', 'dominoes', 'triggers', 'situations', 'picks', 'lineups', 'trends', 'defense', 'pickdef', 'gscore', 'surface', 'gsummary', 'fosum', 'scout', 'wp', 'ga', 'projsk', 'depth', 'roster', 'reports', 'health'];
+function saAiMenu() {
+  return 'STATS (id: meaning):\n' + SA_CATALOG.map(c => `${c.id}: ${c.label}${c.dir === 'low' ? ' (lower is better)' : ''}`).concat(['catchXg: expected goals on shots taken off a teammate\'s feed (catching, not dodging)']).join('\n')
+    + '\nROLES (id: blend):\n' + SA_CONCEPTS.map(c => `${c.id}: ${c.label} = ${c.parts.map(p => p[0]).join(' + ')}`).join('\n')
+    + '\nPAGES: ' + SA_AI_PAGES.join(', ');
+}
+const SA_AI_RULES = `You turn a lacrosse coach's question into a JSON plan for the team's stats tracker. Reply with JSON only:
+{"type":"rank"|"player"|"lineup"|"page"|"none",
+ "metric":"<stat id>" (or omit when using "role" or "blend"),
+ "role":"<role id>",
+ "blend":{"label":"<2-5 words>","parts":[{"id":"<stat id>","weight":1}]},
+ "players":["P1"],
+ "n":3, "dir":"best"|"worst",
+ "filters":{"ctx":"Game"|"Practice"|"Scrimmage","season":"2026"|"2027","lastDays":21,"since":"YYYY-MM-DD","opponent":"<team>"},
+ "page":"<page id>",
+ "why":"<one short sentence on how you read the question>"}
+Rules: use only ids from the menu. Pick the single stat that answers the question; if none fits, use a role; if no role fits, build a blend of 2-4 stats (weight -1 for stats where lower is better, like toTouch). "player" = the question names P1/P2; "rank" = who is best/worst/top N. "who would you start" or "starting lineup" = "lineup". A question that just wants a page = "page". Off-topic = "none". "right now"/"lately" = lastDays 21. Never invent players or numbers.`;
+let SA_AI = null;
+async function saAiModel(name) {
+  if (!SA_AI) {
+    const A = await import('https://www.gstatic.com/firebasejs/12.6.0/firebase-app.js');
+    const I = await import('https://www.gstatic.com/firebasejs/12.6.0/firebase-ai.js');
+    const app = A.getApps().find(a => a.name === 'wluai') || A.initializeApp(firebase.app().options, 'wluai');
+    SA_AI = { I, ai: I.getAI(app, { backend: new I.GoogleAIBackend() }) };
+  }
+  return SA_AI.I.getGenerativeModel(SA_AI.ai, { model: name, generationConfig: { responseMimeType: 'application/json', temperature: 0 }, systemInstruction: SA_AI_RULES + '\n\n' + saAiMenu() });
+}
+// Names / #jerseys -> P1, P2 ... (and back). Returns { text, map: { P1: jersey } }.
+function saMask(q) {
+  const season = currentLogSeason ? currentLogSeason() : SEASONS[SEASONS.length - 1], roster = (ROSTERS[season] || []).filter(r => r.jersey && r.name);
+  const map = {}; let k = 0, text = ' ' + q + ' ';
+  const tag = j => { const have = Object.keys(map).find(p => map[p] === j); if (have) return have; const p = 'P' + (++k); map[p] = j; return p; };
+  text = text.replace(/#\s?(\d{1,3})\b/g, (m, j) => roster.some(r => r.jersey === j) ? tag(j) : m);
+  roster.forEach(r => r.name.split(/\s+/).filter(w => w.length >= 2).forEach(part => {
+    text = text.replace(new RegExp(`(^|[^a-z])(${part.replace(/[^a-z'-]/gi, '')})(?=[^a-z]|$)`, 'gi'), (m, a) => a + tag(r.jersey));
+  }));
+  // typo'd names (one letter off) too
+  text = text.replace(/[a-z']{4,}/gi, w => { const r = roster.find(r => r.name.split(/\s+/).some(p => p.length >= 4 && navNear(w.toLowerCase(), p.toLowerCase()))); return r ? tag(r.jersey) : w; });
+  return { text: text.trim().replace(/\b(P\d+)(\s+\1\b)+/g, '$1'), map };
+}
+function saMaskOk(text) {
+  const season = currentLogSeason ? currentLogSeason() : SEASONS[SEASONS.length - 1], roster = ROSTERS[season] || [];
+  if (/#\s?\d/.test(text)) return false;
+  return !roster.some(r => r.name && r.name.split(/\s+/).some(p => p.length >= 3 && new RegExp(`\\b${p.replace(/[^a-z'-]/gi, '')}\\b`, 'i').test(text)));
+}
+let SA_AI_LAST_SENT = '';
+const SA_AI_CACHE = {};
+async function saAskAi(q) {
+  const m = saMask(q);
+  if (!saMaskOk(m.text)) throw new Error('blocked: the question still had a name in it after masking');
+  const key = navNorm(m.text);
+  SA_AI_LAST_SENT = m.text;
+  let raw = SA_AI_CACHE[key];
+  if (!raw) {
+    let err = null;
+    for (const name of SA_AI_MODELS) {
+      try { const r = await (await saAiModel(name)).generateContent(m.text); raw = r.response.text(); break; } catch (e) { err = e; }
+    }
+    if (!raw) throw err || new Error('no answer');
+    SA_AI_CACHE[key] = raw;
+  }
+  let j; try { j = JSON.parse(raw.replace(/^```json|```$/g, '').trim()); } catch (e) { throw new Error('the AI reply wasn’t a plan'); }
+  return saPlanFromAi(j, m.map, q);
+}
+// Validate the AI's plan against the menu and turn it into the same plan the rules make.
+function saPlanFromAi(j, map, q) {
+  const today = new Date(), F = j.filters || {}, filters = saFilters(q);   // plain-word filters still apply
+  if (F.ctx && ['Game', 'Practice', 'Scrimmage'].includes(F.ctx)) { filters.ctx = F.ctx; }
+  if (F.season && SEASONS.includes(String(F.season))) filters.season = String(F.season);
+  if (F.lastDays && !filters.from) { const dt = new Date(today); dt.setDate(dt.getDate() - Math.min(365, Number(F.lastDays) || 0)); filters.from = localDateStr(dt); filters.words.push(`last ${F.lastDays} days`); }
+  if (F.since && /^\d{4}-\d{2}-\d{2}$/.test(F.since) && !filters.from) { filters.from = F.since; filters.words.push('since ' + F.since.slice(5)); }
+  const why = typeof j.why === 'string' ? j.why.slice(0, 160) : '';
+  if (j.type === 'lineup') return { type: 'lineup', filters, why };
+  if (j.type === 'page' && NAV_PAGES[j.page]) return { type: 'page', page: j.page, filters, why };
+  let pick = null;
+  const metric = SA_CATALOG.find(c => c.id === j.metric), role = SA_CONCEPTS.find(c => c.id === j.role);
+  if (metric) pick = { kind: 'metric', c: metric };
+  else if (role) pick = { kind: 'concept', c: role };
+  else if (j.blend && Array.isArray(j.blend.parts)) {
+    const parts = j.blend.parts.filter(p => SA_CATALOG.some(c => c.id === p.id) || p.id === 'catchXg').slice(0, 4).map(p => { const c = SA_CATALOG.find(x => x.id === p.id); return [p.id, Number(p.weight) < 0 ? -1 : 1, c ? c.label : 'xG off catches']; });
+    if (parts.length) { const first = SA_CATALOG.find(c => c.id === parts[0][0]); pick = { kind: 'concept', c: { id: 'blend', label: String(j.blend.label || 'Custom blend').slice(0, 40), parts, page: first ? first.page : 'eff', minN: 8 } }; }
+  }
+  if (!pick) return null;
+  const players = (j.players || []).map(p => map[p]).filter(Boolean);
+  if (j.type === 'player' && players.length) return { type: 'player', pick, players, filters, why };
+  return { type: 'rank', pick, n: Math.max(1, Math.min(10, Number(j.n) || 3)), dir: j.dir === 'worst' ? 'worst' : 'best', filters, why };
+}
+function saShowSent() { try { return IS_DH_OWNER && localStorage.getItem('wluAiShowSent') === '1'; } catch (e) { return false; } }
+
 function navWireSearch() {
   const inp = document.getElementById('sdQ'), dd = document.getElementById('sdDrop'); let items = null, f = [], sel = 0;
   const place = () => { const r = inp.getBoundingClientRect(), w = Math.min(innerWidth - 16, Math.max(r.width, 440)); dd.style.top = (r.bottom + 6) + 'px'; dd.style.left = Math.max(8, Math.min(r.left, innerWidth - w - 8)) + 'px'; dd.style.width = w + 'px'; };
@@ -13457,11 +13561,35 @@ function navWireSearch() {
     if (!items || (NAV_TEAMS && items.teams !== NAV_TEAMS.length)) { items = navItems(); items.teams = (NAV_TEAMS || []).length; }
     const rec = navRecent().map(r => items.find(i => i.t === r.t && i.k === r.k)).filter(Boolean).map(i => Object.assign({}, i, { k: 'Recent' }));
     f = inp.value.trim() ? navFind(items, inp.value) : rec.slice(0, 5).concat(items.filter(i => i.k === 'Question').slice(0, 8 - Math.min(5, rec.length))); sel = 0;
+    const q0 = inp.value.trim();
+    if (q0.length > 3 && !PLAYER_MODE && DB) {
+      let ruled = null; try { ruled = saPlan(q0); } catch (e) { ruled = null; }
+      const askItem = { k: 'Ask AI', t: q0, s: 'Understands any wording · sends only the question, names hidden', ai: true };
+      if (ruled) f = f.slice(0, 11).concat([askItem]); else f = [askItem].concat(f.slice(0, 11));
+    }
     dd.innerHTML = f.length ? `<ul>${f.map((x, k) => `<li><button type="button" data-k="${k}" class="${k === sel ? 'sel' : ''}"><small>${x.k}</small><span>${navEsc(x.t)}<em>${navEsc(x.s)}</em></span></button></li>`).join('')}</ul>` : '<div class="none">Nothing matches. Try a player, a page, or a metric like GSAx.</div>';
     place(); dd.hidden = false;
   };
   const mark = () => dd.querySelectorAll('button[data-k]').forEach(b => b.classList.toggle('sel', +b.dataset.k === sel));
-  const go = it => { navRemember(it); inp.value = ''; dd.hidden = true; inp.blur(); it.go(); };
+  const askAi = async q => {
+    const old = dd.querySelector('.sd-answer'); if (old) old.remove();
+    dd.insertAdjacentHTML('afterbegin', '<div class="sd-answer"><div class="sa-h"><b>Reading your question…</b><span>only the question is sent, with names hidden</span></div></div>'); place(); dd.hidden = false;
+    let html;
+    try {
+      const plan = await saAskAi(q);
+      const sent = saShowSent() ? `<details class="sa-n"><summary>Sent to Google</summary><code style="white-space:pre-wrap">${navEsc(SA_AI_LAST_SENT)}</code><br><small>plus the fixed stat menu and instructions (no numbers, no roster)</small></details>` : '';
+      if (!plan) { ans = null; html = `<div class="sd-answer"><div class="sa-h"><b>I couldn’t match that to our stats</b></div><p class="sa-n">Try naming the skill or stat, e.g. “who creates the most for others in games”.</p>${sent}</div>`; }
+      else if (plan.type === 'page') { inp.value = ''; dd.hidden = true; inp.blur(); goNav(plan.page); return; }
+      else { ansPlan = plan; ans = saRun(plan); html = saCardHtml(ans).replace('<div class="sd-answer">', `<div class="sd-answer">${plan.why ? `<p class="sa-n" style="margin:0 0 6px">Read as: ${navEsc(plan.why)}</p>` : ''}`).replace(/<\/div>$/, sent + '</div>'); }
+    } catch (e) {
+      console.error('AI search', e);
+      const why = /quota|429/i.test(String(e.message)) ? 'the free AI limit is used up for the moment (try again in a minute)' : /blocked/.test(String(e.message)) ? 'a name couldn’t be hidden, so nothing was sent' : 'the AI isn’t reachable right now';
+      html = `<div class="sd-answer"><div class="sa-h"><b>AI not used</b></div><p class="sa-n">${navEsc(why)}. The results below are from the built-in search.</p></div>`;
+    }
+    const o2 = dd.querySelector('.sd-answer'); if (o2) o2.remove();
+    dd.insertAdjacentHTML('afterbegin', html); place(); dd.hidden = false;
+  };
+  const go = it => { if (it.ai) { navRemember({ t: it.t, k: 'Question' }); askAi(it.t); return; } navRemember(it); inp.value = ''; dd.hidden = true; inp.blur(); it.go(); };
   inp.addEventListener('focus', () => { navLoadTeams(); items = null; draw(); });
   inp.addEventListener('input', draw);
   inp.addEventListener('keydown', e => {
