@@ -2924,7 +2924,8 @@ async function loadAll() {
     }, e => console.error('roles sync error', e));
   });
   ADV_SEASONS.forEach(season => DB.doc('app/positions_' + season).onSnapshot(snap => {
-    try { const o = snap.exists ? JSON.parse(snap.data().json || '{}') : {}; const clean = {}; Object.keys(o).forEach(j => { if (validJerseyText(j) && (o[j] === 'A' || o[j] === 'M' || o[j] === 'X')) clean[j] = o[j]; }); POSITIONS[season] = clean; } catch (e) { POSITIONS[season] = {}; }
+    try { const o = snap.exists ? JSON.parse(snap.data().json || '{}') : {}; const clean = {}; Object.keys(o).forEach(j => { if (validJerseyText(j) && POS_OK(o[j])) clean[j] = o[j]; }); POSITIONS[season] = clean;
+      const a = snap.exists && snap.data().alt ? JSON.parse(snap.data().alt) : {}; const ca = {}; Object.keys(a).forEach(j => { if (validJerseyText(j) && POS_CODES.includes(a[j])) ca[j] = a[j]; }); POSITIONS_ALT[season] = ca; } catch (e) { POSITIONS[season] = {}; }
     if (window.__appReady) renderDepthChart();
   }, e => console.error('positions sync error', e)));
   const unitsRef = DB.doc('app/units');
@@ -8680,12 +8681,20 @@ document.getElementById('rptPrintBtn').addEventListener('click', () => window.pr
 // Offense score, by recent form (the same score on the last 14 days), or by
 // chemistry (which groups of three produce most together, from lineups).
 let DEPTH_SEASON = currentAdvSeason(), depthMode = 'scores';
-let POSITIONS = {}; // { season: { jersey: 'A' | 'M' | 'X' } } set by the coach; X = not offense
+let POSITIONS = {}; // { season: { jersey: code } } set by the coach (see POS_CODES); X = old 'Other'
+let POSITIONS_ALT = {}; // { season: { jersey: code } } second position, e.g. a middie who also plays SSDM
+const POS_CODES = ['A', 'M', 'S', 'L', 'D', 'F', 'G'];
+const POS_OK = c => POS_CODES.includes(c) || c === 'X';
+const posOfJ = (season, j) => (POSITIONS[season] || {})[j] || null;
+const posAltJ = (season, j) => (POSITIONS_ALT[season] || {})[j] || null;
+const posIs = (season, j, codes) => [].concat(codes).some(c => posOfJ(season, j) === c || posAltJ(season, j) === c);
+const isOffensePos = (season, j) => posIs(season, j, ['A', 'M']);
 const DEPTH_RECENT_DAYS = 14, DEPTH_CHEM_MIN_POSS = 30, DEPTH_TRIO_MIN = 5;
-const DEPTH_POS_LABEL = { A: 'Attack', M: 'Midfield', X: 'Other' };
+const DEPTH_POS_LABEL = { A: 'Attack', M: 'Midfield', S: 'SSDM', L: 'LSM', D: 'Defense', F: 'FOGO', G: 'Goalie', X: 'Other' };
+let depthEditJ = null;   // the chip whose position editor is open
 async function persistPositions(season) {
   if (!DB) return false;
-  try { await DB.doc('app/positions_' + season).set({ json: JSON.stringify(POSITIONS[season] || {}) }); } catch (e) { console.error(e); return false; }
+  try { await DB.doc('app/positions_' + season).set({ json: JSON.stringify(POSITIONS[season] || {}), alt: JSON.stringify(POSITIONS_ALT[season] || {}) }); } catch (e) { console.error(e); return false; }
   return true;
 }
 function depthLatestDate(season) { return advShots(season).reduce((m, s) => (s.date && s.date > m ? s.date : m), ''); }
@@ -8737,13 +8746,15 @@ function renderDepthChart() {
   const chip = (j, extra) => {
     const g = scoreOf[j];
     const pos = posOf(j);
-    const btns = pos
-      ? `<button type="button" class="depth-pos" data-j="${escapeHtml(j)}" data-to="${pos === 'A' ? 'M' : pos === 'M' ? 'X' : ''}" title="Tap to change: Attack → Midfield → Other → Unassigned">${DEPTH_POS_LABEL[pos]}</button>`
-      : `<span style="display:flex; gap:4px;">${['A', 'M', 'X'].map(p => `<button type="button" class="depth-pos" data-j="${escapeHtml(j)}" data-to="${p}">${DEPTH_POS_LABEL[p]}</button>`).join('')}</span>`;
+    const alt = posAltJ(season, j);
+    const btns = `<button type="button" class="depth-pos" data-edit="${escapeHtml(j)}" title="Tap to set position">${pos ? DEPTH_POS_LABEL[pos] + (alt ? ' / ' + DEPTH_POS_LABEL[alt] : '') : 'Set position'} &#9662;</button>`;
+    const editor = depthEditJ === j ? `<div class="depth-edit" style="grid-column:1 / -1; display:flex; flex-direction:column; gap:6px; margin-top:6px;">
+        <div style="display:flex; flex-wrap:wrap; gap:4px;"><span class="n-note" style="font-style:normal; min-width:52px;">Position</span>${POS_CODES.map(c => `<button type="button" class="pill${pos === c ? ' active' : ''}" data-j="${escapeHtml(j)}" data-set="${c}" style="padding:2px 9px; font-size:11.5px;">${DEPTH_POS_LABEL[c]}</button>`).join('')}<button type="button" class="pill" data-j="${escapeHtml(j)}" data-set="" style="padding:2px 9px; font-size:11.5px;">Clear</button></div>
+        <div style="display:flex; flex-wrap:wrap; gap:4px;"><span class="n-note" style="font-style:normal; min-width:52px;">Also plays</span>${['', ...POS_CODES].map(c => `<button type="button" class="pill${(alt || '') === c ? ' active' : ''}" data-j="${escapeHtml(j)}" data-alt="${c}" style="padding:2px 9px; font-size:11.5px;">${c ? DEPTH_POS_LABEL[c] : 'None'}</button>`).join('')}</div></div>` : '';
     return `<div class="depth-chip">
       <div><b>#${escapeHtml(j)} ${escapeHtml(nameFor(j, season))}</b>${extra || ''}</div>
       <div class="n-note" style="font-style:normal;">${g && g.score !== null ? `Score <b>${Math.round(g.score)}</b> · ${g.shots} shots` : 'Not ranked yet (too few shots)'}</div>
-      ${btns}
+      ${btns}${editor}
     </div>`;
   };
   const renderGroup = (pos, elId, title) => {
@@ -8772,20 +8783,22 @@ function renderDepthChart() {
   };
   renderGroup('A', 'depthAttack', 'Attack');
   renderGroup('M', 'depthMid', 'Midfield');
-  const unassigned = everyone.filter(j => !posOf(j)), other = everyone.filter(j => posOf(j) === 'X');
+  const unassigned = everyone.filter(j => !posOf(j)), other = everyone.filter(j => posOf(j) && posOf(j) !== 'A' && posOf(j) !== 'M');
   document.getElementById('depthUnassigned').innerHTML = `<p class="panel-title">Unassigned (${unassigned.length})</p>
-    <p class="panel-sub">Tap each player&rsquo;s position once. <b>Other</b> is for defense, goalies and faceoff &mdash; they drop off this offense chart. Saved for everyone.</p>
+    <p class="panel-sub">Tap a player&rsquo;s position to set it (Attack, Midfield, SSDM, LSM, Defense, FOGO, Goalie) and anything else he plays. Only Attack and Midfield are on this offense chart; everyone else is listed below. Saved for every coach.</p>
     ${unassigned.length ? `<div class="depth-rest">${unassigned.map(j => chip(j)).join('')}</div>` : '<p class="sans n-note" style="font-size:12.5px;">Everyone has a position.</p>'}
-    ${other.length ? `<details style="margin-top:10px;"><summary class="panel-sub" style="cursor:pointer;">Other (${other.length}) &mdash; tap to change</summary><div class="depth-rest" style="margin-top:8px;">${other.map(j => chip(j)).join('')}</div></details>` : ''}`;
-  document.querySelectorAll('#depthView .depth-pos').forEach(b => b.addEventListener('click', async () => {
-    const j = b.dataset.j;
-    const next = b.dataset.to || null;
-    const map = Object.assign({}, POSITIONS[season] || {});
+    ${other.length ? `<details style="margin-top:10px;"${depthEditJ && other.includes(depthEditJ) ? ' open' : ''}><summary class="panel-sub" style="cursor:pointer;">SSDM, LSM, defense, FOGO, goalies (${other.length}) &mdash; tap to change</summary><div class="depth-rest" style="margin-top:8px;">${other.sort((a, b) => POS_CODES.indexOf(posOf(a)) - POS_CODES.indexOf(posOf(b))).map(j => chip(j)).join('')}</div></details>` : ''}`;
+  document.querySelectorAll('#depthView [data-edit]').forEach(b => b.addEventListener('click', () => { depthEditJ = depthEditJ === b.dataset.edit ? null : b.dataset.edit; renderDepthChart(); }));
+  document.querySelectorAll('#depthView [data-set], #depthView [data-alt]').forEach(b => b.addEventListener('click', async () => {
+    const j = b.dataset.j, isAlt = b.dataset.alt !== undefined, next = (isAlt ? b.dataset.alt : b.dataset.set) || null;
+    const store = isAlt ? POSITIONS_ALT : POSITIONS;
+    const map = Object.assign({}, store[season] || {});
     if (next) map[j] = next; else delete map[j];
-    const prev = POSITIONS[season];
-    POSITIONS[season] = map;
+    const prev = store[season];
+    store[season] = map;
+    if (!isAlt) depthEditJ = null;
     renderDepthChart();
-    if (!(await persistPositions(season))) { POSITIONS[season] = prev; renderDepthChart(); }
+    if (!(await persistPositions(season))) { store[season] = prev; renderDepthChart(); }
   }));
 }
 setupPillGroup('depthSeasonPills', ADV_SEASONS, DEPTH_SEASON, v => { DEPTH_SEASON = v || DEPTH_SEASON; if (!v) setPillGroupValue('depthSeasonPills', DEPTH_SEASON); renderDepthChart(); });
@@ -13301,47 +13314,47 @@ function saCatchXg(d) {   // look value finished off a teammate's feed, catching
 }
 // Every stat a question can ask for. min = smallest sample shown; dir = which way is better.
 const SA_CATALOG = [
-  { id: 'shooterScore', label: 'Shooter Score', words: 'shooter score, best shooter, best shooters, shooter, shooters, sniper, snipers', page: 'shooter', fmt: SA_NUM(0), seasonOnly: true, f: () => { const m = {}; computeShooterScores(EFF_SEASON, 'shooting').list.filter(r => r.score !== null).forEach(r => { m[r.jersey] = { v: r.score, n: r.shots }; }); return m; } },
+  { off: true, id: 'shooterScore', label: 'Shooter Score', words: 'shooter score, best shooter, best shooters, shooter, shooters, sniper, snipers', page: 'shooter', fmt: SA_NUM(0), seasonOnly: true, f: () => { const m = {}; computeShooterScores(EFF_SEASON, 'shooting').list.filter(r => r.score !== null).forEach(r => { m[r.jersey] = { v: r.score, n: r.shots }; }); return m; } },
   { id: 'goalieScore', label: 'Goalie Score', words: 'goalie score, best goalie, goalie, goalies, keeper, netminder', page: 'gscore', fmt: SA_NUM(0), seasonOnly: true, f: () => { const m = {}; computeGoalieScores(EFF_SEASON).filter(r => r.score !== null).forEach(r => { m[r.jersey] = { v: r.score, n: r.faced }; }); return m; } },
-  { id: 'goals', label: 'Goals', words: 'goals, goal scorer, scorers, scoring', page: 'eff', fmt: SA_NUM(0), f: d => saMap(d, p => p.shots ? { v: p.goals, n: p.shots } : null) },
-  { id: 'assists', label: 'Assists', words: 'assists, assist', page: 'eff', fmt: SA_NUM(0), f: d => saMap(d, p => (p.potAst || p.assists) ? { v: p.assists, n: p.potAst } : null) },
-  { id: 'points', label: 'Points (G+A)', words: 'points, production, producer', page: 'eff', fmt: SA_NUM(0), f: d => saMap(d, p => (p.shots || p.potAst) ? { v: p.goals + p.assists, n: p.shots + p.potAst } : null) },
-  { id: 'shots', label: 'Shots', words: 'shots taken, shot attempts, most shots, volume', page: 'eff', fmt: SA_NUM(0), f: d => saMap(d, p => p.shots ? { v: p.shots, n: p.shots } : null) },
-  { id: 'shpct', label: 'Shooting %', words: 'shooting percentage, shooting %, shooting%, sh%, finishing rate, shoot the best', min: 15, page: 'eff', fmt: SA_PCT, f: d => saMap(d, p => p.shots ? { v: p.goals / p.shots, n: p.shots, extra: `${p.goals} of ${p.shots}` } : null) },
-  { id: 'gmx', label: 'Goals above expected (G−xG)', words: 'above expected, g-xg, gxg, finishing, efficient', min: 15, page: 'eff', fmt: SA_SGN(1), f: d => saMap(d, p => p.shots ? { v: p.goals - p.xg, n: p.shots } : null) },
-  { id: 'outsideSh', label: 'Shooting % from 12+ yards', words: 'from distance, distance, long range, from deep, outside shooter, outside shooting, outside, 12 yards, step down', min: 5, page: 'heat', fmt: SA_PCT, f: d => saShotSub(d, s => Number(s.distanceYds) >= 12, true) },
-  { id: 'insideSh', label: 'Shooting % inside 8 yards', words: 'close range, inside, in tight, crease, doorstep, point blank', min: 5, page: 'heat', fmt: SA_PCT, f: d => saShotSub(d, s => s.distanceYds != null && Number(s.distanceYds) < 8, true) },
-  { id: 'dodgeG', label: 'Goals off the dodge', words: 'off the dodge, dodge goals, dodging goals, scores off the dodge', page: 'situations', fmt: SA_NUM(0), f: d => saShotSub(d, s => Number(s.offDodge) === 1, false) },
-  { id: 'catchG', label: 'Goals off the catch', words: 'off the catch, catch and shoot, catch-and-shoot, catch goals', page: 'situations', fmt: SA_NUM(0), f: d => saShotSub(d, s => Number(s.offDodge) !== 1, false) },
-  { id: 'transG', label: 'Transition goals', words: 'transition, fast break, unsettled, in transition, off the faceoff', page: 'situations', fmt: SA_NUM(0), f: d => saShotSub(d, s => s.transition === 'FO' || s.transition === 'OTOD', false) },
-  { id: 'manupG', label: 'Man-up goals', words: 'man up, man-up, emo, extra man, power play', page: 'eff', fmt: SA_NUM(0), f: d => saShotSub(d, s => s.manSituation === 'Man-Up', false) },
-  { id: 'xg', label: 'Expected goals (xG)', words: 'xg, expected goals, look quality, best looks, chances', page: 'eff', fmt: SA_NUM(1), f: d => saMap(d, p => p.shots ? { v: p.xg, n: p.shots } : null) },
-  { id: 'xa', label: 'Expected assists (xA)', words: 'xa, expected assists, playmaker, creator for others, passing, passer', page: 'eff', fmt: SA_NUM(1), f: d => saMap(d, p => p.potAst ? { v: p.xa, n: p.potAst } : null) },
-  { id: 'feeds', label: 'Shots set up', words: 'feeds, potential assists, set up, setups, sets up', page: 'eff', fmt: SA_NUM(0), f: d => saMap(d, p => p.potAst ? { v: p.potAst, n: p.potAst } : null) },
+  { off: true, id: 'goals', label: 'Goals', words: 'goals, goal scorer, scorers, scoring', page: 'eff', fmt: SA_NUM(0), f: d => saMap(d, p => p.shots ? { v: p.goals, n: p.shots } : null) },
+  { off: true, id: 'assists', label: 'Assists', words: 'assists, assist', page: 'eff', fmt: SA_NUM(0), f: d => saMap(d, p => (p.potAst || p.assists) ? { v: p.assists, n: p.potAst } : null) },
+  { off: true, id: 'points', label: 'Points (G+A)', words: 'points, production, producer', page: 'eff', fmt: SA_NUM(0), f: d => saMap(d, p => (p.shots || p.potAst) ? { v: p.goals + p.assists, n: p.shots + p.potAst } : null) },
+  { off: true, id: 'shots', label: 'Shots', words: 'shots taken, shot attempts, most shots, volume', page: 'eff', fmt: SA_NUM(0), f: d => saMap(d, p => p.shots ? { v: p.shots, n: p.shots } : null) },
+  { off: true, id: 'shpct', label: 'Shooting %', words: 'shooting percentage, shooting %, shooting%, sh%, finishing rate, shoot the best', min: 15, page: 'eff', fmt: SA_PCT, f: d => saMap(d, p => p.shots ? { v: p.goals / p.shots, n: p.shots, extra: `${p.goals} of ${p.shots}` } : null) },
+  { off: true, id: 'gmx', label: 'Goals above expected (G−xG)', words: 'above expected, g-xg, gxg, finishing, efficient', min: 15, page: 'eff', fmt: SA_SGN(1), f: d => saMap(d, p => p.shots ? { v: p.goals - p.xg, n: p.shots } : null) },
+  { off: true, id: 'outsideSh', label: 'Shooting % from 12+ yards', words: 'from distance, distance, long range, from deep, outside shooter, outside shooting, outside, 12 yards, step down', min: 5, page: 'heat', fmt: SA_PCT, f: d => saShotSub(d, s => Number(s.distanceYds) >= 12, true) },
+  { off: true, id: 'insideSh', label: 'Shooting % inside 8 yards', words: 'close range, inside, in tight, crease, doorstep, point blank', min: 5, page: 'heat', fmt: SA_PCT, f: d => saShotSub(d, s => s.distanceYds != null && Number(s.distanceYds) < 8, true) },
+  { off: true, id: 'dodgeG', label: 'Goals off the dodge', words: 'off the dodge, dodge goals, dodging goals, scores off the dodge', page: 'situations', fmt: SA_NUM(0), f: d => saShotSub(d, s => Number(s.offDodge) === 1, false) },
+  { off: true, id: 'catchG', label: 'Goals off the catch', words: 'off the catch, catch and shoot, catch-and-shoot, catch goals', page: 'situations', fmt: SA_NUM(0), f: d => saShotSub(d, s => Number(s.offDodge) !== 1, false) },
+  { off: true, id: 'transG', label: 'Transition goals', words: 'transition, fast break, unsettled, in transition, off the faceoff', page: 'situations', fmt: SA_NUM(0), f: d => saShotSub(d, s => s.transition === 'FO' || s.transition === 'OTOD', false) },
+  { off: true, id: 'manupG', label: 'Man-up goals', words: 'man up, man-up, emo, extra man, power play', page: 'eff', fmt: SA_NUM(0), f: d => saShotSub(d, s => s.manSituation === 'Man-Up', false) },
+  { off: true, id: 'xg', label: 'Expected goals (xG)', words: 'xg, expected goals, look quality, best looks, chances', page: 'eff', fmt: SA_NUM(1), f: d => saMap(d, p => p.shots ? { v: p.xg, n: p.shots } : null) },
+  { off: true, id: 'xa', label: 'Expected assists (xA)', words: 'xa, expected assists, playmaker, creator for others, passing, passer', page: 'eff', fmt: SA_NUM(1), f: d => saMap(d, p => p.potAst ? { v: p.xa, n: p.potAst } : null) },
+  { off: true, id: 'feeds', label: 'Shots set up', words: 'feeds, potential assists, set up, setups, sets up', page: 'eff', fmt: SA_NUM(0), f: d => saMap(d, p => p.potAst ? { v: p.potAst, n: p.potAst } : null) },
   { id: 'to', label: 'Turnovers', words: 'turnovers, turnover, giveaways, turns it over, turns the ball over', page: 'eff', fmt: SA_NUM(0), f: d => saMap(d, p => p.to ? { v: p.to, n: p.shots + p.potAst + p.to } : null) },
-  { id: 'toTouch', label: 'Turnovers per touch', words: 'ball security, protects the ball, protect the ball, takes care of the ball, careless, sloppy, turnover rate, secure', dir: 'low', min: 25, page: 'pertouch', fmt: SA_PCT, f: d => saMap(d, p => { const t = p.shots + p.potAst + p.to; return t ? { v: p.to / t, n: t, extra: `${p.to} in ${t} touches` } : null; }) },
-  { id: 'usage', label: 'Usage', words: 'usage, involvement, involved, runs through', page: 'eff', fmt: SA_PCT, f: d => { const all = saPlayers(d), T = d.shots.length + all.reduce((a, p) => a + p.potAst, 0); return saMap(d, p => (p.shots + p.potAst) ? { v: (p.shots + p.potAst) / T, n: p.shots + p.potAst } : null); } },
-  { id: 'possUsed', label: 'Possessions used', words: 'possessions used, ends possessions', page: 'eff', fmt: SA_PCT, f: d => { const all = saPlayers(d), T = d.shots.length + all.reduce((a, p) => a + p.to, 0); return saMap(d, p => (p.shots + p.to) ? { v: (p.shots + p.to) / T, n: p.shots + p.to } : null); } },
+  { off: true, id: 'toTouch', label: 'Turnovers per touch', words: 'ball security, protects the ball, protect the ball, takes care of the ball, careless, sloppy, turnover rate, secure', dir: 'low', min: 25, page: 'pertouch', fmt: SA_PCT, f: d => saMap(d, p => { const t = p.shots + p.potAst + p.to; return t ? { v: p.to / t, n: t, extra: `${p.to} in ${t} touches` } : null; }) },
+  { off: true, id: 'usage', label: 'Usage', words: 'usage, involvement, involved, runs through', page: 'eff', fmt: SA_PCT, f: d => { const all = saPlayers(d), T = d.shots.length + all.reduce((a, p) => a + p.potAst, 0); return saMap(d, p => (p.shots + p.potAst) ? { v: (p.shots + p.potAst) / T, n: p.shots + p.potAst } : null); } },
+  { off: true, id: 'possUsed', label: 'Possessions used', words: 'possessions used, ends possessions', page: 'eff', fmt: SA_PCT, f: d => { const all = saPlayers(d), T = d.shots.length + all.reduce((a, p) => a + p.to, 0); return saMap(d, p => (p.shots + p.to) ? { v: (p.shots + p.to) / T, n: p.shots + p.to } : null); } },
   { id: 'gb', label: 'Ground balls', words: 'ground balls, ground ball, gbs, gb, scrappy', page: 'eff', fmt: SA_NUM(0), f: d => saMap(d, p => p.gb ? { v: p.gb, n: p.gb } : null) },
   { id: 'ct', label: 'Caused turnovers', words: 'caused turnovers, takeaways, takeaway, steals, forced turnovers', page: 'eff', fmt: SA_NUM(0), f: d => saMap(d, p => p.ct ? { v: p.ct, n: p.ct } : null) },
-  { id: 'dom', label: 'Dominoes started', words: 'dominoes, starts the dominoes, initiator, initiates, breaks down, dodger, dodgers, dodging, draws slides', page: 'dominoes', fmt: SA_NUM(0), f: d => saMap(d, p => p.dominoes ? { v: p.dominoes, n: p.dominoes } : null) },
-  { id: 'advCreated', label: 'Screen advantages created', words: 'screen advantages, advantages created, screens, screen, screener, screeners, picks, pick setter', page: 'picks', fmt: SA_NUM(0), f: d => { const s = saScreens(d); const m = {}; Object.keys(s.set).forEach(j => { m[j] = { v: s.adv[j] || 0, n: s.set[j], extra: `${s.adv[j] || 0} of ${s.set[j]} screens` }; }); return m; } },
-  { id: 'gold', label: 'Shooting % on Gold shots', words: 'gold', min: 8, page: 'quality', fmt: SA_PCT, f: d => saTier(d, '1-Gold', true) },
-  { id: 'silver', label: 'Shooting % on Silver shots', words: 'silver', min: 8, page: 'quality', fmt: SA_PCT, f: d => saTier(d, '2-Silver', true) },
-  { id: 'bronze', label: 'Shooting % on Bronze shots', words: 'bronze', min: 8, page: 'quality', fmt: SA_PCT, f: d => saTier(d, '3-Bronze', true) },
+  { off: true, id: 'dom', label: 'Dominoes started', words: 'dominoes, starts the dominoes, initiator, initiates, breaks down, dodger, dodgers, dodging, draws slides', page: 'dominoes', fmt: SA_NUM(0), f: d => saMap(d, p => p.dominoes ? { v: p.dominoes, n: p.dominoes } : null) },
+  { off: true, id: 'advCreated', label: 'Screen advantages created', words: 'screen advantages, advantages created, screens, screen, screener, screeners, picks, pick setter', page: 'picks', fmt: SA_NUM(0), f: d => { const s = saScreens(d); const m = {}; Object.keys(s.set).forEach(j => { m[j] = { v: s.adv[j] || 0, n: s.set[j], extra: `${s.adv[j] || 0} of ${s.set[j]} screens` }; }); return m; } },
+  { off: true, id: 'gold', label: 'Shooting % on Gold shots', words: 'gold', min: 8, page: 'quality', fmt: SA_PCT, f: d => saTier(d, '1-Gold', true) },
+  { off: true, id: 'silver', label: 'Shooting % on Silver shots', words: 'silver', min: 8, page: 'quality', fmt: SA_PCT, f: d => saTier(d, '2-Silver', true) },
+  { off: true, id: 'bronze', label: 'Shooting % on Bronze shots', words: 'bronze', min: 8, page: 'quality', fmt: SA_PCT, f: d => saTier(d, '3-Bronze', true) },
   { id: 'ga', label: 'Goals Added', words: 'goals added, most valuable, value, impact, helps most, contribution', page: 'ga', fmt: SA_SGN(1), f: () => { const r = computeGoalsAdded(); const m = {}; r.rows.forEach(x => { m[x.jersey] = { v: x.total, n: x.apps, extra: `offense ${SA_SGN(1)(x.off)}, defense ${SA_SGN(1)(x.def)}` }; }); return m; } },
-  { id: 'gaOff', label: 'Goals Added on offense', words: 'offensive value, offense goals added, offensive impact', page: 'ga', fmt: SA_SGN(1), f: () => { const r = computeGoalsAdded(); const m = {}; r.rows.forEach(x => { m[x.jersey] = { v: x.off, n: x.apps }; }); return m; } },
+  { off: true, id: 'gaOff', label: 'Goals Added on offense', words: 'offensive value, offense goals added, offensive impact', page: 'ga', fmt: SA_SGN(1), f: () => { const r = computeGoalsAdded(); const m = {}; r.rows.forEach(x => { m[x.jersey] = { v: x.off, n: x.apps }; }); return m; } },
   { id: 'gaDef', label: 'Goals Added on defense (field players)', words: 'defensive value, defense goals added, defensive impact, best defender, best defenders, defenders', page: 'ga', fmt: SA_SGN(1), f: () => { const r = computeGoalsAdded(); const m = {}; r.rows.forEach(x => { if (x.goalie === undefined) m[x.jersey] = { v: (x.takeaway || 0) + (x.onball || 0), n: x.apps }; }); return m; } },
   { id: 'fo', label: 'Faceoff win %', words: 'faceoffs, faceoff, fogo, draws, wins draws, wins our faceoffs', min: 10, page: 'fosum', fmt: SA_PCT, goalie: false, f: () => { const m = {}; FACEOFFS.filter(f => f.playerJersey && seasonForDate(f.date) === EFF_SEASON && effContextOk(f) && effFromOk(f)).forEach(f => { const r = (m[f.playerJersey] = m[f.playerJersey] || { w: 0, n: 0 }); r.n++; if (Number(f.won) === 1) r.w++; }); Object.keys(m).forEach(j => { m[j] = { v: m[j].w / m[j].n, n: m[j].n, extra: `${m[j].w}-${m[j].n - m[j].w}` }; }); return m; } },
   { id: 'savePct', label: 'Save %', words: 'save percentage, save %, save%, saves, stopper', min: 20, page: 'gsummary', fmt: SA_PCT, f: () => { const m = {}; goalieShotsForSeason(EFF_SEASON).filter(s => s.onKeeper === 1 && s.goalieJersey && effContextOk(s) && effFromOk(s)).forEach(s => { const r = (m[s.goalieJersey] = m[s.goalieJersey] || { sv: 0, n: 0 }); r.n++; if (s.goal !== 1) r.sv++; }); Object.keys(m).forEach(j => { m[j] = { v: m[j].sv / m[j].n, n: m[j].n, extra: `${m[j].sv} of ${m[j].n}` }; }); return m; } },
 ];
 // Concepts: plain-language roles = a blend of catalog stats, each scored vs the team (z-score).
 const SA_CONCEPTS = [
-  { id: 'offball', label: 'Off-ball offense', words: 'off ball, off-ball, offball, without the ball, off the ball, screens and cuts', parts: [['advCreated', 1, 'screen advantages'], ['catchXg', 1, 'xG off catches']], page: 'picks', minN: 6 },
-  { id: 'initiator', label: 'Initiator', words: 'initiator, initiators, creator, creates offense, breaks down', parts: [['dom', 1, 'dominoes started'], ['xa', 1, 'xA']], page: 'dominoes', minN: 8 },
-  { id: 'finisher', label: 'Finisher', words: 'finisher, finishers, clutch finisher', parts: [['gmx', 1, 'G−xG'], ['shpct', 1, 'Sh%']], page: 'eff', minN: 15 },
-  { id: 'feeder', label: 'Feeder', words: 'feeder, feeders, quarterback, best passer', parts: [['xa', 1, 'xA'], ['feeds', 1, 'shots set up']], page: 'passing', minN: 8 },
-  { id: 'secure', label: 'Ball security', words: 'protects the ball best, safest with the ball, most careful', parts: [['toTouch', -1, 'TO per touch']], page: 'pertouch', minN: 25 },
+  { off: true, id: 'offball', label: 'Off-ball offense', words: 'off ball, off-ball, offball, without the ball, off the ball, screens and cuts', parts: [['advCreated', 1, 'screen advantages'], ['catchXg', 1, 'xG off catches']], page: 'picks', minN: 6 },
+  { off: true, id: 'initiator', label: 'Initiator', words: 'initiator, initiators, creator, creates offense, breaks down', parts: [['dom', 1, 'dominoes started'], ['xa', 1, 'xA']], page: 'dominoes', minN: 8 },
+  { off: true, id: 'finisher', label: 'Finisher', words: 'finisher, finishers, clutch finisher', parts: [['gmx', 1, 'G−xG'], ['shpct', 1, 'Sh%']], page: 'eff', minN: 15 },
+  { off: true, id: 'feeder', label: 'Feeder', words: 'feeder, feeders, quarterback, best passer', parts: [['xa', 1, 'xA'], ['feeds', 1, 'shots set up']], page: 'passing', minN: 8 },
+  { off: true, id: 'secure', label: 'Ball security', words: 'protects the ball best, safest with the ball, most careful', parts: [['toTouch', -1, 'TO per touch']], page: 'pertouch', minN: 25 },
   { id: 'twoWay', label: 'Two-way value', words: 'two way, two-way, both ends', parts: [['gaOff', 1, 'offense GA'], ['gaDef', 1, 'defense GA']], page: 'ga', minN: 3 },
 ];
 const saByIdCompute = { catchXg: d => saCatchXg(d) };
@@ -13381,8 +13394,8 @@ function saFilters(q) {
   const since = t.match(/\bsince (\d{1,2})\/(\d{1,2})\b/) || t.match(/\bsince ([a-z]{3})[a-z]* (\d{1,2})\b/);
   if (since) { const mo = isNaN(since[1]) ? SA_MONTHS.indexOf(since[1]) + 1 : Number(since[1]), day = Number(since[2]); if (mo > 0) { const y = mo > today.getMonth() + 1 ? today.getFullYear() - 1 : today.getFullYear(); f.from = `${y}-${String(mo).padStart(2, '0')}-${String(day).padStart(2, '0')}`; f.words.push('since ' + f.from.slice(5)); } }
   const vs = t.match(/\b(?:vs\.?|versus|against) ([a-z .&'-]{3,30})/);
-  const pos = t.match(/\b(attack(?:man|men|ers)|middies|middie|middy|midfielders?|mids|defense(?:men|man)|poles|d-?men)\b/);
-  if (pos) { f.pos = /^att/.test(pos[1]) ? 'A' : /^mid/.test(pos[1]) ? 'M' : 'X'; f.words.push({ A: 'attack', M: 'middies', X: 'defense' }[f.pos]); }
+  const pos = t.match(/\b(attack(?:man|men|ers)|middies|middie|middy|midfielders?|mids|ssdms?|short stick d|lsms?|long sticks?|defense(?:men|man)|d-?men|poles|fogos?|faceoff (?:guys|men)|goalies|goalie|keepers)\b/);
+  if (pos) { const w = pos[1]; f.pos = /^att/.test(w) ? ['A'] : /^mid/.test(w) ? ['M'] : /^(ssdm|short)/.test(w) ? ['S'] : /^(lsm|long)/.test(w) ? ['L'] : /^poles/.test(w) ? ['L', 'D'] : /^(fogo|faceoff)/.test(w) ? ['F'] : /^(goal|keep)/.test(w) ? ['G'] : ['D']; f.words.push(f.pos.map(c => DEPTH_POS_LABEL[c]).join('/')); }
   if (vs) { const opps = [...new Set(allShotEntries().concat(POSSESSIONS).map(e => e.opponent).filter(Boolean))]; const want = vs[1].trim(); const hit = opps.find(o => o.toLowerCase().startsWith(want) || want.startsWith(o.toLowerCase())); if (hit) { f.opp = hit; f.words.push('vs ' + hit); } }
   return f;
 }
@@ -13431,7 +13444,9 @@ function saRun(plan) {
     const min = isC ? meta.minN : (meta.min || 0);
     const better = isC ? 'high' : (meta.dir || 'high');
     let rows = Object.keys(raw).map(j => Object.assign({ jersey: j, name: nameFor(j, season) || ('#' + j) }, raw[j])).filter(r => r.n >= min);
-    if (f.pos) { const P0 = POSITIONS[season] || {}; if (Object.keys(P0).length) rows = rows.filter(r => P0[r.jersey] === f.pos); else out0.note = 'Positions aren’t set yet (Personnel › Depth Chart), so this shows everyone.'; }
+    const posSet = Object.keys(POSITIONS[season] || {}).length > 0;
+    if (f.pos) { if (posSet) rows = rows.filter(r => posIs(season, r.jersey, f.pos)); else out0.note = 'Positions aren’t set yet (Personnel › Depth Chart), so this shows everyone.'; }
+    else if (meta.off && posSet) rows = rows.filter(r => isOffensePos(season, r.jersey));   // offense questions: attack and middies only
     const asc = (better === 'low') !== (plan.dir === 'worst');
     rows.sort((a, b) => asc ? a.v - b.v : b.v - a.v);
     rows.forEach((r, i) => { r.rank = i + 1; });
@@ -13486,7 +13501,7 @@ const SA_AI_RULES = `You turn a lacrosse coach's question into a JSON plan for t
  "blend":{"label":"<2-5 words>","parts":[{"id":"<stat id>","weight":1}]},
  "players":["P1"],
  "n":3, "dir":"best"|"worst",
- "filters":{"ctx":"Game"|"Practice"|"Scrimmage","season":"2026"|"2027","lastDays":21,"since":"YYYY-MM-DD","opponent":"<team>","position":"attack"|"midfield"|"defense"},
+ "filters":{"ctx":"Game"|"Practice"|"Scrimmage","season":"2026"|"2027","lastDays":21,"since":"YYYY-MM-DD","opponent":"<team>","position":"attack"|"midfield"|"ssdm"|"lsm"|"defense"|"fogo"|"goalie"},
  "page":"<page id>",
  "why":"<one short sentence on how you read the question>"}
 Rules: use only ids from the menu. Pick the single stat that answers the question; if none fits, use a role; if no role fits, build a blend of 2-4 stats (weight -1 for stats where lower is better, like toTouch). "player" = the question names P1/P2; "rank" = who is best/worst/top N. "who would you start" or "starting lineup" = "lineup". A question that just wants a page = "page". Off-topic = "none". "right now"/"lately" = lastDays 21. Only include a filter the question actually asks for (no season, games/practice or dates unless stated). n = how many names to show: 3 unless the question asks for a number. Never invent players or numbers.`;
@@ -13563,11 +13578,11 @@ function saPlanFromAi(j, map, q) {
   if (!/\b(20\d\d|year|season)\b/.test(ql)) delete F.season;
   if (!/\b(day|days|week|weeks|month|lately|recent|recently|now|this)\b/.test(ql)) delete F.lastDays;
   if (!/\bsince\b/.test(ql)) delete F.since;
-  if (!/\b(attack\w*|middie\w*|middy|midfield\w*|mids|defense\w*|poles|d-?men)\b/.test(ql)) delete F.position;
+  if (!/\b(attack\w*|middie\w*|middy|midfield\w*|mids|defense\w*|poles|d-?men|ssdms?|short stick|lsms?|long stick|fogos?|faceoff|goalies?|keepers?)\b/.test(ql)) delete F.position;
   if (F.ctx && ['Game', 'Practice', 'Scrimmage'].includes(F.ctx)) { filters.ctx = F.ctx; }
   if (F.season && SEASONS.includes(String(F.season))) filters.season = String(F.season);
   if (F.lastDays && !filters.from) { const dt = new Date(today); dt.setDate(dt.getDate() - Math.min(365, Number(F.lastDays) || 0)); filters.from = localDateStr(dt); filters.words.push(`last ${F.lastDays} days`); }
-  if (F.position && !filters.pos) { const k = String(F.position).toLowerCase(); filters.pos = k.startsWith('att') ? 'A' : k.startsWith('mid') ? 'M' : k.startsWith('def') ? 'X' : null; if (filters.pos) filters.words.push(k); }
+  if (F.position && !filters.pos) { const k = String(F.position).toLowerCase(); const c = { attack: 'A', midfield: 'M', ssdm: 'S', lsm: 'L', defense: 'D', fogo: 'F', goalie: 'G' }[k]; if (c) { filters.pos = [c]; filters.words.push(DEPTH_POS_LABEL[c]); } }
   if (F.since && /^\d{4}-\d{2}-\d{2}$/.test(F.since) && !filters.from) { filters.from = F.since; filters.words.push('since ' + F.since.slice(5)); }
   const why = typeof j.why === 'string' ? j.why.slice(0, 160) : '';
   if (j.type === 'lineup') return { type: 'lineup', filters, why };
@@ -13578,7 +13593,7 @@ function saPlanFromAi(j, map, q) {
   else if (role) pick = { kind: 'concept', c: role };
   else if (j.blend && Array.isArray(j.blend.parts)) {
     const parts = j.blend.parts.filter(p => SA_CATALOG.some(c => c.id === p.id) || p.id === 'catchXg').slice(0, 4).map(p => { const c = SA_CATALOG.find(x => x.id === p.id); return [p.id, Number(p.weight) < 0 ? -1 : 1, c ? c.label : 'xG off catches']; });
-    if (parts.length) { const first = SA_CATALOG.find(c => c.id === parts[0][0]); pick = { kind: 'concept', c: { id: 'blend', label: String(j.blend.label || 'Custom blend').slice(0, 40), parts, page: first ? first.page : 'eff', minN: 8 } }; }
+    if (parts.length) { const first = SA_CATALOG.find(c => c.id === parts[0][0]); pick = { kind: 'concept', c: { id: 'blend', off: parts.every(x => (SA_CATALOG.find(c => c.id === x[0]) || { off: true }).off), label: String(j.blend.label || 'Custom blend').slice(0, 40), parts, page: first ? first.page : 'eff', minN: 8 } }; }
   }
   if (!pick) return null;
   const players = (j.players || []).map(p => map[p]).filter(Boolean);
@@ -13912,7 +13927,7 @@ function renderProfile() {
   let ga; try { ga = computeGoalsAdded(); } finally { EFF_SEASON = s0; EFF_CONTEXT = c0; }
   const gaRow = ga.rows.find(r => r.jersey === j);
   const pj = computeProjections(season), pp = pj.players.find(p => p.jersey === j);
-  const pos = (POSITIONS[season] || {})[j], posName = pos === 'A' ? 'Attack' : pos === 'M' ? 'Midfield' : pos === 'X' ? 'Defense / specialist' : 'Position not set';
+  const pos = (POSITIONS[season] || {})[j], alt = (POSITIONS_ALT[season] || {})[j], posName = pos ? (pos === 'X' ? 'Defense / specialist' : DEPTH_POS_LABEL[pos]) + (alt ? ' (also ' + DEPTH_POS_LABEL[alt] + ')' : '') : 'Position not set';
   const roleName = pp && pp.role ? ({ S: 'Starter', R: 'Rotation', B: 'Reserve', N: 'Won’t play' })[pp.role] : 'Role not set';
   const pctile = (v, arr) => { const a = arr.filter(x => x !== null && x !== undefined && isFinite(x)).sort((x, y) => x - y); if (v === null || v === undefined || !a.length) return null; return Math.round((a.filter(x => x < v).length + a.filter(x => x === v).length / 2) / a.length * 100); };
   const kpi = (label, v, sub) => `<div class="pf-k"><span class="cap">${label}</span><span class="v">${v}</span><span class="d">${sub}</span></div>`;
