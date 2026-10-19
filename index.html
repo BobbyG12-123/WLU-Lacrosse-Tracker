@@ -13084,6 +13084,7 @@ function goNav(id, anchor, fromHistory) {
   let p = NAV_PAGES[id]; if (!p || !navVisible(p)) p = navFirstVisible();
   if (!fromHistory && NAV_ST.cur && NAV_ST.cur !== p.id) NAV_ST.history.push(NAV_ST.cur);
   NAV_ST.cur = p.id; NAV_ST.busy = true;
+  try { const u = navUse(); u[p.id] = (u[p.id] || 0) + 1; localStorage.setItem('wluNavUse', JSON.stringify(u)); } catch (e) { /* storage unavailable */ }
   try {
     if (p.view === 'labView') renderLabHome();
     if (p.view === 'briefView') renderBrief();
@@ -13135,39 +13136,60 @@ const NAV_KW = {
   logshot: 'log enter record input shot possession faceoff sideline lineup units entry add', shooter: 'best shooter shooting score scorer finishing sniper rank shooters leaderboard composite',
   heat: 'heat map where shoot from zones spots location shot chart filters', quality: 'shot quality gold silver bronze grade good looks bad looks share',
   shottypes: 'shot type types mechanism overhand sidearm underhand bounce', angles: 'angle angles stick plane hand side lefty righty where to aim 3d shot map recipe best spot',
-  eff: 'efficiency xg expected goals g-xg finishing xa expected assists assists turnovers a/to possession man up man down emo extra man', pertouch: 'per touch touches usage rate',
+  eff: 'efficiency xg expected goals g-xg finishing xa expected assists assists turnovers a/to possession man up man down emo extra man', pertouch: 'per touch touches usage rate possessions used',
   persession: 'per session rate box score session box per game', passing: 'passing passes feeds feeder assists connections who feeds who chemistry lift',
   dominoes: 'dominoes advantage slide slides created who starts', triggers: 'triggers plays sets what works best play',
-  situations: 'situations man up rebound catch dodge dodging mechanism trigger efficiency', picks: 'pick picks screen screens pick and roll two man game coverage switch slip get screener user mismatch',
+  situations: 'situations man up rebound catch dodge dodging mechanism trigger efficiency', picks: 'pick picks screen screens pick and roll two man game coverage switch slip get screener user mismatch screen generated ppp screen lift advantages created screen edge off ball',
   lineups: 'lineup lineups combinations units pairs who plays well together chemistry', trends: 'trends trending hot cold streak improving slumping form recent',
   deepdive: 'deep dive one player breakdown', defense: 'defense defender on ball beaten slides slide help off ball breakdown who got beat 1v1 defending matchups',
   pickdef: 'pick defense defending picks screens switch who defends picks', deflineups: 'defensive lineups defense units pairs',
   gscore: 'best goalie goalie score goaltending keeper netminder who should start in goal', surface: 'save surface 3d cage net where goalie saves strong weak holes corners high low',
-  savemap: 'save map goalie heat map where shots beat goalie', gsummary: 'goalie summary save percentage', gadv: 'gsax saves above expected rebounds outlets clears goalie advanced where when shot profiles',
+  savemap: 'save map goalie heat map where shots beat goalie', gsummary: 'goalie summary save percentage missed cage blocked shots faced', gadv: 'gsax saves above expected rebounds outlets clears goalie advanced where when shot profiles',
   gadj: 'shooter adjusted sae good shooters saves vs our shooters day by day progress', gtrends: 'goalie trends hot cold goalie improving',
   fosum: 'faceoff faceoffs fogo draws wins x faceoff man who wins draws', foh2h: 'faceoff head to head rating matchup fogo', fotrends: 'faceoff trends fogo', folog: 'faceoff log draws list',
-  opp: 'opponent opponents scouting scout team history versus vs game prep', wp: 'win probability chance to win leverage clutch big moments swing games late game wpa',
+  scout: 'scout scouting report opponent film tendencies sets threats who beats us matchup edges game week package clips reels film session pick defense slides ride clear lr lacrosse reference scorebreak',
+  train: 'train tagger auto tag autotag label shots contest level teach model film tagging review clips gold silver bronze grade hand feet on the run',
+  opp: 'opponent opponents history versus vs our history against game prep', wp: 'win probability chance to win leverage clutch big moments swing games late game wpa',
   labhome: 'lab models analytics advanced metrics 3d all models', xg: 'xg expected goals model shot cone 3d how likely score look chance how it works',
-  xgover: 'expected goals overview model', ga: 'goals added value credit impact contribution who helps most',
+  xgover: 'expected goals overview model', ga: 'goals added value credit impact contribution who helps most offense defense',
   projsk: 'projections projected projection forecast 17 games goals assists points season predict true level role bump', projgk: 'goalie projections projected saves forecast',
   compare: 'compare comparison side by side versus two players seasons', depth: 'depth chart lines starters first line second line rotation who starts',
   roster: 'roster players list jerseys numbers add player', recruits: 'recruits recruiting prospects evaluations ratings high school', board: 'board recruiting board top targets',
-  shotlog: 'shot log all shots raw data edit delete entries list', health: 'data health coverage missing logging quality reps needed sample size', where: 'where did it go old tab moved find old page map',
+  shotlog: 'shot log all shots raw data edit delete entries list', health: 'data health coverage missing logging quality reps needed sample size export backup import lr data', where: 'where did it go old tab moved find old page map',
 };
 const NAV_QUESTIONS = [['What should I know this week?', 'brief'], ['Who is heating up?', 'brief'], ['Who is our best shooter?', 'shooter'], ['Who is our best goalie?', 'gscore'], ['Who wins our faceoffs?', 'fosum'], ['Where does our goalie struggle?', 'surface'], ['Where should we shoot from?', 'angles'], ['Who creates the most for others?', 'passing'], ['Who turns the ball over most?', 'eff'], ['Which lineup works best?', 'lineups'], ['Who is hot right now?', 'trends'], ['Who gets beat on defense?', 'defense'], ['How do we defend picks?', 'pickdef'], ['Which plays work best?', 'triggers'], ['What happened last practice?', 'reports'], ['Who should start?', 'depth'], ['What will he score this season?', 'projsk'], ['Which moments swung the game?', 'wp'], ['How is xG calculated?', 'xg'], ['What are our shot types?', 'shottypes']];
 const NAV_METRICS = [['GSAx', 'Goals saved above expected', 'gadv'], ['SAE', 'Saves above expected, shooter-adjusted', 'gadj'], ['G−xG', 'Finishing vs look quality', 'eff'], ['xG', 'Expected goals', 'xg'], ['xA', 'Expected assists', 'eff'], ['A/TO', 'Assists per turnover', 'eff'], ['On-Goal Sh%', 'Shooting % on shots on cage', 'eff'], ['Look Value', 'Average quality of looks', 'shooter'], ['Leverage', 'How much one goal swings win chance', 'wp'], ['WPA', 'Win probability added', 'wp'], ['Clutch', 'Top 20% leverage moments', 'wp'], ['Goals Added', 'Credit for every action in a possession', 'ga'], ['True Level', 'Rates pulled toward the team with ranges', 'projsk'], ['Reps Needed', 'Sample size before a stat is trustworthy', 'health'], ['Faceoff Rating', 'Opponent-adjusted faceoff strength', 'foh2h'], ['Shooter Score', '0–100 shooting composite', 'shooter'], ['Goalie Score', '0–100 goaltending composite', 'gscore'], ['Dominoes', 'Advantage created, slides forced', 'dominoes'], ['Lift', 'Shooter finishes better off this passer', 'passing']];
 const NAV_STOP = new Set('the a an is are our we do does did of to for in on at by with and or who what which where when how why should can me my show find get go page tab his her he him their it this that most best'.split(' '));
 const navNorm = t => String(t).toLowerCase().replace(/[^a-z0-9%#\-\/\s]/g, ' ');
+// Lacrosse shorthand -> the words the pages use. Added to the query, never replacing it.
+const NAV_SYN = { emo: 'man up', extraman: 'man up', 'man-up': 'man up', mdd: 'man down', 'man-down': 'man down', fogo: 'faceoff', fo: 'faceoff', draw: 'faceoff', draws: 'faceoff',
+  keeper: 'goalie', tender: 'goalie', goaltender: 'goalie', cage: 'goalie', pole: 'defense', lsm: 'defense', dmid: 'defense', 'd-mid': 'defense', defender: 'defense',
+  tos: 'turnover', giveaway: 'turnover', giveaways: 'turnover', gb: 'ground ball', gbs: 'ground ball', screen: 'pick', screens: 'pick', screener: 'pick', hockey: 'dominoes', 'sh%': 'shooting', shooting: 'shooter',
+  offball: 'off ball screen', 'off-ball': 'off ball screen', slip: 'pick', roll: 'pick', ppp: 'points per possession screen', scout: 'scouting', film: 'scouting clips', tagger: 'train tagger' };
+function navExpand(q) { const w = navNorm(q).split(/\s+/).filter(Boolean); return w.concat(w.flatMap(x => (NAV_SYN[x] || '').split(' ').filter(Boolean))).join(' '); }
+// One letter off (insert, delete, swap or change) for words of 4+ letters.
+function navNear(a, b) {
+  if (a === b) return true; if (a.length < 4 || Math.abs(a.length - b.length) > 1) return false;
+  let i = 0; while (i < a.length && a[i] === b[i]) i++;
+  if (a.slice(i + 1) === b.slice(i + 1)) return true;           // change one
+  if (a.slice(i + 1) === b.slice(i)) return true;               // a has one extra
+  if (a.slice(i) === b.slice(i + 1)) return true;               // b has one extra
+  return a[i] === b[i + 1] && a[i + 1] === b[i] && a.slice(i + 2) === b.slice(i + 2);   // swapped pair
+}
 const navStem = w => w.replace(/(ing|ers|er|es|s)$/, '');
 function navItems() {
   const items = [], vis = Object.values(NAV_PAGES).filter(navVisible);
   vis.forEach(p => {
-    items.push({ k: 'Page', t: p.name, s: p.sec.name, kw: (NAV_KW[p.id] || '') + ' ' + (NAV_OLD[p.view] || ''), go: () => goNav(p.id) });
-    if (!p.anchor) navPanels(p).forEach(t => { if (t !== p.name) items.push({ k: 'Section', t, s: p.sec.name + ' › ' + p.name, kw: NAV_KW[p.id] || '', go: () => goNav(p.id, t) }); });
+    items.push({ k: 'Page', pageId: p.id, t: p.name, s: p.sec.name, kw: (NAV_KW[p.id] || '') + ' ' + (NAV_OLD[p.view] || ''), go: () => goNav(p.id) });
+    if (!p.anchor) navPanels(p).forEach(t => { if (t !== p.name) items.push({ k: 'Section', pageId: p.id, t, s: p.sec.name + ' › ' + p.name, kw: NAV_KW[p.id] || '', go: () => goNav(p.id, t) }); });
   });
   NAV_QUESTIONS.forEach(([q, id]) => { const p = NAV_PAGES[id]; if (p && navVisible(p)) items.push({ k: 'Question', t: q, s: '→ ' + p.sec.name + ' › ' + p.name, kw: NAV_KW[id] || '', go: () => goNav(id) }); });
   NAV_METRICS.forEach(([m, d, id]) => { const p = NAV_PAGES[id]; if (p && navVisible(p)) items.push({ k: 'Metric', t: m + ' — ' + d, s: p.sec.name + ' › ' + p.name, kw: NAV_KW[id] || '', go: () => goNav(id) }); });
+  NAV_ACTIONS.forEach(([t, kw, id, fn]) => { const p = NAV_PAGES[id]; if (p && navVisible(p)) items.push({ k: 'Action', t, s: p.sec.name + ' › ' + p.name, kw, go: () => { goNav(id); if (fn) setTimeout(fn, 60); } }); });
   if (!PLAYER_MODE) {
+    (NAV_TEAMS || []).forEach(([id, name]) => items.push({ k: 'Team', t: 'Scout: ' + name, s: 'Games › Opponent Scouting', kw: 'scout scouting opponent ' + name, go: () => navOpenScout(id) }));
+    try { rptPeriods('practice').slice(0, 60).forEach((p, i) => { const dt = new Date(p.date + 'T00:00:00'); const words = dt.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' }) + ' ' + dt.toLocaleDateString('en-US', { month: 'short' }) + ' ' + (dt.getMonth() + 1) + '/' + dt.getDate();
+      items.push({ k: 'Session', t: rptLabel('practice', p), s: 'Command Center › Reports', kw: 'session report ' + words + ' ' + (p.context || '') + ' ' + (p.opponent || '') + (i === 0 ? ' last latest most recent today yesterday' : ''), go: () => navOpenSession(p.key) }); }); } catch (e) { /* no sessions yet */ }
     const season = currentLogSeason ? currentLogSeason() : SEASONS[SEASONS.length - 1];
     (ROSTERS[season] || []).filter(r => r.name && r.jersey).forEach(r => items.push({ k: 'Player', t: `#${r.jersey} ${r.name}`, s: 'Player profile', kw: 'player profile', go: () => profileOpen(r.jersey) }));
   }
@@ -13178,32 +13200,83 @@ function navItems() {
 // of its sections; a typed question favors the matching coach question.
 function navFind(items, q) {
   const raw = navNorm(q).trim(); if (!raw) return [];
-  const all = raw.split(/\s+/), words = all.filter(w => !NAV_STOP.has(w)), use = words.length ? words : all;
+  const typed = raw.split(/\s+/), all = navExpand(q).split(/\s+/), words = all.filter(w => !NAV_STOP.has(w)), use = words.length ? words : all;
+  const need = Math.ceil(typed.filter(w => !NAV_STOP.has(w)).length / 2) || 1;
+  const use0 = new Set(typed);
   return items.map(it => {
     const wT = navNorm(it.t).split(/\s+/), wK = navNorm(it.kw || '').split(/\s+/), wS = navNorm(it.s || '').split(/\s+/);
     // A word matches a word that starts with it, or the same root with a plain ending (goals ~ goal, not goalie).
     const has = (list, w) => { const st = navStem(w); return list.some(x => x.startsWith(w) || (st.length > 2 && /^(|s|es|ing|er|ers|ed)$/.test(x.startsWith(st) ? x.slice(st.length) : '#'))); };
-    let score = 0, hit = 0;
-    use.forEach(w => { if (has(wT, w)) { score += 6; hit++; } else if (has(wK, w)) { score += 3; hit++; } else if (has(wS, w)) { score += 1; hit++; } });
-    if (!hit || hit < Math.ceil(use.length / 2)) return null;
+    const near = (list, w) => w.length >= 4 && list.some(x => navNear(w, x));
+    let score = 0, hit = 0, typedHit = 0;
+    use.forEach(w => {
+      const t = use0.has(w);           // a word the coach typed (vs. one added by the shorthand list)
+      let got = 0;
+      if (has(wT, w)) got = 6; else if (has(wK, w)) got = 3; else if (has(wS, w)) got = 1;
+      else if (near(wT, w)) got = 4; else if (near(wK, w)) got = 2;
+      if (got) { score += t ? got : got / 2; hit++; if (t) typedHit++; }
+    });
+    if (!hit || (typedHit < need && hit < need)) return null;
+    score += navUseBonus(it);
     const T = navNorm(it.t); if (T.startsWith(raw)) score += 8; else if (T.includes(raw)) score += 4;
     if (it.k === 'Question' && all.length > 2) score += 3;
     if (it.k === 'Page') score += hit === use.length ? 5 : 1;
+    if (it.k === 'Team' || it.k === 'Session') score += navNorm(it.t).includes(raw) ? 6 : 0;
+    if (it.k === 'Action' && /^(log|export|import|add|print|train|backup|record|enter)$/.test(typed[0])) score += 10;   // a command, not a question
     return { it, score: score + hit * 2 };
   }).filter(Boolean).sort((a, b) => b.score - a.score).slice(0, 12).map(x => x.it);
 }
+// Actions: [label, words, page, optional thing to do once there]
+const navClick = sel => () => { const b = document.querySelector(sel); if (b) b.click(); };
+const NAV_ACTIONS = [
+  ['Log a shot', 'log shot enter record add new shot', 'logshot', navClick('#entryTypeSeg button[data-value="shot"]')],
+  ['Log a no-shot possession', 'log possession no shot turnover failed clear enter record add', 'logshot', navClick('#entryTypeSeg button[data-value="poss"]')],
+  ['Log a faceoff', 'log faceoff fogo draw enter record add', 'logshot', navClick('#entryTypeSeg button[data-value="fo"]')],
+  ['Export all data (backup)', 'export backup download save data firestore', 'health', () => navScrollTo(NAV_PAGES.health, 'Export All Data')],
+  ['Import LR data', 'import lr lacrosse reference scouting data load', 'health', () => navScrollTo(NAV_PAGES.health, 'Import LR Data')],
+  ['Train the tagger', 'train tagger label shots review clips teach', 'train'],
+  ['Add a player', 'add player roster new jersey', 'roster'],
+  ['Add a recruit', 'add recruit recruiting prospect evaluation', 'recruits'],
+  ['Print a practice report', 'print report pdf practice week', 'reports'],
+];
+// D3/D1 teams for "Scout: <team>", read once from the scouting import (names only).
+let NAV_TEAMS = null;
+function navLoadTeams() {
+  if (NAV_TEAMS || PLAYER_MODE || !DB) return;
+  NAV_TEAMS = [];
+  DB.collection('app').doc('lrMeta').get().then(d => {
+    if (!d.exists) return; const m = d.data(); const meta = typeof m.j === 'string' ? JSON.parse(m.j) : m;
+    NAV_TEAMS = (meta.teams || []).map(t => [t.id, t.name]);
+  }).catch(() => { NAV_TEAMS = []; });
+}
+function navOpenScout(id) {
+  try { localStorage.setItem('wluScoutTeam', String(id)); } catch (e) { /* storage unavailable */ }
+  goNav('scout');
+  const f = document.getElementById('scoutFrame');
+  if (f && f.contentWindow) f.contentWindow.postMessage({ openTeam: id }, location.origin);
+}
+function navOpenSession(key) {
+  goNav('reports');
+  setTimeout(() => { navPick('rptModePills', 'Practice'); rptMode = 'practice'; rptKey = key; renderReports(); }, 60);
+}
+// Recent searches and most-used pages (this browser only).
+function navRecent() { try { return JSON.parse(localStorage.getItem('wluSearchRecent') || '[]'); } catch (e) { return []; } }
+function navRemember(it) { try { const r = navRecent().filter(x => !(x.t === it.t && x.k === it.k)); r.unshift({ t: it.t, k: it.k }); localStorage.setItem('wluSearchRecent', JSON.stringify(r.slice(0, 8))); } catch (e) { /* storage unavailable */ } }
+function navUse() { try { return JSON.parse(localStorage.getItem('wluNavUse') || '{}'); } catch (e) { return {}; } }
+function navUseBonus(it) { const id = it.pageId; if (!id) return 0; const n = navUse()[id] || 0; return Math.min(3, Math.log2(1 + n)); }
 function navWireSearch() {
   const inp = document.getElementById('sdQ'), dd = document.getElementById('sdDrop'); let items = null, f = [], sel = 0;
   const place = () => { const r = inp.getBoundingClientRect(), w = Math.min(innerWidth - 16, Math.max(r.width, 440)); dd.style.top = (r.bottom + 6) + 'px'; dd.style.left = Math.max(8, Math.min(r.left, innerWidth - w - 8)) + 'px'; dd.style.width = w + 'px'; };
   const draw = () => {
-    items = items || navItems();
-    f = inp.value.trim() ? navFind(items, inp.value) : items.filter(i => i.k === 'Question').slice(0, 8); sel = 0;
+    if (!items || (NAV_TEAMS && items.teams !== NAV_TEAMS.length)) { items = navItems(); items.teams = (NAV_TEAMS || []).length; }
+    const rec = navRecent().map(r => items.find(i => i.t === r.t && i.k === r.k)).filter(Boolean).map(i => Object.assign({}, i, { k: 'Recent' }));
+    f = inp.value.trim() ? navFind(items, inp.value) : rec.slice(0, 5).concat(items.filter(i => i.k === 'Question').slice(0, 8 - Math.min(5, rec.length))); sel = 0;
     dd.innerHTML = f.length ? `<ul>${f.map((x, k) => `<li><button type="button" data-k="${k}" class="${k === sel ? 'sel' : ''}"><small>${x.k}</small><span>${navEsc(x.t)}<em>${navEsc(x.s)}</em></span></button></li>`).join('')}</ul>` : '<div class="none">Nothing matches. Try a player, a page, or a metric like GSAx.</div>';
     place(); dd.hidden = false;
   };
   const mark = () => dd.querySelectorAll('button[data-k]').forEach(b => b.classList.toggle('sel', +b.dataset.k === sel));
-  const go = it => { inp.value = ''; dd.hidden = true; inp.blur(); it.go(); };
-  inp.addEventListener('focus', () => { items = null; draw(); });
+  const go = it => { navRemember(it); inp.value = ''; dd.hidden = true; inp.blur(); it.go(); };
+  inp.addEventListener('focus', () => { navLoadTeams(); items = null; draw(); });
   inp.addEventListener('input', draw);
   inp.addEventListener('keydown', e => {
     if (e.key === 'ArrowDown') { sel = Math.min(f.length - 1, sel + 1); mark(); e.preventDefault(); }
