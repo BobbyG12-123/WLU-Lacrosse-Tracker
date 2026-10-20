@@ -250,6 +250,22 @@
   #pmBanner b { color: var(--navy-3); font-size: 15px; }
   #pmBanner .pm-actions { margin-left: auto; display: flex; gap: 8px; align-items: center; }
   body.player-mode #pmBanner { display: flex; }
+  body.player-mode .chat-fab, body.player-mode .chat-panel { display: none !important; }
+  .chat-fab { position: fixed; right: 18px; bottom: calc(18px + env(safe-area-inset-bottom, 0px)); z-index: 60; font-family: var(--text); font-size: 14px; font-weight: 700; padding: 11px 18px; border-radius: 999px; border: none; background: var(--navy-3); color: #fff; box-shadow: 0 6px 18px rgba(0,0,0,.18); cursor: pointer; max-width: calc(100vw - 36px); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .chat-panel { position: fixed; right: 18px; bottom: calc(18px + env(safe-area-inset-bottom, 0px)); z-index: 61; width: min(440px, calc(100vw - 24px)); height: min(640px, calc(100vh - 110px)); display: flex; flex-direction: column; background: var(--card); color: var(--ink); border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 12px 36px rgba(0,0,0,.22); font-family: var(--text); }
+  .chat-head { display: flex; align-items: center; gap: 8px; padding: 10px 12px; border-bottom: 1px solid var(--line); }
+  .chat-x { border: none; background: none; font-size: 22px; line-height: 1; color: var(--muted); cursor: pointer; padding: 0 4px; }
+  .chat-focus { display: flex; align-items: center; gap: 6px; padding: 6px 12px; font-size: 12.5px; border-bottom: 1px solid var(--line); } .chat-focus > span { flex: 1; }
+  .chat-log { flex: 1; overflow-y: auto; padding: 10px 12px; display: flex; flex-direction: column; gap: 10px; font-size: 13.5px; line-height: 1.5; }
+  .chat-msg { padding: 8px 10px; border-radius: 10px; max-width: 92%; } .chat-msg p { margin: 0 0 6px; } .chat-msg p:last-child { margin: 0; } .chat-msg ul { margin: 4px 0; padding-left: 18px; }
+  .chat-msg.user { align-self: flex-end; background: var(--navy-3); color: #fff; } .chat-msg.user .n-note { color: rgba(255,255,255,.75); }
+  .chat-msg.model { align-self: flex-start; background: var(--paper); border: 1px solid var(--line); }
+  .chat-facts { font-size: 12px; white-space: pre-wrap; color: var(--muted); max-height: 220px; overflow-y: auto; }
+  .chat-sent pre { white-space: pre-wrap; font-size: 11px; max-height: 200px; overflow: auto; }
+  .chat-empty { color: var(--muted); font-size: 13px; }
+  .chat-sugg { display: flex; flex-wrap: wrap; gap: 4px; padding: 6px 12px 0; } .chat-sugg .pill { font-size: 11.5px; }
+  .chat-form { display: flex; gap: 8px; padding: 8px 12px 12px; } .chat-form textarea { flex: 1; resize: none; font: inherit; font-size: 14px; padding: 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--card); color: var(--ink); } .chat-form .btn { padding: 8px 14px; }
+  @media (max-width: 520px) { .chat-panel { right: 8px; left: 8px; width: auto; bottom: calc(8px + env(safe-area-inset-bottom, 0px)); height: calc(100vh - 90px); } }
   #pmPicker { position: fixed; inset: 0; z-index: 10000; background: rgba(15,31,61,.55); display: none; align-items: flex-start; justify-content: center; padding: 60px 16px; overflow-y: auto; }
   #pmPicker.open { display: flex; }
   #pmPicker .pm-card { background: var(--card); border-radius: 12px; padding: 22px; max-width: 760px; width: 100%; box-shadow: 0 10px 40px rgba(0,0,0,.3); }
@@ -13872,6 +13888,194 @@ function saPlan(q) {
   return { type: 'rank', pick, n: n || 3, dir, filters };
 }
 // ---- running a plan ----
+// ---------------- Ask chat (Bobby, Oct 19) ----------------
+// A chat on every page. The tracker works out the facts for each question from our data;
+// the AI only puts them into words. What's sent: the question and those facts, with every
+// player as a code (P1, P2...). Never names, jerseys, the roster, the shot log or whole tables.
+// If a name or #jersey is still in what would be sent, nothing is sent.
+const CHAT = { open: false, focus: null, msgs: [], map: {}, n: 0, busy: false, lastSent: '' };
+const CHAT_RULES = `You are the analytics assistant inside a college lacrosse coaching staff's stats tracker. Coaches ask why a player or line is rated where it is, how a number is figured, and what would change it.
+Rules:
+- Use ONLY the numbers in FACTS. Never invent or estimate a number that isn't there. If FACTS don't cover the question, say what is missing and where in the tracker to log or look.
+- Players appear as codes (P1, P2...). Always refer to a player by his code exactly as written, never guess a name.
+- Ratings and parts are 0-100 where 50 is the team average among qualified players.
+- Answer like a sharp assistant coach: lead with the direct answer, then the 2-4 reasons that matter most with their numbers, then (if useful) what would move it. Short paragraphs or a few bullets. No headers. Under 180 words unless asked for more.
+- When asked how something is figured, explain the formula in plain words from FACTS.
+- Small samples: if a number rests on few shots/reps/possessions, say so.`;
+const CHAT_PARTS = {
+  off: { fin: 'goals minus expected goals per shot (finishing)', look: 'expected goals per shot plus shots per practice', create: 'expected assists and dominoes started per touch', offball: 'screen advantages created and expected goals off teammates’ feeds', secure: 'turnovers per touch (fewer is better)', twoman: 'team goals on screen-advantage possessions he is in, vs normal', steady: 'how steady his per-practice value is (needs 5 practices)' },
+  def: { ct: 'caused turnovers per session', offball: 'off-ball breakdowns per session (fewer is better)', onball: 'expected goals per shot he allowed, and goals vs expected', beaten: 'share of reps he was beaten (fewer is better)', pick: 'expected points allowed and Freed % on picks he defended', slide: 'goals allowed after his slide' },
+};
+function chatCode(j) {
+  if (!j) return null;
+  const have = Object.keys(CHAT.map).find(p => CHAT.map[p] === j); if (have) return have;
+  const p = 'P' + (++CHAT.n); CHAT.map[p] = j; return p;
+}
+function chatSeason() { return (NAV_ST && isAdvSeason(NAV_ST.season)) ? NAV_ST.season : currentAdvSeason(); }
+// Everything the tracker knows that bears on the question, as coded text.
+function chatFacts(q) {
+  const season = chatSeason(), ctx = (NAV_ST && NAV_ST.ctx) || 'All', f = CHAT.focus, out = [];
+  const page = NAV_PAGES[NAV_ST.cur];
+  out.push(`SEASON ${season}, ${ctx === 'All' ? 'all sessions' : ctx.toLowerCase() + 's'}. Coach is on the "${page ? page.name : 'tracker'}" page.`);
+  if (f) out.push(`COACH CLICKED: ${[f.panel && 'panel "' + f.panel + '"', f.label && '"' + f.label + '"', f.value && 'showing ' + f.value, f.jersey && 'player ' + chatCode(f.jersey)].filter(Boolean).join(', ')}.`);
+  const named = saPlayerIn(q);
+  const js = [...new Set([f && f.jersey, ...named].filter(Boolean))].slice(0, 4);
+  const plan = saPlan(q) || { type: 'none' }, t = ' ' + navNorm(q) + ' ';
+  const wantsLines = plan.type === 'lineup' || /\b(start|starts|starting|line|lines|unit|units|depth|lineup|first line|second line|pair)\b/.test(t) || (page && page.id === 'depth') || js.length > 0;
+  const wantsDef = (plan.type === 'lineup' && plan.side === 'def') || saLineupSide(t) === 'def' || js.some(j => ['D', 'L', 'S', 'G'].includes(posOfJ(season, j)));
+  // Depth models (model pick, and the Coach's lineup if one is saved).
+  const models = [];
+  [['off', 'OFFENSE MODEL (Offense Rating)', soBase, SO_W], ['def', 'DEFENSE MODEL (Defense Rating)', sdBase, SD_W]].forEach(([side, title, base, W]) => {
+    if (side === 'def' && !wantsDef && !js.some(j => (DP_BASE.def && DP_BASE.def.players && DP_BASE.def.players[j]))) return;
+    const B = base(season); if (!B.ready) { out.push(`${title}: not ready (${B.why})`); return; }
+    const M = dpAssemble(side, B, null), c = (DP_COACH[season] || {})[side], C = c && !dpEmpty(c) ? dpAssemble(side, B, c) : null;
+    models.push([side, M]);
+    const lab = Object.fromEntries(DP_LINES[side].map(([k, l]) => [k, l]));
+    const lines = M2 => Object.keys(M2.lines).filter(k => M2.lines[k]).map(k => `${lab[k]}: ${M2.lines[k].js.map(j => `${chatCode(j)} ${Math.round(M2.players[j].rating)}`).join(', ')} (group score ${Math.round(M2.lines[k].score)}, chemistry ${Math.round(M2.lines[k].chem)})`).join('; ');
+    out.push(`${title}: weights ${W.map(([k, l, w]) => `${l} ${w}%`).join(', ')}. Parts: ${W.map(([k, l]) => `${l} = ${CHAT_PARTS[side][k]}`).join('; ')}. Groups = best 85% average rating + 15% chemistry; last 3 weeks of practice count 1.5x; ${side === 'def' ? SD_MIN_REPS + '+ defensive reps' : SO_MIN_TOUCHES + '+ touches'} to qualify.`);
+    if (wantsLines) out.push(`${side === 'def' ? 'DEFENSE' : 'OFFENSE'} MODEL PICK: ${lines(M)}.`);
+    if (wantsLines && C) out.push(`COACH'S LINEUP (saved by a coach, overrides the model for the staff): ${lines(C)}.`);
+    if (wantsLines && M.flags.length) out.push(`MODEL FLAGS: ${M.flags.map(x => side === 'def' ? `${chatCode(x.j)} (LSM) rates above a close defender in Unit 1.` : x.to === 'M' ? `${chatCode(x.j)} (attackman outside the top 3) rates above a middie on the lines; consider him at midfield.` : `${chatCode(x.j)} (middie) rates above an attackman in the attack trio.`).join(' ')}`);
+    // Who is just outside the lines, for "what would it take" questions.
+    if (wantsLines) { const inL = dpLineOfMap(M); const next = Object.values(M.players).filter(p => !inL[p.j]).sort((a, b) => b.rating - a.rating).slice(0, 4); if (next.length) out.push(`${side === 'def' ? 'DEFENSE' : 'OFFENSE'} NEXT UP (not in the groups): ${next.map(p => `${chatCode(p.j)} ${Math.round(p.rating)} (${DEPTH_POS_LABEL[p.pos] || ''})`).join(', ')}.`); }
+  });
+  // Each player: position, both model ratings with parts and raw counts, then every stat with team rank.
+  const s0 = EFF_SEASON, c0 = EFF_CONTEXT, fr0 = EFF_FROM, to0 = EFF_TO, op0 = EFF_OPP;
+  EFF_SEASON = season; EFF_CONTEXT = ctx; EFF_FROM = null; EFF_TO = null; EFF_OPP = null;
+  try {
+    const d = buildEffData();
+    const cat = SA_CATALOG.map(c => { let m = {}; try { m = c.f(d) || {}; } catch (e) { m = {}; } return [c, m]; });
+    js.forEach(j => {
+      const code = chatCode(j), pos = posOfJ(season, j), alt = posAltJ(season, j), lines = [`PLAYER ${code}: ${DEPTH_POS_LABEL[pos] || 'position not set'}${alt && alt !== pos ? ' / ' + DEPTH_POS_LABEL[alt] : ''}.`];
+      models.forEach(([side, M]) => {
+        const p = M.players[j], W = dpW(side), where = dpLineOfMap(M)[j], lab = Object.fromEntries(DP_LINES[side].map(([k, l]) => [k, l]));
+        if (!p) { const ne = (DP_BASE[side] || {}).notEnough || []; const x = ne.find(y => y.j === j); if (x) lines.push(`${side === 'def' ? 'Defense' : 'Offense'} Rating: not enough data (${x.reps !== undefined ? x.reps + ' reps' : x.touches + ' touches'}).`); return; }
+        const rank = Object.values(M.players).sort((a, b) => b.rating - a.rating).findIndex(x => x.j === j) + 1;
+        lines.push(`${side === 'def' ? 'Defense' : 'Offense'} Rating ${Math.round(p.rating)} (rank ${rank} of ${Object.keys(M.players).length} qualified; ${where ? 'model has him on ' + lab[where] : 'not in the model groups'}). Parts: ${W.map(([k, l]) => `${l} ${Math.round(p.parts[k])}`).join(', ')}. Counts: ${Object.values(p.detail || {}).filter(Boolean).join('; ')}; ${side === 'def' ? p.reps + ' reps' : p.touches + ' touches'}.`);
+      });
+      const st = [];
+      cat.forEach(([c, m]) => {
+        const r = m[j]; if (!r || r.v === null || r.v === undefined || !isFinite(r.v)) return;
+        const min = c.min || 0, ok = Object.keys(m).filter(k => m[k] && isFinite(m[k].v) && (m[k].n || 0) >= min && (!c.off || isOffensePos(season, k)));
+        const better = c.dir === 'low' ? 1 : -1, rk = ok.slice().sort((a, b) => better * (m[a].v - m[b].v)).indexOf(j) + 1;
+        st.push(`${c.label} ${c.fmt(r.v).replace(/<[^>]+>/g, '')}${r.n !== undefined ? ` (n=${Math.round(r.n)})` : ''}${rk ? `, rank ${rk}/${ok.length}` : (r.n || 0) < min ? `, under the ${min} minimum` : ''}`);
+      });
+      if (st.length) lines.push(`Stats: ${st.join('; ')}.`);
+      out.push(lines.join(' '));
+    });
+    // A ranking question: the tracker's own answer.
+    if (plan.type === 'rank' || plan.type === 'player') {
+      const a = saRun(plan);
+      if (a && a.rows && a.rows.length) out.push(`TRACKER ANSWER "${a.title}" (${a.filt}): ${a.rows.slice(0, 8).map(r => `${chatCode(r.jersey)} ${String(a.fmt ? a.fmt(r.v) : r.v).replace(/<[^>]+>/g, '')}${r.n !== undefined ? ' (n=' + r.n + ')' : ''}`).join(', ')}.`);
+    }
+  } finally { EFF_SEASON = s0; EFF_CONTEXT = c0; EFF_FROM = fr0; EFF_TO = to0; EFF_OPP = op0; }
+  return out.join('\n');
+}
+let CHAT_AI = null;
+async function chatModel(name) {
+  if (!SA_AI) await saAiModel(SA_AI_MODELS[0]);
+  return SA_AI.I.getGenerativeModel(SA_AI.ai, { model: name, generationConfig: { temperature: 0.3, maxOutputTokens: 700 }, systemInstruction: CHAT_RULES });
+}
+// Turn the AI's codes back into names, and its light markdown into HTML.
+function chatUnmask(text) {
+  const esc = escapeHtml(text).replace(/\bP(\d+)\b/g, (m) => { const j = CHAT.map[m]; return j ? `<b>#${escapeHtml(j)} ${escapeHtml(nameFor(j, chatSeason()) || '')}</b>` : m; });
+  return esc.replace(/\*\*(.+?)\*\*/g, '<b>$1</b>').split(/\n{2,}/).map(par => /^\s*[-*•] /m.test(par) ? `<ul>${par.split('\n').filter(l => l.trim()).map(l => `<li>${l.replace(/^\s*[-*•]\s*/, '')}</li>`).join('')}</ul>` : `<p>${par.replace(/\n/g, '<br>')}</p>`).join('');
+}
+async function chatAsk(q) {
+  if (CHAT.busy || !q.trim()) return;
+  CHAT.busy = true;
+  const shown = escapeHtml(q);
+  CHAT.msgs.push({ role: 'user', html: shown, focus: CHAT.focus ? chatFocusLabel(CHAT.focus) : '' });
+  CHAT.msgs.push({ role: 'model', html: '<p class="n-note">Working it out…</p>', pending: true });
+  chatDraw();
+  let facts = '', sent = '';
+  try {
+    facts = chatFacts(q);
+    const m = saMask(q);
+    // Re-use this chat's codes for names in the question.
+    let qText = m.text; Object.keys(m.map).forEach(p => { qText = qText.replace(new RegExp(`\\b${p}\\b`, 'g'), '\u0000' + chatCode(m.map[p])); }); qText = qText.replace(/\u0000/g, '');
+    sent = `FACTS:\n${facts}\n\nQUESTION: ${qText}`;
+    if (!saMaskOk(sent)) throw new Error('blocked');
+    CHAT.lastSent = sent;
+    const history = CHAT.msgs.filter(x => x.sent && x.reply).flatMap(x => [{ role: 'user', parts: [{ text: x.sent }] }, { role: 'model', parts: [{ text: x.reply }] }]).slice(-12);
+    let reply = null, err = null;
+    for (const name of SA_AI_MODELS) {
+      try { const chat = (await chatModel(name)).startChat({ history }); const r = await chat.sendMessage(sent); reply = r.response.text(); break; } catch (e) { err = e; }
+    }
+    if (!reply) throw err || new Error('no answer');
+    const last = CHAT.msgs[CHAT.msgs.length - 1];
+    Object.assign(last, { pending: false, html: chatUnmask(reply), reply, sent, facts });
+  } catch (e) {
+    const last = CHAT.msgs[CHAT.msgs.length - 1];
+    const why = /blocked/.test(String(e && e.message)) ? 'A name was still in what would be sent, so nothing went out.' : /429|quota|exhaust/i.test(String(e && e.message)) ? 'The free AI is at its limit for the minute. Try again shortly.' : 'The AI didn’t answer.';
+    Object.assign(last, { pending: false, html: `<p>${why} Here’s what the tracker has on it:</p>${facts ? `<div class="chat-facts">${chatUnmask(facts)}</div>` : ''}` });
+  }
+  CHAT.busy = false;
+  chatDraw();
+}
+function chatFocusLabel(f) { return [f.jersey ? `#${f.jersey} ${nameFor(f.jersey, chatSeason()) || ''}` : '', f.label, f.value].filter(Boolean).join(' · ') + (f.panel ? ` (${f.panel})` : ''); }
+// Remember what the coach last clicked on a page: a player row or card, a stat tile, a table cell.
+function chatCapture(ev) {
+  const t = ev.target; if (!t || !t.closest || t.closest('#chatPanel, #chatFab, input, select, textarea, .nav-layer')) return;
+  const view = t.closest('.view'); if (!view) return;
+  const panel = t.closest('.panel'), panelTitle = panel && panel.querySelector('.panel-title') ? panel.querySelector('.panel-title').textContent.trim().slice(0, 60) : '';
+  const f = { panel: panelTitle };
+  const chip = t.closest('.depth-chip'), tile = t.closest('.stat-tile'), td = t.closest('td'), tr = t.closest('tr');
+  const jerseyIn = txt => { const m = String(txt || '').match(/#\s?(\d{1,3})\b/); return m && rosterHas(m[1]) ? m[1] : null; };
+  if (chip) { f.jersey = jerseyIn(chip.textContent); f.label = (chip.closest('.depth-line') && chip.closest('.depth-line').querySelector('.depth-line-head') || {}).textContent || ''; f.label = f.label.split('·').slice(0, 2).join('·').trim().slice(0, 50); }
+  else if (tile) { f.label = (tile.querySelector('.name') || {}).textContent || ''; f.value = ((tile.querySelector('.value') || {}).textContent || '').slice(0, 30); }
+  else if (tr && tr.closest('table')) {
+    const cells = [...tr.children], first = cells[0] ? cells[0].textContent.trim() : '';
+    f.jersey = /^\d{1,3}$/.test(first) && rosterHas(first) ? first : jerseyIn(tr.textContent);
+    if (td) { const i = cells.indexOf(td), th = tr.closest('table').querySelectorAll('thead th')[i]; const h = th ? th.textContent.replace(/[▲▼]/g, '').trim() : ''; if (h && !/^(#|name)$/i.test(h)) { f.label = h.slice(0, 50); f.value = td.textContent.trim().slice(0, 30); } }
+  } else { const sa = t.closest('.sa-card, li'); if (sa) f.jersey = jerseyIn(sa.textContent); }
+  if (f.value && !saMaskOk(f.value)) f.value = '';
+  if (!f.jersey && !f.label) return;
+  CHAT.focus = f; chatDraw();
+}
+function rosterHas(j) { const s = chatSeason(); return (ROSTERS[s] || []).some(r => r.jersey === j); }
+function chatDraw() {
+  const fab = document.getElementById('chatFab'), panel = document.getElementById('chatPanel'); if (!fab || !panel) return;
+  fab.innerHTML = CHAT.focus && !CHAT.open ? `&#128172; Ask about ${escapeHtml(CHAT.focus.jersey ? '#' + CHAT.focus.jersey + ' ' + lastNameOf(nameFor(CHAT.focus.jersey, chatSeason()) || '') : (CHAT.focus.label || 'this'))}` : '&#128172; Ask';
+  fab.hidden = CHAT.open; panel.hidden = !CHAT.open;
+  if (!CHAT.open) return;
+  const f = CHAT.focus;
+  const sugg = f && f.jersey ? ['Why is he rated here?', 'What would move him up?', 'How is this figured?', 'What is he best and worst at?'] : f ? ['How is this figured?', 'Why is it this number?', 'Who is best at this?'] : ['Who should start on offense, and why?', 'Who should start on defense, and why?', 'Who is our best off-ball player?'];
+  document.getElementById('chatFocus').innerHTML = f ? `<span>Asking about: <b>${escapeHtml(chatFocusLabel(f))}</b></span><button type="button" class="chat-x" data-chat="unfocus" title="Stop asking about this">&times;</button>` : '<span class="n-note">Tip: click a player, row or number on any page, then ask about it.</span>';
+  document.getElementById('chatLog').innerHTML = CHAT.msgs.length ? CHAT.msgs.map(m => `<div class="chat-msg ${m.role}">${m.focus ? `<div class="n-note">about ${escapeHtml(m.focus)}</div>` : ''}${m.html}${m.sent && chatShowSent() ? `<details class="chat-sent"><summary>What was sent</summary><pre>${escapeHtml(m.sent)}</pre></details>` : ''}</div>`).join('')
+    : `<div class="chat-empty"><p>Ask anything about the numbers: why a player is where he is, how a stat is figured, what would change it.</p><p class="n-note">Only coded numbers go to the AI (P1, P2&hellip;), never names. The tracker does the math.</p></div>`;
+  document.getElementById('chatSugg').innerHTML = sugg.map(s => `<button type="button" class="pill" data-chat="ask" data-q="${escapeHtml(s)}">${escapeHtml(s)}</button>`).join('');
+  const log = document.getElementById('chatLog'); log.scrollTop = log.scrollHeight;
+  document.getElementById('chatSend').disabled = CHAT.busy;
+}
+function chatShowSent() { try { return IS_DH_OWNER && localStorage.getItem('wluAiShowSent') === '1'; } catch (e) { return false; } }
+function chatInit() {
+  if (document.getElementById('chatFab')) return;
+  const wrap = document.createElement('div');
+  wrap.innerHTML = `<button type="button" id="chatFab" class="chat-fab">&#128172; Ask</button>
+    <section id="chatPanel" class="chat-panel" hidden aria-label="Ask the tracker">
+      <div class="chat-head"><b>Ask the tracker</b><span style="flex:1;"></span><button type="button" class="pill" data-chat="new">New chat</button><button type="button" class="chat-x" data-chat="close" title="Close">&times;</button></div>
+      <div id="chatFocus" class="chat-focus"></div>
+      <div id="chatLog" class="chat-log"></div>
+      <div id="chatSugg" class="chat-sugg"></div>
+      <form id="chatForm" class="chat-form"><textarea id="chatInput" rows="2" placeholder="Ask why, how it’s figured, what would change it…"></textarea><button type="submit" id="chatSend" class="btn">Send</button></form>
+    </section>`;
+  document.getElementById('appRoot').appendChild(wrap);
+  document.getElementById('chatFab').addEventListener('click', () => { CHAT.open = true; chatDraw(); setTimeout(() => document.getElementById('chatInput').focus(), 30); });
+  wrap.addEventListener('click', ev => {
+    const b = ev.target.closest('[data-chat]'); if (!b) return;
+    const a = b.dataset.chat;
+    if (a === 'close') CHAT.open = false;
+    if (a === 'unfocus') CHAT.focus = null;
+    if (a === 'new') { CHAT.msgs = []; CHAT.map = {}; CHAT.n = 0; }
+    if (a === 'ask') { chatAsk(b.dataset.q); return; }
+    chatDraw();
+  });
+  document.getElementById('chatForm').addEventListener('submit', ev => { ev.preventDefault(); const i = document.getElementById('chatInput'); const q = i.value; i.value = ''; chatAsk(q); });
+  document.getElementById('chatInput').addEventListener('keydown', ev => { if (ev.key === 'Enter' && !ev.shiftKey) { ev.preventDefault(); document.getElementById('chatForm').requestSubmit(); } });
+  document.getElementById('appRoot').addEventListener('click', chatCapture, true);
+  chatDraw();
+}
 // One line for a search answer when a Coach's lineup is saved: who it starts that the model doesn't.
 function saCoachNote(side, season, M) {
   const c = (DP_COACH[season] || {})[side];
@@ -14539,6 +14743,7 @@ async function init() {
   renderOpponent();
   window.__appReady = true;
   navBoot();
+  try { chatInit(); } catch (e) { console.error('chat', e); }
   onSessionChanged();
   renderUnitsPanel();
   if (LIVE_SHOTS_TUPLES.length) migrateShotsInbox(LIVE_SHOTS_TUPLES);
