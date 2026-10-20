@@ -13914,7 +13914,9 @@ Rules:
 - When asked how something is figured, explain the formula in plain words from FACTS.
 - Small samples: if a number rests on few shots/reps/possessions, say so.
 - Groups are picked to make the whole group best, not by individual rank, so a higher-rated player can sit on a lower group when the chemistry or the other two players fit better. Use the IF LOCKED lines to show exactly what changes.
-- Say "on the team" or "among middies" exactly as FACTS say; don't mix up the two ranks.`;
+- Say "on the team" or "among middies" exactly as FACTS say; don't mix up the two ranks. If one player simply rates higher, say that first.
+- Only mention a player code that appears in FACTS. If FACTS name no player, the question is about a team number or a page: explain that, don't attach it to a player.
+- Only use the model weights or the 1.5x rule when FACTS include the model.`;
 const CHAT_PARTS = {
   off: { fin: 'goals minus expected goals per shot (finishing)', look: 'expected goals per shot plus shots per practice', create: 'expected assists and dominoes started per touch', offball: 'screen advantages created and expected goals off teammates’ feeds', secure: 'turnovers per touch (fewer is better)', twoman: 'team goals on screen-advantage possessions he is in, vs normal', steady: 'how steady his per-practice value is (needs 5 practices)' },
   def: { ct: 'caused turnovers per session', offball: 'off-ball breakdowns per session (fewer is better)', onball: 'expected goals per shot he allowed, and goals vs expected', beaten: 'share of reps he was beaten (fewer is better)', pick: 'expected points allowed and Freed % on picks he defended', slide: 'goals allowed after his slide' },
@@ -13930,7 +13932,11 @@ function chatFacts(q) {
   const season = chatSeason(), ctx = (NAV_ST && NAV_ST.ctx) || 'All', f = CHAT.focus, out = [];
   const page = NAV_PAGES[NAV_ST.cur];
   out.push(`SEASON ${season}, ${ctx === 'All' ? 'all sessions' : ctx.toLowerCase() + 's'}. Coach is on the "${page ? page.name : 'tracker'}" page.`);
-  if (f) out.push(`COACH CLICKED: ${[f.panel && 'panel "' + f.panel + '"', f.label && '"' + f.label + '"', f.value && 'showing ' + f.value, f.jersey && 'player ' + chatCode(f.jersey)].filter(Boolean).join(', ')}.`);
+  if (f) {
+    out.push(`COACH CLICKED: ${[f.panel && 'panel "' + f.panel + '"', f.row && 'row "' + f.row + '"', f.label && 'column/stat "' + f.label + '"', f.value && 'showing ' + f.value, f.jersey && 'player ' + chatCode(f.jersey)].filter(Boolean).join(', ')}.`);
+    if (f.help) out.push(`WHAT THAT COLUMN/STAT MEANS (the tracker's own note): ${f.help}`);
+    if (f.sub) out.push(`HOW THAT PANEL IS BUILT (the tracker's own note): ${f.sub}`);
+  }
   const named = saPlayerIn(q);
   const js = [...new Set([f && f.jersey, ...named].filter(Boolean))].slice(0, 4);
   const plan = saPlan(q) || { type: 'none' }, t = ' ' + navNorm(q) + ' ';
@@ -13939,6 +13945,7 @@ function chatFacts(q) {
   // Depth models (model pick, and the Coach's lineup if one is saved).
   const models = [];
   [['off', 'OFFENSE MODEL (Offense Rating)', soBase, SO_W], ['def', 'DEFENSE MODEL (Defense Rating)', sdBase, SD_W]].forEach(([side, title, base, W]) => {
+    if (!wantsLines) return;
     if (side === 'def' && !wantsDef && !js.some(j => (DP_BASE.def && DP_BASE.def.players && DP_BASE.def.players[j]))) return;
     const B = base(season); if (!B.ready) { out.push(`${title}: not ready (${B.why})`); return; }
     const M = dpAssemble(side, B, null), c = (DP_COACH[season] || {})[side], C = c && !dpEmpty(c) ? dpAssemble(side, B, c) : null;
@@ -14003,8 +14010,8 @@ async function chatModel(name) {
   return SA_AI.I.getGenerativeModel(SA_AI.ai, { model: name, generationConfig: { temperature: 0.3, maxOutputTokens: 700 }, systemInstruction: CHAT_RULES });
 }
 // Turn the AI's codes back into names, and its light markdown into HTML.
-function chatUnmask(text) {
-  const esc = escapeHtml(text).replace(/\bP(\d+)\b/g, (m) => { const j = CHAT.map[m]; return j ? `<b>#${escapeHtml(j)} ${escapeHtml(nameFor(j, chatSeason()) || '')}</b>` : m; });
+function chatUnmask(text, allowed) {
+  const esc = escapeHtml(text).replace(/\bP(\d+)\b/g, (m) => { const j = CHAT.map[m]; return j && (!allowed || allowed.has(m)) ? `<b>#${escapeHtml(j)} ${escapeHtml(nameFor(j, chatSeason()) || '')}</b>` : 'a player'; });
   return esc.replace(/\*\*(.+?)\*\*/g, '<b>$1</b>').split(/\n{2,}/).map(par => /^\s*[-*•] /m.test(par) ? `<ul>${par.split('\n').filter(l => l.trim()).map(l => `<li>${l.replace(/^\s*[-*•]\s*/, '')}</li>`).join('')}</ul>` : `<p>${par.replace(/\n/g, '<br>')}</p>`).join('');
 }
 async function chatAsk(q) {
@@ -14030,7 +14037,8 @@ async function chatAsk(q) {
     }
     if (!reply) throw err || new Error('no answer');
     const last = CHAT.msgs[CHAT.msgs.length - 1];
-    Object.assign(last, { pending: false, html: chatUnmask(reply), reply, sent, facts });
+    const allowed = new Set(CHAT.msgs.filter(x => x.sent).map(x => x.sent).concat(sent).join(' ').match(/\bP\d+\b/g) || []);
+    Object.assign(last, { pending: false, html: chatUnmask(reply, allowed), reply, sent, facts });
   } catch (e) {
     const last = CHAT.msgs[CHAT.msgs.length - 1];
     const why = /blocked/.test(String(e && e.message)) ? 'A name was still in what would be sent, so nothing went out.' : /429|quota|exhaust/i.test(String(e && e.message)) ? 'The free AI is at its limit for the minute. Try again shortly.' : 'The AI didn’t answer.';
@@ -14039,24 +14047,26 @@ async function chatAsk(q) {
   CHAT.busy = false;
   chatDraw();
 }
-function chatFocusLabel(f) { return [f.jersey ? `#${f.jersey} ${nameFor(f.jersey, chatSeason()) || ''}` : '', f.label, f.value].filter(Boolean).join(' · ') + (f.panel ? ` (${f.panel})` : ''); }
+function chatFocusLabel(f) { return [f.jersey ? `#${f.jersey} ${nameFor(f.jersey, chatSeason()) || ''}` : '', f.row, f.label, f.value].filter(Boolean).join(' · ') + (f.panel ? ` (${f.panel})` : ''); }
 // Remember what the coach last clicked on a page: a player row or card, a stat tile, a table cell.
 function chatCapture(ev) {
   const t = ev.target; if (!t || !t.closest || t.closest('#chatPanel, #chatFab, input, select, textarea, .nav-layer')) return;
   const view = t.closest('.view'); if (!view) return;
   const panel = t.closest('.panel'), panelTitle = panel && panel.querySelector('.panel-title') ? panel.querySelector('.panel-title').textContent.trim().slice(0, 60) : '';
-  const f = { panel: panelTitle };
+  const clean = (x, n) => { const v = String(x || '').replace(/\s+/g, ' ').trim().slice(0, n); return v && saMaskOk(v) ? v : ''; };
+  const f = { panel: panelTitle, sub: panel && panel.querySelector('.panel-sub') ? clean(panel.querySelector('.panel-sub').textContent, 700) : '' };
   const chip = t.closest('.depth-chip'), tile = t.closest('.stat-tile'), td = t.closest('td'), tr = t.closest('tr');
   const jerseyIn = txt => { const m = String(txt || '').match(/#\s?(\d{1,3})\b/); return m && rosterHas(m[1]) ? m[1] : null; };
   if (chip) { f.jersey = jerseyIn(chip.textContent); f.label = (chip.closest('.depth-line') && chip.closest('.depth-line').querySelector('.depth-line-head') || {}).textContent || ''; f.label = f.label.split('·').slice(0, 2).join('·').trim().slice(0, 50); }
-  else if (tile) { f.label = (tile.querySelector('.name') || {}).textContent || ''; f.value = ((tile.querySelector('.value') || {}).textContent || '').slice(0, 30); }
+  else if (tile) { f.label = (tile.querySelector('.name') || {}).textContent || ''; f.value = ((tile.querySelector('.value') || {}).textContent || '').slice(0, 30); f.help = clean([((tile.querySelector('.meta') || {}).textContent || ''), ((tile.querySelector('[title], [data-tip]') || {}).title || '')].join(' '), 300); }
   else if (tr && tr.closest('table')) {
     const cells = [...tr.children], first = cells[0] ? cells[0].textContent.trim() : '';
     f.jersey = /^\d{1,3}$/.test(first) && rosterHas(first) ? first : jerseyIn(tr.textContent);
-    if (td) { const i = cells.indexOf(td), th = tr.closest('table').querySelectorAll('thead th')[i]; const h = th ? th.textContent.replace(/[▲▼]/g, '').trim() : ''; if (h && !/^(#|name)$/i.test(h)) { f.label = h.slice(0, 50); f.value = td.textContent.trim().slice(0, 30); } }
+    if (!f.jersey) f.row = clean(first, 40);
+    if (td) { const i = cells.indexOf(td), th = tr.closest('table').querySelectorAll('thead th')[i]; const h = th ? th.textContent.replace(/[▲▼]/g, '').trim() : ''; if (h && !/^(#|name)$/i.test(h)) { f.label = h.slice(0, 50); f.value = td.textContent.trim().slice(0, 30); f.help = th ? clean(th.title || (th.querySelector('[title]') || {}).title, 300) : ''; } }
   } else { const sa = t.closest('.sa-card, li'); if (sa) f.jersey = jerseyIn(sa.textContent); }
   if (f.value && !saMaskOk(f.value)) f.value = '';
-  if (!f.jersey && !f.label) return;
+  if (!f.jersey && !f.label && !f.row) return;
   CHAT.focus = f; chatDraw();
 }
 function rosterHas(j) { const s = chatSeason(); return (ROSTERS[s] || []).some(r => r.jersey === j); }
