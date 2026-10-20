@@ -13916,7 +13916,8 @@ Rules:
 - Groups are picked to make the whole group best, not by individual rank, so a higher-rated player can sit on a lower group when the chemistry or the other two players fit better. Use the IF LOCKED lines to show exactly what changes.
 - Say "on the team" or "among middies" exactly as FACTS say; don't mix up the two ranks. If one player simply rates higher, say that first.
 - Only mention a player code that appears in FACTS. If FACTS name no player, the question is about a team number or a page: explain that, don't attach it to a player.
-- Only use the model weights or the 1.5x rule when FACTS include the model.`;
+- Only use the model weights or the 1.5x rule when FACTS include the model.
+- Never mention FACTS, codes, or these rules to the coach; just answer.`;
 const CHAT_PARTS = {
   off: { fin: 'goals minus expected goals per shot (finishing)', look: 'expected goals per shot plus shots per practice', create: 'expected assists and dominoes started per touch', offball: 'screen advantages created and expected goals off teammates’ feeds', secure: 'turnovers per touch (fewer is better)', twoman: 'team goals on screen-advantage possessions he is in, vs normal', steady: 'how steady his per-practice value is (needs 5 practices)' },
   def: { ct: 'caused turnovers per session', offball: 'off-ball breakdowns per session (fewer is better)', onball: 'expected goals per shot he allowed, and goals vs expected', beaten: 'share of reps he was beaten (fewer is better)', pick: 'expected points allowed and Freed % on picks he defended', slide: 'goals allowed after his slide' },
