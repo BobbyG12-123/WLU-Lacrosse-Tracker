@@ -14001,7 +14001,8 @@ function bfPicker(field, val, side, item, rowIdx) {
   const st = item && item.e.stintId ? stintById(sid, item.e.stintId) : null;
   const onField = st ? (side === 'def' ? st.defense : st.offense).filter(j => !isOppJersey(j)) : [];
   const posWant = side === 'def' ? ['D', 'L', 'S'] : ['A', 'M'];
-  const byPos = roster.filter(r => !onField.includes(r.jersey) && (posWant.includes(posOfJ(season, r.jersey)) || (side === 'def' && posAltJ(season, r.jersey) === 'S'))).sort((a, b) => posWant.indexOf(posOfJ(season, a.jersey)) - posWant.indexOf(posOfJ(season, b.jersey)) || Number(a.jersey) - Number(b.jersey)).map(r => r.jersey);
+  const rk = j => { const i = posWant.indexOf(posOfJ(season, j)); return i >= 0 ? i : posWant.length; };   // second-position SSDMs after the real ones
+  const byPos = roster.filter(r => !onField.includes(r.jersey) && (posWant.includes(posOfJ(season, r.jersey)) || (side === 'def' && posAltJ(season, r.jersey) === 'S'))).sort((a, b) => rk(a.jersey) - rk(b.jersey) || Number(a.jersey) - Number(b.jersey)).map(r => r.jersey);
   const rest = roster.map(r => r.jersey).filter(j => !onField.includes(j) && !byPos.includes(j)).sort((a, b) => Number(a) - Number(b));
   const key = field + (rowIdx != null ? '_' + rowIdx : '');
   const btn = j => `<button type="button" class="pill bf-j${val === j ? ' active' : ''}" data-bf="set" data-f="${field}" ${rowIdx != null ? `data-r="${rowIdx}"` : ''} data-v="${escapeHtml(j)}" title="${escapeHtml(nameFor(j, season) || '')}">${escapeHtml(j)}<small>${escapeHtml(lastNameOf(nameFor(j, season) || '').slice(0, 9))}</small></button>`;
@@ -14054,9 +14055,9 @@ function renderBackfill() {
   if (!BF.sid || !LIVE_SESSIONS[BF.sid]) {
     BF.sid = null;
     wrap.innerHTML = `<div class="panel"><p class="panel-title">Backfill a practice</p><p class="panel-sub">Pick a practice, then watch the film alongside and step through its shots in the order they were logged. Add defense, picks and screens, and any turnovers that weren’t logged. Everything is optional. Tip: put ScoreBreak in a second window side by side.</p>
-      <div class="table-wrap"><table class="shotlog"><thead><tr><th>Practice</th><th>Shots</th><th>Reviewed</th><th>Defender logged</th><th>Picks / screens logged</th><th>No-shot poss.</th><th></th></tr></thead><tbody>${sessions.map(s => {
+      <div class="table-wrap"><table class="shotlog"><thead><tr><th>Practice</th><th>Shots</th><th title="Shots plus no-shot possessions you've saved in Backfill">Reviewed</th><th>Defender logged</th><th>Picks / screens logged</th><th>No-shot poss.</th><th></th></tr></thead><tbody>${sessions.map(s => {
         const tl = bfTimeline(s), shots = tl.list.filter(x => x.kind === 'shot'), rev = tl.list.filter(x => bfIsRev(s.sid, x.kind, x.e.id)).length;
-        return `<tr><td>${escapeHtml(s.date)}</td><td>${shots.length}</td><td>${rev} of ${tl.list.length}</td><td>${shots.filter(x => x.e.defender).length}</td><td>${shots.filter(x => x.e.pick || (x.e.screens && x.e.screens !== '')).length}</td><td>${(s.poss || []).length}</td><td><button type="button" class="pill" data-bf="open" data-sid="${escapeHtml(s.sid)}">${rev ? 'Continue' : 'Start'} &rarr;</button></td></tr>`; }).join('')}</tbody></table></div></div>`;
+        return `<tr><td>${escapeHtml(s.date)}</td><td>${shots.length}</td><td>${rev} of ${tl.list.length}${tl.list.length > shots.length ? ` <span class="n-note">(${shots.length} shots + ${tl.list.length - shots.length} poss.)</span>` : ''}</td><td>${shots.filter(x => x.e.defender).length}</td><td>${shots.filter(x => x.e.pick || (x.e.screens && x.e.screens !== '')).length}</td><td>${(s.poss || []).length}</td><td><button type="button" class="pill" data-bf="open" data-sid="${escapeHtml(s.sid)}">${rev ? 'Continue' : 'Start'} &rarr;</button></td></tr>`; }).join('')}</tbody></table></div></div>`;
     return;
   }
   const sess = LIVE_SESSIONS[BF.sid], tl = bfTimeline(sess);
