@@ -13912,7 +13912,9 @@ Rules:
 - Ratings and parts are 0-100 where 50 is the team average among qualified players.
 - Answer like a sharp assistant coach: lead with the direct answer, then the 2-4 reasons that matter most with their numbers, then (if useful) what would move it. Short paragraphs or a few bullets. No headers. Under 180 words unless asked for more.
 - When asked how something is figured, explain the formula in plain words from FACTS.
-- Small samples: if a number rests on few shots/reps/possessions, say so.`;
+- Small samples: if a number rests on few shots/reps/possessions, say so.
+- Groups are picked to make the whole group best, not by individual rank, so a higher-rated player can sit on a lower group when the chemistry or the other two players fit better. Use the IF LOCKED lines to show exactly what changes.
+- Say "on the team" or "among middies" exactly as FACTS say; don't mix up the two ranks.`;
 const CHAT_PARTS = {
   off: { fin: 'goals minus expected goals per shot (finishing)', look: 'expected goals per shot plus shots per practice', create: 'expected assists and dominoes started per touch', offball: 'screen advantages created and expected goals off teammates’ feeds', secure: 'turnovers per touch (fewer is better)', twoman: 'team goals on screen-advantage possessions he is in, vs normal', steady: 'how steady his per-practice value is (needs 5 practices)' },
   def: { ct: 'caused turnovers per session', offball: 'off-ball breakdowns per session (fewer is better)', onball: 'expected goals per shot he allowed, and goals vs expected', beaten: 'share of reps he was beaten (fewer is better)', pick: 'expected points allowed and Freed % on picks he defended', slide: 'goals allowed after his slide' },
@@ -13962,7 +13964,20 @@ function chatFacts(q) {
         const p = M.players[j], W = dpW(side), where = dpLineOfMap(M)[j], lab = Object.fromEntries(DP_LINES[side].map(([k, l]) => [k, l]));
         if (!p) { const ne = (DP_BASE[side] || {}).notEnough || []; const x = ne.find(y => y.j === j); if (x) lines.push(`${side === 'def' ? 'Defense' : 'Offense'} Rating: not enough data (${x.reps !== undefined ? x.reps + ' reps' : x.touches + ' touches'}).`); return; }
         const rank = Object.values(M.players).sort((a, b) => b.rating - a.rating).findIndex(x => x.j === j) + 1;
-        lines.push(`${side === 'def' ? 'Defense' : 'Offense'} Rating ${Math.round(p.rating)} (rank ${rank} of ${Object.keys(M.players).length} qualified; ${where ? 'model has him on ' + lab[where] : 'not in the model groups'}). Parts: ${W.map(([k, l]) => `${l} ${Math.round(p.parts[k])}`).join(', ')}. Counts: ${Object.values(p.detail || {}).filter(Boolean).join('; ')}; ${side === 'def' ? p.reps + ' reps' : p.touches + ' touches'}.`);
+        const grp = side === 'off' ? (p.pos === 'A' ? M.att : M.mid) : (p.pos === 'L' ? M.lsm : p.pos === 'D' ? M.close : M.ss), gName = side === 'off' ? (p.pos === 'A' ? 'attackmen' : 'middies') : (p.pos === 'L' ? 'LSMs' : p.pos === 'D' ? 'close defenders' : 'SSDMs');
+        const gRank = (grp || []).slice().sort((a, b) => M.players[b].rating - M.players[a].rating).indexOf(j) + 1;
+        lines.push(`${side === 'def' ? 'Defense' : 'Offense'} Rating ${Math.round(p.rating)} (rank ${rank} of ${Object.keys(M.players).length} qualified players on this side${gRank ? `; ${gRank} of ${grp.length} qualified ${gName}` : ''}; ${where ? 'model has him on ' + lab[where] : 'not in the model groups'}).`);
+        // What-if the tracker runs itself: lock him on each other group and compare.
+        const B0 = DP_BASE[side] && DP_BASE[side].season === season ? DP_BASE[side] : (side === 'def' ? sdBase(season) : soBase(season));
+        const tot = M2 => Object.values(M2.lines).filter(Boolean).reduce((a, l) => a + l.score, 0);
+        dpLockLines(side, p).filter(k => k !== where).slice(0, 2).forEach(k => {
+          const T = dpAssemble(side, B0, { w: {}, adj: {}, lock: { [j]: { line: k } } }), l = T.lines[k], l0 = M.lines[k];
+          if (!l) return;
+          lines.push(`IF LOCKED ON ${lab[k]}: best ${lab[k]} would be ${l.js.map(x => `${chatCode(x)} ${Math.round(T.players[x].rating)}`).join(', ')} (group score ${num(l.score, 1)}, players ${num(l.rating, 1)}, chemistry ${Math.round(l.chem)}) vs the model's ${lab[k]} ${l0 ? `${l0.js.map(x => chatCode(x)).join(', ')} (group score ${num(l0.score, 1)}, players ${num(l0.rating, 1)}, chemistry ${Math.round(l0.chem)})` : '(none)'}; all groups together ${num(tot(T), 1)} vs ${num(tot(M), 1)} now.`);
+        });
+        // How far he is from the cut on each group above him.
+        if (where) { const i = DP_LINES[side].findIndex(x => x[0] === where); if (i > 0) { const up = M.lines[DP_LINES[side][i - 1][0]]; if (up) { const low = up.js.slice().sort((a, b) => M.players[a].rating - M.players[b].rating)[0]; lines.push(`Lowest-rated player on ${lab[DP_LINES[side][i - 1][0]]}: ${chatCode(low)} ${Math.round(M.players[low].rating)}.`); } } }
+        lines.push(` Parts: ${W.map(([k, l]) => `${l} ${Math.round(p.parts[k])}`).join(', ')}. Counts: ${Object.values(p.detail || {}).filter(Boolean).join('; ')}; ${side === 'def' ? p.reps + ' reps' : p.touches + ' touches'}.`);
       });
       const st = [];
       cat.forEach(([c, m]) => {
