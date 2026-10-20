@@ -317,6 +317,11 @@
   .dp-weights { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 6px 14px; margin: 8px 0 12px; }
   .dp-w { display: flex; flex-direction: column; font-family: var(--text); font-size: 12px; gap: 2px; } .dp-w input { width: 100%; }
   .dp-changes { margin: 6px 0 0; padding-left: 18px; }
+  .dp-layout { display: grid; grid-template-columns: minmax(0, 1fr) 250px; gap: 16px; align-items: start; }
+  .dp-side { position: sticky; top: calc(70px + env(safe-area-inset-top, 0px)); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; background: var(--card); display: flex; flex-direction: column; gap: 6px; }
+  .dp-wh { font: 700 12px var(--text); letter-spacing: .06em; text-transform: uppercase; color: var(--navy-3); margin: 0 0 2px; }
+  .dp-wbtn { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
+  @media (max-width: 900px) { .dp-layout { grid-template-columns: 1fr; } .dp-side { position: static; order: -1; } }
   .depth-chip .depth-pos { grid-row: 1 / span 2; grid-column: 2; }
   .depth-rest { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 0 10px; }
   .depth-pos { font-family: var(--text); font-size: 11.5px; font-weight: 700; border: 1.5px solid var(--navy-3); color: var(--navy-3); background: #fff; border-radius: 999px; padding: 4px 10px; cursor: pointer; white-space: nowrap; }
@@ -8870,104 +8875,69 @@ function renderDepthChart() {
     if (!(await persistPositions(season))) { store[season] = prev; renderDepthChart(); }
   }));
 }
-// ---------------- Model Starting Offense (Bobby, Oct 19) ----------------
-// Offense Rating (0-100, 50 = team average among qualified attack + middies), from logged data only:
-//   Finishing 20 · Look quality 15 · Creating for others 20 · Off-ball value 15 · Ball security 15
-//   · Two-man game 10 · Consistency 5. The last 3 weeks of practice count 1.5x. 40+ touches to qualify.
-// Lines: 3 attack, then middie Line 1 and Line 2, each the trio with the best
-//   line score = 85% average Offense Rating + 15% chemistry (how the three connect).
-// Shooter Score is not used anywhere in here.
-const SO_W = [['fin', 'Finishing', 20], ['look', 'Look quality', 15], ['create', 'Creating for others', 20], ['offball', 'Off-ball value', 15], ['secure', 'Ball security', 15], ['twoman', 'Two-man game', 10], ['steady', 'Consistency', 5]];
-const SO_MIN_TOUCHES = 40, SO_RECENT_DAYS = 21, SO_RECENT_X = 1.5, SO_CHEM = 0.15;
+// ---------------- Model Starting Offense: Impact Rating (Bobby, Oct 20) ----------------
+// Impact Rating (0-100, 50 = team average among rated attack + middies), from logged data only.
+// Eight parts, even weights to start (coaches move the sliders on the Depth Chart):
+//   Expected points · Gold + Silver shooting % · Dominoes created · xP per touch · Assist / TO
+//   · Shot selection · Advantage per pick · Off-ball scoring off the catch.
+// Every practice counts the same. 20+ touches to be rated. Small samples are pulled toward the team.
+// Lines are a straight ranking: top 3 attack, middies 1-3 = Line 1, 4-6 = Line 2 (no chemistry).
+const SO_W = [['xp', 'Expected points', 12.5], ['gs', 'Gold + Silver shooting %', 12.5], ['dom', 'Dominoes created', 12.5], ['xppt', 'xP per touch', 12.5], ['ato', 'Assist / TO', 12.5], ['sel', 'Shot selection', 12.5], ['adv', 'Advantage per pick', 12.5], ['catch', 'Off-ball scoring off the catch', 12.5]];
+const SO_MIN_TOUCHES = 20, SO_RECENT_DAYS = 21, SO_RECENT_X = 1.5, SO_CHEM = 0;
 function soData(season, from) { const s0 = EFF_SEASON, c0 = EFF_CONTEXT, f0 = EFF_FROM; EFF_SEASON = season; EFF_CONTEXT = 'All'; EFF_FROM = from || null; try { return buildEffData(); } finally { EFF_SEASON = s0; EFF_CONTEXT = c0; EFF_FROM = f0; } }
 function soZ(map) { const ks = Object.keys(map).filter(k => map[k] !== null && isFinite(map[k])); if (ks.length < 2) return {}; const v = ks.map(k => map[k]), m = v.reduce((a, b) => a + b, 0) / v.length, sd = Math.sqrt(v.reduce((a, b) => a + (b - m) ** 2, 0) / (v.length - 1)) || 1; const z = {}; ks.forEach(k => { z[k] = Math.max(-2.5, Math.min(2.5, (map[k] - m) / sd)); }); return z; }
 const soPts = z => Math.max(0, Math.min(100, 50 + 15 * (z || 0)));
 function soPairKey(a, b) { return a < b ? a + '|' + b : b + '|' + a; }
+const soIsGS = s => s.shotQuality === '1-Gold' || s.shotQuality === '2-Silver';
 function computeStartingOffense(season, opt) { return soAssemble(soBase(season), opt); }
 function soBase(season) {
   const last = depthLatestDate(season);
   if (!last) return { ready: false, why: 'No practices logged yet this season.' };
-  const rd = new Date(last + 'T00:00:00'); rd.setDate(rd.getDate() - (SO_RECENT_DAYS - 1));
-  const recentFrom = localDateStr(rd);
-  const A = soData(season), R = soData(season, recentFrom), extra = SO_RECENT_X - 1;
-  // Weighted sums per player: everything once, the last 3 weeks counted again at 0.5.
-  const W = {}; const add = (d, k) => Object.values(d.players).forEach(p => { if (!p.jersey || isOppJersey(p.jersey)) return; const w = (W[p.jersey] = W[p.jersey] || { j: p.jersey, shots: 0, goals: 0, xg: 0, potAst: 0, xa: 0, to: 0, dom: 0, catchXg: 0, sessions: 0 });
-    w.shots += k * p.shots; w.goals += k * p.goals; w.xg += k * p.xg; w.potAst += k * p.potAst; w.xa += k * p.xa; w.to += k * p.to; w.dom += k * p.dominoes; w.sessions += k * p.sessions.size;
-    w.catchXg += k * p.ownShots.filter(s => s.assistJersey && Number(s.offDodge) !== 1).reduce((a, s) => a + d.xgOf(s), 0); });
-  add(A, 1); add(R, extra);
-  // Screens: advantages created, and two-man game (team goals on advantage-screen possessions he's in).
-  const scr = {}, two = {}, base = { g: 0, n: 0 };
-  [[A, 1], [R, extra]].forEach(([d, k]) => d.possList.filter(pp => pp.team === 'WLU').forEach(pp => {
-    const adv = (pp.screens || []).filter(x => x.adv === 'Yes');
-    if (!adv.length) { base.g += k * pp.goal; base.n += k; }
-    const inPoss = new Set();
-    adv.forEach(x => { if (x.s && !isOppJersey(x.s)) { scr[x.s] = (scr[x.s] || 0) + k; inPoss.add(x.s); } if (x.u && !isOppJersey(x.u)) inPoss.add(x.u); });
-    inPoss.forEach(j => { const t = (two[j] = two[j] || { g: 0, n: 0 }); t.g += k * pp.goal; t.n += k; });
-  }));
-  const baseG = base.n ? base.g / base.n : 0;
-  // Consistency: per-practice (xG + xA - turnovers x avg possession value) per touch, practices with 5+ touches.
-  const V = A.possList.filter(p => p.team === 'WLU').length ? A.possList.filter(p => p.team === 'WLU' && p.goal).length / A.possList.filter(p => p.team === 'WLU').length : 0.27;
-  const perSess = {};
-  Object.values(A.bySession).forEach(sess => Object.values(sess.players).forEach(b => { const t = b.shots + b.potAst + b.to; if (t < 5 || isOppJersey(b.jersey)) return; (perSess[b.jersey] = perSess[b.jersey] || []).push((b.xg + b.xa - b.to * V) / t); }));
-  // Who qualifies: Attack or Midfield (first position), 40+ touches over the season.
-  const touchesAll = j => { const p = A.players[j]; return p ? p.shots + p.potAst + p.to : 0; };
-  const pos = j => posOfJ(season, j);
-  const pool = Object.keys(W).filter(j => (pos(j) === 'A' || pos(j) === 'M'));
-  const qual = pool.filter(j => touchesAll(j) >= SO_MIN_TOUCHES);
-  const notEnough = pool.filter(j => touchesAll(j) > 0 && touchesAll(j) < SO_MIN_TOUCHES).map(j => ({ j, touches: touchesAll(j) }));
+  const A = soData(season), pos = j => posOfJ(season, j);
+  // Screens he set, and how many created an advantage.
+  const scr = {}, adv = {};
+  A.possList.filter(pp => pp.team === 'WLU').forEach(pp => (pp.screens || []).forEach(x => { if (x.s && !isOppJersey(x.s)) { scr[x.s] = (scr[x.s] || 0) + 1; if (x.adv === 'Yes') adv[x.s] = (adv[x.s] || 0) + 1; } }));
+  const C = {};
+  Object.values(A.players).forEach(p => {
+    if (!p.jersey || isOppJersey(p.jersey)) return;
+    const gs = p.ownShots.filter(soIsGS), cat = p.ownShots.filter(s => s.assistJersey && s.assistJersey !== s.shooterJersey && Number(s.offDodge) !== 1);
+    C[p.jersey] = { j: p.jersey, touch: p.shots + p.potAst + p.to, shots: p.shots, goals: p.goals, xg: p.xg, xa: p.xa, ast: p.assists, to: p.to, dom: p.dominoes,
+      gsN: gs.length, gsG: gs.filter(s => s.goal === 1).length, catN: cat.length, catG: cat.filter(s => s.goal === 1).length, catXg: cat.reduce((a, s) => a + A.xgOf(s), 0),
+      scr: scr[p.jersey] || 0, adv: adv[p.jersey] || 0, sessions: p.sessions.size };
+  });
+  const pool = Object.keys(C).filter(j => pos(j) === 'A' || pos(j) === 'M');
+  const qual = pool.filter(j => C[j].touch >= SO_MIN_TOUCHES);
+  const notEnough = pool.filter(j => C[j].touch > 0 && C[j].touch < SO_MIN_TOUCHES).map(j => ({ j, touches: C[j].touch }));
   if (qual.length < 3) return { ready: false, why: `Only ${qual.length} attack/middies have ${SO_MIN_TOUCHES}+ touches so far.`, notEnough };
-  // Team rates for shrinkage (qualified players).
-  const T = qual.reduce((a, j) => { const w = W[j]; a.shots += w.shots; a.goals += w.goals; a.xg += w.xg; a.xa += w.xa; a.to += w.to; a.dom += w.dom; a.touch += w.shots + w.potAst + w.to; return a; }, { shots: 0, goals: 0, xg: 0, xa: 0, to: 0, dom: 0, touch: 0 });
-  const tXgShot = T.xg / (T.shots || 1), tXaT = T.xa / (T.touch || 1), tDomT = T.dom / (T.touch || 1), tToT = T.to / (T.touch || 1);
-  const raw = { fin: {}, xgs: {}, vol: {}, xat: {}, domt: {}, adv: {}, cxg: {}, sec: {}, two: {}, steady: {} };
+  // Team rates (rated players) that small samples are pulled toward.
+  const S = f => qual.reduce((a, j) => a + f(C[j]), 0);
+  const tTouch = S(c => c.touch) || 1, tShots = S(c => c.shots) || 1;
+  const tXpT = (S(c => c.xg) + S(c => c.xa)) / tTouch, tAstT = S(c => c.ast) / tTouch, tToT = S(c => c.to) / tTouch, tDomT = S(c => c.dom) / tTouch;
+  const tGs = S(c => c.gsG) / (S(c => c.gsN) || 1), tSel = S(c => c.gsN) / tShots, tAdv = S(c => c.adv) / (S(c => c.scr) || 1);
+  const raw = {}; SO_W.forEach(([k]) => { raw[k] = {}; });
   qual.forEach(j => {
-    const w = W[j], touch = w.shots + w.potAst + w.to, sess = Math.max(1, w.sessions);
-    raw.fin[j] = (w.goals - w.xg) / (w.shots + 20);
-    raw.xgs[j] = (w.xg + 20 * tXgShot) / (w.shots + 20);
-    raw.vol[j] = w.shots / sess;
-    raw.xat[j] = (w.xa + 15 * tXaT) / (touch + 15);
-    raw.domt[j] = (w.dom + 15 * tDomT) / (touch + 15);
-    raw.adv[j] = (scr[j] || 0) / sess;
-    raw.cxg[j] = w.catchXg / sess;
-    raw.sec[j] = -((w.to + 30 * tToT) / (touch + 30));
-    const t = two[j] || { g: 0, n: 0 }; raw.two[j] = (t.g + 8 * baseG) / (t.n + 8) - baseG;
-    const ps = perSess[j] || []; if (ps.length >= 5) { const m = ps.reduce((a, b) => a + b, 0) / ps.length; raw.steady[j] = -Math.sqrt(ps.reduce((a, b) => a + (b - m) ** 2, 0) / (ps.length - 1)); }
+    const c = C[j];
+    raw.xp[j] = c.xg + c.xa;
+    raw.gs[j] = (c.gsG + 15 * tGs) / (c.gsN + 15);
+    raw.dom[j] = (c.dom + 15 * tDomT) / (c.touch + 15);
+    raw.xppt[j] = (c.xg + c.xa + 15 * tXpT) / (c.touch + 15);
+    raw.ato[j] = ((c.ast + 15 * tAstT) / (c.touch + 15)) / Math.max(0.01, (c.to + 15 * tToT) / (c.touch + 15));
+    raw.sel[j] = (c.gsN + 10 * tSel) / (c.shots + 10);
+    raw.adv[j] = (c.adv + 6 * tAdv) / (c.scr + 6);
+    raw.catch[j] = (c.catG - c.catXg) / (c.catN + 10);
   });
   const z = {}; Object.keys(raw).forEach(k => { z[k] = soZ(raw[k]); });
-  const comp = j => ({ fin: z.fin[j], look: ((z.xgs[j] || 0) + (z.vol[j] || 0)) / 2, create: ((z.xat[j] || 0) + (z.domt[j] || 0)) / 2, offball: ((z.adv[j] || 0) + (z.cxg[j] || 0)) / 2, secure: z.sec[j], twoman: z.two[j], steady: z.steady[j] });
-  // Actual counts (no 1.5x) for the details people read.
-  const cntA = { scr: {}, two: {} };
-  A.possList.filter(pp => pp.team === 'WLU').forEach(pp => { const adv = (pp.screens || []).filter(x => x.adv === 'Yes'), inP = new Set();
-    adv.forEach(x => { if (x.s && !isOppJersey(x.s)) { cntA.scr[x.s] = (cntA.scr[x.s] || 0) + 1; inP.add(x.s); } if (x.u && !isOppJersey(x.u)) inP.add(x.u); });
-    inP.forEach(j => { const t = (cntA.two[j] = cntA.two[j] || { g: 0, n: 0 }); t.g += pp.goal; t.n++; }); });
   const players = {};
   qual.forEach(j => {
-    const c = comp(j), parts = {}; let tot = 0;
-    SO_W.forEach(([k, , w]) => { parts[k] = soPts(c[k]); tot += w * parts[k]; });
-    const w = W[j];
-    players[j] = { j, name: nameFor(j, season), pos: pos(j), rating: tot / 100, parts, touches: touchesAll(j),
-      detail: soDetail(A, j, cntA, (perSess[j] || []).length) };
+    const c = C[j], parts = {}; let tot = 0;
+    SO_W.forEach(([k, , w]) => { parts[k] = soPts(z[k][j]); tot += w * parts[k]; });
+    players[j] = { j, name: nameFor(j, season), pos: pos(j), rating: tot / SO_W.reduce((a, x) => a + x[2], 0), parts, touches: c.touch,
+      detail: { xp: `${num(c.xg + c.xa, 1)} xP (${num(c.xg, 1)} xG + ${num(c.xa, 1)} xA)`, gs: `${c.gsG} of ${c.gsN} on Gold/Silver`, dom: `${c.dom} dominoes on ${c.touch} touches`,
+        xppt: `${num(c.touch ? (c.xg + c.xa) / c.touch : 0, 2)} xP per touch`, ato: `${c.ast} assists, ${c.to} turnovers`, sel: `${c.gsN} of ${c.shots} shots Gold/Silver`,
+        adv: c.scr ? `${c.adv} advantages on ${c.scr} screens set` : 'no screens logged', catch: c.catN ? `${c.catG} goals on ${num(c.catXg, 1)} xG off the catch (${c.catN} shots)` : 'no catch shots' } };
   });
-  // Chemistry between two players: feeds between them, screens between them, time on the field together.
-  const feed = {}, pairScr = {}, together = {};
-  let tFeedXg = 0, tFeedN = 0;
-  [[A, 1], [R, extra]].forEach(([d, k]) => {
-    d.shots.forEach(s => { if (!s.assistJersey || isOppJersey(s.assistJersey) || s.assistJersey === s.shooterJersey) return; const key = soPairKey(s.assistJersey, s.shooterJersey); const f = (feed[key] = feed[key] || { xg: 0, n: 0 }); const x = d.xgOf(s); f.xg += k * x; f.n += k; tFeedXg += k * x; tFeedN += k; });
-    d.possList.filter(pp => pp.team === 'WLU').forEach(pp => {
-      (pp.screens || []).filter(x => x.adv === 'Yes' && x.s && x.u).forEach(x => { const key = soPairKey(x.s, x.u); const p = (pairScr[key] = pairScr[key] || { g: 0, n: 0 }); p.g += k * pp.goal; p.n += k; });
-      const on = wluOnField(pp.e); if (on && k === 1) { const o = on.offense.filter(j => players[j]); for (let a = 0; a < o.length; a++) for (let b = a + 1; b < o.length; b++) { const key = soPairKey(o[a], o[b]); const t = (together[key] = together[key] || { xg: 0, n: 0 }); t.xg += pp.xg; t.n += 1; } }
-    });
-  });
-  const tFeed = tFeedN ? tFeedXg / tFeedN : 0, wp = A.possList.filter(p => p.team === 'WLU'), tPossXg = wp.length ? wp.reduce((a, p) => a + p.xg, 0) / wp.length : 0;
-  const rf = {}, rs = {}, rt = {};
-  Object.keys(feed).forEach(k => { const f = feed[k]; rf[k] = (f.xg + 8 * tFeed) / (f.n + 8) - tFeed; });
-  Object.keys(pairScr).forEach(k => { const p = pairScr[k]; rs[k] = (p.g + 6 * baseG) / (p.n + 6) - baseG; });
-  Object.keys(together).forEach(k => { const t = together[k]; if (t.n >= 30) rt[k] = (t.xg + 30 * tPossXg) / (t.n + 30) - tPossXg; });
-  const zf = soZ(rf), zs = soZ(rs), zt = soZ(rt);
-  const pairZ = (a, b) => { const k = soPairKey(a, b), have = [zf[k], zs[k], zt[k]].filter(v => v !== undefined); return have.length ? have.reduce((x, y) => x + y, 0) / have.length : 0; };
-  const pairNote = (a, b) => { const k = soPairKey(a, b), out = []; if (feed[k]) out.push(`${num(feed[k].xg / feed[k].n, 2)} xG per feed on ${Math.round(feed[k].n)}`); if (pairScr[k]) out.push(`${Math.round(pairScr[k].n)} screen advantages together`); if (rt[k] !== undefined) out.push(`${together[k].n} poss. on the field together`); return out.join(', '); };
   const att = qual.filter(j => pos(j) === 'A'), mid = qual.filter(j => pos(j) === 'M');
-  return { ready: true, side: 'off', season, recentFrom, last, players, notEnough, att, mid, pairZ, pairNote };
+  return { ready: true, side: 'off', season, last, players, notEnough, att, mid, pairZ: () => 0, pairNote: () => '' };
 }
 // ---------------- Model Starting Defense (Bobby, Oct 19) ----------------
 // Defense Rating (0-100, 50 = average qualified defender), from logged data only:
@@ -9113,12 +9083,6 @@ function dpGroup(players, pairZ, js) {
   const chem = soPts(pz.length ? pz.reduce((a, b) => a + b, 0) / pz.length : 0);
   return { js, rating: r, chem, score: (1 - SO_CHEM) * r + SO_CHEM * chem };
 }
-function soDetail(A, j, cnt, nPrac) {
-  const p = A.players[j] || { shots: 0, goals: 0, xg: 0, potAst: 0, xa: 0, to: 0, dominoes: 0, sessions: new Set() }, touch = p.shots + p.potAst + p.to, t = cnt.two[j];
-  return { fin: `${p.goals} G on ${num(p.xg, 1)} xG in ${p.shots} shots`, look: `${num(p.shots ? p.xg / p.shots : 0, 2)} xG per shot, ${num(p.shots / Math.max(1, p.sessions.size), 1)} shots per practice`,
-    create: `${num(p.xa, 1)} xA on ${p.potAst} shots set up, ${p.dominoes} dominoes started, ${touch} touches`, offball: `${cnt.scr[j] || 0} screen advantages created`,
-    secure: `${p.to} turnovers on ${touch} touches`, twoman: t ? `${t.g} team goals on ${t.n} screen-advantage possessions he was in` : 'no screen-advantage possessions logged', steady: nPrac >= 5 ? `${nPrac} practices with 5+ touches` : `needs 5 practices (has ${nPrac})` };
-}
 function soAssemble(B, opt) {
   if (!B.ready) return B;
   const { players, w } = dpRerate(B.players, SO_W, opt), all = Object.keys(players), lockOf = dpLockOf(opt);
@@ -9173,14 +9137,15 @@ function dpLineOfMap(M) { const m = {}; Object.keys(M.lines || {}).forEach(k => 
 // What the current view is built from.
 function dpOpt(side) { const v = DP_VIEW[side]; return v === 'whatif' ? DP_WHATIF[side] : v === 'coach' ? ((DP_COACH[DEPTH_SEASON] || {})[side] || null) : null; }
 let DP_BASE = { off: null, def: null };
-function dpRender(side) {
+function dpRender(side, bodyOnly) {
   const el = document.getElementById(side === 'def' ? 'depthModelDef' : 'depthModel'); if (!el) return;
+  if (bodyOnly && !document.getElementById(side + 'DpBody')) bodyOnly = false;
   const title = side === 'def' ? 'Model Starting Defense' : 'Model Starting Offense';
   const B = DP_BASE[side];
   if (!B || !B.ready) { el.innerHTML = `<p class="panel-title">${title}</p><div class="model-note">${escapeHtml(B ? B.why : 'Loading…')}</div>`; return; }
   const view = DP_VIEW[side], opt = dpOpt(side), editing = view === 'whatif';
   const M0 = dpAssemble(side, B, null), M = view === 'model' ? M0 : dpAssemble(side, B, opt);
-  const coach = (DP_COACH[DEPTH_SEASON] || {})[side], W = dpW(side), word = side === 'def' ? 'Defense Rating' : 'Offense Rating';
+  const coach = (DP_COACH[DEPTH_SEASON] || {})[side], W = dpW(side), word = side === 'def' ? 'Defense Rating' : 'Impact Rating';
   const lab = Object.fromEntries(DP_LINES[side].map(([k, , s]) => [k, s])), order = DP_LINES[side].map(x => x[0]);
   const was = dpLineOfMap(M0), now = dpLineOfMap(M);
   const mv = j => { if (view === 'model') return ''; const a = was[j], b = now[j]; if (a === b) return ''; if (!a) return '<span class="dp-mv up">&#9650; new</span>'; return order.indexOf(b) < order.indexOf(a) ? `<span class="dp-mv up">&#9650; from ${escapeHtml(lab[a])}</span>` : `<span class="dp-mv down">&#9660; from ${escapeHtml(lab[a])}</span>`; };
@@ -9202,7 +9167,7 @@ function dpRender(side) {
     return `<div class="depth-chip" style="display:block;"><b>#${escapeHtml(j)} ${escapeHtml(p.name)}</b> ${mv(j)} <span class="n-note" style="font-style:normal;">${side === 'def' ? escapeHtml(sdPosLabel(p)) + ' &middot; ' : ''}${word} <b>${Math.round(p.rating)}</b>${diff ? ` <span class="n-note">(model ${Math.round(p.modelRating)})</span>` : ''} &middot; best at ${escapeHtml(dpReason(side, p))} &middot; ${side === 'def' ? p.reps + ' reps' : p.touches + ' touches'}</span> ${tag(j)}${ctrls(j, p)}</div>`; };
   const lineHtml = (k, title) => { const l = M.lines[k];
     if (!l) return `<div class="depth-line"><div class="depth-line-head">${title}</div><p class="n-note">Not enough qualified players at this position yet.</p></div>`;
-    return `<div class="depth-line"><div class="depth-line-head">${title} &middot; ${side === 'def' ? 'unit' : 'line'} ${Math.round(l.score)} (players ${Math.round(l.rating)}, chemistry ${Math.round(l.chem)})</div>${l.js.map(chip).join('')}
+    return `<div class="depth-line"><div class="depth-line-head">${title} &middot; avg ${Math.round(l.rating)}</div>${l.js.map(chip).join('')}
       ${l.bestPair ? `<p class="n-note" style="font-style:normal; margin:4px 0 0;">Best connection: #${escapeHtml(l.bestPair.js[0])} + #${escapeHtml(l.bestPair.js[1])} &mdash; ${escapeHtml(l.bestPair.note)}</p>` : ''}</div>`; };
   const L = DP_LINES[side];
   const linesHtml = side === 'def'
@@ -9218,9 +9183,13 @@ function dpRender(side) {
       : `<div class="model-note">No Coach&rsquo;s lineup saved yet. Make changes in What-if, then Save.</div>`)
     : `<div class="model-note">What-if: only you see this until you save. ${dpEmpty(opt) ? 'Boost or drop a player, lock him on a line, or change the weights below.' : dpChangeList(side, opt)}
         <div style="margin-top:6px; display:flex; flex-wrap:wrap; gap:6px;"><button type="button" class="pill" data-dp="${side}" data-act="save">Save as Coach&rsquo;s lineup</button>${coach && !dpEmpty(coach) ? `<button type="button" class="pill" data-dp="${side}" data-act="load">Start from Coach&rsquo;s lineup</button>` : ''}<button type="button" class="pill" data-dp="${side}" data-act="reset">Back to the model</button></div></div>`;
-  const weights = !editing ? '' : `<div class="dp-weights"><p class="panel-sub" style="margin:0 0 6px;">Weights (they&rsquo;re re-scaled to 100%, total now ${Math.round(wTotal)})</p>${W.map(([k, l, d]) => `<label class="dp-w"><span>${escapeHtml(l)} <b>${Math.round(M.w[k])}</b>${M.w[k] !== d ? ` <span class="n-note">(model ${d})</span>` : ''}</span><input type="range" min="0" max="50" step="5" value="${M.w[k]}" data-dp="${side}" data-act="w" data-k="${k}"></label>`).join('')}</div>`;
-  el.innerHTML = `<p class="panel-title">${title}</p>${pills}
-    <p class="panel-sub">${side === 'def' ? sdSubText(B) : soSubText(B)}</p>${viewNote}${weights}
+  const weights = `<p class="dp-wh">Weights <span class="n-note">drag to re-rank live</span></p>${W.map(([k, l, d]) => `<label class="dp-w"><span>${escapeHtml(l)} <b data-dpw="${k}">${dpPct(M.w[k], wTotal)}%</b></span><input type="range" min="0" max="40" step="0.5" value="${M.w[k]}" data-dp="${side}" data-act="w" data-k="${k}" aria-label="${escapeHtml(l)} weight"></label>`).join('')}
+    <div class="dp-wbtn"><button type="button" class="pill" data-dp="${side}" data-act="wreset">Reset weights</button><button type="button" class="pill" data-dp="${side}" data-act="save">Save for staff</button></div>`;
+  if (!bodyOnly) el.innerHTML = `<p class="panel-title">${title}</p><div id="${side}DpPills">${pills}</div>
+    <p class="panel-sub">${side === 'def' ? sdSubText(B) : soSubText(B)}</p>
+    <div class="dp-layout"><div class="dp-main" id="${side}DpBody"></div><aside class="dp-side" id="${side}DpW">${weights}</aside></div>`;
+  else document.getElementById(side + 'DpPills').innerHTML = pills;
+  document.getElementById(side + 'DpBody').innerHTML = `${viewNote}
     ${linesHtml}
     ${out.length ? `<div class="model-note" style="margin-top:10px;">Out vs the model&rsquo;s pick: ${out.map(j => `#${escapeHtml(j)} ${escapeHtml(M.players[j].name)} (was ${escapeHtml(lab[was[j]])}, now ${Math.round(M.players[j].rating)})`).join(' · ')}</div>` : ''}
     ${M.flags.length ? `<div class="model-note" style="margin-top:10px;">${M.flags.map(f => escapeHtml(f.text)).join('<br>')}</div>` : ''}
@@ -9237,9 +9206,10 @@ function dpRender(side) {
    .concat([side === 'def' ? { key: 'reps', label: 'Reps', type: 'num', value: r => r.reps } : { key: 'touches', label: 'Touches', type: 'num', value: r => r.touches }]),
   Object.values(M.players), { dense: true, defaultSort: { key: 'rating', dir: 'desc' } });
 }
+const dpPct = (w, tot) => (tot ? Math.round(1000 * w / tot) / 10 : 0);
 function sdOneHtml(lab, g, fmt) { return `<div class="depth-chip" style="display:block;"><b>${lab}</b> ${g ? `#${escapeHtml(g.jersey)} ${escapeHtml(g.name)} <span class="n-note" style="font-style:normal;">${fmt(g)}</span>` : '<span class="n-note">Not enough data yet.</span>'}</div>`; }
-function soSubText(B) { return `From logged data only (no Shooter Score). Offense Rating 0&ndash;100, 50 = average qualified attack/middie: ${SO_W.map(([, l, w]) => `${l} ${w}%`).join(' · ')}. Practices since ${escapeHtml(B.recentFrom)} count 1.5&times;; ${SO_MIN_TOUCHES}+ touches to qualify. Lines are the trios with the best 85% rating + 15% chemistry (feeds, screens and time on the field together between them).`; }
-function sdSubText(B) { return `From logged data only. Defense Rating 0&ndash;100, 50 = average qualified defender: ${SD_W.map(([, l, w]) => `${l} ${w}%`).join(' · ')}. Practices since ${escapeHtml(B.recentFrom)} count 1.5&times;; ${SD_MIN_REPS}+ defensive reps (on-ball, slides, breakdowns, caused turnovers, picks defended) to qualify. Small samples are pulled toward the team rate. Units are the groups with the best 85% rating + 15% chemistry (time on the defensive end together, once a pair has 30+ possessions).`; }
+function soSubText(B) { return `From logged data only. Impact Rating 0&ndash;100, 50 = average rated attack/middie, built from ${SO_W.map(([, l]) => l.toLowerCase()).join(', ')}. Starts with every part weighted evenly; drag the sliders to change it. Every practice counts the same; ${SO_MIN_TOUCHES}+ touches to be rated; small samples are pulled toward the team. Lines are a straight ranking: top 3 attack, then middies 1&ndash;3 and 4&ndash;6.`; }
+function sdSubText(B) { return `From logged data only. Defense Rating 0&ndash;100, 50 = average qualified defender: ${SD_W.map(([, l, w]) => `${l} ${w}%`).join(' · ')}. Practices since ${escapeHtml(B.recentFrom)} count 1.5&times;; ${SD_MIN_REPS}+ defensive reps (on-ball, slides, breakdowns, caused turnovers, picks defended) to qualify. Small samples are pulled toward the team rate. Units are a straight ranking: the best 3 close D + the best LSM, then the next; SSDM pairs the same way.`; }
 // Plain list of the changes in a set, with who made them.
 function dpChangeList(side, opt) {
   const W = dpW(side), lab = Object.fromEntries(DP_LINES[side].map(([k, , s]) => [k, s])), name = j => `#${escapeHtml(j)} ${escapeHtml(nameFor(j, DEPTH_SEASON) || '')}`, by = (b, a) => (b ? ` <span class="n-note">(${escapeHtml(b)}${a ? ', ' + escapeHtml(dpWhen(a)) : ''})</span>` : '');
@@ -9282,6 +9252,7 @@ function dpWire(el) {
     if (act === 'clear-yes') { dpClear(side); return; }
     if (act === 'edit' || act === 'load') { const c = (DP_COACH[DEPTH_SEASON] || {})[side]; DP_WHATIF[side] = c ? JSON.parse(JSON.stringify(c)) : null; DP_VIEW[side] = 'whatif'; dpRender(side); return; }
     if (act === 'reset') { DP_WHATIF[side] = null; DP_OPEN = null; dpRender(side); return; }
+    if (act === 'wreset') { if (DP_WHATIF[side]) DP_WHATIF[side].w = {}; if (DP_VIEW[side] === 'whatif' && dpEmpty(DP_WHATIF[side])) DP_VIEW[side] = 'model'; dpRender(side); return; }
     dpEdit(side, (o, who, at) => {
       const a = () => (o.adj[j] = o.adj[j] || { all: 0, parts: {} });
       if (act === 'boost' || act === 'drop') { const x = a(); x.all = Math.max(-50, Math.min(50, (x.all || 0) + (act === 'boost' ? DP_STEP : -DP_STEP))); x.by = who; x.at = at; }
@@ -9290,9 +9261,16 @@ function dpWire(el) {
       if (act === 'undo') { delete o.adj[j]; delete o.lock[j]; }
     });
   });
-  el.addEventListener('change', ev => {
+  // Sliders re-rank as you drag: only the lines redraw, so the slider keeps its grip.
+  el.addEventListener('input', ev => {
     const r = ev.target.closest('input[data-dp][data-act="w"]'); if (!r) return;
-    dpEdit(r.dataset.dp, (o, who, at) => { const d = dpW(r.dataset.dp).find(x => x[0] === r.dataset.k)[2], v = Number(r.value); if (v === d) delete o.w[r.dataset.k]; else o.w[r.dataset.k] = v; o.wBy = who; o.wAt = at; });
+    const side = r.dataset.dp;
+    if (DP_VIEW[side] !== 'whatif') { const c = (DP_COACH[DEPTH_SEASON] || {})[side]; DP_WHATIF[side] = DP_VIEW[side] === 'coach' && c ? JSON.parse(JSON.stringify(c)) : (DP_WHATIF[side] || { w: {}, adj: {}, lock: {} }); DP_VIEW[side] = 'whatif'; }
+    const o = DP_WHATIF[side] || (DP_WHATIF[side] = { w: {}, adj: {}, lock: {} }), d = dpW(side).find(x => x[0] === r.dataset.k)[2], v = Number(r.value);
+    if (v === d) delete o.w[r.dataset.k]; else o.w[r.dataset.k] = v; o.wBy = dpWho(); o.wAt = new Date().toISOString();
+    const W = dpW(side), w = {}; W.forEach(([k, , dd]) => { w[k] = isFinite(o.w[k]) ? o.w[k] : dd; }); const tot = Object.values(w).reduce((a, b) => a + b, 0);
+    W.forEach(([k]) => { const b = el.querySelector(`[data-dpw="${k}"]`); if (b) b.textContent = dpPct(w[k], tot) + '%'; });
+    dpRender(side, true);
   });
 }
 let DP_SEASON = null;
@@ -14138,13 +14116,13 @@ Rules:
 - Answer like a sharp assistant coach: lead with the direct answer, then the 2-4 reasons that matter most with their numbers, then (if useful) what would move it. Short paragraphs or a few bullets. No headers. Under 180 words unless asked for more.
 - When asked how something is figured, explain the formula in plain words from FACTS.
 - Small samples: if a number rests on few shots/reps/possessions, say so.
-- Groups are picked to make the whole group best, not by individual rank, so a higher-rated player can sit on a lower group when the chemistry or the other two players fit better. Use the IF LOCKED lines to show exactly what changes.
+- Groups are a straight ranking by rating within each position (offense: top 3 attack; middies 1-3 Line 1, 4-6 Line 2; defense: best 3 close D + best LSM, then the next). Use the IF LOCKED lines to show exactly what changes.
 - Say "on the team" or "among middies" exactly as FACTS say; don't mix up the two ranks. If one player simply rates higher, say that first.
 - Only mention a player code that appears in FACTS. If FACTS name no player, the question is about a team number or a page: explain that, don't attach it to a player.
-- Only use the model weights or the 1.5x rule when FACTS include the model.
+- Only use the model weights when FACTS include the model. The defense model counts the last 3 weeks of practice 1.5x; the offense model does not.
 - Never mention FACTS, codes, or these rules to the coach; just answer.`;
 const CHAT_PARTS = {
-  off: { fin: 'goals minus expected goals per shot (finishing)', look: 'expected goals per shot plus shots per practice', create: 'expected assists and dominoes started per touch', offball: 'screen advantages created and expected goals off teammates’ feeds', secure: 'turnovers per touch (fewer is better)', twoman: 'team goals on screen-advantage possessions he is in, vs normal', steady: 'how steady his per-practice value is (needs 5 practices)' },
+  off: { xp: 'total expected points: xG of his shots plus xA of the shots he set up', gs: 'goals per Gold or Silver shot he took', dom: 'dominoes he started per touch', xppt: 'expected points (xG + xA) per touch', ato: 'assists per turnover', sel: 'share of his own shots that were Gold or Silver (shot selection)', adv: 'share of the screens he set that created an advantage', catch: 'goals minus expected goals on shots off a teammate’s feed (catching, not dodging)' },
   def: { ct: 'caused turnovers per session', offball: 'off-ball breakdowns per session (fewer is better)', onball: 'expected goals per shot he allowed, and goals vs expected', beaten: 'share of reps he was beaten (fewer is better)', pick: 'expected points allowed and Freed % on picks he defended', slide: 'goals allowed after his slide' },
 };
 function chatCode(j) {
@@ -14170,15 +14148,15 @@ function chatFacts(q) {
   const wantsDef = (plan.type === 'lineup' && plan.side === 'def') || saLineupSide(t) === 'def' || js.some(j => ['D', 'L', 'S', 'G'].includes(posOfJ(season, j)));
   // Depth models (model pick, and the Coach's lineup if one is saved).
   const models = [];
-  [['off', 'OFFENSE MODEL (Offense Rating)', soBase, SO_W], ['def', 'DEFENSE MODEL (Defense Rating)', sdBase, SD_W]].forEach(([side, title, base, W]) => {
+  [['off', 'OFFENSE MODEL (Impact Rating)', soBase, SO_W], ['def', 'DEFENSE MODEL (Defense Rating)', sdBase, SD_W]].forEach(([side, title, base, W]) => {
     if (!wantsLines) return;
     if (side === 'def' && !wantsDef && !js.some(j => (DP_BASE.def && DP_BASE.def.players && DP_BASE.def.players[j]))) return;
     const B = base(season); if (!B.ready) { out.push(`${title}: not ready (${B.why})`); return; }
     const M = dpAssemble(side, B, null), c = (DP_COACH[season] || {})[side], C = c && !dpEmpty(c) ? dpAssemble(side, B, c) : null;
     models.push([side, M]);
     const lab = Object.fromEntries(DP_LINES[side].map(([k, l]) => [k, l]));
-    const lines = M2 => Object.keys(M2.lines).filter(k => M2.lines[k]).map(k => `${lab[k]}: ${M2.lines[k].js.map(j => `${chatCode(j)} ${Math.round(M2.players[j].rating)}`).join(', ')} (group score ${Math.round(M2.lines[k].score)}, chemistry ${Math.round(M2.lines[k].chem)})`).join('; ');
-    out.push(`${title}: weights ${W.map(([k, l, w]) => `${l} ${w}%`).join(', ')}. Parts: ${W.map(([k, l]) => `${l} = ${CHAT_PARTS[side][k]}`).join('; ')}. Groups = best 85% average rating + 15% chemistry; last 3 weeks of practice count 1.5x; ${side === 'def' ? SD_MIN_REPS + '+ defensive reps' : SO_MIN_TOUCHES + '+ touches'} to qualify.`);
+    const lines = M2 => Object.keys(M2.lines).filter(k => M2.lines[k]).map(k => `${lab[k]}: ${M2.lines[k].js.map(j => `${chatCode(j)} ${Math.round(M2.players[j].rating)}`).join(', ')} (average ${Math.round(M2.lines[k].rating)})`).join('; ');
+    out.push(`${title}: weights ${W.map(([k, l, w]) => `${l} ${w}%`).join(', ')}. Parts: ${W.map(([k, l]) => `${l} = ${CHAT_PARTS[side][k]}`).join('; ')}. Groups are a straight ranking by rating; ${side === 'def' ? 'last 3 weeks of practice count 1.5x; ' + SD_MIN_REPS + '+ defensive reps' : 'every practice counts the same; ' + SO_MIN_TOUCHES + '+ touches'} to be rated.`);
     if (wantsLines) out.push(`${side === 'def' ? 'DEFENSE' : 'OFFENSE'} MODEL PICK: ${lines(M)}.`);
     if (wantsLines && C) out.push(`COACH'S LINEUP (saved by a coach, overrides the model for the staff): ${lines(C)}.`);
     if (wantsLines && M.flags.length) out.push(`MODEL FLAGS: ${M.flags.map(x => side === 'def' ? `${chatCode(x.j)} (LSM) rates above a close defender in Unit 1.` : x.to === 'M' ? `${chatCode(x.j)} (attackman outside the top 3) rates above a middie on the lines; consider him at midfield.` : `${chatCode(x.j)} (middie) rates above an attackman in the attack trio.`).join(' ')}`);
@@ -14206,7 +14184,7 @@ function chatFacts(q) {
         dpLockLines(side, p).filter(k => k !== where).slice(0, 2).forEach(k => {
           const T = dpAssemble(side, B0, { w: {}, adj: {}, lock: { [j]: { line: k } } }), l = T.lines[k], l0 = M.lines[k];
           if (!l) return;
-          lines.push(`IF LOCKED ON ${lab[k]}: best ${lab[k]} would be ${l.js.map(x => `${chatCode(x)} ${Math.round(T.players[x].rating)}`).join(', ')} (group score ${num(l.score, 1)}, players ${num(l.rating, 1)}, chemistry ${Math.round(l.chem)}) vs the model's ${lab[k]} ${l0 ? `${l0.js.map(x => chatCode(x)).join(', ')} (group score ${num(l0.score, 1)}, players ${num(l0.rating, 1)}, chemistry ${Math.round(l0.chem)})` : '(none)'}; all groups together ${num(tot(T), 1)} vs ${num(tot(M), 1)} now.`);
+          lines.push(`IF LOCKED ON ${lab[k]}: best ${lab[k]} would be ${l.js.map(x => `${chatCode(x)} ${Math.round(T.players[x].rating)}`).join(', ')} (average ${num(l.rating, 1)}) vs the model's ${lab[k]} ${l0 ? `${l0.js.map(x => chatCode(x)).join(', ')} (average ${num(l0.rating, 1)})` : '(none)'}; all groups' average ratings together ${num(tot(T), 1)} vs ${num(tot(M), 1)} now.`);
         });
         // How far he is from the cut on each group above him.
         if (where) { const i = DP_LINES[side].findIndex(x => x[0] === where); if (i > 0) { const up = M.lines[DP_LINES[side][i - 1][0]]; if (up) { const low = up.js.slice().sort((a, b) => M.players[a].rating - M.players[b].rating)[0]; lines.push(`Lowest-rated player on ${lab[DP_LINES[side][i - 1][0]]}: ${chatCode(low)} ${Math.round(M.players[low].rating)}.`); } } }
@@ -14365,14 +14343,14 @@ function saRun(plan) {
       const unit = (lab, u) => u ? `<li><b>${lab}</b> <em>unit ${Math.round(u.score)}</em><br>${u.js.map(j => `#${navEsc(j)} ${navEsc(M.players[j].name)} <span class="v">${Math.round(M.players[j].rating)}</span>`).join(' · ')}</li>` : '';
       const one = (lab, g, v) => g ? `<li><b>${lab}</b><br>#${navEsc(g.jersey)} ${navEsc(g.name)} <span class="v">${v}</span></li>` : '';
       return { title: 'Model Starting Defense', filt: `${season} · last 3 weeks count 1.5× · ${SD_MIN_REPS}+ reps`, rows: [], page: 'depth',
-        html: `<ol>${unit('Close D + LSM', M.unit1)}${unit('SSDM', M.ssdm1)}${one('Goalie', M.goalie, Math.round(M.goalie ? M.goalie.score : 0))}${one('FOGO', M.fogo, M.fogo ? pct(M.fogo.winPct) : '')}</ol>${M.flags.length ? `<p class="sa-n">${M.flags.slice(0, 2).map(f => navEsc(f.text)).join('<br>')}</p>` : ''}${saCoachNote('def', season, M)}<p class="sa-n">Defense Rating from caused turnovers 25%, off-ball breakdowns 20%, on-ball 20%, not getting beaten 15%, pick defense 15%, slides 5%, plus 15% chemistry.</p>` };
+        html: `<ol>${unit('Close D + LSM', M.unit1)}${unit('SSDM', M.ssdm1)}${one('Goalie', M.goalie, Math.round(M.goalie ? M.goalie.score : 0))}${one('FOGO', M.fogo, M.fogo ? pct(M.fogo.winPct) : '')}</ol>${M.flags.length ? `<p class="sa-n">${M.flags.slice(0, 2).map(f => navEsc(f.text)).join('<br>')}</p>` : ''}${saCoachNote('def', season, M)}<p class="sa-n">Defense Rating from caused turnovers 25%, off-ball breakdowns 20%, on-ball 20%, not getting beaten 15%, pick defense 15%, slides 5%, straight ranking.</p>` };
     }
     if (plan.type === 'lineup') {
       const M = computeStartingOffense(season);
       if (!M.ready) return { title: 'Model Starting Offense', filt: season, rows: [], note: M.why, page: 'depth' };
       const line = (lab, l) => l ? `<li><b>${lab}</b> <em>line ${Math.round(l.score)}</em><br>${l.js.map(j => `#${navEsc(j)} ${navEsc(M.players[j].name)} <span class="v">${Math.round(M.players[j].rating)}</span>`).join(' · ')}</li>` : '';
-      return { title: 'Model Starting Offense', filt: `${season} · last 3 weeks count 1.5× · 40+ touches`, rows: [], page: 'depth',
-        html: `<ol>${line('Attack', M.attack)}${line('Middies · Line 1', M.mid1)}${line('Middies · Line 2', M.mid2)}</ol>${saCoachNote('off', season, M)}${M.flags.length ? `<p class="sa-n">${M.flags.slice(0, 2).map(f => navEsc(f.text)).join('<br>')}</p>` : ''}<p class="sa-n">Offense Rating from finishing, look quality, creating, off-ball value, ball security, two-man game and consistency, plus 15% chemistry. Not Shooter Score.</p>` };
+      return { title: 'Model Starting Offense', filt: `${season} · Impact Rating · ${SO_MIN_TOUCHES}+ touches`, rows: [], page: 'depth',
+        html: `<ol>${line('Attack', M.attack)}${line('Middies · Line 1', M.mid1)}${line('Middies · Line 2', M.mid2)}</ol>${saCoachNote('off', season, M)}${M.flags.length ? `<p class="sa-n">${M.flags.slice(0, 2).map(f => navEsc(f.text)).join('<br>')}</p>` : ''}<p class="sa-n">Impact Rating: expected points, Gold + Silver shooting, dominoes, xP per touch, assist/TO, shot selection, advantage per pick and scoring off the catch (weights set on the Depth Chart).</p>` };
     }
     const out0 = {};
     const P = plan.pick, isC = P.kind === 'concept', meta = P.c;
@@ -14928,12 +14906,12 @@ function renderMethods() {
       steps: ['Advantage = the screen freed the ball carrier, got the screener open, left a shooter open, created a mismatch or forced a slide. Covered and turnovers are not advantages.', 'Every screen is logged on the shot or no-shot possession (Screens rows); older entries count the single Pick card as one screen.', 'A possession counts once per player even if he set two advantage screens; team totals count it once.', 'Lift = his goals/poss minus the team&rsquo;s goals/poss on possessions without a screen advantage. xG/poss is shown beside it because it steadies faster than goals.'],
       ex: 'If #22 sets an advantage screen on 20 possessions and we score on 9 of them, he is at 0.45 goals/poss; with the team at 0.30 on possessions without a screen advantage, his lift is +0.15. If we score 0.25 on his other on-field possessions, his Screen Edge is +0.20. Points/Poss also counts the assist on each assisted goal. Advantages Created ranks who breaks the defense with screens most often; per 10 possessions adjusts for playing time.' },
     so: { t: 'Model Starting Offense', page: 'depth', q: 'Who should start on offense, from everything we log?',
-      what: 'An Offense Rating (0–100, 50 = average qualified attackman or middie) from logged data only — not Shooter Score — then the best attack trio and two middie lines, with how the three connect counted in.',
-      steps: ['Finishing 20% (goals minus xG per shot), look quality 15% (xG per shot and shots per practice), creating for others 20% (xA and dominoes started per touch), off-ball value 15% (screen advantages created and xG off teammates’ feeds), ball security 15% (turnovers per touch), two-man game 10% (team goals on advantage-screen possessions he’s in, vs normal), consistency 5% (how steady his per-practice value is; neutral until 5 practices).', 'Small samples are pulled toward the team average; the last 3 weeks of practice count 1.5×; 40+ touches to qualify; positions come from the Depth Chart.', 'Each line is the trio with the best 85% average rating + 15% chemistry: how good the looks are when they feed each other, how they do on screens together, and their offense on the field together once lineups are logged.', 'Crossover flags: an attackman outside the top three who would make a middie line, or a middie who rates above the attack trio.'],
+      what: 'An Impact Rating (0–100, 50 = average rated attackman or middie) from logged data only, then the top 3 attack and two middie lines as a straight ranking. Coaches set the weights with the sliders on the Depth Chart.',
+      steps: ['Eight parts, even weights to start: expected points (xG + xA, total), Gold + Silver shooting % (goals per Gold/Silver shot), dominoes created (per touch), xP per touch, assist / TO, shot selection (share of his shots that are Gold/Silver), advantage per pick (share of his screens that created an advantage), off-ball scoring off the catch (goals minus xG on shots off a feed).', 'Each part is compared with the team (0–100, 50 = average); small samples are pulled toward the team. Every practice counts the same; 20+ touches to be rated; positions come from the Depth Chart.', 'Lines are a straight ranking: top 3 attack; middies 1–3 = Line 1, 4–6 = Line 2. Drag a weight slider and the lines re-rank as you drag; Save for staff makes it the shared Coach’s lineup.'],
       ex: 'If #19 is the 4th-best attackman but rates higher than a Line 2 middie, the panel says to consider him at midfield.' },
     sd: { t: 'Model Starting Defense', page: 'depth', q: 'Who should start on defense, from everything we log?',
       what: 'A Defense Rating (0–100, 50 = average qualified close defender, LSM or SSDM) from logged data only, then the best close D + LSM unit, two SSDMs, a second unit, and the Goalie and FOGO picks.',
-      steps: ['Caused turnovers 25% (per session he was on the field), off-ball 20% (fewer off-ball breakdowns per session), on-ball 20% (xG per shot he allowed, and goals vs xG), not getting beaten 15% (beaten share of reps with Beaten logged), pick defense 15% (xP allowed and Freed % on picks he defended), slides 5% (goals after his slide).', 'Small samples are pulled toward the team rate; the last 3 weeks of practice count 1.5×; 15+ defensive reps to qualify; positions come from the Depth Chart (second-position SSDMs count for SSDM).', 'Each unit is the group with the best 85% average rating + 15% chemistry: expected goals allowed when they were on the defensive end together, once a pair has 30+ possessions.', 'Goalie = top Goalie Score with 25+ faced; FOGO = best faceoff % with 20+ taken.'],
+      steps: ['Caused turnovers 25% (per session he was on the field), off-ball 20% (fewer off-ball breakdowns per session), on-ball 20% (xG per shot he allowed, and goals vs xG), not getting beaten 15% (beaten share of reps with Beaten logged), pick defense 15% (xP allowed and Freed % on picks he defended), slides 5% (goals after his slide).', 'Small samples are pulled toward the team rate; the last 3 weeks of practice count 1.5×; 15+ defensive reps to qualify; positions come from the Depth Chart (second-position SSDMs count for SSDM).', 'Units are a straight ranking: the best 3 close D + the best LSM, then the next; SSDM pairs the same way.', 'Goalie = top Goalie Score with 25+ faced; FOGO = best faceoff % with 20+ taken.'],
       ex: 'A pole who causes 2 turnovers a practice but gets beaten often can still rate high, because caused turnovers count more than not getting beaten.' },
     pj: { t: 'Projections', page: 'projsk', q: 'What will each player produce over 17 games?',
       what: 'Forecasts built on playing time and true efficiency, with ranges. The &ldquo;true level&rdquo; is a Bayesian idea: start from the team average and trust a player&rsquo;s own results more as his sample grows.',
