@@ -9004,10 +9004,10 @@ function computeStartingDefense(season) {
   qual.forEach(j => {
     const c = comp(j), parts = {}; let tot = 0;
     SD_W.forEach(([k, , w]) => { parts[k] = soPts(c[k]); tot += w * parts[k]; });
-    const r = R[j], c = r.c;
+    const r = R[j], cn = r.c;
     players[j] = { j, name: nameFor(j, season), pos: pos(j), alt: alt(j), rating: tot / 100, parts, reps: r.reps,
-      detail: { ct: `${c.ct} caused TO in ${r.sessN} sessions`, offball: `${c.off} off-ball breakdowns in ${r.sessN} sessions`, onball: `${c.onG} G on ${num(c.onXg, 1)} xG in ${c.on} shots`,
-        beaten: c.bl ? `beaten ${c.beat} of ${c.bl}` : 'no beaten reps logged', pick: `${c.pk} picks defended`, slide: `${c.slide} slides, ${c.slideG} goals after` } };
+      detail: { ct: `${cn.ct} caused TO in ${r.sessN} sessions`, offball: `${cn.off} off-ball breakdowns in ${r.sessN} sessions`, onball: `${cn.onG} G on ${num(cn.onXg, 1)} xG in ${cn.on} shots`,
+        beaten: cn.bl ? `beaten ${cn.beat} of ${cn.bl}` : 'no beaten reps logged', pick: `${cn.pk} picks defended`, slide: `${cn.slide} slides, ${cn.slideG} goals after` } };
   });
   // Chemistry: expected goals allowed per possession when two were on the defensive end together (30+ possessions).
   const together = {}; let tN = 0, tXg = 0;
