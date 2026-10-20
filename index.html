@@ -252,6 +252,7 @@
   body.player-mode #pmBanner { display: flex; }
   body.player-mode .chat-fab, body.player-mode .chat-panel { display: none !important; }
   .chat-fab { position: fixed; right: 16px; bottom: calc(16px + env(safe-area-inset-bottom, 0px)); z-index: 60; width: 46px; height: 46px; border-radius: 50%; border: 1px solid rgba(255,255,255,.25); background: #0B2545; color: #fff; font-size: 20px; line-height: 1; padding: 0; box-shadow: 0 4px 14px rgba(0,0,0,.22); cursor: pointer; display: flex; align-items: center; justify-content: center; }
+  .chat-fab[hidden], .chat-panel[hidden] { display: none !important; }
   .chat-fab .chat-dot { position: absolute; top: 2px; right: 2px; width: 11px; height: 11px; border-radius: 50%; background: #E8A317; border: 2px solid #0B2545; }
   .chat-panel { position: fixed; right: 18px; bottom: calc(18px + env(safe-area-inset-bottom, 0px)); z-index: 61; width: min(440px, calc(100vw - 24px)); height: min(640px, calc(100vh - 110px)); display: flex; flex-direction: column; background: var(--card); color: var(--ink); border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 12px 36px rgba(0,0,0,.22); font-family: var(--text); }
   .chat-head { display: flex; align-items: center; gap: 8px; padding: 10px 12px; border-bottom: 1px solid var(--line); }
