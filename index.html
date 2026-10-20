@@ -2159,6 +2159,7 @@
     </div>
     <p class="view-intro">Recommended offensive lines, updated live as you log. Set each player&rsquo;s position once below (saved for everyone). <span id="depthSub"></span></p>
     <div class="panel" id="depthModel"></div>
+    <div class="panel" id="depthModelDef"></div>
     <div class="panel" id="depthAttack"></div>
     <div class="panel" id="depthMid"></div>
     <div class="panel" id="depthUnassigned"></div>
@@ -8734,6 +8735,7 @@ function renderDepthChart() {
   const wrap = document.getElementById('depthAttack');
   if (!wrap || !document.getElementById('depthView').classList.contains('active')) return;
   try { renderStartingOffense(); } catch (e) { console.error('starting offense', e); }
+  try { renderStartingDefense(); } catch (e) { console.error('starting defense', e); }
   const season = DEPTH_SEASON;
   const fixes = POSITIONS[season] || {};
   const posOf = j => fixes[j] || null;
@@ -8934,6 +8936,134 @@ function renderStartingOffense() {
     { key: 'pos', label: 'Pos', type: 'text', value: r => DEPTH_POS_LABEL[r.pos] || '' },
     { key: 'rating', label: 'Offense Rating', type: 'num', value: r => r.rating, format: v => `<b>${Math.round(v)}</b>` },
   ].concat(SO_W.map(([k, lab, w]) => ({ key: k, label: `${lab} (${w}%)`, type: 'num', value: r => r.parts[k], format: v => String(Math.round(v)) }))).concat([{ key: 'touches', label: 'Touches', type: 'num', value: r => r.touches }]),
+  rows, { dense: true, defaultSort: { key: 'rating', dir: 'desc' } });
+}
+// ---------------- Model Starting Defense (Bobby, Oct 19) ----------------
+// Defense Rating (0-100, 50 = average qualified defender), from logged data only:
+//   Caused turnovers 25 · Off-ball breakdowns (fewer) 20 · On-ball 20 · Not getting beaten 15
+//   · Pick defense 15 · Slides 5. The last 3 weeks count 1.5x. 15+ defensive reps to qualify.
+// Small samples are pulled toward the team rate, so a guy with 3 reps can't top a part.
+// Units: 3 close D + 1 LSM, 2 SSDM, then a 2nd unit; Goalie and FOGO from their own pages.
+const SD_W = [['ct', 'Caused turnovers', 25], ['offball', 'Off-ball (fewer breakdowns)', 20], ['onball', 'On-ball', 20], ['beaten', 'Not getting beaten', 15], ['pick', 'Pick defense', 15], ['slide', 'Slides', 5]];
+const SD_MIN_REPS = 15;
+function computeStartingDefense(season) {
+  const last = depthLatestDate(season);
+  if (!last) return { ready: false, why: 'No practices logged yet this season.' };
+  const rd = new Date(last + 'T00:00:00'); rd.setDate(rd.getDate() - (SO_RECENT_DAYS - 1));
+  const recentFrom = localDateStr(rd);
+  const wt = date => (date && date >= recentFrom ? SO_RECENT_X : 1);
+  const wl = j => j && !isOppJersey(j);
+  const model = xgModelFor(season);
+  const shots = advShots(season).concat(OPP_SHOTS.filter(s => seasonForDate(s.date) === season));
+  const d = effDataFor(season);
+  const R = {}, P = j => (R[j] = R[j] || { j, on: 0, onG: 0, onXg: 0, bl: 0, beat: 0, slide: 0, slideG: 0, off: 0, ct: 0, pk: 0, pkXp: 0, pkFreed: 0, sess: new Set(), reps: 0, c: { on: 0, onG: 0, onXg: 0, bl: 0, beat: 0, slide: 0, slideG: 0, off: 0, ct: 0, pk: 0 } });
+  // Sessions he was on the field for anything (any role), the per-session base for counts.
+  const seen = {}; const saw = (j, e) => { if (wl(j)) (seen[j] = seen[j] || new Set()).add(sessKey(e)); };
+  shots.forEach(s => { [s.shooterJersey, s.assistJersey, s.goalieJersey, s.defender, s.slideDefender, s.offBallFault, s.possStartJersey].forEach(j => saw(j, s)); });
+  d.possList.forEach(pp => { [pp.e.turnoverBy, pp.e.causedBy, pp.e.possStartJersey, pp.pick && pp.pick.screenerDef, pp.pick && pp.pick.userDef].forEach(j => saw(j, pp.e)); });
+  shots.forEach(s => {
+    const k = wt(s.date), g = s.goal === 1 ? 1 : 0;
+    if (wl(s.defender)) { const p = P(s.defender), x = xgForShot(s, model); p.on += k; p.onG += k * g; p.onXg += k * x; p.reps++; p.c.on++; p.c.onG += g; p.c.onXg += x;
+      if (s.defBeaten === 'Yes' || s.defBeaten === 'No') { p.bl += k; p.c.bl++; if (s.defBeaten === 'Yes') { p.beat += k; p.c.beat++; } } }
+    if (wl(s.slideDefender)) { const p = P(s.slideDefender); p.slide += k; p.slideG += k * g; p.reps++; p.c.slide++; p.c.slideG += g; }
+    if (wl(s.offBallFault)) { const p = P(s.offBallFault); p.off += k; p.reps++; p.c.off++; }
+  });
+  d.possList.forEach(pp => {
+    const k = wt(pp.e.date);
+    if (wl(pp.e.causedBy)) { const p = P(pp.e.causedBy); p.ct += k; p.reps++; p.c.ct++; }
+    if (pp.pick) { const v = possPoints(pp, d.xgOf); new Set([pp.pick.screenerDef, pp.pick.userDef].filter(wl)).forEach(j => { const p = P(j); p.pk += k; p.pkXp += k * v.xp; if (pp.pick.result === 'Freed ball carrier') p.pkFreed += k; p.reps++; p.c.pk++; }); }
+  });
+  const pos = j => posOfJ(season, j), alt = j => posAltJ(season, j);
+  const isDef = j => ['D', 'L', 'S'].includes(pos(j)) || alt(j) === 'S';
+  const pool = Object.keys(R).filter(isDef);
+  const qual = pool.filter(j => R[j].reps >= SD_MIN_REPS);
+  const notEnough = pool.filter(j => R[j].reps < SD_MIN_REPS).map(j => ({ j, reps: R[j].reps }));
+  if (qual.length < 4) return { ready: false, why: `Only ${qual.length} defenders have ${SD_MIN_REPS}+ defensive reps so far.`, notEnough };
+  qual.forEach(j => { R[j].sessN = Math.max(1, (seen[j] || new Set()).size); });
+  // Team rates (qualified players) that small samples are pulled toward.
+  const sum = f => qual.reduce((a, j) => a + f(R[j]), 0);
+  const tSess = sum(r => r.sessN), tCt = sum(r => r.ct) / tSess, tOff = sum(r => r.off) / tSess;
+  const tOn = sum(r => r.on) || 1, tXgS = sum(r => r.onXg) / tOn, tGmx = (sum(r => r.onG) - sum(r => r.onXg)) / tOn;
+  const tBeat = sum(r => r.beat) / (sum(r => r.bl) || 1), tSlideG = sum(r => r.slideG) / (sum(r => r.slide) || 1);
+  const tPk = sum(r => r.pk) || 1, tPkXp = sum(r => r.pkXp) / tPk, tFreed = sum(r => r.pkFreed) / tPk;
+  const raw = { ct: {}, off: {}, xgs: {}, gmx: {}, beat: {}, pxp: {}, pfr: {}, slide: {} };
+  qual.forEach(j => {
+    const r = R[j];
+    raw.ct[j] = (r.ct + 3 * tCt) / (r.sessN + 3);
+    raw.off[j] = -(r.off + 3 * tOff) / (r.sessN + 3);
+    raw.xgs[j] = -(r.onXg + 10 * tXgS) / (r.on + 10);
+    raw.gmx[j] = -((r.onG - r.onXg) + 15 * tGmx) / (r.on + 15);
+    raw.beat[j] = -(r.beat + 10 * tBeat) / (r.bl + 10);
+    raw.pxp[j] = -(r.pkXp + 8 * tPkXp) / (r.pk + 8);
+    raw.pfr[j] = -(r.pkFreed + 8 * tFreed) / (r.pk + 8);
+    raw.slide[j] = -(r.slideG + 8 * tSlideG) / (r.slide + 8);
+  });
+  const z = {}; Object.keys(raw).forEach(k => { z[k] = soZ(raw[k]); });
+  const comp = j => ({ ct: z.ct[j], offball: z.off[j], onball: ((z.xgs[j] || 0) + (z.gmx[j] || 0)) / 2, beaten: z.beat[j], pick: ((z.pxp[j] || 0) + (z.pfr[j] || 0)) / 2, slide: z.slide[j] });
+  const players = {};
+  qual.forEach(j => {
+    const c = comp(j), parts = {}; let tot = 0;
+    SD_W.forEach(([k, , w]) => { parts[k] = soPts(c[k]); tot += w * parts[k]; });
+    const r = R[j], cn = r.c;
+    players[j] = { j, name: nameFor(j, season), pos: pos(j), alt: alt(j), rating: tot / 100, parts, reps: r.reps,
+      detail: { ct: `${cn.ct} caused TO in ${r.sessN} sessions`, offball: `${cn.off} off-ball breakdowns in ${r.sessN} sessions`, onball: `${cn.onG} G on ${num(cn.onXg, 1)} xG in ${cn.on} shots`,
+        beaten: cn.bl ? `beaten ${cn.beat} of ${cn.bl}` : 'no beaten reps logged', pick: `${cn.pk} picks defended`, slide: `${cn.slide} slides, ${cn.slideG} goals after` } };
+  });
+  // Chemistry: expected goals allowed per possession when two were on the defensive end together (30+ possessions).
+  const together = {}; let tN = 0, tXg = 0;
+  d.possList.forEach(pp => { const on = wluOnField(pp.e); if (!on || !on.defense.length) return; const ds = on.defense.filter(j => players[j]); tN++; tXg += pp.xg;
+    for (let a = 0; a < ds.length; a++) for (let b = a + 1; b < ds.length; b++) { const key = soPairKey(ds[a], ds[b]); const t = (together[key] = together[key] || { xg: 0, n: 0 }); t.xg += pp.xg; t.n++; } });
+  const tPoss = tN ? tXg / tN : 0, rt = {};
+  Object.keys(together).forEach(k => { const t = together[k]; if (t.n >= 30) rt[k] = -((t.xg + 30 * tPoss) / (t.n + 30) - tPoss); });
+  const zt = soZ(rt);
+  const pairZ = (a, b) => zt[soPairKey(a, b)] || 0;
+  const unitOf = js => { const r = js.reduce((a, j) => a + players[j].rating, 0) / js.length; const pz = []; for (let a = 0; a < js.length; a++) for (let b = a + 1; b < js.length; b++) pz.push(pairZ(js[a], js[b])); const chem = soPts(pz.reduce((a, b) => a + b, 0) / pz.length); return { js, rating: r, chem, score: (1 - SO_CHEM) * r + SO_CHEM * chem }; };
+  const combos = (list, n) => { const out = []; const go = (i, cur) => { if (cur.length === n) { out.push(cur.slice()); return; } for (let x = i; x < list.length; x++) { cur.push(list[x]); go(x + 1, cur); cur.pop(); } }; go(0, []); return out; };
+  const bestUnit = (dl, ll) => { let top = null; combos(dl, 3).forEach(c3 => (ll.length ? ll : [null]).forEach(l => { const js = l ? c3.concat(l) : c3; const u = unitOf(js); if (!top || u.score > top.score) top = u; })); return top; };
+  const bestPair = list => { let top = null; combos(list, 2).forEach(c => { const u = unitOf(c); if (!top || u.score > top.score) top = u; }); return top; };
+  const close = qual.filter(j => pos(j) === 'D'), lsm = qual.filter(j => pos(j) === 'L');
+  const ss = qual.filter(j => pos(j) === 'S' || alt(j) === 'S');
+  const unit1 = close.length >= 3 ? bestUnit(close, lsm) : null;
+  const unit2 = unit1 && close.length >= 6 ? bestUnit(close.filter(j => !unit1.js.includes(j)), lsm.filter(j => !unit1.js.includes(j))) : null;
+  const ssdm1 = ss.length >= 2 ? bestPair(ss) : null;
+  const ssdm2 = ssdm1 && ss.length >= 4 ? bestPair(ss.filter(j => !ssdm1.js.includes(j))) : null;
+  // Goalie: the Goalie Score (saves vs expected). FOGO: faceoff % with 20+ taken.
+  const gs = computeGoalieScores(season).filter(g => g.score !== null && g.faced >= 25).sort((a, b) => b.score - a.score);
+  const fo = computeFaceoffSummary(faceoffsForSeason(season)).filter(f => f.taken >= 20).sort((a, b) => b.winPct - a.winPct);
+  const flags = [];
+  // A close defender or LSM who'd make the unit over a starter in the other group.
+  if (unit1) {
+    const lowD = unit1.js.filter(j => pos(j) === 'D').sort((a, b) => players[a].rating - players[b].rating)[0];
+    lsm.filter(j => !unit1.js.includes(j) && players[j].rating > players[lowD].rating).forEach(j => flags.push({ j, text: `#${j} ${players[j].name} (LSM, ${Math.round(players[j].rating)}) rates higher than close defender #${lowD} ${players[lowD].name} (${Math.round(players[lowD].rating)}).` }));
+  }
+  return { ready: true, season, recentFrom, last, players, unit1, unit2, ssdm1, ssdm2, goalie: gs[0] || null, goalie2: gs[1] || null, fogo: fo[0] || null, flags, notEnough, close, lsm, ss };
+}
+function sdPosLabel(p) { const L = { D: 'Close D', L: 'LSM', S: 'SSDM' }; return (L[p.pos] || DEPTH_POS_LABEL[p.pos] || '') + (p.alt === 'S' && p.pos !== 'S' ? ' / SSDM' : ''); }
+function sdReason(p) { const top = SD_W.map(([k, lab]) => [lab, p.parts[k]]).sort((a, b) => b[1] - a[1]).slice(0, 2); return top.map(([lab, v]) => `${lab.toLowerCase()} ${Math.round(v)}`).join(', '); }
+function sdUnitHtml(title, u, M) {
+  if (!u) return `<div class="depth-line"><div class="depth-line-head">${title}</div><p class="n-note">Not enough qualified players at this position yet.</p></div>`;
+  return `<div class="depth-line"><div class="depth-line-head">${title} &middot; unit ${Math.round(u.score)} (players ${Math.round(u.rating)}, chemistry ${Math.round(u.chem)})</div>
+    ${u.js.map(j => { const p = M.players[j]; return `<div class="depth-chip" style="display:block;"><b>#${escapeHtml(j)} ${escapeHtml(p.name)}</b> <span class="n-note" style="font-style:normal;">${escapeHtml(sdPosLabel(p))} &middot; Rating <b>${Math.round(p.rating)}</b> &middot; best at ${escapeHtml(sdReason(p))} &middot; ${p.reps} reps</span></div>`; }).join('')}</div>`;
+}
+function renderStartingDefense() {
+  const el = document.getElementById('depthModelDef'); if (!el) return;
+  const M = computeStartingDefense(DEPTH_SEASON);
+  if (!M.ready) { el.innerHTML = `<p class="panel-title">Model Starting Defense</p><div class="model-note">${escapeHtml(M.why)}</div>`; return; }
+  const one = (lab, g, fmt) => `<div class="depth-chip" style="display:block;"><b>${lab}</b> ${g ? `#${escapeHtml(g.jersey)} ${escapeHtml(g.name)} <span class="n-note" style="font-style:normal;">${fmt(g)}</span>` : '<span class="n-note">Not enough data yet.</span>'}</div>`;
+  const rows = Object.values(M.players).sort((a, b) => b.rating - a.rating);
+  el.innerHTML = `<p class="panel-title">Model Starting Defense</p>
+    <p class="panel-sub">From logged data only. Defense Rating 0&ndash;100, 50 = average qualified defender: ${SD_W.map(([, l, w]) => `${l} ${w}%`).join(' · ')}. Practices since ${escapeHtml(M.recentFrom)} count 1.5&times;; ${SD_MIN_REPS}+ defensive reps (on-ball, slides, breakdowns, caused turnovers, picks defended) to qualify. Small samples are pulled toward the team rate. Units are the groups with the best 85% rating + 15% chemistry (time on the defensive end together, once a pair has 30+ possessions).</p>
+    <div class="depth-lines">${sdUnitHtml('Close D + LSM &middot; Unit 1', M.unit1, M)}${sdUnitHtml('Close D + LSM &middot; Unit 2', M.unit2, M)}</div>
+    <div class="depth-lines" style="margin-top:8px;">${sdUnitHtml('SSDM &middot; Pair 1', M.ssdm1, M)}${sdUnitHtml('SSDM &middot; Pair 2', M.ssdm2, M)}<div class="depth-line"><div class="depth-line-head">Goalie &amp; FOGO</div>${one('Goalie', M.goalie, g => `Goalie Score <b>${Math.round(g.score)}</b> &middot; ${g.faced} faced &middot; ${g.gsax100 >= 0 ? '+' : ''}${num(g.gsax100, 1)} saved vs expected /100`)}${one('FOGO', M.fogo, f => `${pct(f.winPct)} on ${f.taken} faceoffs`)}</div></div>
+    ${M.flags.length ? `<div class="model-note" style="margin-top:10px;">${M.flags.map(f => escapeHtml(f.text)).join('<br>')}</div>` : ''}
+    <details style="margin-top:10px;"><summary class="panel-sub" style="cursor:pointer;">Every qualified defender's Defense Rating and parts</summary><div class="table-wrap" id="sdTableWrap" style="margin-top:8px;"></div></details>
+    ${M.notEnough.length ? `<p class="panel-sub" style="margin-top:8px;">Not enough data yet (under ${SD_MIN_REPS} reps): ${M.notEnough.sort((a, b) => b.reps - a.reps).map(x => `#${escapeHtml(x.j)} ${escapeHtml(nameFor(x.j, DEPTH_SEASON))} (${x.reps})`).join(', ')}.</p>` : ''}`;
+  renderSortableTable('sdTableWrap', [
+    { key: 'j', label: '#', type: 'text', value: r => r.j },
+    { key: 'name', label: 'Name', type: 'text', value: r => r.name, format: nameCell },
+    { key: 'pos', label: 'Pos', type: 'text', value: r => sdPosLabel(r) },
+    { key: 'rating', label: 'Defense Rating', type: 'num', value: r => r.rating, format: v => `<b>${Math.round(v)}</b>` },
+  ].concat(SD_W.map(([k, lab, w]) => ({ key: k, label: `${lab} (${w}%)`, type: 'num', value: r => r.parts[k], format: (v, r) => `<span title="${escapeHtml(r.detail[k === 'offball' ? 'offball' : k] || '')}">${Math.round(v)}</span>` }))).concat([{ key: 'reps', label: 'Reps', type: 'num', value: r => r.reps }]),
   rows, { dense: true, defaultSort: { key: 'rating', dir: 'desc' } });
 }
 
@@ -13543,9 +13673,11 @@ function saPlayerIn(q) {
   roster.forEach(r => { const parts = r.name.toLowerCase().split(/\s+/); if (words.some(w => parts.some(p => p === w || (w.length >= 4 && navNear(w, p))))) out.push(r.jersey); });
   return [...new Set(out)];
 }
+// Which side a 'who should start' question is about: defense words win, else offense.
+function saLineupSide(t) { return /\b(defen[cs]e\w*|d|d-?men|d-?line|poles?|close d|lsms?|long sticks?|ssdms?|short sticks?|goalies?|keepers?|fogos?)\b/.test(' ' + String(t).toLowerCase() + ' ') ? 'def' : 'off'; }
 function saPlan(q) {
   const t = ' ' + navNorm(q) + ' ', filters = saFilters(q), players = saPlayerIn(q);
-  if (/\bwho (would|should) (you|we|i) start\b|\bstarting (six|6|lineup|offense)\b|\bstart on offense\b/.test(t)) return { type: 'lineup', filters };
+  if (/\bwho (would|should) (you|we|i) start\b|\bwho starts\b|\bstarting (six|6|lineup|offense|defense|d|unit|poles)\b|\bstart on (offense|defense|d)\b/.test(t)) return { type: 'lineup', side: saLineupSide(t), filters };
   const topN = t.match(/\btop (\d+|one|two|three|four|five|six|seven|eight|nine|ten)\b/) || t.match(/\bbest (\d+|two|three|four|five|six)\b/);
   const n = topN ? (Number(topN[1]) || SA_NUMS[topN[1]]) : null;
   const dir = /\b(worst|least|fewest|lowest|bottom|struggl)/.test(t) ? 'worst' : 'best';
@@ -13573,6 +13705,14 @@ function saRun(plan) {
     const d = buildEffData(), season = EFF_SEASON, ctx = EFF_CONTEXT;
     const empty = !d.shots.length && !d.poss.length ? `No ${ctx === 'All' ? '' : ctx.toLowerCase() + ' '}entries logged for ${season}${f.from ? ' in that date range' : ''}${f.opp ? ' vs ' + f.opp : ''} yet.` : '';
     const filt = [season, ctx === 'All' ? 'all sessions' : ctx.toLowerCase() + 's'].concat(f.words.filter(w => !/^20\d\d$|^games$|^practice$|^scrimmages$/.test(w))).join(' · ');
+    if (plan.type === 'lineup' && plan.side === 'def') {
+      const M = computeStartingDefense(season);
+      if (!M.ready) return { title: 'Model Starting Defense', filt: season, rows: [], note: M.why, page: 'depth' };
+      const unit = (lab, u) => u ? `<li><b>${lab}</b> <em>unit ${Math.round(u.score)}</em><br>${u.js.map(j => `#${navEsc(j)} ${navEsc(M.players[j].name)} <span class="v">${Math.round(M.players[j].rating)}</span>`).join(' · ')}</li>` : '';
+      const one = (lab, g, v) => g ? `<li><b>${lab}</b><br>#${navEsc(g.jersey)} ${navEsc(g.name)} <span class="v">${v}</span></li>` : '';
+      return { title: 'Model Starting Defense', filt: `${season} · last 3 weeks count 1.5× · ${SD_MIN_REPS}+ reps`, rows: [], page: 'depth',
+        html: `<ol>${unit('Close D + LSM', M.unit1)}${unit('SSDM', M.ssdm1)}${one('Goalie', M.goalie, Math.round(M.goalie ? M.goalie.score : 0))}${one('FOGO', M.fogo, M.fogo ? pct(M.fogo.winPct) : '')}</ol>${M.flags.length ? `<p class="sa-n">${M.flags.slice(0, 2).map(f => navEsc(f.text)).join('<br>')}</p>` : ''}<p class="sa-n">Defense Rating from caused turnovers 25%, off-ball breakdowns 20%, on-ball 20%, not getting beaten 15%, pick defense 15%, slides 5%, plus 15% chemistry.</p>` };
+    }
     if (plan.type === 'lineup') {
       const M = computeStartingOffense(season);
       if (!M.ready) return { title: 'Model Starting Offense', filt: season, rows: [], note: M.why, page: 'depth' };
@@ -13727,7 +13867,7 @@ function saPlanFromAi(j, map, q) {
   if (F.position && !filters.pos) { const k = String(F.position).toLowerCase(); const c = { attack: 'A', midfield: 'M', ssdm: 'S', lsm: 'L', defense: 'D', fogo: 'F', goalie: 'G' }[k]; if (c) { filters.pos = [c]; filters.words.push(DEPTH_POS_LABEL[c]); } }
   if (F.since && /^\d{4}-\d{2}-\d{2}$/.test(F.since) && !filters.from) { filters.from = F.since; filters.words.push('since ' + F.since.slice(5)); }
   const why = typeof j.why === 'string' ? j.why.slice(0, 160) : '';
-  if (j.type === 'lineup') return { type: 'lineup', filters, why };
+  if (j.type === 'lineup') return { type: 'lineup', side: saLineupSide(ql), filters, why };
   if (j.type === 'page' && NAV_PAGES[j.page]) return { type: 'page', page: j.page, filters, why };
   let pick = null;
   const metric = SA_CATALOG.find(c => c.id === j.metric), role = SA_CONCEPTS.find(c => c.id === j.role);
@@ -14137,6 +14277,10 @@ function renderMethods() {
       what: 'An Offense Rating (0–100, 50 = average qualified attackman or middie) from logged data only — not Shooter Score — then the best attack trio and two middie lines, with how the three connect counted in.',
       steps: ['Finishing 20% (goals minus xG per shot), look quality 15% (xG per shot and shots per practice), creating for others 20% (xA and dominoes started per touch), off-ball value 15% (screen advantages created and xG off teammates’ feeds), ball security 15% (turnovers per touch), two-man game 10% (team goals on advantage-screen possessions he’s in, vs normal), consistency 5% (how steady his per-practice value is; neutral until 5 practices).', 'Small samples are pulled toward the team average; the last 3 weeks of practice count 1.5×; 40+ touches to qualify; positions come from the Depth Chart.', 'Each line is the trio with the best 85% average rating + 15% chemistry: how good the looks are when they feed each other, how they do on screens together, and their offense on the field together once lineups are logged.', 'Crossover flags: an attackman outside the top three who would make a middie line, or a middie who rates above the attack trio.'],
       ex: 'If #19 is the 4th-best attackman but rates higher than a Line 2 middie, the panel says to consider him at midfield.' },
+    sd: { t: 'Model Starting Defense', page: 'depth', q: 'Who should start on defense, from everything we log?',
+      what: 'A Defense Rating (0–100, 50 = average qualified close defender, LSM or SSDM) from logged data only, then the best close D + LSM unit, two SSDMs, a second unit, and the Goalie and FOGO picks.',
+      steps: ['Caused turnovers 25% (per session he was on the field), off-ball 20% (fewer off-ball breakdowns per session), on-ball 20% (xG per shot he allowed, and goals vs xG), not getting beaten 15% (beaten share of reps with Beaten logged), pick defense 15% (xP allowed and Freed % on picks he defended), slides 5% (goals after his slide).', 'Small samples are pulled toward the team rate; the last 3 weeks of practice count 1.5×; 15+ defensive reps to qualify; positions come from the Depth Chart (second-position SSDMs count for SSDM).', 'Each unit is the group with the best 85% average rating + 15% chemistry: expected goals allowed when they were on the defensive end together, once a pair has 30+ possessions.', 'Goalie = top Goalie Score with 25+ faced; FOGO = best faceoff % with 20+ taken.'],
+      ex: 'A pole who causes 2 turnovers a practice but gets beaten often can still rate high, because caused turnovers count more than not getting beaten.' },
     pj: { t: 'Projections', page: 'projsk', q: 'What will each player produce over 17 games?',
       what: 'Forecasts built on playing time and true efficiency, with ranges. The &ldquo;true level&rdquo; is a Bayesian idea: start from the team average and trust a player&rsquo;s own results more as his sample grows.',
       steps: ['Volume: last season&rsquo;s official shots per game, scaled by the role you set (Starter / Rotation / Reserve), plus your bump. New players use the role average.', 'Efficiency: his true fall shooting %, his own rate blended with the team&rsquo;s by how many shots he has (the reps-needed estimate from Data Health).', 'Ranges: about 4 times in 5 he lands inside them.', 'Later, once a season of game lineups is logged: an impact rating that uses Goals Added as the starting estimate and adjusts it by how the team does with him on the field (like LUMA&rsquo;s ARC).'],
