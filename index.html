@@ -14056,14 +14056,16 @@ function chatCapture(ev) {
   const clean = (x, n) => { const v = String(x || '').replace(/\s+/g, ' ').trim().slice(0, n); return v && saMaskOk(v) ? v : ''; };
   const f = { panel: panelTitle, sub: panel && panel.querySelector('.panel-sub') ? clean(panel.querySelector('.panel-sub').textContent, 700) : '' };
   const chip = t.closest('.depth-chip'), tile = t.closest('.stat-tile'), td = t.closest('td'), tr = t.closest('tr');
+  const textOf = el => { if (!el) return ''; const c = el.cloneNode(true); c.querySelectorAll('.info-tip').forEach(x => x.remove()); return c.textContent; };
+  const tipOf = el => { const x = el && el.querySelector('.info-tip'); return x ? x.title : ''; };
   const jerseyIn = txt => { const m = String(txt || '').match(/#\s?(\d{1,3})\b/); return m && rosterHas(m[1]) ? m[1] : null; };
   if (chip) { f.jersey = jerseyIn(chip.textContent); f.label = (chip.closest('.depth-line') && chip.closest('.depth-line').querySelector('.depth-line-head') || {}).textContent || ''; f.label = f.label.split('·').slice(0, 2).join('·').trim().slice(0, 50); }
-  else if (tile) { f.label = (tile.querySelector('.name') || {}).textContent || ''; f.value = ((tile.querySelector('.value') || {}).textContent || '').slice(0, 30); f.help = clean([((tile.querySelector('.meta') || {}).textContent || ''), ((tile.querySelector('[title], [data-tip]') || {}).title || '')].join(' '), 300); }
+  else if (tile) { f.label = textOf(tile.querySelector('.name')).trim(); f.value = ((tile.querySelector('.value') || {}).textContent || '').slice(0, 30); f.help = clean([textOf(tile.querySelector('.meta')), tipOf(tile)].join(' '), 300); }
   else if (tr && tr.closest('table')) {
     const cells = [...tr.children], first = cells[0] ? cells[0].textContent.trim() : '';
     f.jersey = /^\d{1,3}$/.test(first) && rosterHas(first) ? first : jerseyIn(tr.textContent);
     if (!f.jersey) f.row = clean(first, 40);
-    if (td) { const i = cells.indexOf(td), th = tr.closest('table').querySelectorAll('thead th')[i]; const h = th ? th.textContent.replace(/[▲▼]/g, '').trim() : ''; if (h && !/^(#|name)$/i.test(h)) { f.label = h.slice(0, 50); f.value = td.textContent.trim().slice(0, 30); f.help = th ? clean(th.title || (th.querySelector('[title]') || {}).title, 300) : ''; } }
+    if (td) { const i = cells.indexOf(td), th = tr.closest('table').querySelectorAll('thead th')[i]; const h = th ? textOf(th).replace(/[▲▼]/g, '').trim() : ''; if (h && !/^(#|name)$/i.test(h)) { f.label = h.slice(0, 50); f.value = td.textContent.trim().slice(0, 30); f.help = th ? clean(th.title || tipOf(th), 300) : ''; } }
   } else { const sa = t.closest('.sa-card, li'); if (sa) f.jersey = jerseyIn(sa.textContent); }
   if (f.value && !saMaskOk(f.value)) f.value = '';
   if (!f.jersey && !f.label && !f.row) return;
