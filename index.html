@@ -269,6 +269,18 @@
   .depth-line-head { font-family: var(--text); font-size: 12px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--navy-3); margin-bottom: 6px; }
   .depth-chip { font-family: var(--text); font-size: 13px; background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 7px 10px; margin-bottom: 6px; display: grid; grid-template-columns: 1fr auto; gap: 2px 8px; align-items: center; }
   .depth-chip .n-note { grid-column: 1; }
+  .dp-views { display: flex; flex-wrap: wrap; gap: 6px; margin: 2px 0 8px; }
+  .dp-mv { font-family: var(--text); font-size: 11px; font-weight: 700; padding: 1px 6px; border-radius: 999px; white-space: nowrap; }
+  .dp-mv.up { color: var(--good); background: color-mix(in srgb, var(--good) 12%, transparent); }
+  .dp-mv.down { color: var(--critical); background: color-mix(in srgb, var(--critical) 12%, transparent); }
+  .dp-tag { display: block; font-family: var(--text); font-size: 11.5px; color: var(--navy-3); margin-top: 2px; }
+  .dp-ctl { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
+  .dp-ctl .pill, .dp-parts .pill { font-size: 11px; padding: 2px 8px; }
+  .dp-parts { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 4px 10px; margin-top: 6px; }
+  .dp-part { display: flex; align-items: center; gap: 4px; font-family: var(--text); font-size: 12px; } .dp-part > span:first-child { flex: 1; }
+  .dp-weights { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 6px 14px; margin: 8px 0 12px; }
+  .dp-w { display: flex; flex-direction: column; font-family: var(--text); font-size: 12px; gap: 2px; } .dp-w input { width: 100%; }
+  .dp-changes { margin: 6px 0 0; padding-left: 18px; }
   .depth-chip .depth-pos { grid-row: 1 / span 2; grid-column: 2; }
   .depth-rest { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 0 10px; }
   .depth-pos { font-family: var(--text); font-size: 11.5px; font-weight: 700; border: 1.5px solid var(--navy-3); color: var(--navy-3); background: #fff; border-radius: 999px; padding: 4px 10px; cursor: pointer; white-space: nowrap; }
@@ -2930,6 +2942,12 @@ async function loadAll() {
       const a = snap.exists && snap.data().alt ? JSON.parse(snap.data().alt) : {}; const ca = {}; Object.keys(a).forEach(j => { if (validJerseyText(j) && POS_CODES.includes(a[j])) ca[j] = a[j]; }); POSITIONS_ALT[season] = ca; } catch (e) { POSITIONS[season] = {}; }
     if (window.__appReady) renderDepthChart();
   }, e => console.error('positions sync error', e)));
+  ADV_SEASONS.forEach(season => DB.doc('app/depthCoach_' + season).onSnapshot(snap => {
+    const d = snap.exists ? snap.data() : {}, o = {};
+    ['off', 'def'].forEach(side => { try { o[side] = d[side] ? dpClean(JSON.parse(d[side]), side) : null; } catch (e) { o[side] = null; } });
+    DP_COACH[season] = o;
+    if (window.__appReady && season === DEPTH_SEASON) { dpRender('off'); dpRender('def'); }
+  }, e => console.error('coach lineup sync error', e)));
   const unitsRef = DB.doc('app/units');
   unitsRef.onSnapshot(snap => {
     UNITS = snap.exists ? parseUnits(snap.data().json) : [];
@@ -8818,7 +8836,8 @@ function soData(season, from) { const s0 = EFF_SEASON, c0 = EFF_CONTEXT, f0 = EF
 function soZ(map) { const ks = Object.keys(map).filter(k => map[k] !== null && isFinite(map[k])); if (ks.length < 2) return {}; const v = ks.map(k => map[k]), m = v.reduce((a, b) => a + b, 0) / v.length, sd = Math.sqrt(v.reduce((a, b) => a + (b - m) ** 2, 0) / (v.length - 1)) || 1; const z = {}; ks.forEach(k => { z[k] = Math.max(-2.5, Math.min(2.5, (map[k] - m) / sd)); }); return z; }
 const soPts = z => Math.max(0, Math.min(100, 50 + 15 * (z || 0)));
 function soPairKey(a, b) { return a < b ? a + '|' + b : b + '|' + a; }
-function computeStartingOffense(season) {
+function computeStartingOffense(season, opt) { return soAssemble(soBase(season), opt); }
+function soBase(season) {
   const last = depthLatestDate(season);
   if (!last) return { ready: false, why: 'No practices logged yet this season.' };
   const rd = new Date(last + 'T00:00:00'); rd.setDate(rd.getDate() - (SO_RECENT_DAYS - 1));
@@ -8895,48 +8914,7 @@ function computeStartingOffense(season) {
   const zf = soZ(rf), zs = soZ(rs), zt = soZ(rt);
   const pairZ = (a, b) => { const k = soPairKey(a, b), have = [zf[k], zs[k], zt[k]].filter(v => v !== undefined); return have.length ? have.reduce((x, y) => x + y, 0) / have.length : 0; };
   const pairNote = (a, b) => { const k = soPairKey(a, b), out = []; if (feed[k]) out.push(`${num(feed[k].xg / feed[k].n, 2)} xG per feed on ${Math.round(feed[k].n)}`); if (pairScr[k]) out.push(`${Math.round(pairScr[k].n)} screen advantages together`); if (rt[k] !== undefined) out.push(`${together[k].n} poss. on the field together`); return out.join(', '); };
-  const lineOf = js => { const r = js.reduce((a, j) => a + players[j].rating, 0) / js.length; const pz = [pairZ(js[0], js[1]), pairZ(js[0], js[2]), pairZ(js[1], js[2])]; const chem = soPts(pz.reduce((a, b) => a + b, 0) / 3); return { js, rating: r, chem, score: (1 - SO_CHEM) * r + SO_CHEM * chem }; };
-  const best = list => { let top = null; for (let a = 0; a < list.length; a++) for (let b = a + 1; b < list.length; b++) for (let c = b + 1; c < list.length; c++) { const l = lineOf([list[a], list[b], list[c]]); if (!top || l.score > top.score) top = l; } return top; };
-  const att = qual.filter(j => pos(j) === 'A'), mid = qual.filter(j => pos(j) === 'M');
-  const attack = att.length >= 3 ? best(att) : null;
-  const mid1 = mid.length >= 3 ? best(mid) : null;
-  const mid2 = mid1 && mid.length >= 6 ? best(mid.filter(j => !mid1.js.includes(j))) : null;
-  [attack, mid1, mid2].forEach(l => { if (!l) return; let bk = null, bz = -9; for (let a = 0; a < 3; a++) for (let b = a + 1; b < 3; b++) { const z0 = pairZ(l.js[a], l.js[b]); if (z0 > bz) { bz = z0; bk = [l.js[a], l.js[b]]; } } l.bestPair = bk && pairNote(bk[0], bk[1]) ? { js: bk, note: pairNote(bk[0], bk[1]) } : null; });
-  // Crossover flags: an attackman who'd make a middie line, or a middie who'd crack the attack.
-  const flags = [];
-  const midLine = [mid1, mid2].filter(Boolean).flatMap(l => l.js), lowestMid = midLine.slice().sort((a, b) => players[a].rating - players[b].rating)[0];
-  if (attack && lowestMid) att.filter(j => !attack.js.includes(j) && players[j].rating > players[lowestMid].rating).sort((a, b) => players[b].rating - players[a].rating).forEach(j => {
-    const rank = [...mid, j].sort((a, b) => players[b].rating - players[a].rating).indexOf(j) + 1;
-    flags.push({ j, to: 'M', text: `Consider #${j} ${players[j].name} at midfield: he's not in the top 3 attack, but his ${Math.round(players[j].rating)} would rank ${rank === 1 ? '1st' : rank === 2 ? '2nd' : rank === 3 ? '3rd' : rank + 'th'} among middies, ahead of #${lowestMid} ${players[lowestMid].name} (${Math.round(players[lowestMid].rating)}).` });
-  });
-  if (attack) { const lowAtt = attack.js.slice().sort((a, b) => players[a].rating - players[b].rating)[0]; mid.filter(j => players[j].rating > players[lowAtt].rating).forEach(j => flags.push({ j, to: 'A', text: `#${j} ${players[j].name} (middie, ${Math.round(players[j].rating)}) rates higher than #${lowAtt} ${players[lowAtt].name} (${Math.round(players[lowAtt].rating)}) in the attack trio.` })); }
-  return { ready: true, season, recentFrom, last, players, attack, mid1, mid2, flags, notEnough, att, mid };
-}
-function soReason(p) { const top = SO_W.map(([k, lab]) => [lab, p.parts[k]]).sort((a, b) => b[1] - a[1]).slice(0, 2); return top.map(([lab, v]) => `${lab.toLowerCase()} ${Math.round(v)}`).join(', '); }
-function soLineHtml(title, l, M) {
-  if (!l) return `<div class="depth-line"><div class="depth-line-head">${title}</div><p class="n-note">Not enough qualified players at this position yet.</p></div>`;
-  return `<div class="depth-line"><div class="depth-line-head">${title} &middot; line ${Math.round(l.score)} (players ${Math.round(l.rating)}, chemistry ${Math.round(l.chem)})</div>
-    ${l.js.map(j => { const p = M.players[j]; return `<div class="depth-chip" style="display:block;"><b>#${escapeHtml(j)} ${escapeHtml(p.name)}</b> <span class="n-note" style="font-style:normal;">Offense Rating <b>${Math.round(p.rating)}</b> &middot; best at ${escapeHtml(soReason(p))} &middot; ${p.touches} touches</span></div>`; }).join('')}
-    ${l.bestPair ? `<p class="n-note" style="font-style:normal; margin:4px 0 0;">Best connection: #${escapeHtml(l.bestPair.js[0])} + #${escapeHtml(l.bestPair.js[1])} &mdash; ${escapeHtml(l.bestPair.note)}</p>` : ''}</div>`;
-}
-function renderStartingOffense() {
-  const el = document.getElementById('depthModel'); if (!el) return;
-  const M = computeStartingOffense(DEPTH_SEASON);
-  if (!M.ready) { el.innerHTML = `<p class="panel-title">Model Starting Offense</p><div class="model-note">${escapeHtml(M.why)}</div>`; return; }
-  const rows = Object.values(M.players).sort((a, b) => b.rating - a.rating);
-  el.innerHTML = `<p class="panel-title">Model Starting Offense</p>
-    <p class="panel-sub">From logged data only (no Shooter Score). Offense Rating 0&ndash;100, 50 = average qualified attack/middie: ${SO_W.map(([, l, w]) => `${l} ${w}%`).join(' · ')}. Practices since ${escapeHtml(M.recentFrom)} count 1.5&times;; ${SO_MIN_TOUCHES}+ touches to qualify. Lines are the trios with the best 85% rating + 15% chemistry (feeds, screens and time on the field together between them).</p>
-    <div class="depth-lines">${soLineHtml('Attack', M.attack, M)}${soLineHtml('Middies &middot; Line 1', M.mid1, M)}${soLineHtml('Middies &middot; Line 2', M.mid2, M)}</div>
-    ${M.flags.length ? `<div class="model-note" style="margin-top:10px;">${M.flags.map(f => escapeHtml(f.text)).join('<br>')}</div>` : ''}
-    <details style="margin-top:10px;"><summary class="panel-sub" style="cursor:pointer;">Every qualified player's Offense Rating and parts</summary><div class="table-wrap" id="soTableWrap" style="margin-top:8px;"></div></details>
-    ${M.notEnough.length ? `<p class="panel-sub" style="margin-top:8px;">Not enough data yet (under ${SO_MIN_TOUCHES} touches): ${M.notEnough.sort((a, b) => b.touches - a.touches).map(x => `#${escapeHtml(x.j)} ${escapeHtml(nameFor(x.j, DEPTH_SEASON))} (${x.touches})`).join(', ')}.</p>` : ''}`;
-  renderSortableTable('soTableWrap', [
-    { key: 'j', label: '#', type: 'text', value: r => r.j },
-    { key: 'name', label: 'Name', type: 'text', value: r => r.name, format: nameCell },
-    { key: 'pos', label: 'Pos', type: 'text', value: r => DEPTH_POS_LABEL[r.pos] || '' },
-    { key: 'rating', label: 'Offense Rating', type: 'num', value: r => r.rating, format: v => `<b>${Math.round(v)}</b>` },
-  ].concat(SO_W.map(([k, lab, w]) => ({ key: k, label: `${lab} (${w}%)`, type: 'num', value: r => r.parts[k], format: v => String(Math.round(v)) }))).concat([{ key: 'touches', label: 'Touches', type: 'num', value: r => r.touches }]),
-  rows, { dense: true, defaultSort: { key: 'rating', dir: 'desc' } });
+  return { ready: true, side: 'off', season, recentFrom, last, players, notEnough, att, mid, pairZ, pairNote };
 }
 // ---------------- Model Starting Defense (Bobby, Oct 19) ----------------
 // Defense Rating (0-100, 50 = average qualified defender), from logged data only:
@@ -8946,7 +8924,8 @@ function renderStartingOffense() {
 // Units: 3 close D + 1 LSM, 2 SSDM, then a 2nd unit; Goalie and FOGO from their own pages.
 const SD_W = [['ct', 'Caused turnovers', 25], ['offball', 'Off-ball (fewer breakdowns)', 20], ['onball', 'On-ball', 20], ['beaten', 'Not getting beaten', 15], ['pick', 'Pick defense', 15], ['slide', 'Slides', 5]];
 const SD_MIN_REPS = 15;
-function computeStartingDefense(season) {
+function computeStartingDefense(season, opt) { return sdAssemble(sdBase(season), opt); }
+function sdBase(season) {
   const last = depthLatestDate(season);
   if (!last) return { ready: false, why: 'No practices logged yet this season.' };
   const rd = new Date(last + 'T00:00:00'); rd.setDate(rd.getDate() - (SO_RECENT_DAYS - 1));
@@ -9017,55 +8996,250 @@ function computeStartingDefense(season) {
   Object.keys(together).forEach(k => { const t = together[k]; if (t.n >= 30) rt[k] = -((t.xg + 30 * tPoss) / (t.n + 30) - tPoss); });
   const zt = soZ(rt);
   const pairZ = (a, b) => zt[soPairKey(a, b)] || 0;
-  const unitOf = js => { const r = js.reduce((a, j) => a + players[j].rating, 0) / js.length; const pz = []; for (let a = 0; a < js.length; a++) for (let b = a + 1; b < js.length; b++) pz.push(pairZ(js[a], js[b])); const chem = soPts(pz.reduce((a, b) => a + b, 0) / pz.length); return { js, rating: r, chem, score: (1 - SO_CHEM) * r + SO_CHEM * chem }; };
-  const combos = (list, n) => { const out = []; const go = (i, cur) => { if (cur.length === n) { out.push(cur.slice()); return; } for (let x = i; x < list.length; x++) { cur.push(list[x]); go(x + 1, cur); cur.pop(); } }; go(0, []); return out; };
-  const bestUnit = (dl, ll) => { let top = null; combos(dl, 3).forEach(c3 => (ll.length ? ll : [null]).forEach(l => { const js = l ? c3.concat(l) : c3; const u = unitOf(js); if (!top || u.score > top.score) top = u; })); return top; };
-  const bestPair = list => { let top = null; combos(list, 2).forEach(c => { const u = unitOf(c); if (!top || u.score > top.score) top = u; }); return top; };
-  const close = qual.filter(j => pos(j) === 'D'), lsm = qual.filter(j => pos(j) === 'L');
-  const ss = qual.filter(j => pos(j) === 'S' || alt(j) === 'S');
-  const unit1 = close.length >= 3 ? bestUnit(close, lsm) : null;
-  const unit2 = unit1 && close.length >= 6 ? bestUnit(close.filter(j => !unit1.js.includes(j)), lsm.filter(j => !unit1.js.includes(j))) : null;
-  const ssdm1 = ss.length >= 2 ? bestPair(ss) : null;
-  const ssdm2 = ssdm1 && ss.length >= 4 ? bestPair(ss.filter(j => !ssdm1.js.includes(j))) : null;
   // Goalie: the Goalie Score (saves vs expected). FOGO: faceoff % with 20+ taken.
   const gs = computeGoalieScores(season).filter(g => g.score !== null && g.faced >= 25).sort((a, b) => b.score - a.score);
   const fo = computeFaceoffSummary(faceoffsForSeason(season)).filter(f => f.taken >= 20).sort((a, b) => b.winPct - a.winPct);
-  const flags = [];
-  // A close defender or LSM who'd make the unit over a starter in the other group.
-  if (unit1) {
-    const lowD = unit1.js.filter(j => pos(j) === 'D').sort((a, b) => players[a].rating - players[b].rating)[0];
-    lsm.filter(j => !unit1.js.includes(j) && players[j].rating > players[lowD].rating).forEach(j => flags.push({ j, text: `#${j} ${players[j].name} (LSM, ${Math.round(players[j].rating)}) rates higher than close defender #${lowD} ${players[lowD].name} (${Math.round(players[lowD].rating)}).` }));
-  }
-  return { ready: true, season, recentFrom, last, players, unit1, unit2, ssdm1, ssdm2, goalie: gs[0] || null, goalie2: gs[1] || null, fogo: fo[0] || null, flags, notEnough, close, lsm, ss };
+  const close = qual.filter(j => pos(j) === 'D'), lsm = qual.filter(j => pos(j) === 'L');
+  const ss = qual.filter(j => pos(j) === 'S' || alt(j) === 'S');
+  return { ready: true, side: 'def', season, recentFrom, last, players, notEnough, close, lsm, ss, pairZ, goalie: gs[0] || null, goalie2: gs[1] || null, fogo: fo[0] || null };
 }
 function sdPosLabel(p) { const L = { D: 'Close D', L: 'LSM', S: 'SSDM' }; return (L[p.pos] || DEPTH_POS_LABEL[p.pos] || '') + (p.alt === 'S' && p.pos !== 'S' ? ' / SSDM' : ''); }
-function sdReason(p) { const top = SD_W.map(([k, lab]) => [lab, p.parts[k]]).sort((a, b) => b[1] - a[1]).slice(0, 2); return top.map(([lab, v]) => `${lab.toLowerCase()} ${Math.round(v)}`).join(', '); }
-function sdUnitHtml(title, u, M) {
-  if (!u) return `<div class="depth-line"><div class="depth-line-head">${title}</div><p class="n-note">Not enough qualified players at this position yet.</p></div>`;
-  return `<div class="depth-line"><div class="depth-line-head">${title} &middot; unit ${Math.round(u.score)} (players ${Math.round(u.rating)}, chemistry ${Math.round(u.chem)})</div>
-    ${u.js.map(j => { const p = M.players[j]; return `<div class="depth-chip" style="display:block;"><b>#${escapeHtml(j)} ${escapeHtml(p.name)}</b> <span class="n-note" style="font-style:normal;">${escapeHtml(sdPosLabel(p))} &middot; Rating <b>${Math.round(p.rating)}</b> &middot; best at ${escapeHtml(sdReason(p))} &middot; ${p.reps} reps</span></div>`; }).join('')}</div>`;
+// ---------------- What-if and Coach's lineup (Bobby, Oct 19) ----------------
+// One set of changes (opt) works on either model:
+//   { w: { part: weight }, adj: { jersey: { all, parts: { part: +/- }, by, at } }, lock: { jersey: { line, by, at } }, wBy, wAt }
+// Model's pick = no changes. What-if = this coach's preview (not saved).
+// Coach's lineup = the changes someone saved for everyone (app/depthCoach_<season>).
+const DP_STEP = 5;
+let DP_VIEW = { off: 'model', def: 'model' }, DP_WHATIF = { off: null, def: null }, DP_OPEN = null, DP_CLEAR = null;
+const DP_COACH = {};
+const DP_LINES = {
+  off: [['attack', 'Attack', 'Attack'], ['mid1', 'Middies · Line 1', 'Line 1'], ['mid2', 'Middies · Line 2', 'Line 2']],
+  def: [['unit1', 'Close D + LSM · Unit 1', 'Unit 1'], ['unit2', 'Close D + LSM · Unit 2', 'Unit 2'], ['ssdm1', 'SSDM · Pair 1', 'SSDM 1'], ['ssdm2', 'SSDM · Pair 2', 'SSDM 2']],
+};
+const dpW = side => (side === 'def' ? SD_W : SO_W);
+function dpWho() {
+  const e = ((firebase.auth().currentUser || {}).email || '').toLowerCase();
+  const m = { 'bgriffith@wlu.edu': 'Bobby Griffith', 'rdglax22@icloud.com': 'Bobby Griffith', 'wgarrett@wlu.edu': 'Will Garrett', 'mccabee@wlu.edu': 'Gene McCabe', 'eugenemccabe11@gmail.com': 'Gene McCabe' };
+  return m[e] || getCoachIdentity() || e.split('@')[0] || 'A coach';
 }
-function renderStartingDefense() {
-  const el = document.getElementById('depthModelDef'); if (!el) return;
-  const M = computeStartingDefense(DEPTH_SEASON);
-  if (!M.ready) { el.innerHTML = `<p class="panel-title">Model Starting Defense</p><div class="model-note">${escapeHtml(M.why)}</div>`; return; }
-  const one = (lab, g, fmt) => `<div class="depth-chip" style="display:block;"><b>${lab}</b> ${g ? `#${escapeHtml(g.jersey)} ${escapeHtml(g.name)} <span class="n-note" style="font-style:normal;">${fmt(g)}</span>` : '<span class="n-note">Not enough data yet.</span>'}</div>`;
-  const rows = Object.values(M.players).sort((a, b) => b.rating - a.rating);
-  el.innerHTML = `<p class="panel-title">Model Starting Defense</p>
-    <p class="panel-sub">From logged data only. Defense Rating 0&ndash;100, 50 = average qualified defender: ${SD_W.map(([, l, w]) => `${l} ${w}%`).join(' · ')}. Practices since ${escapeHtml(M.recentFrom)} count 1.5&times;; ${SD_MIN_REPS}+ defensive reps (on-ball, slides, breakdowns, caused turnovers, picks defended) to qualify. Small samples are pulled toward the team rate. Units are the groups with the best 85% rating + 15% chemistry (time on the defensive end together, once a pair has 30+ possessions).</p>
-    <div class="depth-lines">${sdUnitHtml('Close D + LSM &middot; Unit 1', M.unit1, M)}${sdUnitHtml('Close D + LSM &middot; Unit 2', M.unit2, M)}</div>
-    <div class="depth-lines" style="margin-top:8px;">${sdUnitHtml('SSDM &middot; Pair 1', M.ssdm1, M)}${sdUnitHtml('SSDM &middot; Pair 2', M.ssdm2, M)}<div class="depth-line"><div class="depth-line-head">Goalie &amp; FOGO</div>${one('Goalie', M.goalie, g => `Goalie Score <b>${Math.round(g.score)}</b> &middot; ${g.faced} faced &middot; ${g.gsax100 >= 0 ? '+' : ''}${num(g.gsax100, 1)} saved vs expected /100`)}${one('FOGO', M.fogo, f => `${pct(f.winPct)} on ${f.taken} faceoffs`)}</div></div>
+const dpWhen = iso => { try { return new Date(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }); } catch (e) { return ''; } };
+// Keep only what the tracker understands from a saved lineup (it comes back from Firestore).
+function dpClean(o, side) {
+  if (!o || typeof o !== 'object') return null;
+  const parts = dpW(side).map(x => x[0]), lines = DP_LINES[side].map(x => x[0]), txt = v => String(v || '').slice(0, 60), n = v => (isFinite(Number(v)) ? Math.max(-50, Math.min(50, Number(v))) : 0);
+  const out = { w: {}, adj: {}, lock: {}, wBy: txt(o.wBy), wAt: txt(o.wAt), by: txt(o.by), at: txt(o.at) };
+  parts.forEach(k => { if (o.w && isFinite(Number(o.w[k]))) out.w[k] = Math.max(0, Math.min(100, Number(o.w[k]))); });
+  Object.keys(o.adj || {}).forEach(j => { if (!validJerseyText(j)) return; const a = o.adj[j] || {}, ps = {}; parts.forEach(k => { if (a.parts && n(a.parts[k])) ps[k] = n(a.parts[k]); }); out.adj[j] = { all: n(a.all), parts: ps, by: txt(a.by), at: txt(a.at) }; });
+  Object.keys(o.lock || {}).forEach(j => { const l = o.lock[j] || {}; if (validJerseyText(j) && lines.includes(l.line)) out.lock[j] = { line: l.line, by: txt(l.by), at: txt(l.at) }; });
+  return out;
+}
+const dpEmpty = opt => !opt || (!Object.keys(opt.w || {}).length && !Object.keys(opt.adj || {}).length && !Object.keys(opt.lock || {}).length);
+// Ratings with the changes: weights re-normalized, part boosts (0-100), then the overall boost.
+function dpRerate(players, W, opt) {
+  const w = {}; W.forEach(([k, , d]) => { w[k] = opt && opt.w && isFinite(opt.w[k]) ? opt.w[k] : d; });
+  const tw = Object.values(w).reduce((a, b) => a + b, 0) || 1, out = {};
+  Object.values(players).forEach(p => {
+    const a = (opt && opt.adj && opt.adj[p.j]) || null, parts = {}; let tot = 0;
+    W.forEach(([k]) => { parts[k] = Math.max(0, Math.min(100, p.parts[k] + ((a && a.parts && a.parts[k]) || 0))); tot += w[k] * parts[k]; });
+    out[p.j] = Object.assign({}, p, { parts, modelParts: p.parts, modelRating: p.rating, rating: tot / tw + ((a && a.all) || 0) });
+  });
+  return { players: out, w };
+}
+function dpCombos(list, n) { const out = []; const go = (i, cur) => { if (cur.length === n) { out.push(cur.slice()); return; } for (let x = i; x < list.length; x++) { cur.push(list[x]); go(x + 1, cur); cur.pop(); } }; go(0, []); return out; }
+const dpLockOf = opt => j => (opt && opt.lock && opt.lock[j] && opt.lock[j].line) || null;
+// The best group of n: everyone locked to this line is in it; nobody locked to another line is.
+function dpBest(free, n, line, lockOf, all, groupOf) {
+  const must = all.filter(j => lockOf(j) === line).slice(0, n), pool = free.filter(j => !lockOf(j)), need = n - must.length;
+  if (pool.length < need) return null;
+  let top = null; (need ? dpCombos(pool, need) : [[]]).forEach(c => { const g = groupOf(must.concat(c)); if (!top || g.score > top.score) top = g; });
+  return top;
+}
+function dpGroup(players, pairZ, js) {
+  const r = js.reduce((a, j) => a + players[j].rating, 0) / js.length, pz = [];
+  for (let a = 0; a < js.length; a++) for (let b = a + 1; b < js.length; b++) pz.push(pairZ(js[a], js[b]));
+  const chem = soPts(pz.length ? pz.reduce((a, b) => a + b, 0) / pz.length : 0);
+  return { js, rating: r, chem, score: (1 - SO_CHEM) * r + SO_CHEM * chem };
+}
+function soAssemble(B, opt) {
+  if (!B.ready) return B;
+  const { players, w } = dpRerate(B.players, SO_W, opt), all = Object.keys(players), lockOf = dpLockOf(opt);
+  const grp = js => dpGroup(players, B.pairZ, js);
+  const attack = dpBest(B.att, 3, 'attack', lockOf, all, grp);
+  const mid1 = dpBest(B.mid, 3, 'mid1', lockOf, all, grp);
+  const mid2 = mid1 ? dpBest(B.mid.filter(j => !mid1.js.includes(j)), 3, 'mid2', lockOf, all, grp) : null;
+  [attack, mid1, mid2].forEach(l => { if (!l) return; let bk = null, bz = -9; for (let a = 0; a < 3; a++) for (let b = a + 1; b < 3; b++) { const z0 = B.pairZ(l.js[a], l.js[b]); if (z0 > bz) { bz = z0; bk = [l.js[a], l.js[b]]; } } l.bestPair = bk && B.pairNote(bk[0], bk[1]) ? { js: bk, note: B.pairNote(bk[0], bk[1]) } : null; });
+  // Crossover flags: an attackman who'd make a middie line, or a middie who'd crack the attack.
+  const flags = [], att = B.att, mid = B.mid;
+  const midLine = [mid1, mid2].filter(Boolean).flatMap(l => l.js), lowestMid = midLine.slice().sort((a, b) => players[a].rating - players[b].rating)[0];
+  if (attack && lowestMid) att.filter(j => !attack.js.includes(j) && !midLine.includes(j) && players[j].rating > players[lowestMid].rating).sort((a, b) => players[b].rating - players[a].rating).forEach(j => {
+    const rank = [...mid, j].sort((a, b) => players[b].rating - players[a].rating).indexOf(j) + 1;
+    flags.push({ j, to: 'M', text: `Consider #${j} ${players[j].name} at midfield: he's not in the top 3 attack, but his ${Math.round(players[j].rating)} would rank ${rank === 1 ? '1st' : rank === 2 ? '2nd' : rank === 3 ? '3rd' : rank + 'th'} among middies, ahead of #${lowestMid} ${players[lowestMid].name} (${Math.round(players[lowestMid].rating)}).` });
+  });
+  if (attack) { const lowAtt = attack.js.slice().sort((a, b) => players[a].rating - players[b].rating)[0]; mid.filter(j => !attack.js.includes(j) && players[j].rating > players[lowAtt].rating).forEach(j => flags.push({ j, to: 'A', text: `#${j} ${players[j].name} (middie, ${Math.round(players[j].rating)}) rates higher than #${lowAtt} ${players[lowAtt].name} (${Math.round(players[lowAtt].rating)}) in the attack trio.` })); }
+  return Object.assign({}, B, { players, w, attack, mid1, mid2, flags, lines: { attack, mid1, mid2 } });
+}
+function sdAssemble(B, opt) {
+  if (!B.ready) return B;
+  const { players, w } = dpRerate(B.players, SD_W, opt), all = Object.keys(players), lockOf = dpLockOf(opt);
+  const grp = js => dpGroup(players, B.pairZ, js);
+  // A unit is 3 close D + 1 LSM: locked players fill their spots first.
+  const bestUnit = (line, ex) => {
+    const mustD = all.filter(j => lockOf(j) === line && players[j].pos !== 'L').slice(0, 3), mustL = all.filter(j => lockOf(j) === line && players[j].pos === 'L').slice(0, 1);
+    const freeD = B.close.filter(j => !lockOf(j) && !ex.includes(j)), freeL = B.lsm.filter(j => !lockOf(j) && !ex.includes(j)), nD = 3 - mustD.length;
+    if (freeD.length < nD) return null;
+    const lOpts = mustL.length ? [[]] : (freeL.length ? freeL.map(x => [x]) : [[]]);
+    let top = null; (nD ? dpCombos(freeD, nD) : [[]]).forEach(c => lOpts.forEach(l => { const u = grp(mustD.concat(c, mustL, l)); if (!top || u.score > top.score) top = u; }));
+    return top;
+  };
+  const unit1 = bestUnit('unit1', []);
+  const unit2 = unit1 ? bestUnit('unit2', unit1.js) : null;
+  const ssFree = B.ss.filter(j => !(unit1 && unit1.js.includes(j)) && !(unit2 && unit2.js.includes(j)));
+  const ssdm1 = dpBest(ssFree, 2, 'ssdm1', lockOf, all, grp);
+  const ssdm2 = ssdm1 ? dpBest(ssFree.filter(j => !ssdm1.js.includes(j)), 2, 'ssdm2', lockOf, all, grp) : null;
+  const flags = [];
+  if (unit1) {
+    const lowD = unit1.js.filter(j => players[j].pos !== 'L').sort((a, b) => players[a].rating - players[b].rating)[0];
+    if (lowD) B.lsm.filter(j => !unit1.js.includes(j) && players[j].rating > players[lowD].rating).forEach(j => flags.push({ j, text: `#${j} ${players[j].name} (LSM, ${Math.round(players[j].rating)}) rates higher than close defender #${lowD} ${players[lowD].name} (${Math.round(players[lowD].rating)}).` }));
+  }
+  return Object.assign({}, B, { players, w, unit1, unit2, ssdm1, ssdm2, flags, lines: { unit1, unit2, ssdm1, ssdm2 } });
+}
+const dpAssemble = (side, B, opt) => (side === 'def' ? sdAssemble(B, opt) : soAssemble(B, opt));
+// Which lines a player can be locked to.
+function dpLockLines(side, p) {
+  if (side === 'off') return p.pos === 'A' ? ['attack', 'mid1', 'mid2'] : ['mid1', 'mid2', 'attack'];
+  const out = []; if (p.pos === 'D' || p.pos === 'L') out.push('unit1', 'unit2'); if (p.pos === 'S' || p.alt === 'S') out.push('ssdm1', 'ssdm2'); return out;
+}
+function dpReason(side, p) { return dpW(side).map(([k, lab]) => [lab, p.parts[k]]).sort((a, b) => b[1] - a[1]).slice(0, 2).map(([lab, v]) => `${lab.toLowerCase()} ${Math.round(v)}`).join(', '); }
+function dpLineOfMap(M) { const m = {}; Object.keys(M.lines || {}).forEach(k => { const l = M.lines[k]; if (l) l.js.forEach(j => { m[j] = k; }); }); return m; }
+// What the current view is built from.
+function dpOpt(side) { const v = DP_VIEW[side]; return v === 'whatif' ? DP_WHATIF[side] : v === 'coach' ? ((DP_COACH[DEPTH_SEASON] || {})[side] || null) : null; }
+let DP_BASE = { off: null, def: null };
+function dpRender(side) {
+  const el = document.getElementById(side === 'def' ? 'depthModelDef' : 'depthModel'); if (!el) return;
+  const title = side === 'def' ? 'Model Starting Defense' : 'Model Starting Offense';
+  const B = DP_BASE[side];
+  if (!B || !B.ready) { el.innerHTML = `<p class="panel-title">${title}</p><div class="model-note">${escapeHtml(B ? B.why : 'Loading…')}</div>`; return; }
+  const view = DP_VIEW[side], opt = dpOpt(side), editing = view === 'whatif';
+  const M0 = dpAssemble(side, B, null), M = view === 'model' ? M0 : dpAssemble(side, B, opt);
+  const coach = (DP_COACH[DEPTH_SEASON] || {})[side], W = dpW(side), word = side === 'def' ? 'Defense Rating' : 'Offense Rating';
+  const lab = Object.fromEntries(DP_LINES[side].map(([k, , s]) => [k, s])), order = DP_LINES[side].map(x => x[0]);
+  const was = dpLineOfMap(M0), now = dpLineOfMap(M);
+  const mv = j => { if (view === 'model') return ''; const a = was[j], b = now[j]; if (a === b) return ''; if (!a) return '<span class="dp-mv up">&#9650; new</span>'; return order.indexOf(b) < order.indexOf(a) ? `<span class="dp-mv up">&#9650; from ${escapeHtml(lab[a])}</span>` : `<span class="dp-mv down">&#9660; from ${escapeHtml(lab[a])}</span>`; };
+  const tag = j => { const a = opt && opt.adj && opt.adj[j], l = opt && opt.lock && opt.lock[j], out = [];
+    if (a && a.all) out.push(`${a.all > 0 ? 'Boosted +' : 'Dropped '}${a.all}`); if (a && Object.keys(a.parts || {}).length) out.push(Object.keys(a.parts).map(k => `${(W.find(x => x[0] === k) || [k, k])[1]} ${a.parts[k] > 0 ? '+' : ''}${a.parts[k]}`).join(', '));
+    if (l) out.push(`&#128274; ${escapeHtml(lab[l.line])}`);
+    if (!out.length) return '';
+    const who = [a && a.by ? `${a.by}, ${dpWhen(a.at)}` : '', l && l.by && (!a || l.by !== a.by) ? `${l.by}, ${dpWhen(l.at)}` : ''].filter(Boolean).join(' · ');
+    return `<span class="dp-tag" title="${escapeHtml(who)}">${out.join(' · ')}${view === 'coach' && who ? ` <span class="n-note">(${escapeHtml(who)})</span>` : ''}</span>`; };
+  const ctrls = (j, p) => !editing ? '' : `<div class="dp-ctl">
+      <button type="button" class="pill" data-dp="${side}" data-act="boost" data-j="${escapeHtml(j)}" title="Boost his rating ${DP_STEP}">&#9650; +${DP_STEP}</button>
+      <button type="button" class="pill" data-dp="${side}" data-act="drop" data-j="${escapeHtml(j)}" title="Drop his rating ${DP_STEP}">&#9660; &minus;${DP_STEP}</button>
+      ${dpLockLines(side, p).map(k => `<button type="button" class="pill${opt && opt.lock && opt.lock[j] && opt.lock[j].line === k ? ' active' : ''}" data-dp="${side}" data-act="lock" data-line="${k}" data-j="${escapeHtml(j)}" title="Lock him on ${escapeHtml(lab[k])}">&#128274; ${escapeHtml(lab[k])}</button>`).join('')}
+      <button type="button" class="pill${DP_OPEN === side + j ? ' active' : ''}" data-dp="${side}" data-act="parts" data-j="${escapeHtml(j)}">Parts</button>
+      ${opt && ((opt.adj && opt.adj[j]) || (opt.lock && opt.lock[j])) ? `<button type="button" class="pill" data-dp="${side}" data-act="undo" data-j="${escapeHtml(j)}">Undo</button>` : ''}
+    </div>${DP_OPEN === side + j ? `<div class="dp-parts">${W.map(([k, l]) => `<span class="dp-part"><span>${escapeHtml(l)} <b>${Math.round(p.parts[k])}</b>${Math.round(p.parts[k]) !== Math.round(p.modelParts[k]) ? ` <span class="n-note">(model ${Math.round(p.modelParts[k])})</span>` : ''}</span>
+      <button type="button" class="pill" data-dp="${side}" data-act="part-" data-k="${k}" data-j="${escapeHtml(j)}">&minus;${DP_STEP}</button><button type="button" class="pill" data-dp="${side}" data-act="part+" data-k="${k}" data-j="${escapeHtml(j)}">+${DP_STEP}</button></span>`).join('')}</div>` : ''}`;
+  const chip = j => { const p = M.players[j]; const diff = Math.round(p.rating) !== Math.round(p.modelRating);
+    return `<div class="depth-chip" style="display:block;"><b>#${escapeHtml(j)} ${escapeHtml(p.name)}</b> ${mv(j)} <span class="n-note" style="font-style:normal;">${side === 'def' ? escapeHtml(sdPosLabel(p)) + ' &middot; ' : ''}${word} <b>${Math.round(p.rating)}</b>${diff ? ` <span class="n-note">(model ${Math.round(p.modelRating)})</span>` : ''} &middot; best at ${escapeHtml(dpReason(side, p))} &middot; ${side === 'def' ? p.reps + ' reps' : p.touches + ' touches'}</span> ${tag(j)}${ctrls(j, p)}</div>`; };
+  const lineHtml = (k, title) => { const l = M.lines[k];
+    if (!l) return `<div class="depth-line"><div class="depth-line-head">${title}</div><p class="n-note">Not enough qualified players at this position yet.</p></div>`;
+    return `<div class="depth-line"><div class="depth-line-head">${title} &middot; ${side === 'def' ? 'unit' : 'line'} ${Math.round(l.score)} (players ${Math.round(l.rating)}, chemistry ${Math.round(l.chem)})</div>${l.js.map(chip).join('')}
+      ${l.bestPair ? `<p class="n-note" style="font-style:normal; margin:4px 0 0;">Best connection: #${escapeHtml(l.bestPair.js[0])} + #${escapeHtml(l.bestPair.js[1])} &mdash; ${escapeHtml(l.bestPair.note)}</p>` : ''}</div>`; };
+  const L = DP_LINES[side];
+  const linesHtml = side === 'def'
+    ? `<div class="depth-lines">${lineHtml('unit1', L[0][1])}${lineHtml('unit2', L[1][1])}</div><div class="depth-lines" style="margin-top:8px;">${lineHtml('ssdm1', L[2][1])}${lineHtml('ssdm2', L[3][1])}<div class="depth-line"><div class="depth-line-head">Goalie &amp; FOGO</div>${sdOneHtml('Goalie', M.goalie, g => `Goalie Score <b>${Math.round(g.score)}</b> &middot; ${g.faced} faced &middot; ${g.gsax100 >= 0 ? '+' : ''}${num(g.gsax100, 1)} saved vs expected /100`)}${sdOneHtml('FOGO', M.fogo, f => `${pct(f.winPct)} on ${f.taken} faceoffs`)}</div></div>`
+    : `<div class="depth-lines">${L.map(([k, t]) => lineHtml(k, t)).join('')}</div>`;
+  // Players the model starts who are out of the lines in this view, and everyone else (to boost or lock in).
+  const out = view === 'model' ? [] : Object.keys(was).filter(j => !now[j]);
+  const bench = Object.keys(M.players).filter(j => !now[j]).sort((a, b) => M.players[b].rating - M.players[a].rating);
+  const wTotal = Object.values(M.w).reduce((a, b) => a + b, 0);
+  const pills = `<div class="dp-views">${[['model', 'Model’s pick'], ['whatif', 'What-if'], ['coach', 'Coach’s lineup']].map(([v, t]) => `<button type="button" class="pill${view === v ? ' active' : ''}" data-dp="${side}" data-act="view" data-v="${v}">${t}${v === 'coach' && coach && !dpEmpty(coach) ? ' &#10003;' : ''}</button>`).join('')}</div>`;
+  const viewNote = view === 'model' ? '' : view === 'coach'
+    ? (coach && !dpEmpty(coach) ? `<div class="model-note">Coach&rsquo;s lineup, shared with every coach. Saved by ${escapeHtml(coach.by || 'a coach')} on ${escapeHtml(dpWhen(coach.at))}. ${dpChangeList(side, coach)} <button type="button" class="pill" data-dp="${side}" data-act="edit">Edit in What-if</button> ${DP_CLEAR === side ? `<button type="button" class="pill" data-dp="${side}" data-act="clear-yes">Tap again to clear it for everyone</button>` : `<button type="button" class="pill" data-dp="${side}" data-act="clear">Clear</button>`}</div>`
+      : `<div class="model-note">No Coach&rsquo;s lineup saved yet. Make changes in What-if, then Save.</div>`)
+    : `<div class="model-note">What-if: only you see this until you save. ${dpEmpty(opt) ? 'Boost or drop a player, lock him on a line, or change the weights below.' : dpChangeList(side, opt)}
+        <div style="margin-top:6px; display:flex; flex-wrap:wrap; gap:6px;"><button type="button" class="pill" data-dp="${side}" data-act="save">Save as Coach&rsquo;s lineup</button>${coach && !dpEmpty(coach) ? `<button type="button" class="pill" data-dp="${side}" data-act="load">Start from Coach&rsquo;s lineup</button>` : ''}<button type="button" class="pill" data-dp="${side}" data-act="reset">Back to the model</button></div></div>`;
+  const weights = !editing ? '' : `<div class="dp-weights"><p class="panel-sub" style="margin:0 0 6px;">Weights (they&rsquo;re re-scaled to 100%, total now ${Math.round(wTotal)})</p>${W.map(([k, l, d]) => `<label class="dp-w"><span>${escapeHtml(l)} <b>${Math.round(M.w[k])}</b>${M.w[k] !== d ? ` <span class="n-note">(model ${d})</span>` : ''}</span><input type="range" min="0" max="50" step="5" value="${M.w[k]}" data-dp="${side}" data-act="w" data-k="${k}"></label>`).join('')}</div>`;
+  el.innerHTML = `<p class="panel-title">${title}</p>${pills}
+    <p class="panel-sub">${side === 'def' ? sdSubText(B) : soSubText(B)}</p>${viewNote}${weights}
+    ${linesHtml}
+    ${out.length ? `<div class="model-note" style="margin-top:10px;">Out vs the model&rsquo;s pick: ${out.map(j => `#${escapeHtml(j)} ${escapeHtml(M.players[j].name)} (was ${escapeHtml(lab[was[j]])}, now ${Math.round(M.players[j].rating)})`).join(' · ')}</div>` : ''}
     ${M.flags.length ? `<div class="model-note" style="margin-top:10px;">${M.flags.map(f => escapeHtml(f.text)).join('<br>')}</div>` : ''}
-    <details style="margin-top:10px;"><summary class="panel-sub" style="cursor:pointer;">Every qualified defender's Defense Rating and parts</summary><div class="table-wrap" id="sdTableWrap" style="margin-top:8px;"></div></details>
-    ${M.notEnough.length ? `<p class="panel-sub" style="margin-top:8px;">Not enough data yet (under ${SD_MIN_REPS} reps): ${M.notEnough.sort((a, b) => b.reps - a.reps).map(x => `#${escapeHtml(x.j)} ${escapeHtml(nameFor(x.j, DEPTH_SEASON))} (${x.reps})`).join(', ')}.</p>` : ''}`;
-  renderSortableTable('sdTableWrap', [
+    ${editing && bench.length ? `<details style="margin-top:10px;" ${DP_OPEN && DP_OPEN.startsWith(side) && bench.includes(DP_OPEN.slice(side.length)) ? 'open' : ''} data-dp-bench="${side}"><summary class="panel-sub" style="cursor:pointer;">Everyone else (boost or lock someone in)</summary><div class="depth-lines" style="margin-top:8px;"><div class="depth-line">${bench.map(chip).join('')}</div></div></details>` : ''}
+    <details style="margin-top:10px;"><summary class="panel-sub" style="cursor:pointer;">Every qualified player&rsquo;s ${word} and parts</summary><div class="table-wrap" id="${side}DpTable" style="margin-top:8px;"></div></details>
+    ${B.notEnough.length ? `<p class="panel-sub" style="margin-top:8px;">Not enough data yet (under ${side === 'def' ? SD_MIN_REPS + ' reps' : SO_MIN_TOUCHES + ' touches'}): ${B.notEnough.slice().sort((a, b) => (b.reps || b.touches) - (a.reps || a.touches)).map(x => `#${escapeHtml(x.j)} ${escapeHtml(nameFor(x.j, DEPTH_SEASON))} (${x.reps !== undefined ? x.reps : x.touches})`).join(', ')}.</p>` : ''}`;
+  renderSortableTable(side + 'DpTable', [
     { key: 'j', label: '#', type: 'text', value: r => r.j },
     { key: 'name', label: 'Name', type: 'text', value: r => r.name, format: nameCell },
-    { key: 'pos', label: 'Pos', type: 'text', value: r => sdPosLabel(r) },
-    { key: 'rating', label: 'Defense Rating', type: 'num', value: r => r.rating, format: v => `<b>${Math.round(v)}</b>` },
-  ].concat(SD_W.map(([k, lab, w]) => ({ key: k, label: `${lab} (${w}%)`, type: 'num', value: r => r.parts[k], format: (v, r) => `<span title="${escapeHtml(r.detail[k === 'offball' ? 'offball' : k] || '')}">${Math.round(v)}</span>` }))).concat([{ key: 'reps', label: 'Reps', type: 'num', value: r => r.reps }]),
-  rows, { dense: true, defaultSort: { key: 'rating', dir: 'desc' } });
+    { key: 'pos', label: 'Pos', type: 'text', value: r => (side === 'def' ? sdPosLabel(r) : DEPTH_POS_LABEL[r.pos] || '') },
+    { key: 'rating', label: word, type: 'num', value: r => r.rating, format: v => `<b>${Math.round(v)}</b>` },
+  ].concat(view === 'model' ? [] : [{ key: 'modelRating', label: 'Model', type: 'num', value: r => r.modelRating, format: v => String(Math.round(v)) }])
+   .concat(W.map(([k, l, w]) => ({ key: k, label: `${l} (${Math.round(M.w[k])}%)`, type: 'num', value: r => r.parts[k], format: (v, r) => `<span title="${escapeHtml((r.detail && r.detail[k]) || '')}">${Math.round(v)}</span>` })))
+   .concat([side === 'def' ? { key: 'reps', label: 'Reps', type: 'num', value: r => r.reps } : { key: 'touches', label: 'Touches', type: 'num', value: r => r.touches }]),
+  Object.values(M.players), { dense: true, defaultSort: { key: 'rating', dir: 'desc' } });
 }
+function sdOneHtml(lab, g, fmt) { return `<div class="depth-chip" style="display:block;"><b>${lab}</b> ${g ? `#${escapeHtml(g.jersey)} ${escapeHtml(g.name)} <span class="n-note" style="font-style:normal;">${fmt(g)}</span>` : '<span class="n-note">Not enough data yet.</span>'}</div>`; }
+function soSubText(B) { return `From logged data only (no Shooter Score). Offense Rating 0&ndash;100, 50 = average qualified attack/middie: ${SO_W.map(([, l, w]) => `${l} ${w}%`).join(' · ')}. Practices since ${escapeHtml(B.recentFrom)} count 1.5&times;; ${SO_MIN_TOUCHES}+ touches to qualify. Lines are the trios with the best 85% rating + 15% chemistry (feeds, screens and time on the field together between them).`; }
+function sdSubText(B) { return `From logged data only. Defense Rating 0&ndash;100, 50 = average qualified defender: ${SD_W.map(([, l, w]) => `${l} ${w}%`).join(' · ')}. Practices since ${escapeHtml(B.recentFrom)} count 1.5&times;; ${SD_MIN_REPS}+ defensive reps (on-ball, slides, breakdowns, caused turnovers, picks defended) to qualify. Small samples are pulled toward the team rate. Units are the groups with the best 85% rating + 15% chemistry (time on the defensive end together, once a pair has 30+ possessions).`; }
+// Plain list of the changes in a set, with who made them.
+function dpChangeList(side, opt) {
+  const W = dpW(side), lab = Object.fromEntries(DP_LINES[side].map(([k, , s]) => [k, s])), name = j => `#${escapeHtml(j)} ${escapeHtml(nameFor(j, DEPTH_SEASON) || '')}`, by = (b, a) => (b ? ` <span class="n-note">(${escapeHtml(b)}${a ? ', ' + escapeHtml(dpWhen(a)) : ''})</span>` : '');
+  const out = [];
+  const wc = W.filter(([k, , d]) => opt.w && isFinite(opt.w[k]) && opt.w[k] !== d).map(([k, l, d]) => `${escapeHtml(l)} ${d}&rarr;${opt.w[k]}`);
+  if (wc.length) out.push(`Weights: ${wc.join(', ')}${by(opt.wBy, opt.wAt)}`);
+  Object.keys(opt.adj || {}).forEach(j => { const a = opt.adj[j], bits = []; if (a.all) bits.push(`${a.all > 0 ? '+' : ''}${a.all} overall`); Object.keys(a.parts || {}).forEach(k => bits.push(`${(W.find(x => x[0] === k) || [k, k])[1]} ${a.parts[k] > 0 ? '+' : ''}${a.parts[k]}`)); if (bits.length) out.push(`${name(j)} ${bits.join(', ')}${by(a.by, a.at)}`); });
+  Object.keys(opt.lock || {}).forEach(j => { const l = opt.lock[j]; out.push(`${name(j)} &#128274; ${escapeHtml(lab[l.line])}${by(l.by, l.at)}`); });
+  return out.length ? `<ul class="dp-changes">${out.map(x => `<li>${x}</li>`).join('')}</ul>` : '';
+}
+function dpEdit(side, fn) {
+  const o = DP_WHATIF[side] || { w: {}, adj: {}, lock: {} };
+  fn(o, dpWho(), new Date().toISOString());
+  Object.keys(o.adj).forEach(j => { const a = o.adj[j]; Object.keys(a.parts || {}).forEach(k => { if (!a.parts[k]) delete a.parts[k]; }); if (!a.all && !Object.keys(a.parts || {}).length) delete o.adj[j]; });
+  DP_WHATIF[side] = o; DP_VIEW[side] = 'whatif'; dpRender(side);
+}
+async function dpSave(side) {
+  if (!DB) return;
+  const o = JSON.parse(JSON.stringify(DP_WHATIF[side] || { w: {}, adj: {}, lock: {} }));
+  o.by = dpWho(); o.at = new Date().toISOString();
+  const doc = {}; doc[side] = JSON.stringify(o);
+  try { await DB.doc('app/depthCoach_' + DEPTH_SEASON).set(doc, { merge: true }); DP_VIEW[side] = 'coach'; } catch (e) { console.error(e); }
+  dpRender(side);
+}
+async function dpClear(side) {
+  if (!DB) return;
+  const doc = {}; doc[side] = ''; DP_CLEAR = null;
+  try { await DB.doc('app/depthCoach_' + DEPTH_SEASON).set(doc, { merge: true }); } catch (e) { console.error(e); }
+  dpRender(side);
+}
+function dpWire(el) {
+  if (el.__dpWired) return; el.__dpWired = true;
+  el.addEventListener('click', ev => {
+    const b = ev.target.closest('button[data-dp]'); if (!b) return;
+    const side = b.dataset.dp, j = b.dataset.j, act = b.dataset.act;
+    if (act === 'view') { DP_VIEW[side] = b.dataset.v; DP_CLEAR = null; dpRender(side); return; }
+    if (act === 'parts') { DP_OPEN = DP_OPEN === side + j ? null : side + j; dpRender(side); return; }
+    if (act === 'save') { dpSave(side); return; }
+    if (act === 'clear') { DP_CLEAR = side; dpRender(side); return; }
+    if (act === 'clear-yes') { dpClear(side); return; }
+    if (act === 'edit' || act === 'load') { const c = (DP_COACH[DEPTH_SEASON] || {})[side]; DP_WHATIF[side] = c ? JSON.parse(JSON.stringify(c)) : null; DP_VIEW[side] = 'whatif'; dpRender(side); return; }
+    if (act === 'reset') { DP_WHATIF[side] = null; DP_OPEN = null; dpRender(side); return; }
+    dpEdit(side, (o, who, at) => {
+      const a = () => (o.adj[j] = o.adj[j] || { all: 0, parts: {} });
+      if (act === 'boost' || act === 'drop') { const x = a(); x.all = Math.max(-50, Math.min(50, (x.all || 0) + (act === 'boost' ? DP_STEP : -DP_STEP))); x.by = who; x.at = at; }
+      if (act === 'part+' || act === 'part-') { const x = a(), k = b.dataset.k; x.parts[k] = Math.max(-50, Math.min(50, (x.parts[k] || 0) + (act === 'part+' ? DP_STEP : -DP_STEP))); x.by = who; x.at = at; }
+      if (act === 'lock') { if (o.lock[j] && o.lock[j].line === b.dataset.line) delete o.lock[j]; else o.lock[j] = { line: b.dataset.line, by: who, at }; }
+      if (act === 'undo') { delete o.adj[j]; delete o.lock[j]; }
+    });
+  });
+  el.addEventListener('change', ev => {
+    const r = ev.target.closest('input[data-dp][data-act="w"]'); if (!r) return;
+    dpEdit(r.dataset.dp, (o, who, at) => { const d = dpW(r.dataset.dp).find(x => x[0] === r.dataset.k)[2], v = Number(r.value); if (v === d) delete o.w[r.dataset.k]; else o.w[r.dataset.k] = v; o.wBy = who; o.wAt = at; });
+  });
+}
+let DP_SEASON = null;
+function dpSeasonCheck() { if (DP_SEASON !== DEPTH_SEASON) { DP_SEASON = DEPTH_SEASON; DP_WHATIF = { off: null, def: null }; DP_OPEN = null; DP_CLEAR = null; } }
+function renderStartingOffense() { dpSeasonCheck(); const el = document.getElementById('depthModel'); if (!el) return; dpWire(el); DP_BASE.off = soBase(DEPTH_SEASON); dpRender('off'); }
+function renderStartingDefense() { dpSeasonCheck(); const el = document.getElementById('depthModelDef'); if (!el) return; dpWire(el); DP_BASE.def = sdBase(DEPTH_SEASON); dpRender('def'); }
 
 setupPillGroup('depthSeasonPills', ADV_SEASONS, DEPTH_SEASON, v => { DEPTH_SEASON = v || DEPTH_SEASON; if (!v) setPillGroupValue('depthSeasonPills', DEPTH_SEASON); renderDepthChart(); });
 setupPillGroup('depthModePills', [{ value: 'scores', label: 'Scores' }, { value: 'recent', label: 'Recent form' }, { value: 'chem', label: 'Chemistry' }], 'scores', v => { depthMode = v || 'scores'; if (!v) setPillGroupValue('depthModePills', 'scores'); renderDepthChart(); });
@@ -13697,6 +13871,15 @@ function saPlan(q) {
   return { type: 'rank', pick, n: n || 3, dir, filters };
 }
 // ---- running a plan ----
+// One line for a search answer when a Coach's lineup is saved: who it starts that the model doesn't.
+function saCoachNote(side, season, M) {
+  const c = (DP_COACH[season] || {})[side];
+  if (!c || dpEmpty(c) || !M.ready) return '';
+  const C = dpAssemble(side, side === 'def' ? sdBase(season) : soBase(season), c), was = dpLineOfMap(M), now = dpLineOfMap(C);
+  const lab = Object.fromEntries(DP_LINES[side].map(([k, , t]) => [k, t]));
+  const moved = Object.keys(now).filter(j => was[j] !== now[j]).map(j => `#${navEsc(j)} ${navEsc(C.players[j].name)} ${was[j] ? navEsc(lab[was[j]]) + ' → ' : 'in at '}${navEsc(lab[now[j]])}`);
+  return `<p class="sa-n"><b>Coach’s lineup</b> (saved by ${navEsc(c.by || 'a coach')}, ${navEsc(dpWhen(c.at))}): ${moved.length ? moved.join(' · ') : 'same players as the model'}.</p>`;
+}
 function saRun(plan) {
   const f = plan.filters, s0 = EFF_SEASON, c0 = EFF_CONTEXT, fr0 = EFF_FROM, to0 = EFF_TO, op0 = EFF_OPP;
   EFF_SEASON = f.season || ((NAV_ST && isAdvSeason(NAV_ST.season)) ? NAV_ST.season : currentAdvSeason());
@@ -13711,14 +13894,14 @@ function saRun(plan) {
       const unit = (lab, u) => u ? `<li><b>${lab}</b> <em>unit ${Math.round(u.score)}</em><br>${u.js.map(j => `#${navEsc(j)} ${navEsc(M.players[j].name)} <span class="v">${Math.round(M.players[j].rating)}</span>`).join(' · ')}</li>` : '';
       const one = (lab, g, v) => g ? `<li><b>${lab}</b><br>#${navEsc(g.jersey)} ${navEsc(g.name)} <span class="v">${v}</span></li>` : '';
       return { title: 'Model Starting Defense', filt: `${season} · last 3 weeks count 1.5× · ${SD_MIN_REPS}+ reps`, rows: [], page: 'depth',
-        html: `<ol>${unit('Close D + LSM', M.unit1)}${unit('SSDM', M.ssdm1)}${one('Goalie', M.goalie, Math.round(M.goalie ? M.goalie.score : 0))}${one('FOGO', M.fogo, M.fogo ? pct(M.fogo.winPct) : '')}</ol>${M.flags.length ? `<p class="sa-n">${M.flags.slice(0, 2).map(f => navEsc(f.text)).join('<br>')}</p>` : ''}<p class="sa-n">Defense Rating from caused turnovers 25%, off-ball breakdowns 20%, on-ball 20%, not getting beaten 15%, pick defense 15%, slides 5%, plus 15% chemistry.</p>` };
+        html: `<ol>${unit('Close D + LSM', M.unit1)}${unit('SSDM', M.ssdm1)}${one('Goalie', M.goalie, Math.round(M.goalie ? M.goalie.score : 0))}${one('FOGO', M.fogo, M.fogo ? pct(M.fogo.winPct) : '')}</ol>${M.flags.length ? `<p class="sa-n">${M.flags.slice(0, 2).map(f => navEsc(f.text)).join('<br>')}</p>` : ''}${saCoachNote('def', season, M)}<p class="sa-n">Defense Rating from caused turnovers 25%, off-ball breakdowns 20%, on-ball 20%, not getting beaten 15%, pick defense 15%, slides 5%, plus 15% chemistry.</p>` };
     }
     if (plan.type === 'lineup') {
       const M = computeStartingOffense(season);
       if (!M.ready) return { title: 'Model Starting Offense', filt: season, rows: [], note: M.why, page: 'depth' };
       const line = (lab, l) => l ? `<li><b>${lab}</b> <em>line ${Math.round(l.score)}</em><br>${l.js.map(j => `#${navEsc(j)} ${navEsc(M.players[j].name)} <span class="v">${Math.round(M.players[j].rating)}</span>`).join(' · ')}</li>` : '';
       return { title: 'Model Starting Offense', filt: `${season} · last 3 weeks count 1.5× · 40+ touches`, rows: [], page: 'depth',
-        html: `<ol>${line('Attack', M.attack)}${line('Middies · Line 1', M.mid1)}${line('Middies · Line 2', M.mid2)}</ol>${M.flags.length ? `<p class="sa-n">${M.flags.slice(0, 2).map(f => navEsc(f.text)).join('<br>')}</p>` : ''}<p class="sa-n">Offense Rating from finishing, look quality, creating, off-ball value, ball security, two-man game and consistency, plus 15% chemistry. Not Shooter Score.</p>` };
+        html: `<ol>${line('Attack', M.attack)}${line('Middies · Line 1', M.mid1)}${line('Middies · Line 2', M.mid2)}</ol>${saCoachNote('off', season, M)}${M.flags.length ? `<p class="sa-n">${M.flags.slice(0, 2).map(f => navEsc(f.text)).join('<br>')}</p>` : ''}<p class="sa-n">Offense Rating from finishing, look quality, creating, off-ball value, ball security, two-man game and consistency, plus 15% chemistry. Not Shooter Score.</p>` };
     }
     const out0 = {};
     const P = plan.pick, isC = P.kind === 'concept', meta = P.c;
