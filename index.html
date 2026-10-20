@@ -8956,22 +8956,22 @@ function computeStartingDefense(season) {
   const model = xgModelFor(season);
   const shots = advShots(season).concat(OPP_SHOTS.filter(s => seasonForDate(s.date) === season));
   const d = effDataFor(season);
-  const R = {}, P = j => (R[j] = R[j] || { j, on: 0, onG: 0, onXg: 0, bl: 0, beat: 0, slide: 0, slideG: 0, off: 0, ct: 0, pk: 0, pkXp: 0, pkFreed: 0, sess: new Set(), reps: 0 });
+  const R = {}, P = j => (R[j] = R[j] || { j, on: 0, onG: 0, onXg: 0, bl: 0, beat: 0, slide: 0, slideG: 0, off: 0, ct: 0, pk: 0, pkXp: 0, pkFreed: 0, sess: new Set(), reps: 0, c: { on: 0, onG: 0, onXg: 0, bl: 0, beat: 0, slide: 0, slideG: 0, off: 0, ct: 0, pk: 0 } });
   // Sessions he was on the field for anything (any role), the per-session base for counts.
   const seen = {}; const saw = (j, e) => { if (wl(j)) (seen[j] = seen[j] || new Set()).add(sessKey(e)); };
   shots.forEach(s => { [s.shooterJersey, s.assistJersey, s.goalieJersey, s.defender, s.slideDefender, s.offBallFault, s.possStartJersey].forEach(j => saw(j, s)); });
   d.possList.forEach(pp => { [pp.e.turnoverBy, pp.e.causedBy, pp.e.possStartJersey, pp.pick && pp.pick.screenerDef, pp.pick && pp.pick.userDef].forEach(j => saw(j, pp.e)); });
   shots.forEach(s => {
     const k = wt(s.date), g = s.goal === 1 ? 1 : 0;
-    if (wl(s.defender)) { const p = P(s.defender); p.on += k; p.onG += k * g; p.onXg += k * xgForShot(s, model); p.reps++;
-      if (s.defBeaten === 'Yes' || s.defBeaten === 'No') { p.bl += k; if (s.defBeaten === 'Yes') p.beat += k; } }
-    if (wl(s.slideDefender)) { const p = P(s.slideDefender); p.slide += k; p.slideG += k * g; p.reps++; }
-    if (wl(s.offBallFault)) { const p = P(s.offBallFault); p.off += k; p.reps++; }
+    if (wl(s.defender)) { const p = P(s.defender), x = xgForShot(s, model); p.on += k; p.onG += k * g; p.onXg += k * x; p.reps++; p.c.on++; p.c.onG += g; p.c.onXg += x;
+      if (s.defBeaten === 'Yes' || s.defBeaten === 'No') { p.bl += k; p.c.bl++; if (s.defBeaten === 'Yes') { p.beat += k; p.c.beat++; } } }
+    if (wl(s.slideDefender)) { const p = P(s.slideDefender); p.slide += k; p.slideG += k * g; p.reps++; p.c.slide++; p.c.slideG += g; }
+    if (wl(s.offBallFault)) { const p = P(s.offBallFault); p.off += k; p.reps++; p.c.off++; }
   });
   d.possList.forEach(pp => {
     const k = wt(pp.e.date);
-    if (wl(pp.e.causedBy)) { const p = P(pp.e.causedBy); p.ct += k; p.reps++; }
-    if (pp.pick) { const v = possPoints(pp, d.xgOf); new Set([pp.pick.screenerDef, pp.pick.userDef].filter(wl)).forEach(j => { const p = P(j); p.pk += k; p.pkXp += k * v.xp; if (pp.pick.result === 'Freed ball carrier') p.pkFreed += k; p.reps++; }); }
+    if (wl(pp.e.causedBy)) { const p = P(pp.e.causedBy); p.ct += k; p.reps++; p.c.ct++; }
+    if (pp.pick) { const v = possPoints(pp, d.xgOf); new Set([pp.pick.screenerDef, pp.pick.userDef].filter(wl)).forEach(j => { const p = P(j); p.pk += k; p.pkXp += k * v.xp; if (pp.pick.result === 'Freed ball carrier') p.pkFreed += k; p.reps++; p.c.pk++; }); }
   });
   const pos = j => posOfJ(season, j), alt = j => posAltJ(season, j);
   const isDef = j => ['D', 'L', 'S'].includes(pos(j)) || alt(j) === 'S';
@@ -9004,10 +9004,10 @@ function computeStartingDefense(season) {
   qual.forEach(j => {
     const c = comp(j), parts = {}; let tot = 0;
     SD_W.forEach(([k, , w]) => { parts[k] = soPts(c[k]); tot += w * parts[k]; });
-    const r = R[j];
+    const r = R[j], c = r.c;
     players[j] = { j, name: nameFor(j, season), pos: pos(j), alt: alt(j), rating: tot / 100, parts, reps: r.reps,
-      detail: { ct: `${Math.round(r.ct)} caused TO in ${r.sessN} sessions`, offball: `${Math.round(r.off)} off-ball breakdowns`, onball: `${Math.round(r.onG)} G on ${num(r.onXg, 1)} xG in ${Math.round(r.on)} shots`,
-        beaten: r.bl ? `beaten ${Math.round(r.beat)} of ${Math.round(r.bl)}` : 'no beaten reps logged', pick: `${Math.round(r.pk)} picks defended`, slide: `${Math.round(r.slide)} slides, ${Math.round(r.slideG)} goals after` } };
+      detail: { ct: `${c.ct} caused TO in ${r.sessN} sessions`, offball: `${c.off} off-ball breakdowns in ${r.sessN} sessions`, onball: `${c.onG} G on ${num(c.onXg, 1)} xG in ${c.on} shots`,
+        beaten: c.bl ? `beaten ${c.beat} of ${c.bl}` : 'no beaten reps logged', pick: `${c.pk} picks defended`, slide: `${c.slide} slides, ${c.slideG} goals after` } };
   });
   // Chemistry: expected goals allowed per possession when two were on the defensive end together (30+ possessions).
   const together = {}; let tN = 0, tXg = 0;
