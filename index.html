@@ -9038,11 +9038,12 @@ function computeStartingDefense(season) {
   }
   return { ready: true, season, recentFrom, last, players, unit1, unit2, ssdm1, ssdm2, goalie: gs[0] || null, goalie2: gs[1] || null, fogo: fo[0] || null, flags, notEnough, close, lsm, ss };
 }
+function sdPosLabel(p) { const L = { D: 'Close D', L: 'LSM', S: 'SSDM' }; return (L[p.pos] || DEPTH_POS_LABEL[p.pos] || '') + (p.alt === 'S' && p.pos !== 'S' ? ' / SSDM' : ''); }
 function sdReason(p) { const top = SD_W.map(([k, lab]) => [lab, p.parts[k]]).sort((a, b) => b[1] - a[1]).slice(0, 2); return top.map(([lab, v]) => `${lab.toLowerCase()} ${Math.round(v)}`).join(', '); }
 function sdUnitHtml(title, u, M) {
   if (!u) return `<div class="depth-line"><div class="depth-line-head">${title}</div><p class="n-note">Not enough qualified players at this position yet.</p></div>`;
   return `<div class="depth-line"><div class="depth-line-head">${title} &middot; unit ${Math.round(u.score)} (players ${Math.round(u.rating)}, chemistry ${Math.round(u.chem)})</div>
-    ${u.js.map(j => { const p = M.players[j]; return `<div class="depth-chip" style="display:block;"><b>#${escapeHtml(j)} ${escapeHtml(p.name)}</b> <span class="n-note" style="font-style:normal;">${escapeHtml(DEPTH_POS_LABEL[p.pos] || '')} &middot; Defense Rating <b>${Math.round(p.rating)}</b> &middot; best at ${escapeHtml(sdReason(p))} &middot; ${p.reps} reps</span></div>`; }).join('')}</div>`;
+    ${u.js.map(j => { const p = M.players[j]; return `<div class="depth-chip" style="display:block;"><b>#${escapeHtml(j)} ${escapeHtml(p.name)}</b> <span class="n-note" style="font-style:normal;">${escapeHtml(sdPosLabel(p))} &middot; Rating <b>${Math.round(p.rating)}</b> &middot; best at ${escapeHtml(sdReason(p))} &middot; ${p.reps} reps</span></div>`; }).join('')}</div>`;
 }
 function renderStartingDefense() {
   const el = document.getElementById('depthModelDef'); if (!el) return;
@@ -9052,17 +9053,17 @@ function renderStartingDefense() {
   const rows = Object.values(M.players).sort((a, b) => b.rating - a.rating);
   el.innerHTML = `<p class="panel-title">Model Starting Defense</p>
     <p class="panel-sub">From logged data only. Defense Rating 0&ndash;100, 50 = average qualified defender: ${SD_W.map(([, l, w]) => `${l} ${w}%`).join(' · ')}. Practices since ${escapeHtml(M.recentFrom)} count 1.5&times;; ${SD_MIN_REPS}+ defensive reps (on-ball, slides, breakdowns, caused turnovers, picks defended) to qualify. Small samples are pulled toward the team rate. Units are the groups with the best 85% rating + 15% chemistry (time on the defensive end together, once a pair has 30+ possessions).</p>
-    <div class="depth-lines">${sdUnitHtml('Close D + LSM &middot; Unit 1', M.unit1, M)}${sdUnitHtml('SSDM &middot; Pair 1', M.ssdm1, M)}${sdUnitHtml('Close D + LSM &middot; Unit 2', M.unit2, M)}${sdUnitHtml('SSDM &middot; Pair 2', M.ssdm2, M)}</div>
-    <div class="depth-lines" style="margin-top:8px;">${one('Goalie', M.goalie, g => `Goalie Score <b>${Math.round(g.score)}</b> &middot; ${g.faced} faced &middot; ${g.gsax100 >= 0 ? '+' : ''}${num(g.gsax100, 1)} saved vs expected /100`)}${one('FOGO', M.fogo, f => `${pct(f.winPct)} on ${f.taken} faceoffs`)}</div>
+    <div class="depth-lines">${sdUnitHtml('Close D + LSM &middot; Unit 1', M.unit1, M)}${sdUnitHtml('Close D + LSM &middot; Unit 2', M.unit2, M)}</div>
+    <div class="depth-lines" style="margin-top:8px;">${sdUnitHtml('SSDM &middot; Pair 1', M.ssdm1, M)}${sdUnitHtml('SSDM &middot; Pair 2', M.ssdm2, M)}<div class="depth-line"><div class="depth-line-head">Goalie &amp; FOGO</div>${one('Goalie', M.goalie, g => `Goalie Score <b>${Math.round(g.score)}</b> &middot; ${g.faced} faced &middot; ${g.gsax100 >= 0 ? '+' : ''}${num(g.gsax100, 1)} saved vs expected /100`)}${one('FOGO', M.fogo, f => `${pct(f.winPct)} on ${f.taken} faceoffs`)}</div></div>
     ${M.flags.length ? `<div class="model-note" style="margin-top:10px;">${M.flags.map(f => escapeHtml(f.text)).join('<br>')}</div>` : ''}
     <details style="margin-top:10px;"><summary class="panel-sub" style="cursor:pointer;">Every qualified defender's Defense Rating and parts</summary><div class="table-wrap" id="sdTableWrap" style="margin-top:8px;"></div></details>
     ${M.notEnough.length ? `<p class="panel-sub" style="margin-top:8px;">Not enough data yet (under ${SD_MIN_REPS} reps): ${M.notEnough.sort((a, b) => b.reps - a.reps).map(x => `#${escapeHtml(x.j)} ${escapeHtml(nameFor(x.j, DEPTH_SEASON))} (${x.reps})`).join(', ')}.</p>` : ''}`;
   renderSortableTable('sdTableWrap', [
     { key: 'j', label: '#', type: 'text', value: r => r.j },
     { key: 'name', label: 'Name', type: 'text', value: r => r.name, format: nameCell },
-    { key: 'pos', label: 'Pos', type: 'text', value: r => DEPTH_POS_LABEL[r.pos] || '' },
+    { key: 'pos', label: 'Pos', type: 'text', value: r => sdPosLabel(r) },
     { key: 'rating', label: 'Defense Rating', type: 'num', value: r => r.rating, format: v => `<b>${Math.round(v)}</b>` },
-  ].concat(SD_W.map(([k, lab, w]) => ({ key: k, label: `${lab} (${w}%)`, type: 'num', value: r => r.parts[k], format: v => String(Math.round(v)), title: '' }))).concat([{ key: 'reps', label: 'Reps', type: 'num', value: r => r.reps }]),
+  ].concat(SD_W.map(([k, lab, w]) => ({ key: k, label: `${lab} (${w}%)`, type: 'num', value: r => r.parts[k], format: (v, r) => `<span title="${escapeHtml(r.detail[k === 'offball' ? 'offball' : k] || '')}">${Math.round(v)}</span>` }))).concat([{ key: 'reps', label: 'Reps', type: 'num', value: r => r.reps }]),
   rows, { dense: true, defaultSort: { key: 'rating', dir: 'desc' } });
 }
 
