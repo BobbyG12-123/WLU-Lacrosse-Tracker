@@ -8904,13 +8904,18 @@ function soBase(season) {
   });
   const z = {}; Object.keys(raw).forEach(k => { z[k] = soZ(raw[k]); });
   const comp = j => ({ fin: z.fin[j], look: ((z.xgs[j] || 0) + (z.vol[j] || 0)) / 2, create: ((z.xat[j] || 0) + (z.domt[j] || 0)) / 2, offball: ((z.adv[j] || 0) + (z.cxg[j] || 0)) / 2, secure: z.sec[j], twoman: z.two[j], steady: z.steady[j] });
+  // Actual counts (no 1.5x) for the details people read.
+  const cntA = { scr: {}, two: {} };
+  A.possList.filter(pp => pp.team === 'WLU').forEach(pp => { const adv = (pp.screens || []).filter(x => x.adv === 'Yes'), inP = new Set();
+    adv.forEach(x => { if (x.s && !isOppJersey(x.s)) { cntA.scr[x.s] = (cntA.scr[x.s] || 0) + 1; inP.add(x.s); } if (x.u && !isOppJersey(x.u)) inP.add(x.u); });
+    inP.forEach(j => { const t = (cntA.two[j] = cntA.two[j] || { g: 0, n: 0 }); t.g += pp.goal; t.n++; }); });
   const players = {};
   qual.forEach(j => {
     const c = comp(j), parts = {}; let tot = 0;
     SO_W.forEach(([k, , w]) => { parts[k] = soPts(c[k]); tot += w * parts[k]; });
     const w = W[j];
     players[j] = { j, name: nameFor(j, season), pos: pos(j), rating: tot / 100, parts, touches: touchesAll(j),
-      detail: { finishing: `${Math.round(w.goals)} G on ${num(w.xg, 1)} xG`, steady: raw.steady[j] === undefined ? 'needs 5 practices' : '' } };
+      detail: soDetail(A, j, cntA, (perSess[j] || []).length) };
   });
   // Chemistry between two players: feeds between them, screens between them, time on the field together.
   const feed = {}, pairScr = {}, together = {};
@@ -9076,6 +9081,12 @@ function dpGroup(players, pairZ, js) {
   for (let a = 0; a < js.length; a++) for (let b = a + 1; b < js.length; b++) pz.push(pairZ(js[a], js[b]));
   const chem = soPts(pz.length ? pz.reduce((a, b) => a + b, 0) / pz.length : 0);
   return { js, rating: r, chem, score: (1 - SO_CHEM) * r + SO_CHEM * chem };
+}
+function soDetail(A, j, cnt, nPrac) {
+  const p = A.players[j] || { shots: 0, goals: 0, xg: 0, potAst: 0, xa: 0, to: 0, dominoes: 0, sessions: new Set() }, touch = p.shots + p.potAst + p.to, t = cnt.two[j];
+  return { fin: `${p.goals} G on ${num(p.xg, 1)} xG in ${p.shots} shots`, look: `${num(p.shots ? p.xg / p.shots : 0, 2)} xG per shot, ${num(p.shots / Math.max(1, p.sessions.size), 1)} shots per practice`,
+    create: `${num(p.xa, 1)} xA on ${p.potAst} shots set up, ${p.dominoes} dominoes started, ${touch} touches`, offball: `${cnt.scr[j] || 0} screen advantages created`,
+    secure: `${p.to} turnovers on ${touch} touches`, twoman: t ? `${t.g} team goals on ${t.n} screen-advantage possessions he was in` : 'no screen-advantage possessions logged', steady: nPrac >= 5 ? `${nPrac} practices with 5+ touches` : `needs 5 practices (has ${nPrac})` };
 }
 function soAssemble(B, opt) {
   if (!B.ready) return B;
