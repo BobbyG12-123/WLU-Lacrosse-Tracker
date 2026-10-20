@@ -251,14 +251,14 @@
   #pmBanner .pm-actions { margin-left: auto; display: flex; gap: 8px; align-items: center; }
   body.player-mode #pmBanner { display: flex; }
   body.player-mode .chat-fab, body.player-mode .chat-panel { display: none !important; }
-  .chat-fab { position: fixed; right: 18px; bottom: calc(18px + env(safe-area-inset-bottom, 0px)); z-index: 60; font-family: var(--text); font-size: 14px; font-weight: 700; padding: 11px 18px; border-radius: 999px; border: none; background: var(--navy-3); color: #fff; box-shadow: 0 6px 18px rgba(0,0,0,.18); cursor: pointer; max-width: calc(100vw - 36px); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .chat-fab { position: fixed; right: 18px; bottom: calc(18px + env(safe-area-inset-bottom, 0px)); z-index: 60; font-family: var(--text); font-size: 14px; font-weight: 700; padding: 11px 18px; border-radius: 999px; border: 1px solid rgba(255,255,255,.25); background: #0B2545; color: #fff; box-shadow: 0 6px 18px rgba(0,0,0,.18); cursor: pointer; max-width: calc(100vw - 36px); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .chat-panel { position: fixed; right: 18px; bottom: calc(18px + env(safe-area-inset-bottom, 0px)); z-index: 61; width: min(440px, calc(100vw - 24px)); height: min(640px, calc(100vh - 110px)); display: flex; flex-direction: column; background: var(--card); color: var(--ink); border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 12px 36px rgba(0,0,0,.22); font-family: var(--text); }
   .chat-head { display: flex; align-items: center; gap: 8px; padding: 10px 12px; border-bottom: 1px solid var(--line); }
   .chat-x { border: none; background: none; font-size: 22px; line-height: 1; color: var(--muted); cursor: pointer; padding: 0 4px; }
   .chat-focus { display: flex; align-items: center; gap: 6px; padding: 6px 12px; font-size: 12.5px; border-bottom: 1px solid var(--line); } .chat-focus > span { flex: 1; }
   .chat-log { flex: 1; overflow-y: auto; padding: 10px 12px; display: flex; flex-direction: column; gap: 10px; font-size: 13.5px; line-height: 1.5; }
   .chat-msg { padding: 8px 10px; border-radius: 10px; max-width: 92%; } .chat-msg p { margin: 0 0 6px; } .chat-msg p:last-child { margin: 0; } .chat-msg ul { margin: 4px 0; padding-left: 18px; }
-  .chat-msg.user { align-self: flex-end; background: var(--navy-3); color: #fff; } .chat-msg.user .n-note { color: rgba(255,255,255,.75); }
+  .chat-msg.user { align-self: flex-end; background: #0B2545; color: #fff; } .chat-msg.user .n-note { color: rgba(255,255,255,.75); }
   .chat-msg.model { align-self: flex-start; background: var(--paper); border: 1px solid var(--line); }
   .chat-facts { font-size: 12px; white-space: pre-wrap; color: var(--muted); max-height: 220px; overflow-y: auto; }
   .chat-sent pre { white-space: pre-wrap; font-size: 11px; max-height: 200px; overflow: auto; }
@@ -14060,7 +14060,7 @@ function chatCapture(ev) {
   const textOf = el => { if (!el) return ''; const c = el.cloneNode(true); c.querySelectorAll('.info-tip').forEach(x => x.remove()); return c.textContent; };
   const tipOf = el => { const x = el && el.querySelector('.info-tip'); return x ? x.title : ''; };
   const jerseyIn = txt => { const m = String(txt || '').match(/#\s?(\d{1,3})\b/); return m && rosterHas(m[1]) ? m[1] : null; };
-  if (chip) { f.jersey = jerseyIn(chip.textContent); f.label = (chip.closest('.depth-line') && chip.closest('.depth-line').querySelector('.depth-line-head') || {}).textContent || ''; f.label = f.label.split('·').slice(0, 2).join('·').trim().slice(0, 50); }
+  if (chip) { f.jersey = jerseyIn(chip.textContent); f.label = (chip.closest('.depth-line') && chip.closest('.depth-line').querySelector('.depth-line-head') || {}).textContent || ''; f.label = f.label.split('·').filter(x => !/\b(line|unit) \d|players \d/i.test(x)).join('·').trim().slice(0, 50); }
   else if (tile) { f.label = textOf(tile.querySelector('.name')).trim(); f.value = ((tile.querySelector('.value') || {}).textContent || '').slice(0, 30); f.help = clean([textOf(tile.querySelector('.meta')), tipOf(tile)].join(' '), 300); }
   else if (tr && tr.closest('table')) {
     const cells = [...tr.children], first = cells[0] ? cells[0].textContent.trim() : '';
