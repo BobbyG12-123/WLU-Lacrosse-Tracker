@@ -8914,6 +8914,7 @@ function soBase(season) {
   const zf = soZ(rf), zs = soZ(rs), zt = soZ(rt);
   const pairZ = (a, b) => { const k = soPairKey(a, b), have = [zf[k], zs[k], zt[k]].filter(v => v !== undefined); return have.length ? have.reduce((x, y) => x + y, 0) / have.length : 0; };
   const pairNote = (a, b) => { const k = soPairKey(a, b), out = []; if (feed[k]) out.push(`${num(feed[k].xg / feed[k].n, 2)} xG per feed on ${Math.round(feed[k].n)}`); if (pairScr[k]) out.push(`${Math.round(pairScr[k].n)} screen advantages together`); if (rt[k] !== undefined) out.push(`${together[k].n} poss. on the field together`); return out.join(', '); };
+  const att = qual.filter(j => pos(j) === 'A'), mid = qual.filter(j => pos(j) === 'M');
   return { ready: true, side: 'off', season, recentFrom, last, players, notEnough, att, mid, pairZ, pairNote };
 }
 // ---------------- Model Starting Defense (Bobby, Oct 19) ----------------
