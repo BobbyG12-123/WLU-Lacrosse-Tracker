@@ -253,6 +253,24 @@
   body.player-mode .chat-fab, body.player-mode .chat-panel { display: none !important; }
   .chat-fab { position: fixed; right: 16px; bottom: calc(16px + env(safe-area-inset-bottom, 0px)); z-index: 60; width: 46px; height: 46px; border-radius: 50%; border: 1px solid rgba(255,255,255,.25); background: #0B2545; color: #fff; font-size: 20px; line-height: 1; padding: 0; box-shadow: 0 4px 14px rgba(0,0,0,.22); cursor: pointer; display: flex; align-items: center; justify-content: center; }
   .chat-fab[hidden], .chat-panel[hidden] { display: none !important; }
+  .bf-panel { max-width: 760px; }
+  .bf-top { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-bottom: 8px; font-family: var(--text); }
+  .bf-strip { display: flex; flex-wrap: wrap; gap: 3px; margin-bottom: 10px; max-height: 92px; overflow-y: auto; }
+  .bf-chip { min-width: 30px; height: 26px; border-radius: 6px; border: 1px solid var(--line); background: var(--card); color: var(--ink); font: 600 12px var(--text); cursor: pointer; padding: 0 5px; }
+  .bf-chip.done { background: color-mix(in srgb, var(--good) 22%, var(--card)); border-color: var(--good); }
+  .bf-chip.part { background: color-mix(in srgb, #E8A317 22%, var(--card)); border-color: #E8A317; }
+  .bf-chip.cur { outline: 2px solid var(--navy-3); outline-offset: 1px; }
+  .bf-match { display: flex; gap: 12px; align-items: center; padding: 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--card-2, #F8F9FB); margin-bottom: 10px; font-family: var(--text); }
+  .bf-big { font-size: 17px; font-weight: 700; } .bf-sub { font-size: 13px; margin-top: 2px; }
+  .bf-res { font-size: 12px; padding: 1px 7px; border-radius: 999px; background: var(--line); margin-left: 4px; } .bf-res.goal { background: var(--good); color: #fff; }
+  .bf-field { width: 92px; flex: none; } .bf-field rect { fill: #2f7d32; stroke: #fff; stroke-width: 1; } .bf-field line { stroke: #fff; stroke-width: .6; } .bf-field .g { fill: #fff; } .bf-field .shot { fill: #FFD54F; stroke: #000; stroke-width: .6; } .bf-field .goal { fill: #ff5252; stroke: #fff; stroke-width: .8; }
+  .bf-sec { border-top: 1px solid var(--line); padding: 8px 0; } .bf-h { font: 700 12px var(--text); letter-spacing: .06em; text-transform: uppercase; color: var(--navy-3); margin-bottom: 4px; }
+  .bf-lab { font: 600 12px var(--text); color: var(--muted); margin: 6px 0 3px; }
+  .bf-pick, .bf-grp, .bf-opts { display: flex; flex-wrap: wrap; gap: 4px; } .bf-pick { flex-direction: column; } .bf-gl { font: 600 11px var(--text); color: var(--muted); width: 100%; }
+  .bf-j { display: inline-flex; flex-direction: column; align-items: center; min-width: 46px; padding: 3px 6px; line-height: 1.1; } .bf-j small { font-size: 9.5px; opacity: .75; font-weight: 500; }
+  .bf-row { border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px; margin: 6px 0; } .bf-rh { display: flex; align-items: center; gap: 6px; font-family: var(--text); }
+  .bf-actions { display: flex; flex-wrap: wrap; gap: 8px; padding-top: 10px; border-top: 1px solid var(--line); position: sticky; bottom: 0; background: var(--card); padding-bottom: 8px; }
+  .bf-msg { font: 600 13px var(--text); color: var(--good); margin: 6px 0 0; }
   .chat-fab .chat-dot { position: absolute; top: 2px; right: 2px; width: 11px; height: 11px; border-radius: 50%; background: #E8A317; border: 2px solid #0B2545; }
   .chat-panel { position: fixed; right: 18px; bottom: calc(18px + env(safe-area-inset-bottom, 0px)); z-index: 61; width: min(440px, calc(100vw - 24px)); height: min(640px, calc(100vh - 110px)); display: flex; flex-direction: column; background: var(--card); color: var(--ink); border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 12px 36px rgba(0,0,0,.22); font-family: var(--text); }
   .chat-head { display: flex; align-items: center; gap: 8px; padding: 10px 12px; border-bottom: 1px solid var(--line); }
@@ -2349,6 +2367,10 @@
 
   <section id="briefView" class="view"><div id="briefWrap"></div></section>
   <section id="profileView" class="view"><div id="profileWrap"></div></section>
+  <section id="backfillView" class="view pm-off">
+    <p class="view-intro">Go back through a practice on film and fill in defense, picks, screens and missed turnovers, shot by shot.</p>
+    <div id="backfillWrap"></div>
+  </section>
   <section id="methodsView" class="view">
     <p class="view-intro">How each model is built, in plain English, with a worked example from your own live numbers.</p>
     <div id="methodsWrap"></div>
@@ -2446,7 +2468,9 @@ const POSS_END_OPTIONS = ["Turnover","Failed clear","End of period"];
 // from shots so no shot math changes; lineup/turnover/dominoes stats read both.
 const POSS_COLS = ["id","date","context","opponent","team","possStart","possStartJersey","dominoes","advCreator","advType","manSituation","end","turnoverBy","causedBy","stintId",
   "pick","pickType","pickSpot","pickScreener","pickUser","pickCoverage","pickResult","pickMismatch","pickAction",
-  "pickScreenerDef","pickUserDef","quarter","clock","screens"];
+  "pickScreenerDef","pickUserDef","quarter","clock","screens",
+  // Backfill: the shot a possession added later came right after (practice film order).
+  "afterShot"];
 // Shot Outcome (one required pill pick) replaces the old On Goal/On
 // Keeper/Goal Scored/Blocked checkboxes. Rather than rewriting every
 // existing analytics function that reads onGoal/onKeeper/goal/blocked
@@ -2921,7 +2945,7 @@ async function loadAll() {
     qs.docs.forEach(d => { LIVE_SESSIONS[d.id] = parseSessionDoc(d.id, d.data()); });
     rebuildShots();
     rerenderAfterShotsChange();
-    if (window.__appReady) { renderRecentEntries(); refreshOpponentLists(); }
+    if (window.__appReady) { renderRecentEntries(); refreshOpponentLists(); if (document.getElementById('backfillView').classList.contains('active')) renderBackfill(); }
   }, e => console.error('sessions sync error', e));
   shotsRef.onSnapshot(snap => {
     if (!snap.exists || typeof snap.data().json !== 'string') return;
@@ -2966,6 +2990,10 @@ async function loadAll() {
     DP_COACH[season] = o;
     if (window.__appReady && season === DEPTH_SEASON) { dpRender('off'); dpRender('def'); }
   }, e => console.error('coach lineup sync error', e)));
+  ADV_SEASONS.forEach(season => DB.doc('app/backfill_' + season).onSnapshot(snap => {
+    const d = snap.exists ? snap.data() : {}; Object.keys(d).forEach(k => { if (/^r_/.test(k)) BF.reviewed[k] = 1; });
+    if (window.__appReady && document.getElementById('backfillView').classList.contains('active')) renderBackfill();
+  }, e => console.error('backfill sync error', e)));
   const unitsRef = DB.doc('app/units');
   unitsRef.onSnapshot(snap => {
     UNITS = snap.exists ? parseUnits(snap.data().json) : [];
@@ -3668,6 +3696,7 @@ function switchTab(viewId) {
   if (viewId === 'healthView') renderDataHealth();
   if (viewId === 'reportsView') renderReports();
   if (viewId === 'depthView') renderDepthChart();
+  if (viewId === 'backfillView') { bfInit(); renderBackfill(); }
   if (viewId === 'goalieView') { renderGoalieHeat(); renderGoalieAdvanced(); }
   if (viewId === 'faceoffView') renderFaceoffs();
   if (viewId === 'tableView') renderTable();
@@ -13493,7 +13522,7 @@ document.getElementById('exportRecruitsBtn').addEventListener('click', () => {
 // [id, page name, view, sub-tab label, panel title to scroll to]
 const NAV = [
   { id: 'cc', name: 'Command Center', pages: [['brief', 'Head Coach Brief', 'briefView'], ['reports', 'Reports', 'reportsView'], ['flags', 'Development Flags', 'efficiencyView', 'Flags']] },
-  { id: 'log', name: 'Log', pages: [['logshot', 'Log Shot', 'logView']] },
+  { id: 'log', name: 'Log', pages: [['logshot', 'Log Shot', 'logView'], ['backfill', 'Backfill', 'backfillView']] },
   { id: 'off', name: 'Offense', pages: [
     ['shooter', 'Shooter Score', 'playerView', 'Shooter Score'], ['heat', 'Heat Map', 'playerView', 'Heat Map'], ['quality', 'Shot Quality', 'playerView', 'Shot Quality'],
     ['shottypes', 'Shot Types', 'efficiencyView', 'Shot Types'], ['angles', 'Shooting Angles', 'efficiencyView', 'Angles'], ['eff', 'Efficiency', 'efficiencyView', 'Players'],
@@ -13628,7 +13657,8 @@ const NAV_KW = {
   profile: 'player profile card one player individual goals added breakdown present to player',
   methods: 'methods how built how it works explain explanation one pager bayesian true level research',
   reports: 'report practice report week weekly recap session summary print pdf standouts', flags: 'flags development alerts concerns slumping needs work warning',
-  logshot: 'log enter record input shot possession faceoff sideline lineup units entry add', shooter: 'best shooter shooting score scorer finishing sniper rank shooters leaderboard composite',
+  logshot: 'log enter record input shot possession faceoff sideline lineup units entry add',
+  backfill: 'backfill back fill go back old shots past practice film review add picks defense defender screens turnovers missing fill in catch up', shooter: 'best shooter shooting score scorer finishing sniper rank shooters leaderboard composite',
   heat: 'heat map where shoot from zones spots location shot chart filters', quality: 'shot quality gold silver bronze grade good looks bad looks share',
   shottypes: 'shot type types mechanism overhand sidearm underhand bounce', angles: 'angle angles stick plane hand side lefty righty where to aim 3d shot map recipe best spot',
   eff: 'efficiency xg expected goals g-xg finishing xa expected assists assists turnovers a/to possession man up man down emo extra man', pertouch: 'per touch touches usage rate possessions used',
@@ -13901,6 +13931,196 @@ function saPlan(q) {
   return { type: 'rank', pick, n: n || 3, dir, filters };
 }
 // ---- running a plan ----
+// ---------------- Backfill (Bobby, Oct 20) ----------------
+// Go back through a practice on film, shot by shot in the order they were logged, and add
+// defense, picks / screens and missed turnovers. Every field is optional. Saves through the
+// same persistShot / persistPossession the Log form uses, so stats work the same way.
+// "Reviewed" marks (shared) live in app/backfill_<season> as r_<session>_<kind><id>.
+const BF = { sid: null, idx: 0, draft: null, dirty: false, reviewed: {}, more: {}, msg: '', showAll: {} };
+function bfSeason() { return (NAV_ST && isAdvSeason(NAV_ST.season)) ? NAV_ST.season : currentAdvSeason(); }
+function bfSessions() {
+  const season = bfSeason();
+  return Object.keys(LIVE_SESSIONS).map(sid => Object.assign({ sid }, LIVE_SESSIONS[sid]))
+    .filter(s => s.context === 'Practice' && seasonForDate(s.date) === season && (s.shots || []).length)
+    .sort((a, b) => (a.date || '').localeCompare(b.date || ''));
+}
+const bfKey = (sid, kind, id) => `r_${String(sid).replace(/[^A-Za-z0-9_-]/g, '_')}_${kind}${id}`;
+const bfIsRev = (sid, kind, id) => !!BF.reviewed[bfKey(sid, kind, id)];
+// The walk-through: shots in logged order; possessions added here sit after their shot;
+// other no-shot possessions (logged live, no place known) come at the end.
+function bfTimeline(sess) {
+  const shots = (sess.shots || []).filter(s => s.team !== 'OPP').slice().sort((a, b) => a.id - b.id);
+  const poss = (sess.poss || []).slice().sort((a, b) => a.id - b.id);
+  const after = {}; poss.filter(p => p.afterShot != null && shots.some(s => s.id === Number(p.afterShot))).forEach(p => { (after[p.afterShot] = after[p.afterShot] || []).push(p); });
+  const out = [];
+  shots.forEach((s, i) => { out.push({ kind: 'shot', e: s, n: i + 1 }); (after[s.id] || []).forEach(p => out.push({ kind: 'poss', e: p, after: s.id })); });
+  poss.filter(p => !(p.afterShot != null && shots.some(s => s.id === Number(p.afterShot)))).forEach(p => out.push({ kind: 'poss', e: p, loose: true }));
+  return { list: out, nShots: shots.length };
+}
+// Rows of picks / screens for an entry: the Screens rows, with the Pick card's details on its screen.
+function bfRowsOf(e) {
+  const rows = e.screens && e.screens !== 'none' ? decodeScreens(e.screens).filter(x => x.s || x.u).map(x => ({ s: x.s || null, u: x.u || null, res: x.adv === 'Yes' ? 'adv' : null })) : [];
+  if (e.pick === 'Yes') {
+    const card = { action: e.pickAction || null, type: e.pickType || null, spot: e.pickSpot || null, cov: e.pickCoverage || null, res: e.pickResult || null, sdef: e.pickScreenerDef || null, udef: e.pickUserDef || null };
+    let r = rows.find(x => x.s === (e.pickScreener || null)) || null;
+    if (!r) { r = { s: e.pickScreener || null, u: e.pickUser || null }; rows.unshift(r); }
+    Object.assign(r, card, { main: true });
+  }
+  rows.forEach(r => { if (r.res === 'adv') r.res = null, r.adv = 'Yes'; });
+  return rows;
+}
+function bfDraftFor(item) {
+  const e = item.e;
+  if (item.kind === 'shot') return { kind: 'shot', defender: e.defender || null, defBeaten: e.defBeaten || null, beatenHow: e.beatenHow || null, slideDefender: e.slideDefender || null, offBallFault: e.offBallFault || null, rows: bfRowsOf(e), noPicks: e.pick === 'No' || e.screens === 'none' };
+  return { kind: 'poss', isNew: !!item.isNew, after: item.after != null ? item.after : null, end: e.end || 'Turnover', turnoverBy: e.turnoverBy || null, causedBy: e.causedBy || null, rows: bfRowsOf(e), noPicks: e.pick === 'No' || e.screens === 'none' };
+}
+// What a draft writes onto the entry.
+function bfApply(e, d) {
+  const out = Object.assign({}, e);
+  if (d.kind === 'shot') Object.assign(out, { defender: d.defender, defBeaten: d.defender ? d.defBeaten : null, beatenHow: d.defender && d.defBeaten === 'Yes' ? d.beatenHow : null, slideDefender: d.slideDefender, offBallFault: d.offBallFault });
+  else Object.assign(out, { end: d.end, turnoverBy: d.end === 'Turnover' ? d.turnoverBy : null, causedBy: d.end === 'Turnover' ? d.causedBy : null });
+  const rows = d.rows.filter(r => r.s || r.u);
+  if (rows.length) {
+    out.screens = encodeScreens(rows.map(r => ({ s: r.s, u: r.u, adv: (r.res && SCREEN_ADV_RESULTS.includes(r.res)) || r.adv === 'Yes' ? 'Yes' : 'No' })));
+    const m = rows.find(r => r.main) || rows[0];
+    Object.assign(out, { pick: 'Yes', pickAction: m.action || 'Pick', pickType: m.type || null, pickSpot: m.spot || null, pickScreener: m.s || null, pickUser: m.u || null, pickCoverage: m.cov || null, pickResult: m.res || null, pickScreenerDef: m.sdef || null, pickUserDef: m.udef || null });
+  } else if (d.noPicks || d.rowsCleared) {
+    Object.assign(out, { screens: d.noPicks ? 'none' : null, pick: d.noPicks ? 'No' : null, pickAction: null, pickType: null, pickSpot: null, pickScreener: null, pickUser: null, pickCoverage: null, pickResult: null, pickMismatch: null, pickScreenerDef: null, pickUserDef: null });
+  }
+  return out;
+}
+function bfHasData(item) {
+  const e = item.e;
+  if (item.kind === 'shot') return !!(e.defender || e.slideDefender || e.offBallFault || e.pick || (e.screens && e.screens !== ''));
+  return !!(e.turnoverBy || e.causedBy || e.pick || e.screens);
+}
+function bfState(sid, item) { if (bfIsRev(sid, item.kind, item.e.id)) return 'done'; return bfHasData(item) ? 'part' : 'todo'; }
+// Jersey buttons: that rep's lineup first, then by position, then everyone (folded).
+function bfPicker(field, val, side, item, rowIdx) {
+  const season = bfSeason(), roster = (ROSTERS[season] || []).filter(r => r.jersey), sid = BF.sid;
+  const st = item && item.e.stintId ? stintById(sid, item.e.stintId) : null;
+  const onField = st ? (side === 'def' ? st.defense : st.offense).filter(j => !isOppJersey(j)) : [];
+  const posWant = side === 'def' ? ['D', 'L', 'S'] : ['A', 'M'];
+  const byPos = roster.filter(r => !onField.includes(r.jersey) && (posWant.includes(posOfJ(season, r.jersey)) || (side === 'def' && posAltJ(season, r.jersey) === 'S'))).sort((a, b) => posWant.indexOf(posOfJ(season, a.jersey)) - posWant.indexOf(posOfJ(season, b.jersey)) || Number(a.jersey) - Number(b.jersey)).map(r => r.jersey);
+  const rest = roster.map(r => r.jersey).filter(j => !onField.includes(j) && !byPos.includes(j)).sort((a, b) => Number(a) - Number(b));
+  const key = field + (rowIdx != null ? '_' + rowIdx : '');
+  const btn = j => `<button type="button" class="pill bf-j${val === j ? ' active' : ''}" data-bf="set" data-f="${field}" ${rowIdx != null ? `data-r="${rowIdx}"` : ''} data-v="${escapeHtml(j)}" title="${escapeHtml(nameFor(j, season) || '')}">${escapeHtml(j)}<small>${escapeHtml(lastNameOf(nameFor(j, season) || '').slice(0, 9))}</small></button>`;
+  const showAll = BF.showAll[key] || (val && rest.includes(val));
+  return `<div class="bf-pick">${onField.length ? `<div class="bf-grp"><span class="bf-gl">On field</span>${onField.map(btn).join('')}</div>` : ''}<div class="bf-grp">${onField.length ? `<span class="bf-gl">${side === 'def' ? 'D / LSM / SSDM' : 'Att / Mid'}</span>` : ''}${byPos.map(btn).join('')}${showAll ? rest.map(btn).join('') : `<button type="button" class="pill bf-more" data-bf="all" data-k="${key}">More…</button>`}</div></div>`;
+}
+function bfPills(field, val, opts, rowIdx) {
+  return `<div class="bf-opts">${opts.map(o => `<button type="button" class="pill${val === o ? ' active' : ''}" data-bf="set" data-f="${field}" ${rowIdx != null ? `data-r="${rowIdx}"` : ''} data-v="${escapeHtml(o)}">${escapeHtml(o)}</button>`).join('')}</div>`;
+}
+function bfMatchHtml(item, tl) {
+  const e = item.e, season = bfSeason(), nm = j => j ? `#${escapeHtml(j)} ${escapeHtml(lastNameOf(nameFor(j, season) || ''))}` : '';
+  if (item.kind === 'poss') return `<div class="bf-match"><div class="bf-big">${item.isNew ? 'New possession' : 'Possession #' + e.id}${item.after != null ? ` <span class="n-note">after shot ${tl.list.find(x => x.kind === 'shot' && x.e.id === Number(item.after)).n}</span>` : item.loose ? ' <span class="n-note">(logged live; its spot between shots isn’t known)</span>' : ''}</div><div class="bf-sub">${escapeHtml(e.end || 'Turnover')}${e.turnoverBy ? ' · by ' + nm(e.turnoverBy) : ''}${e.causedBy ? ' · caused by ' + nm(e.causedBy) : ''}</div></div>`;
+  const res = e.goal === 1 ? 'GOAL' : (e.outcome || (e.blocked ? 'Blocked' : e.onGoal ? 'Saved' : 'Missed'));
+  const d = e.distanceYds != null ? `${Math.round(e.distanceYds)} yds` : '', lat = e.lateralYds != null ? (Math.abs(e.lateralYds) < 3 ? 'middle' : (e.lateralYds < 0 ? 'left' : 'right')) : '';
+  const bits = [Number(e.offDodge) === 1 ? 'Off the dodge' : 'Off the catch', [d, lat].filter(Boolean).join(' '), e.shotQuality ? e.shotQuality.replace(/^\d-/, '') : '', e.contestLevel ? e.contestLevel + ' contest' : '', e.manSituation && e.manSituation !== 'Even' ? e.manSituation : '', e.transition ? 'Transition ' + e.transition : '', e.rebound === 'Yes' ? 'Rebound' : '', e.trigger ? 'Trigger: ' + e.trigger : '', e.goalieJersey ? 'G ' + nm(e.goalieJersey) : ''].filter(Boolean);
+  // A small field: goal at top, dot where the shot came from.
+  const x = e.lateralYds != null ? 50 + Math.max(-20, Math.min(20, e.lateralYds)) * 2.2 : null, y = e.distanceYds != null ? 8 + Math.min(30, e.distanceYds) * 2 : null;
+  const field = x !== null && y !== null ? `<svg viewBox="0 0 100 72" class="bf-field" aria-hidden="true"><rect x="1" y="1" width="98" height="70" rx="3"/><circle cx="50" cy="8" r="3" class="g"/><line x1="10" y1="40" x2="90" y2="40"/><circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="3.4" class="${e.goal === 1 ? 'goal' : 'shot'}"/></svg>` : '';
+  const near = [tl.list[tl.list.indexOf(item) - 1], tl.list[tl.list.indexOf(item) + 1]].map((o, k) => o && o.kind === 'shot' ? `${k ? 'Next' : 'Before'}: ${nm(o.e.shooterJersey)} ${o.e.goal === 1 ? 'goal' : (o.e.outcome || '').toLowerCase()}` : '').filter(Boolean).join(' · ');
+  return `<div class="bf-match">${field}<div><div class="bf-big">Shot ${item.n} of ${tl.nShots} · ${nm(e.shooterJersey)}${e.assistJersey ? ` <span class="n-note">from ${nm(e.assistJersey)}</span>` : ''} <span class="bf-res ${e.goal === 1 ? 'goal' : ''}">${escapeHtml(res)}</span></div><div class="bf-sub">${bits.map(escapeHtml).join(' · ')}</div>${near ? `<div class="n-note">${near}</div>` : ''}</div></div>`;
+}
+function bfRowsHtml(d, item) {
+  const rows = d.rows.length ? d.rows : [];
+  return `<div class="bf-sec"><div class="bf-h">Picks &amp; screens <span class="n-note">(all optional; add one row per pick or screen)</span></div>
+    ${rows.map((r, i) => `<div class="bf-row"><div class="bf-rh"><b>${i + 1}.</b> ${r.main || i === 0 ? '' : ''}<span style="flex:1;"></span><button type="button" class="pill" data-bf="rowdel" data-r="${i}">Remove</button></div>
+      <div class="bf-lab">Screener</div>${bfPicker('s', r.s, 'off', item, i)}
+      <div class="bf-lab">Ball carrier / user</div>${bfPicker('u', r.u, 'off', item, i)}
+      <div class="bf-lab">Result</div>${bfPills('res', r.res, PICK_RESULT_OPTIONS, i)}
+      ${BF.more['r' + i] ? `<div class="bf-lab">Pick or get</div>${bfPills('action', r.action, PICK_ACTION_OPTIONS, i)}<div class="bf-lab">Coverage</div>${bfPills('cov', r.cov, PICK_COVERAGE_OPTIONS, i)}<div class="bf-lab">Type</div>${bfPills('type', r.type, PICK_TYPE_OPTIONS, i)}<div class="bf-lab">Spot</div>${bfPills('spot', r.spot, PICK_SPOT_OPTIONS, i)}<div class="bf-lab">Screener’s defender</div>${bfPicker('sdef', r.sdef, 'def', item, i)}<div class="bf-lab">Ball carrier’s defender</div>${bfPicker('udef', r.udef, 'def', item, i)}`
+        : `<button type="button" class="pill" data-bf="more" data-r="${i}">Coverage, type, defenders…</button>`}</div>`).join('')}
+    <div class="bf-opts"><button type="button" class="pill" data-bf="rowadd">+ ${rows.length ? 'Another pick / screen' : 'Add a pick / screen'}</button>${rows.length ? '' : `<button type="button" class="pill${d.noPicks ? ' active' : ''}" data-bf="nopicks">No picks</button>`}</div></div>`;
+}
+function bfCardHtml(item, tl) {
+  const d = BF.draft, sid = BF.sid;
+  const shotFields = d.kind === 'shot' ? `<div class="bf-sec"><div class="bf-h">Defense <span class="n-note">(optional)</span></div>
+      <div class="bf-lab">On-ball defender</div>${bfPicker('defender', d.defender, 'def', item)}
+      ${d.defender ? `<div class="bf-lab">Beaten?</div>${bfPills('defBeaten', d.defBeaten, ['Yes', 'No'])}${d.defBeaten === 'Yes' ? `<div class="bf-lab">How</div>${bfPills('beatenHow', d.beatenHow, BEATEN_HOW_OPTIONS)}` : ''}` : ''}
+      <div class="bf-lab">Slide defender</div>${bfPicker('slideDefender', d.slideDefender, 'def', item)}
+      <div class="bf-lab">Off-ball breakdown</div>${bfPicker('offBallFault', d.offBallFault, 'def', item)}</div>`
+    : `<div class="bf-sec"><div class="bf-h">How it ended</div>${bfPills('end', d.end, POSS_END_OPTIONS)}
+      ${d.end === 'Turnover' ? `<div class="bf-lab">Turned over by <span class="n-note">(optional)</span></div>${bfPicker('turnoverBy', d.turnoverBy, 'off', item)}<div class="bf-lab">Caused by <span class="n-note">(optional; blank = unforced)</span></div>${bfPicker('causedBy', d.causedBy, 'def', item)}` : ''}</div>`;
+  return `${bfMatchHtml(item, tl)}${shotFields}${bfRowsHtml(d, item)}
+    <div class="bf-actions"><button type="button" class="btn secondary" data-bf="prev">&larr; Back</button><button type="button" class="btn" data-bf="save">${d.kind === 'poss' && d.isNew ? 'Save possession' : 'Save &amp; next'} &rarr;</button><button type="button" class="btn secondary" data-bf="skip">Skip</button>
+    ${item.kind === 'shot' ? `<button type="button" class="btn secondary" data-bf="addposs">+ Possession here</button>` : ''}${d.kind === 'poss' && d.isNew ? `<button type="button" class="btn secondary" data-bf="cancelnew">Cancel</button>` : ''}</div>
+    ${BF.msg ? `<p class="bf-msg">${BF.msg}</p>` : ''}`;
+}
+function renderBackfill() {
+  const wrap = document.getElementById('backfillWrap'); if (!wrap) return;
+  const sessions = bfSessions();
+  if (!BF.sid || !LIVE_SESSIONS[BF.sid]) {
+    BF.sid = null;
+    wrap.innerHTML = `<div class="panel"><p class="panel-title">Backfill a practice</p><p class="panel-sub">Pick a practice, then watch the film alongside and step through its shots in the order they were logged. Add defense, picks and screens, and any turnovers that weren’t logged. Everything is optional. Tip: put ScoreBreak in a second window side by side.</p>
+      <div class="table-wrap"><table class="shotlog"><thead><tr><th>Practice</th><th>Shots</th><th>Reviewed</th><th>Defender logged</th><th>Picks / screens logged</th><th>No-shot poss.</th><th></th></tr></thead><tbody>${sessions.map(s => {
+        const tl = bfTimeline(s), shots = tl.list.filter(x => x.kind === 'shot'), rev = tl.list.filter(x => bfIsRev(s.sid, x.kind, x.e.id)).length;
+        return `<tr><td>${escapeHtml(s.date)}</td><td>${shots.length}</td><td>${rev} of ${tl.list.length}</td><td>${shots.filter(x => x.e.defender).length}</td><td>${shots.filter(x => x.e.pick || (x.e.screens && x.e.screens !== '')).length}</td><td>${(s.poss || []).length}</td><td><button type="button" class="pill" data-bf="open" data-sid="${escapeHtml(s.sid)}">${rev ? 'Continue' : 'Start'} &rarr;</button></td></tr>`; }).join('')}</tbody></table></div></div>`;
+    return;
+  }
+  const sess = LIVE_SESSIONS[BF.sid], tl = bfTimeline(sess);
+  if (BF.newItem) tl.list.splice(tl.list.findIndex(x => x.kind === 'shot' && x.e.id === BF.newItem.after) + 1, 0, BF.newItem);
+  BF.idx = Math.max(0, Math.min(BF.idx, tl.list.length - 1));
+  const item = tl.list[BF.idx];
+  if (!BF.draft) BF.draft = bfDraftFor(item);
+  const rev = tl.list.filter(x => !x.isNew && bfIsRev(BF.sid, x.kind, x.e.id)).length;
+  const strip = tl.list.map((x, i) => `<button type="button" class="bf-chip ${x.isNew ? 'part' : bfState(BF.sid, x)}${i === BF.idx ? ' cur' : ''}" data-bf="go" data-i="${i}" title="${x.kind === 'shot' ? 'Shot ' + x.n : 'Possession'}">${x.kind === 'shot' ? x.n : 'P'}</button>`).join('');
+  wrap.innerHTML = `<div class="panel bf-panel"><div class="bf-top"><button type="button" class="pill" data-bf="list">&larr; Practices</button><b>${escapeHtml(sess.date)} practice</b><span class="n-note">${rev} of ${tl.list.length} reviewed · green = reviewed, gold = has some data</span></div>
+    <div class="bf-strip">${strip}</div>${item ? bfCardHtml(item, tl) : '<p>No shots in this practice.</p>'}</div>`;
+  const cur = wrap.querySelector('.bf-chip.cur'); if (cur) cur.scrollIntoView({ block: 'nearest', inline: 'center' });
+}
+async function bfSave() {
+  const sess = LIVE_SESSIONS[BF.sid], tl = bfTimeline(sess);
+  if (BF.newItem) tl.list.splice(tl.list.findIndex(x => x.kind === 'shot' && x.e.id === BF.newItem.after) + 1, 0, BF.newItem);
+  const item = tl.list[BF.idx], d = BF.draft;
+  if (d.kind === 'shot' && d.defender && (d.defender === d.slideDefender)) { BF.msg = 'The slide defender can’t be the on-ball defender.'; renderBackfill(); return; }
+  let res, kind = item.kind, id;
+  if (d.kind === 'shot') { const out = bfApply(item.e, d); id = out.id; res = await persistShot(out); }
+  else if (d.isNew) {
+    id = nextPossId();
+    const base = { id, date: sess.date, context: 'Practice', opponent: null, team: 'WLU', possStart: null, possStartJersey: null, dominoes: null, advCreator: null, advType: null, manSituation: 'Even', afterShot: d.after };
+    res = await persistPossession(bfApply(base, d));
+    BF.newItem = null;
+  } else { const out = bfApply(item.e, d); id = out.id; res = await persistPossession(out); }
+  if (res === 'error') { BF.msg = 'Save failed — please try again.'; renderBackfill(); return; }
+  try { await DB.doc('app/backfill_' + bfSeason()).set({ [bfKey(BF.sid, kind, id)]: dpWho() + ' ' + new Date().toISOString().slice(0, 10) }, { merge: true }); } catch (e) { console.error('backfill mark', e); }
+  BF.reviewed[bfKey(BF.sid, kind, id)] = 1;
+  BF.msg = `Saved ${kind === 'shot' ? 'shot ' + item.n : 'possession'}.${res === 'queued' ? ' (Offline — it will sync.)' : ''}`;
+  BF.idx++; BF.draft = null; BF.more = {}; BF.showAll = {};
+  bfRemember(); renderBackfill();
+}
+function bfRemember() { try { const m = JSON.parse(localStorage.getItem('wluBackfillPos') || '{}'); m[BF.sid] = BF.idx; localStorage.setItem('wluBackfillPos', JSON.stringify(m)); } catch (e) { /* storage unavailable */ } }
+function bfGo(i) { BF.idx = i; BF.draft = null; BF.more = {}; BF.showAll = {}; BF.msg = ''; if (BF.newItem) BF.newItem = null; bfRemember(); renderBackfill(); }
+function bfInit() {
+  const wrap = document.getElementById('backfillWrap'); if (!wrap || wrap.__bf) return; wrap.__bf = true;
+  wrap.addEventListener('click', ev => {
+    const b = ev.target.closest('[data-bf]'); if (!b) return;
+    const a = b.dataset.bf, d = BF.draft, r = b.dataset.r != null ? Number(b.dataset.r) : null;
+    if (a === 'open') { BF.sid = b.dataset.sid; let i = 0; try { i = JSON.parse(localStorage.getItem('wluBackfillPos') || '{}')[BF.sid] || 0; } catch (e) { /* storage unavailable */ } bfGo(i); window.scrollTo(0, 0); return; }
+    if (a === 'list') { BF.sid = null; BF.draft = null; BF.newItem = null; renderBackfill(); return; }
+    if (a === 'go') { bfGo(Number(b.dataset.i)); return; }
+    if (a === 'prev') { bfGo(Math.max(0, BF.idx - 1)); return; }
+    if (a === 'skip') { bfGo(BF.idx + 1); return; }
+    if (a === 'save') { bfSave(); return; }
+    if (a === 'addposs') { const sess = LIVE_SESSIONS[BF.sid], tl = bfTimeline(sess), it = tl.list[BF.idx]; BF.newItem = { kind: 'poss', isNew: true, after: it.e.id, e: { end: 'Turnover' } }; BF.idx = BF.idx + 1; BF.draft = bfDraftFor(BF.newItem); BF.msg = ''; renderBackfill(); return; }
+    if (a === 'cancelnew') { BF.newItem = null; bfGo(Math.max(0, BF.idx - 1)); return; }
+    if (a === 'all') { BF.showAll[b.dataset.k] = true; renderBackfill(); return; }
+    if (!d) return;
+    if (a === 'rowadd') { d.rows.push({ s: null, u: null }); d.noPicks = false; }
+    if (a === 'rowdel') { d.rows.splice(r, 1); if (!d.rows.length) d.rowsCleared = true; }
+    if (a === 'nopicks') d.noPicks = !d.noPicks;
+    if (a === 'more') BF.more['r' + r] = true;
+    if (a === 'set') { const f = b.dataset.f, v = b.dataset.v, tgt = r != null ? d.rows[r] : d; tgt[f] = tgt[f] === v ? null : v; if (f === 'defender' && !tgt[f]) { d.defBeaten = null; d.beatenHow = null; } }
+    BF.msg = ''; renderBackfill();
+  });
+  document.addEventListener('keydown', ev => {
+    if (!document.getElementById('backfillView').classList.contains('active') || !BF.sid || /input|textarea|select/i.test((ev.target.tagName || ''))) return;
+    if (ev.key === 'ArrowRight') { ev.preventDefault(); bfGo(BF.idx + 1); }
+    if (ev.key === 'ArrowLeft') { ev.preventDefault(); bfGo(Math.max(0, BF.idx - 1)); }
+    if (ev.key === 'Enter' && !ev.target.closest('button')) { ev.preventDefault(); bfSave(); }
+  });
+}
 // ---------------- Ask chat (Bobby, Oct 19) ----------------
 // A chat on every page. The tracker works out the facts for each question from our data;
 // the AI only puts them into words. What's sent: the question and those facts, with every
