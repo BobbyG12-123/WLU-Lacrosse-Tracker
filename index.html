@@ -251,7 +251,8 @@
   #pmBanner .pm-actions { margin-left: auto; display: flex; gap: 8px; align-items: center; }
   body.player-mode #pmBanner { display: flex; }
   body.player-mode .chat-fab, body.player-mode .chat-panel { display: none !important; }
-  .chat-fab { position: fixed; right: 18px; bottom: calc(18px + env(safe-area-inset-bottom, 0px)); z-index: 60; font-family: var(--text); font-size: 14px; font-weight: 700; padding: 11px 18px; border-radius: 999px; border: 1px solid rgba(255,255,255,.25); background: #0B2545; color: #fff; box-shadow: 0 6px 18px rgba(0,0,0,.18); cursor: pointer; max-width: calc(100vw - 36px); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .chat-fab { position: fixed; right: 16px; bottom: calc(16px + env(safe-area-inset-bottom, 0px)); z-index: 60; width: 46px; height: 46px; border-radius: 50%; border: 1px solid rgba(255,255,255,.25); background: #0B2545; color: #fff; font-size: 20px; line-height: 1; padding: 0; box-shadow: 0 4px 14px rgba(0,0,0,.22); cursor: pointer; display: flex; align-items: center; justify-content: center; }
+  .chat-fab .chat-dot { position: absolute; top: 2px; right: 2px; width: 11px; height: 11px; border-radius: 50%; background: #E8A317; border: 2px solid #0B2545; }
   .chat-panel { position: fixed; right: 18px; bottom: calc(18px + env(safe-area-inset-bottom, 0px)); z-index: 61; width: min(440px, calc(100vw - 24px)); height: min(640px, calc(100vh - 110px)); display: flex; flex-direction: column; background: var(--card); color: var(--ink); border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 12px 36px rgba(0,0,0,.22); font-family: var(--text); }
   .chat-head { display: flex; align-items: center; gap: 8px; padding: 10px 12px; border-bottom: 1px solid var(--line); }
   .chat-x { border: none; background: none; font-size: 22px; line-height: 1; color: var(--muted); cursor: pointer; padding: 0 4px; }
@@ -14075,7 +14076,9 @@ function chatCapture(ev) {
 function rosterHas(j) { const s = chatSeason(); return (ROSTERS[s] || []).some(r => r.jersey === j); }
 function chatDraw() {
   const fab = document.getElementById('chatFab'), panel = document.getElementById('chatPanel'); if (!fab || !panel) return;
-  fab.innerHTML = CHAT.focus && !CHAT.open ? `&#128172; Ask about ${escapeHtml(CHAT.focus.jersey ? '#' + CHAT.focus.jersey + ' ' + lastNameOf(nameFor(CHAT.focus.jersey, chatSeason()) || '') : (CHAT.focus.label || 'this'))}` : '&#128172; Ask';
+  const about = CHAT.focus ? (CHAT.focus.jersey ? '#' + CHAT.focus.jersey + ' ' + lastNameOf(nameFor(CHAT.focus.jersey, chatSeason()) || '') : (CHAT.focus.label || CHAT.focus.row || 'this')) : '';
+  fab.innerHTML = `&#128172;${about ? '<span class="chat-dot"></span>' : ''}`;
+  fab.title = about ? `Ask about ${about}` : 'Ask the tracker'; fab.setAttribute('aria-label', fab.title);
   fab.hidden = CHAT.open; panel.hidden = !CHAT.open;
   if (!CHAT.open) return;
   const f = CHAT.focus;
@@ -14091,7 +14094,7 @@ function chatShowSent() { try { return IS_DH_OWNER && localStorage.getItem('wluA
 function chatInit() {
   if (document.getElementById('chatFab')) return;
   const wrap = document.createElement('div');
-  wrap.innerHTML = `<button type="button" id="chatFab" class="chat-fab">&#128172; Ask</button>
+  wrap.innerHTML = `<button type="button" id="chatFab" class="chat-fab" title="Ask the tracker" aria-label="Ask the tracker">&#128172;</button>
     <section id="chatPanel" class="chat-panel" hidden aria-label="Ask the tracker">
       <div class="chat-head"><b>Ask the tracker</b><span style="flex:1;"></span><button type="button" class="pill" data-chat="new">New chat</button><button type="button" class="chat-x" data-chat="close" title="Close">&times;</button></div>
       <div id="chatFocus" class="chat-focus"></div>
