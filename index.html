@@ -274,7 +274,7 @@
   .bf-hint { font: 13px var(--text); color: var(--muted); margin: 4px 0 8px; }
   .bf-box { border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; margin: 8px 0; background: var(--card); }
   .bf-boxh { font: 700 13px var(--text); letter-spacing: .05em; text-transform: uppercase; color: var(--navy-3); margin-bottom: 2px; }
-  .bf-field { padding: 4px 0; border-top: 1px dashed var(--line-2, var(--line)); } .bf-box .bf-field:first-of-type { border-top: none; }
+  .bf-q { padding: 4px 0; border-top: 1px dashed var(--line-2, var(--line)); } .bf-box .bf-q:first-of-type { border-top: none; }
   .bf-text { font: 14px var(--text); padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; width: min(320px, 100%); background: var(--card); color: var(--ink); }
   .bf-goal { width: min(260px, 100%); cursor: crosshair; } .bf-goal svg { width: 100%; height: auto; }
   .bf-logged { font: 12.5px var(--text); color: var(--muted); margin: 8px 0; } .bf-logged summary { cursor: pointer; } .bf-logged p { margin: 4px 0 0; line-height: 1.6; }
@@ -14046,7 +14046,7 @@ function bfFieldHtml(fd, e, d, item) {
   else if (kind === 'jg') ctl = bfPicker(k, v, 'g', item);
   else if (kind === 'text') ctl = `<input type="text" class="bf-text" data-bf-text="${k}" list="triggerList" maxlength="60" placeholder="Type or pick, e.g. Rub" value="${escapeHtml(v || '')}">`;
   else if (kind === 'goal') ctl = `<div class="bf-goal" data-bf-goal="1">${goalSVG(buildGoalGrid([]), { metric: 'score', interactive: false, labels: false, grid: true })}</div><span class="n-note">${d.f.goalX != null ? escapeHtml(goalZoneName(d.f.goalX, d.f.goalY)) + ' &middot; tap again to move it' : 'Tap where the shot went'}</span>`;
-  return `<div class="bf-field"><div class="bf-lab">${escapeHtml(label)}</div>${ctl}</div>`;
+  return `<div class="bf-q"><div class="bf-lab">${escapeHtml(label)}</div>${ctl}</div>`;
 }
 function bfCardHtml(item, tl) {
   const d = BF.draft, e = item.e, season = bfSeason(), hidden = bfHidden(), fields = bfFieldsFor(item);
