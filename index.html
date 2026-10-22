@@ -14046,7 +14046,7 @@ const CHAT_RULES = `You're a sharp, friendly assistant coach helping the head co
 How to answer:
 - Lead with the straight answer in one or two sentences. Then give the two or three reasons that matter most, with the real numbers behind them (goals, shots, turnovers, dominoes), not model scores.
 - Say "rating" numbers sparingly. Translate part scores into plain words: around 50 is average for our team, 60+ is one of our better guys at it, 70+ is among the best, under 40 is a weak spot.
-- When he asks what a player should work on, or how he moves up, use the WORK ON and TO MOVE UP lines: name the one or two most realistic changes in real terms (for example "about 1 more domino every 10 touches", "cut turnovers from 1 in 4 touches to 1 in 6").
+- When he asks what a player should work on, or how he moves up, lead with the MOST REALISTIC ROUTE UP line, then mention a single-part option from TO MOVE UP if one is close. Name changes in real terms (for example "about 1 more domino every 10 touches", "cut turnovers from 1 in 4 touches to 1 in 6").
 - When he asks how a player is trending, use the TRENDS lines: say plainly if he's better, worse or the same lately, and why.
 - If something rests on only a handful of shots, reps or touches, say so in a few words.
 - No headers. Use a short bullet list only when listing 3+ things. Keep it under 150 words unless he asks for more.
@@ -14095,8 +14095,14 @@ function chatMoveUp(side, B, M, j) {
   });
   ways.sort((a, b) => a[0] - b[0]);
   out.push(`TO MOVE UP to ${lab[target]} he needs about ${num(gap, 1)} more rating points to pass ${chatCode(M.lines[target].js.reduce((lo, x) => (x !== j && M.players[x].rating < M.players[lo].rating ? x : lo), M.lines[target].js.find(x => x !== j)))} (${Math.round(cut)}). Any ONE of these would do it: ${ways.length ? ways.slice(0, 4).map(x => x[1]).join('; ') : 'no single part can close it alone; it takes improvement in several'}.`);
-  const weak = W.map(([k, l]) => [l, p.parts[k], (p.detail || {})[k]]).sort((a, b) => a[1] - b[1]).slice(0, 2);
-  out.push(`WORK ON (his two weakest parts): ${weak.map(([l, v, d]) => `${l} ${Math.round(v)}${d ? ' (' + d + ')' : ''}`).join('; ')}.`);
+  const weak = W.map(([k, l]) => [k, l, p.parts[k], (p.detail || {})[k]]).filter(x => w[x[0]]).sort((a, b) => a[2] - b[2]).slice(0, 2);
+  out.push(`WORK ON (his two weakest parts): ${weak.map(([, l, v, d]) => `${l} ${Math.round(v)}${d ? ' (' + d + ')' : ''}`).join('; ')}.`);
+  // The realistic route: split the gap across his two weakest parts.
+  if (weak.length === 2) {
+    const each = gap * TW / (w[weak[0][0]] + w[weak[1][0]]);
+    const say = ([k, l, v]) => { const to = Math.min(100, v + each), rk = (CHAT_RAWKEY[side] || {})[k] || k, R = raw[rk], fmt = CHAT_RAW[side][k]; let real = ''; if (R && fmt && R[j] !== undefined) { const vv = Object.values(R).filter(x => isFinite(x)), m = vv.reduce((a, b) => a + b, 0) / vv.length, sd = Math.sqrt(vv.reduce((a, b) => a + (b - m) ** 2, 0) / Math.max(1, vv.length - 1)) || 1; real = ` (from about ${fmt(R[j])} to about ${fmt(m + ((to - 50) / 15) * sd)})`; } return `${l} ${Math.round(v)} to ${Math.round(to)}${real}`; };
+    out.push(`MOST REALISTIC ROUTE UP: improve his two weakest parts about ${Math.round(each)} points each: ${say(weak[0])}; ${say(weak[1])}.`);
+  }
   return out;
 }
 // Practices named in a question: "yesterday", "Tuesday", "last practice", "10/14", "Oct 14".
