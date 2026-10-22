@@ -14087,14 +14087,14 @@ function chatMoveUp(side, B, M, j) {
   W.forEach(([k, l]) => {
     if (!w[k]) return;
     const need = gap * TW / w[k], now = p.parts[k], to = now + need;
-    if (to > 100) return;
+    if (to > 100 || need > 20) return;   // only single-part routes within reach
     const rk = (CHAT_RAWKEY[side] || {})[k] || k, R = raw[rk], fmt = CHAT_RAW[side][k];
     let real = '';
     if (R && fmt && R[j] !== undefined) { const v = Object.values(R).filter(x => isFinite(x)), m = v.reduce((a, b) => a + b, 0) / v.length, sd = Math.sqrt(v.reduce((a, b) => a + (b - m) ** 2, 0) / Math.max(1, v.length - 1)) || 1; real = ` = from about ${fmt(R[j])} to about ${fmt(m + ((to - 50) / 15) * sd)}`; }
     ways.push([need, `${l} ${Math.round(now)} to ${Math.round(to)}${real}`]);
   });
   ways.sort((a, b) => a[0] - b[0]);
-  out.push(`TO MOVE UP to ${lab[target]} he needs about ${num(gap, 1)} more rating points to pass ${chatCode(M.lines[target].js.reduce((lo, x) => (x !== j && M.players[x].rating < M.players[lo].rating ? x : lo), M.lines[target].js.find(x => x !== j)))} (${Math.round(cut)}). Any ONE of these would do it: ${ways.length ? ways.slice(0, 4).map(x => x[1]).join('; ') : 'no single part can close it alone; it takes improvement in several'}.`);
+  out.push(`TO MOVE UP to ${lab[target]} he needs about ${num(gap, 1)} more rating points to pass ${chatCode(M.lines[target].js.reduce((lo, x) => (x !== j && M.players[x].rating < M.players[lo].rating ? x : lo), M.lines[target].js.find(x => x !== j)))} (${Math.round(cut)}). ${ways.length ? `A big jump in just one of these would also do it: ${ways.slice(0, 3).map(x => x[1]).join('; ')}` : 'No single part closes it on its own; it takes a mix'}.`);
   const weak = W.map(([k, l]) => [k, l, p.parts[k], (p.detail || {})[k]]).filter(x => w[x[0]]).sort((a, b) => a[2] - b[2]).slice(0, 2);
   out.push(`WORK ON (his two weakest parts): ${weak.map(([, l, v, d]) => `${l} ${Math.round(v)}${d ? ' (' + d + ')' : ''}`).join('; ')}.`);
   // The realistic route: split the gap across his two weakest parts.
