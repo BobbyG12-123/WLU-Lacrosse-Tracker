@@ -270,6 +270,15 @@
   .bf-j { display: inline-flex; flex-direction: column; align-items: center; min-width: 46px; padding: 3px 6px; line-height: 1.1; } .bf-j small { font-size: 9.5px; opacity: .75; font-weight: 500; }
   .bf-row { border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px; margin: 6px 0; } .bf-rh { display: flex; align-items: center; gap: 6px; font-family: var(--text); }
   .bf-actions { display: flex; flex-wrap: wrap; gap: 8px; padding-top: 10px; border-top: 1px solid var(--line); position: sticky; bottom: 0; background: var(--card); padding-bottom: 8px; }
+  .bf-toggles { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; margin: 6px 0; } .bf-toggles .pill { font-size: 11.5px; }
+  .bf-hint { font: 13px var(--text); color: var(--muted); margin: 4px 0 8px; }
+  .bf-box { border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; margin: 8px 0; background: var(--card); }
+  .bf-boxh { font: 700 13px var(--text); letter-spacing: .05em; text-transform: uppercase; color: var(--navy-3); margin-bottom: 2px; }
+  .bf-field { padding: 4px 0; border-top: 1px dashed var(--line-2, var(--line)); } .bf-box .bf-field:first-of-type { border-top: none; }
+  .bf-text { font: 14px var(--text); padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; width: min(320px, 100%); background: var(--card); color: var(--ink); }
+  .bf-goal { width: min(260px, 100%); cursor: crosshair; } .bf-goal svg { width: 100%; height: auto; }
+  .bf-logged { font: 12.5px var(--text); color: var(--muted); margin: 8px 0; } .bf-logged summary { cursor: pointer; } .bf-logged p { margin: 4px 0 0; line-height: 1.6; }
+  .bf-done { font: 600 13px var(--text); color: var(--good); }
   .bf-msg { font: 600 13px var(--text); color: var(--good); margin: 6px 0 0; } .bf-msg.bad { color: var(--critical); }
   .chat-fab .chat-dot { position: absolute; top: 2px; right: 2px; width: 11px; height: 11px; border-radius: 50%; background: #E8A317; border: 2px solid #0B2545; }
   .chat-panel { position: fixed; right: 18px; bottom: calc(18px + env(safe-area-inset-bottom, 0px)); z-index: 61; width: min(440px, calc(100vw - 24px)); height: min(640px, calc(100vh - 110px)); display: flex; flex-direction: column; background: var(--card); color: var(--ink); border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 12px 36px rgba(0,0,0,.22); font-family: var(--text); }
@@ -13911,26 +13920,6 @@ function bfRowsOf(e) {
   rows.forEach(r => { if (r.res === 'adv') r.res = null, r.adv = 'Yes'; });
   return rows;
 }
-function bfDraftFor(item) {
-  const e = item.e;
-  if (item.kind === 'shot') return { kind: 'shot', defender: e.defender || null, defBeaten: e.defBeaten || null, beatenHow: e.beatenHow || null, slideDefender: e.slideDefender || null, offBallFault: e.offBallFault || null, rows: bfRowsOf(e), noPicks: e.pick === 'No' || e.screens === 'none' };
-  return { kind: 'poss', isNew: !!item.isNew, after: item.after != null ? item.after : null, end: e.end || 'Turnover', turnoverBy: e.turnoverBy || null, causedBy: e.causedBy || null, rows: bfRowsOf(e), noPicks: e.pick === 'No' || e.screens === 'none' };
-}
-// What a draft writes onto the entry.
-function bfApply(e, d) {
-  const out = Object.assign({}, e);
-  if (d.kind === 'shot') Object.assign(out, { defender: d.defender, defBeaten: d.defender ? d.defBeaten : null, beatenHow: d.defender && d.defBeaten === 'Yes' ? d.beatenHow : null, slideDefender: d.slideDefender, offBallFault: d.offBallFault });
-  else Object.assign(out, { end: d.end, turnoverBy: d.end === 'Turnover' ? d.turnoverBy : null, causedBy: d.end === 'Turnover' ? d.causedBy : null });
-  const rows = d.rows.filter(r => r.s || r.u);
-  if (rows.length) {
-    out.screens = encodeScreens(rows.map(r => ({ s: r.s, u: r.u, adv: (r.res && SCREEN_ADV_RESULTS.includes(r.res)) || r.adv === 'Yes' ? 'Yes' : 'No' })));
-    const m = rows.find(r => r.main) || rows[0];
-    Object.assign(out, { pick: 'Yes', pickAction: m.action || 'Pick', pickType: m.type || null, pickSpot: m.spot || null, pickScreener: m.s || null, pickUser: m.u || null, pickCoverage: m.cov || null, pickResult: m.res || null, pickScreenerDef: m.sdef || null, pickUserDef: m.udef || null });
-  } else if (d.noPicks || d.rowsCleared) {
-    Object.assign(out, { screens: d.noPicks ? 'none' : null, pick: d.noPicks ? 'No' : null, pickAction: null, pickType: null, pickSpot: null, pickScreener: null, pickUser: null, pickCoverage: null, pickResult: null, pickMismatch: null, pickScreenerDef: null, pickUserDef: null });
-  }
-  return out;
-}
 function bfHasData(item) {
   const e = item.e;
   if (item.kind === 'shot') return !!(e.defender || e.slideDefender || e.offBallFault || e.pick || (e.screens && e.screens !== ''));
@@ -13941,15 +13930,15 @@ function bfState(sid, item) { if (bfIsRev(sid, item.kind, item.e.id)) return 'do
 function bfPicker(field, val, side, item, rowIdx) {
   const season = bfSeason(), roster = (ROSTERS[season] || []).filter(r => r.jersey), sid = BF.sid;
   const st = item && item.e.stintId ? stintById(sid, item.e.stintId) : null;
-  const onField = st ? (side === 'def' ? st.defense : st.offense).filter(j => !isOppJersey(j)) : [];
-  const posWant = side === 'def' ? ['D', 'L', 'S'] : ['A', 'M'];
+  const onField = st && side !== 'g' ? (side === 'def' ? st.defense : st.offense).filter(j => !isOppJersey(j)) : [];
+  const posWant = side === 'def' ? ['D', 'L', 'S'] : side === 'g' ? ['G'] : ['A', 'M'];
   const rk = j => { const i = posWant.indexOf(posOfJ(season, j)); return i >= 0 ? i : posWant.length; };   // second-position SSDMs after the real ones
   const byPos = roster.filter(r => !onField.includes(r.jersey) && (posWant.includes(posOfJ(season, r.jersey)) || (side === 'def' && posAltJ(season, r.jersey) === 'S'))).sort((a, b) => rk(a.jersey) - rk(b.jersey) || Number(a.jersey) - Number(b.jersey)).map(r => r.jersey);
   const rest = roster.map(r => r.jersey).filter(j => !onField.includes(j) && !byPos.includes(j)).sort((a, b) => Number(a) - Number(b));
   const key = field + (rowIdx != null ? '_' + rowIdx : '');
   const btn = j => `<button type="button" class="pill bf-j${val === j ? ' active' : ''}" data-bf="set" data-f="${field}" ${rowIdx != null ? `data-r="${rowIdx}"` : ''} data-v="${escapeHtml(j)}" title="${escapeHtml(nameFor(j, season) || '')}">${escapeHtml(j)}<small>${escapeHtml(lastNameOf(nameFor(j, season) || '').slice(0, 9))}</small></button>`;
   const showAll = BF.showAll[key] || (val && rest.includes(val));
-  return `<div class="bf-pick">${onField.length ? `<div class="bf-grp"><span class="bf-gl">On field</span>${onField.map(btn).join('')}</div>` : ''}<div class="bf-grp">${onField.length ? `<span class="bf-gl">${side === 'def' ? 'D / LSM / SSDM' : 'Att / Mid'}</span>` : ''}${byPos.map(btn).join('')}${showAll ? rest.map(btn).join('') : `<button type="button" class="pill bf-more" data-bf="all" data-k="${key}">More…</button>`}</div></div>`;
+  return `<div class="bf-pick">${onField.length ? `<div class="bf-grp"><span class="bf-gl">On field</span>${onField.map(btn).join('')}</div>` : ''}<div class="bf-grp">${onField.length ? `<span class="bf-gl">${side === 'def' ? 'D / LSM / SSDM' : side === 'g' ? 'Goalies' : 'Att / Mid'}</span>` : ''}${byPos.map(btn).join('')}${showAll ? rest.map(btn).join('') : `<button type="button" class="pill bf-more" data-bf="all" data-k="${key}">More…</button>`}</div></div>`;
 }
 function bfPills(field, val, opts, rowIdx) {
   return `<div class="bf-opts">${opts.map(o => `<button type="button" class="pill${val === o ? ' active' : ''}" data-bf="set" data-f="${field}" ${rowIdx != null ? `data-r="${rowIdx}"` : ''} data-v="${escapeHtml(o)}">${escapeHtml(o)}</button>`).join('')}</div>`;
@@ -13968,27 +13957,119 @@ function bfMatchHtml(item, tl) {
 }
 function bfRowsHtml(d, item) {
   const rows = d.rows.length ? d.rows : [];
-  return `<div class="bf-sec"><div class="bf-h">Picks &amp; screens <span class="n-note">(all optional; add one row per pick or screen)</span></div>
+  return `<div><p class="n-note" style="margin:0 0 4px;">One row per pick or screen. Leave it empty if you didn’t see one.</p>
     ${rows.map((r, i) => `<div class="bf-row"><div class="bf-rh"><b>${i + 1}.</b> ${r.main || i === 0 ? '' : ''}<span style="flex:1;"></span><button type="button" class="pill" data-bf="rowdel" data-r="${i}">Remove</button></div>
       <div class="bf-lab">Screener</div>${bfPicker('s', r.s, 'off', item, i)}
       <div class="bf-lab">Ball carrier / user</div>${bfPicker('u', r.u, 'off', item, i)}
       <div class="bf-lab">Result</div>${bfPills('res', r.res, PICK_RESULT_OPTIONS, i)}
       ${BF.more['r' + i] ? `<div class="bf-lab">Pick or get</div>${bfPills('action', r.action, PICK_ACTION_OPTIONS, i)}<div class="bf-lab">Coverage</div>${bfPills('cov', r.cov, PICK_COVERAGE_OPTIONS, i)}<div class="bf-lab">Type</div>${bfPills('type', r.type, PICK_TYPE_OPTIONS, i)}<div class="bf-lab">Spot</div>${bfPills('spot', r.spot, PICK_SPOT_OPTIONS, i)}<div class="bf-lab">Screener’s defender</div>${bfPicker('sdef', r.sdef, 'def', item, i)}<div class="bf-lab">Ball carrier’s defender</div>${bfPicker('udef', r.udef, 'def', item, i)}`
         : `<button type="button" class="pill" data-bf="more" data-r="${i}">Coverage, type, defenders…</button>`}</div>`).join('')}
-    <div class="bf-opts"><button type="button" class="pill" data-bf="rowadd">+ ${rows.length ? 'Another pick / screen' : 'Add a pick / screen'}</button>${rows.length ? '' : `<button type="button" class="pill${d.noPicks ? ' active' : ''}" data-bf="nopicks">No picks</button>`}</div></div>`;
+    <div class="bf-opts"><button type="button" class="pill" data-bf="rowadd">+ ${rows.length ? 'Another pick / screen' : 'Add a pick / screen'}</button>${rows.length ? '' : `<button type="button" class="pill${d.noPicks ? ' active' : ''}" data-bf="nopicks">There were no picks</button>`}</div></div>`;
+}
+// Every field the Log Shot form has, grouped for film review. Backfill only shows the ones
+// still blank on that entry; what's already logged is shown read-only and never changed.
+// [key, label, kind, options, section, when]   kind: pills | yn | jdef | joff | jg | text | goal
+const BF_SECTIONS = [['def', 'Defense'], ['picks', 'Picks & screens'], ['poss', 'Possession'], ['shot', 'Shot details'], ['goalie', 'Goalie']];
+const BF_SHOT_FIELDS = [
+  ['defender', 'On-ball defender', 'jdef', null, 'def'],
+  ['defBeaten', 'Was he beaten?', 'yn', null, 'def', (e, f) => e.defender || f.defender],
+  ['beatenHow', 'How was he beaten?', 'pills', BEATEN_HOW_OPTIONS, 'def', (e, f) => (e.defBeaten || f.defBeaten) === 'Yes'],
+  ['slideDefender', 'Slide defender', 'jdef', null, 'def'],
+  ['offBallFault', 'Off-ball breakdown (who lost his man)', 'jdef', null, 'def'],
+  ['possStart', 'How the possession started', 'pills', POSS_START_OPTIONS, 'poss'],
+  ['possStartJersey', 'Who started it', 'joff', null, 'poss', (e, f) => e.possStart || f.possStart],
+  ['transition', 'Transition', 'pills', ['FO', 'OTOD'], 'poss'],
+  ['dominoes', 'Did dominoes happen?', 'yn', null, 'poss'],
+  ['advCreator', 'Who started the dominoes', 'joff', null, 'poss', (e, f) => (e.dominoes || f.dominoes) === 'Yes'],
+  ['advType', 'How', 'pills', ADV_TYPE_OPTIONS, 'poss', (e, f) => (e.dominoes || f.dominoes) === 'Yes'],
+  ['manSituation', 'Man situation', 'pills', MAN_SITUATION_OPTIONS, 'poss'],
+  ['assistJersey', 'Assisted by', 'joff', null, 'shot'],
+  ['trigger', 'Trigger', 'text', null, 'shot'],
+  ['shotMechanism', 'Shot type', 'pills', SHOT_MECHANISM_OPTIONS, 'shot'],
+  ['rightHanded', 'Shooting hand', 'pills', ['Right', 'Left'], 'shot'],
+  ['rebound', 'Rebound shot?', 'yn', null, 'shot'],
+  ['bounceShot', 'Bounce shot?', 'yn', null, 'shot'],
+  ['defScheme', 'Defense was in', 'pills', ['Man', 'Zone'], 'shot'],
+  ['goalX', 'Where it went in the cage', 'goal', null, 'shot', e => e.goal === 1 || e.outcome === 'Goal' || e.outcome === 'Saved'],
+  ['goalieJersey', 'Goalie', 'jg', null, 'goalie'],
+  ['screened', 'Was the goalie screened?', 'yn', null, 'goalie'],
+  ['goalieSet', 'Was the goalie set?', 'yn', null, 'goalie'],
+  ['outlet', 'Outlet after the save', 'pills', OUTLET_OPTIONS, 'goalie', e => e.outcome === 'Saved'],
+];
+const BF_POSS_FIELDS = [
+  ['turnoverBy', 'Turned over by', 'joff', null, 'def', (e, f) => (e.end || f.end) === 'Turnover'],
+  ['causedBy', 'Caused by (blank = unforced)', 'jdef', null, 'def', (e, f) => (e.end || f.end) === 'Turnover'],
+  ['possStart', 'How the possession started', 'pills', POSS_START_OPTIONS, 'poss'],
+  ['possStartJersey', 'Who started it', 'joff', null, 'poss', (e, f) => e.possStart || f.possStart],
+  ['dominoes', 'Did dominoes happen?', 'yn', null, 'poss'],
+  ['advCreator', 'Who started the dominoes', 'joff', null, 'poss', (e, f) => (e.dominoes || f.dominoes) === 'Yes'],
+  ['advType', 'How', 'pills', ADV_TYPE_OPTIONS, 'poss', (e, f) => (e.dominoes || f.dominoes) === 'Yes'],
+  ['manSituation', 'Man situation', 'pills', MAN_SITUATION_OPTIONS, 'poss'],
+];
+const bfBlank = v => v === null || v === undefined || v === '';
+const bfFieldsFor = item => (item.kind === 'shot' ? BF_SHOT_FIELDS : BF_POSS_FIELDS);
+function bfHidden() { try { return new Set(JSON.parse(localStorage.getItem('wluBackfillHide') || '[]')); } catch (e) { return new Set(); } }
+function bfDraftFor(item) {
+  const e = item.e, picksBlank = !e.pick && bfBlank(e.screens);
+  return { kind: item.kind, isNew: !!item.isNew, after: item.after != null ? item.after : null, f: item.isNew ? { end: 'Turnover' } : {}, rows: [], noPicks: false, picksBlank };
+}
+// What a draft writes onto the entry: only fields that were blank.
+function bfApply(e, d) {
+  const out = Object.assign({}, e), f = d.f || {};
+  Object.keys(f).forEach(k => { if (!bfBlank(f[k]) && (d.isNew || bfBlank(e[k]))) out[k] = f[k]; });
+  if (bfBlank(out.defender)) { out.defBeaten = e.defBeaten || null; out.beatenHow = e.beatenHow || null; }
+  if (out.defBeaten !== 'Yes') out.beatenHow = e.beatenHow || null;
+  if (out.end && out.end !== 'Turnover') { out.turnoverBy = null; out.causedBy = null; }
+  if (d.picksBlank || d.isNew) {
+    const rows = d.rows.filter(r => r.s || r.u);
+    if (rows.length) {
+      out.screens = encodeScreens(rows.map(r => ({ s: r.s, u: r.u, adv: r.res && SCREEN_ADV_RESULTS.includes(r.res) ? 'Yes' : 'No' })));
+      const m = rows[0];
+      Object.assign(out, { pick: 'Yes', pickAction: m.action || 'Pick', pickType: m.type || null, pickSpot: m.spot || null, pickScreener: m.s || null, pickUser: m.u || null, pickCoverage: m.cov || null, pickResult: m.res || null, pickScreenerDef: m.sdef || null, pickUserDef: m.udef || null });
+    } else if (d.noPicks) Object.assign(out, { screens: 'none', pick: 'No' });
+  }
+  return out;
+}
+function bfShowVal(k, v, season) {
+  if (bfBlank(v)) return '';
+  if (/Jersey$|^defender$|^slideDefender$|^offBallFault$|^advCreator$|^turnoverBy$|^causedBy$/.test(k)) return `#${v} ${lastNameOf(nameFor(String(v).replace(/^o/, ''), season) || '')}`;
+  if (k === 'goalX') return 'set';
+  return String(v).replace(/^\d-/, '');
+}
+function bfFieldHtml(fd, e, d, item) {
+  const [k, label, kind, opts] = fd, v = d.f[k];
+  let ctl = '';
+  if (kind === 'pills') ctl = bfPills(k, v, opts);
+  else if (kind === 'yn') ctl = bfPills(k, v, ['Yes', 'No']);
+  else if (kind === 'jdef') ctl = bfPicker(k, v, 'def', item);
+  else if (kind === 'joff') ctl = bfPicker(k, v, 'off', item);
+  else if (kind === 'jg') ctl = bfPicker(k, v, 'g', item);
+  else if (kind === 'text') ctl = `<input type="text" class="bf-text" data-bf-text="${k}" list="triggerList" maxlength="60" placeholder="Type or pick, e.g. Rub" value="${escapeHtml(v || '')}">`;
+  else if (kind === 'goal') ctl = `<div class="bf-goal" data-bf-goal="1">${goalSVG(buildGoalGrid([]), { metric: 'score', interactive: false, labels: false, grid: true })}</div><span class="n-note">${d.f.goalX != null ? escapeHtml(goalZoneName(d.f.goalX, d.f.goalY)) + ' &middot; tap again to move it' : 'Tap where the shot went'}</span>`;
+  return `<div class="bf-field"><div class="bf-lab">${escapeHtml(label)}</div>${ctl}</div>`;
 }
 function bfCardHtml(item, tl) {
-  const d = BF.draft, sid = BF.sid;
-  const shotFields = d.kind === 'shot' ? `<div class="bf-sec"><div class="bf-h">Defense <span class="n-note">(optional)</span></div>
-      <div class="bf-lab">On-ball defender</div>${bfPicker('defender', d.defender, 'def', item)}
-      ${d.defender ? `<div class="bf-lab">Beaten?</div>${bfPills('defBeaten', d.defBeaten, ['Yes', 'No'])}${d.defBeaten === 'Yes' ? `<div class="bf-lab">How</div>${bfPills('beatenHow', d.beatenHow, BEATEN_HOW_OPTIONS)}` : ''}` : ''}
-      <div class="bf-lab">Slide defender</div>${bfPicker('slideDefender', d.slideDefender, 'def', item)}
-      <div class="bf-lab">Off-ball breakdown</div>${bfPicker('offBallFault', d.offBallFault, 'def', item)}</div>`
-    : `<div class="bf-sec"><div class="bf-h">How it ended</div>${bfPills('end', d.end, POSS_END_OPTIONS)}
-      ${d.end === 'Turnover' ? `<div class="bf-lab">Turned over by <span class="n-note">(optional)</span></div>${bfPicker('turnoverBy', d.turnoverBy, 'off', item)}<div class="bf-lab">Caused by <span class="n-note">(optional; blank = unforced)</span></div>${bfPicker('causedBy', d.causedBy, 'def', item)}` : ''}</div>`;
-  return `${bfMatchHtml(item, tl)}${shotFields}${bfRowsHtml(d, item)}
-    <div class="bf-actions"><button type="button" class="btn secondary" data-bf="prev">&larr; Back</button><button type="button" class="btn" data-bf="save">${d.kind === 'poss' && d.isNew ? 'Save possession' : 'Save &amp; next'} &rarr;</button><button type="button" class="btn secondary" data-bf="skip">Skip</button>
-    ${item.kind === 'shot' ? `<button type="button" class="btn secondary" data-bf="addposs">+ Possession here</button>` : ''}${d.kind === 'poss' && d.isNew ? `<button type="button" class="btn secondary" data-bf="cancelnew">Cancel</button>` : ''}</div>
+  const d = BF.draft, e = item.e, season = bfSeason(), hidden = bfHidden(), fields = bfFieldsFor(item);
+  const blankNow = fd => (d.isNew || bfBlank(e[fd[0]])) && (!fd[5] || fd[5](e, d.f));
+  const by = {}; BF_SECTIONS.forEach(([sec]) => { by[sec] = fields.filter(fd => fd[4] === sec && blankNow(fd)); });
+  const picksOpen = d.picksBlank || d.isNew;
+  const counts = Object.fromEntries(BF_SECTIONS.map(([sec]) => [sec, sec === 'picks' ? (picksOpen ? 1 : 0) : by[sec].length]));
+  const logged = fields.filter(fd => !d.isNew && !bfBlank(e[fd[0]]) && fd[0] !== 'goalX').map(fd => `${fd[1].replace(/\?$/, '')}: <b>${escapeHtml(bfShowVal(fd[0], e[fd[0]], season))}</b>`)
+    .concat(!picksOpen ? [`Picks/screens: <b>${e.pick === 'No' || e.screens === 'none' ? 'none' : 'logged'}</b>`] : []);
+  const secHtml = BF_SECTIONS.map(([sec, name]) => {
+    if (hidden.has(sec) || !counts[sec]) return '';
+    const body = sec === 'picks' ? bfRowsHtml(d, item) : by[sec].map(fd => bfFieldHtml(fd, e, d, item)).join('');
+    return `<section class="bf-box"><div class="bf-boxh">${escapeHtml(name)}${sec !== 'picks' ? ` <span class="n-note">${by[sec].length} to add</span>` : ''}</div>${body}</section>`;
+  }).join('');
+  const toggles = `<div class="bf-toggles"><span class="n-note">Show:</span>${BF_SECTIONS.map(([sec, name]) => `<button type="button" class="pill${hidden.has(sec) ? '' : ' active'}" data-bf="sec" data-sec="${sec}">${escapeHtml(name)}${counts[sec] ? '' : ' &#10003;'}</button>`).join('')}</div>`;
+  const nothing = !secHtml ? `<p class="bf-done">${BF_SECTIONS.some(([sec]) => counts[sec]) ? 'Everything left is in a hidden section.' : 'Nothing left to add on this one.'} Press <b>Save &amp; next</b> to mark it reviewed.</p>` : '';
+  return `${bfMatchHtml(item, tl)}
+    ${toggles}
+    <p class="bf-hint">Tap what you see on film. Skip anything you’re not sure of. <b>Enter</b> = save &amp; next.</p>
+    ${secHtml}${nothing}
+    ${logged.length ? `<details class="bf-logged"><summary>Already logged (${logged.length}), not changed here</summary><p>${logged.join(' &middot; ')}</p></details>` : ''}
+    <div class="bf-actions"><button type="button" class="btn secondary" data-bf="prev">&larr; Back</button><button type="button" class="btn" data-bf="save">${d.isNew ? 'Save possession' : 'Save &amp; next'} &rarr;</button><button type="button" class="btn secondary" data-bf="skip">Skip</button>
+    ${item.kind === 'shot' ? `<button type="button" class="btn secondary" data-bf="addposs">+ Possession here</button>` : ''}${d.isNew ? `<button type="button" class="btn secondary" data-bf="cancelnew">Cancel</button>` : ''}</div>
     ${BF.msg ? `<p class="bf-msg${/can’t|failed/i.test(BF.msg) ? ' bad' : ''}">${BF.msg}</p>` : ''}`;
 }
 function renderBackfill() {
@@ -14012,12 +14093,13 @@ function renderBackfill() {
   wrap.innerHTML = `<div class="panel bf-panel"><div class="bf-top"><button type="button" class="pill" data-bf="list">&larr; Practices</button><b>${escapeHtml(sess.date)} practice</b><span class="n-note">${rev} of ${tl.list.length} reviewed · green = reviewed, gold = has some data</span></div>
     <div class="bf-strip">${strip}</div>${item ? bfCardHtml(item, tl) : '<p>No shots in this practice.</p>'}</div>`;
   const cur = wrap.querySelector('.bf-chip.cur'); if (cur) cur.scrollIntoView({ block: 'nearest', inline: 'center' });
+  const gw = wrap.querySelector('[data-bf-goal] svg'); if (gw && BF.draft && BF.draft.f.goalX != null) { const [x, y] = goalMouthPoint(BF.draft.f.goalX, BF.draft.f.goalY); makeMarker(gw, 1.6, 0.5).place(x, y); }
 }
 async function bfSave() {
   const sess = LIVE_SESSIONS[BF.sid], tl = bfTimeline(sess);
   if (BF.newItem) tl.list.splice(tl.list.findIndex(x => x.kind === 'shot' && x.e.id === BF.newItem.after) + 1, 0, BF.newItem);
   const item = tl.list[BF.idx], d = BF.draft;
-  if (d.kind === 'shot' && d.defender && (d.defender === d.slideDefender)) { BF.msg = 'The slide defender can’t be the on-ball defender.'; renderBackfill(); return; }
+  if (d.kind === 'shot' && d.f.defender && (d.f.defender === (d.f.slideDefender || item.e.slideDefender))) { BF.msg = 'The slide defender can’t be the on-ball defender.'; renderBackfill(); return; }
   const same = d.rows.findIndex(r => r.s && r.s === r.u);
   if (same >= 0) { BF.msg = `Pick / screen ${same + 1}: the screener and the ball carrier can’t be the same player.`; renderBackfill(); return; }
   let res, kind = item.kind, id;
@@ -14051,13 +14133,22 @@ function bfInit() {
     if (a === 'addposs') { const sess = LIVE_SESSIONS[BF.sid], tl = bfTimeline(sess), it = tl.list[BF.idx]; BF.newItem = { kind: 'poss', isNew: true, after: it.e.id, e: { end: 'Turnover' } }; BF.idx = BF.idx + 1; BF.draft = bfDraftFor(BF.newItem); BF.msg = ''; renderBackfill(); return; }
     if (a === 'cancelnew') { BF.newItem = null; bfGo(Math.max(0, BF.idx - 1)); return; }
     if (a === 'all') { BF.showAll[b.dataset.k] = true; renderBackfill(); return; }
+    if (a === 'sec') { const h = bfHidden(); if (h.has(b.dataset.sec)) h.delete(b.dataset.sec); else h.add(b.dataset.sec); try { localStorage.setItem('wluBackfillHide', JSON.stringify([...h])); } catch (e) { /* storage unavailable */ } renderBackfill(); return; }
     if (!d) return;
     if (a === 'rowadd') { d.rows.push({ s: null, u: null }); d.noPicks = false; }
     if (a === 'rowdel') { d.rows.splice(r, 1); if (!d.rows.length) d.rowsCleared = true; }
     if (a === 'nopicks') d.noPicks = !d.noPicks;
     if (a === 'more') BF.more['r' + r] = true;
-    if (a === 'set') { const f = b.dataset.f, v = b.dataset.v, tgt = r != null ? d.rows[r] : d; tgt[f] = tgt[f] === v ? null : v; if (f === 'defender' && !tgt[f]) { d.defBeaten = null; d.beatenHow = null; } }
+    if (a === 'set') { const f = b.dataset.f, v = b.dataset.v, tgt = r != null ? d.rows[r] : d.f; tgt[f] = tgt[f] === v ? null : v; if (f === 'defender' && !tgt[f]) { delete d.f.defBeaten; delete d.f.beatenHow; } if (f === 'dominoes' && tgt[f] !== 'Yes') { delete d.f.advCreator; delete d.f.advType; } }
     BF.msg = ''; renderBackfill();
+  });
+  wrap.addEventListener('input', ev => { const t = ev.target.closest('[data-bf-text]'); if (t && BF.draft) BF.draft.f[t.dataset.bfText] = cleanText(t.value).trim().slice(0, 60) || null; });
+  wrap.addEventListener('click', ev => {
+    const g = ev.target.closest('[data-bf-goal]'); if (!g || !BF.draft) return;
+    const svgEl = g.querySelector('svg'); if (!svgEl) return;
+    const pt = svgPoint(svgEl, ev), q = goalFromPoint(pt.x, pt.y);
+    BF.draft.f.goalX = Math.round(Math.max(0, Math.min(1, q.gx)) * 100) / 100; BF.draft.f.goalY = Math.round(Math.max(0, Math.min(1, q.gy)) * 100) / 100;
+    renderBackfill();
   });
   document.addEventListener('keydown', ev => {
     if (!document.getElementById('backfillView').classList.contains('active') || !BF.sid || /input|textarea|select/i.test((ev.target.tagName || ''))) return;
