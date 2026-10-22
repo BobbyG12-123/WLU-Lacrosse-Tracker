@@ -8867,9 +8867,9 @@ function soBase(season, range) {
     const c = C[j], parts = {}; let tot = 0;
     SO_W.forEach(([k, , w]) => { parts[k] = soPts(z[k][j]); tot += w * parts[k]; });
     players[j] = { j, name: nameFor(j, season), pos: pos(j), rating: tot / SO_W.reduce((a, x) => a + x[2], 0), parts, touches: c.touch,
-      detail: { xp: `${num(c.xg + c.xa, 1)} xP (${num(c.xg, 1)} xG + ${num(c.xa, 1)} xA)`, gs: `${c.gsG} of ${c.gsN} on Gold/Silver`, dom: `${c.dom} dominoes on ${c.touch} touches`,
+      detail: { xp: `${num(c.xg + c.xa, 1)} expected points: ${num(c.xg, 1)} xG + ${num(c.xa, 1)} xA`, gs: `${c.gsG} of ${c.gsN} on Gold/Silver`, dom: `${c.dom} dominoes on ${c.touch} touches`,
         xppt: `${num(c.touch ? (c.xg + c.xa) / c.touch : 0, 2)} xP per touch`, ato: `${c.ast} assists, ${c.to} turnovers`, sel: `${c.gsN} of ${c.shots} shots Gold/Silver`,
-        adv: c.scr ? `${c.adv} advantages on ${c.scr} screens set` : 'no screens logged', catch: c.catN ? `${c.catG} goals on ${num(c.catXg, 1)} xG off the catch (${c.catN} shots)` : 'no catch shots' } };
+        adv: c.scr ? `${c.adv} advantages on ${c.scr} screens set` : 'no screens logged', catch: c.catN ? `${c.catG} goals on ${num(c.catXg, 1)} xG off the catch, ${c.catN} shots` : 'no catch shots' } };
   });
   const att = qual.filter(j => pos(j) === 'A'), mid = qual.filter(j => pos(j) === 'M');
   return { ready: true, side: 'off', season, last, range: recent ? 'recent' : 'season', recentFrom, minT, raw, players, notEnough, att, mid, pairZ: () => 0, pairNote: () => '' };
