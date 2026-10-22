@@ -14104,11 +14104,11 @@ function chatDates(q, season) {
   const all = [...new Set(advShots(season).map(s => s.date).concat((POSSESSIONS || []).filter(p => seasonForDate(p.date) === season).map(p => p.date)))].filter(Boolean).sort();
   if (!all.length) return [];
   const t = ' ' + String(q).toLowerCase() + ' ', today = localDateStr(new Date()), out = new Set();
-  if (/(last|latest|most recent) (practice|session|game|scrimmage)/.test(t)) out.add(all[all.length - 1]);
-  if (/yesterday/.test(t)) { const d = new Date(); d.setDate(d.getDate() - 1); const y = localDateStr(d); if (all.includes(y)) out.add(y); }
-  if (/today/.test(t) && all.includes(today)) out.add(today);
-  ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'].forEach((w, i) => { if (new RegExp(`\b${w}\b`).test(t)) { const hit = all.slice().reverse().find(x => new Date(x + 'T00:00:00').getDay() === i); if (hit) out.add(hit); } });
-  const md = t.match(/(\d{1,2})\/(\d{1,2})/), mon = t.match(/(jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\.? (\d{1,2})/);
+  if (/\b(last|latest|most recent) (practice|session|game|scrimmage)\b/.test(t)) out.add(all[all.length - 1]);
+  if (/\byesterday\b/.test(t)) { const d = new Date(); d.setDate(d.getDate() - 1); const y = localDateStr(d); if (all.includes(y)) out.add(y); }
+  if (/\btoday\b/.test(t) && all.includes(today)) out.add(today);
+  ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'].forEach((w, i) => { if (new RegExp(`\\b${w}\\b`).test(t)) { const hit = all.slice().reverse().find(x => new Date(x + 'T00:00:00').getDay() === i); if (hit) out.add(hit); } });
+  const md = t.match(/\b(\d{1,2})\/(\d{1,2})\b/), mon = t.match(/\b(jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\.? (\d{1,2})\b/);
   const pick = (m, d) => all.find(x => Number(x.slice(5, 7)) === m && Number(x.slice(8, 10)) === d);
   if (md) { const h = pick(Number(md[1]), Number(md[2])); if (h) out.add(h); }
   if (mon) { const h = pick(['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'].indexOf(mon[1].slice(0, 3)) + 1, Number(mon[2])); if (h) out.add(h); }
