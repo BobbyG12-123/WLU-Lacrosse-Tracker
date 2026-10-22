@@ -279,6 +279,9 @@
   .bf-goal { width: min(260px, 100%); cursor: crosshair; } .bf-goal svg { width: 100%; height: auto; }
   .bf-logged { font: 12.5px var(--text); color: var(--muted); margin: 8px 0; } .bf-logged summary { cursor: pointer; } .bf-logged p { margin: 4px 0 0; line-height: 1.6; }
   .bf-done { font: 600 13px var(--text); color: var(--good); }
+  .bf-scr { margin-top: 6px; } .bf-scrrow { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px; padding: 6px 0; border-top: 1px solid var(--line); }
+  .bf-scrrow label { display: flex; flex-direction: column; font: 600 12px var(--text); color: var(--muted); gap: 2px; } .bf-scrrow input { width: 90px; font: 15px var(--text); padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--card); color: var(--ink); }
+  .bf-scrrow .readout { font-weight: 500; color: var(--ink); min-height: 1em; } .bf-l2 { display: block; font: 600 12px var(--text); color: var(--muted); margin-bottom: 2px; }
   .bf-msg { font: 600 13px var(--text); color: var(--good); margin: 6px 0 0; } .bf-msg.bad { color: var(--critical); }
   .chat-fab .chat-dot { position: absolute; top: 2px; right: 2px; width: 11px; height: 11px; border-radius: 50%; background: #E8A317; border: 2px solid #0B2545; }
   .chat-panel { position: fixed; right: 18px; bottom: calc(18px + env(safe-area-inset-bottom, 0px)); z-index: 61; width: min(440px, calc(100vw - 24px)); height: min(640px, calc(100vh - 110px)); display: flex; flex-direction: column; background: var(--card); color: var(--ink); border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 12px 36px rgba(0,0,0,.22); font-family: var(--text); }
@@ -13955,21 +13958,23 @@ function bfMatchHtml(item, tl) {
   const near = [tl.list[tl.list.indexOf(item) - 1], tl.list[tl.list.indexOf(item) + 1]].map((o, k) => o && o.kind === 'shot' ? `${k ? 'Next' : 'Before'}: ${nm(o.e.shooterJersey)} ${o.e.goal === 1 ? 'goal' : (o.e.outcome || '').toLowerCase()}` : '').filter(Boolean).join(' · ');
   return `<div class="bf-match">${field}<div><div class="bf-big">Shot ${item.n} of ${tl.nShots} · ${nm(e.shooterJersey)}${e.assistJersey ? ` <span class="n-note">from ${nm(e.assistJersey)}</span>` : ''} <span class="bf-res ${e.goal === 1 ? 'goal' : ''}">${escapeHtml(res)}</span></div><div class="bf-sub">${bits.map(escapeHtml).join(' · ')}</div>${near ? `<div class="n-note">${near}</div>` : ''}</div></div>`;
 }
+// Same as the Log Shot form: "Screens on this possession?" then Screener (#), Used By (#), Advantage? per screen.
 function bfRowsHtml(d, item) {
-  const rows = d.rows.length ? d.rows : [];
-  return `<div><p class="n-note" style="margin:0 0 4px;">One row per pick or screen. Leave it empty if you didn’t see one.</p>
-    ${rows.map((r, i) => `<div class="bf-row"><div class="bf-rh"><b>${i + 1}.</b> ${r.main || i === 0 ? '' : ''}<span style="flex:1;"></span><button type="button" class="pill" data-bf="rowdel" data-r="${i}">Remove</button></div>
-      <div class="bf-lab">Screener</div>${bfPicker('s', r.s, 'off', item, i)}
-      <div class="bf-lab">Ball carrier / user</div>${bfPicker('u', r.u, 'off', item, i)}
-      <div class="bf-lab">Result</div>${bfPills('res', r.res, PICK_RESULT_OPTIONS, i)}
-      ${BF.more['r' + i] ? `<div class="bf-lab">Pick or get</div>${bfPills('action', r.action, PICK_ACTION_OPTIONS, i)}<div class="bf-lab">Coverage</div>${bfPills('cov', r.cov, PICK_COVERAGE_OPTIONS, i)}<div class="bf-lab">Type</div>${bfPills('type', r.type, PICK_TYPE_OPTIONS, i)}<div class="bf-lab">Spot</div>${bfPills('spot', r.spot, PICK_SPOT_OPTIONS, i)}<div class="bf-lab">Screener’s defender</div>${bfPicker('sdef', r.sdef, 'def', item, i)}<div class="bf-lab">Ball carrier’s defender</div>${bfPicker('udef', r.udef, 'def', item, i)}`
-        : `<button type="button" class="pill" data-bf="more" data-r="${i}">Coverage, type, defenders…</button>`}</div>`).join('')}
-    <div class="bf-opts"><button type="button" class="pill" data-bf="rowadd">+ ${rows.length ? 'Another pick / screen' : 'Add a pick / screen'}</button>${rows.length ? '' : `<button type="button" class="pill${d.noPicks ? ' active' : ''}" data-bf="nopicks">There were no picks</button>`}</div></div>`;
+  const season = bfSeason(), nm = j => j ? `#${escapeHtml(j)} ${escapeHtml(nameFor(j, season) || '')}` : '';
+  return `<div class="bf-q"><div class="bf-lab">Screens on this possession? <span class="n-note">every screen &mdash; feeds Screen-Generated PPP</span></div>${bfPills('scr', d.scr, ['Yes', 'No']).replace(/data-bf="set" data-f="scr"/g, 'data-bf="scr"')}
+    ${d.scr === 'Yes' ? `<div class="bf-scr">${d.rows.map((r, i) => `<div class="bf-scrrow">
+      <label>Screener (#)<input type="text" inputmode="numeric" maxlength="3" placeholder="Jersey #" data-bf-row="s" data-r="${i}" value="${escapeHtml(r.sTxt != null ? r.sTxt : (r.s || ''))}"><span class="readout" data-bf-ro="s${i}">${nm(r.s)}</span></label>
+      <label>Used By (#)<input type="text" inputmode="numeric" maxlength="3" placeholder="Jersey #" data-bf-row="u" data-r="${i}" value="${escapeHtml(r.uTxt != null ? r.uTxt : (r.u || ''))}"><span class="readout" data-bf-ro="u${i}">${nm(r.u)}</span></label>
+      <div><span class="bf-l2">Advantage?</span>${bfPills('adv', r.adv, ['Yes', 'No'], i)}</div>
+      <button type="button" class="btn secondary" data-bf="rowdel" data-r="${i}" title="Remove this screen">&#10005;</button></div>`).join('')}
+      <button type="button" class="btn secondary" data-bf="rowadd" style="margin-top:6px;">+ Screen</button></div>` : ''}</div>`;
 }
 // Every field the Log Shot form has, grouped for film review. Backfill only shows the ones
 // still blank on that entry; what's already logged is shown read-only and never changed.
 // [key, label, kind, options, section, when]   kind: pills | yn | jdef | joff | jg | text | goal
-const BF_SECTIONS = [['def', 'Defense'], ['picks', 'Picks & screens'], ['poss', 'Possession'], ['shot', 'Shot details'], ['goalie', 'Goalie']];
+const BF_SECTIONS = [['def', 'Defense'], ['picks', 'Dominoes & screens'], ['poss', 'Possession'], ['shot', 'Shot details'], ['goalie', 'Goalie']];
+// Fields shown even when already logged (pre-selected, can be changed): dominoes.
+const BF_ALWAYS = new Set(['dominoes', 'advCreator', 'advType']);
 const BF_SHOT_FIELDS = [
   ['defender', 'On-ball defender', 'jdef', null, 'def'],
   ['defBeaten', 'Was he beaten?', 'yn', null, 'def', (e, f) => e.defender || f.defender],
@@ -13979,9 +13984,9 @@ const BF_SHOT_FIELDS = [
   ['possStart', 'How the possession started', 'pills', POSS_START_OPTIONS, 'poss'],
   ['possStartJersey', 'Who started it', 'joff', null, 'poss', (e, f) => e.possStart || f.possStart],
   ['transition', 'Transition', 'pills', ['FO', 'OTOD'], 'poss'],
-  ['dominoes', 'Did dominoes happen?', 'yn', null, 'poss'],
-  ['advCreator', 'Who started the dominoes', 'joff', null, 'poss', (e, f) => (e.dominoes || f.dominoes) === 'Yes'],
-  ['advType', 'How', 'pills', ADV_TYPE_OPTIONS, 'poss', (e, f) => (e.dominoes || f.dominoes) === 'Yes'],
+  ['dominoes', 'Were dominoes created?', 'yn', null, 'picks'],
+  ['advCreator', 'Who created them', 'joff', null, 'picks', (e, f) => (e.dominoes || f.dominoes) === 'Yes'],
+  ['advType', 'How', 'pills', ADV_TYPE_OPTIONS, 'picks', (e, f) => (e.dominoes || f.dominoes) === 'Yes'],
   ['manSituation', 'Man situation', 'pills', MAN_SITUATION_OPTIONS, 'poss'],
   ['assistJersey', 'Assisted by', 'joff', null, 'shot'],
   ['trigger', 'Trigger', 'text', null, 'shot'],
@@ -14001,32 +14006,32 @@ const BF_POSS_FIELDS = [
   ['causedBy', 'Caused by (blank = unforced)', 'jdef', null, 'def', (e, f) => (e.end || f.end) === 'Turnover'],
   ['possStart', 'How the possession started', 'pills', POSS_START_OPTIONS, 'poss'],
   ['possStartJersey', 'Who started it', 'joff', null, 'poss', (e, f) => e.possStart || f.possStart],
-  ['dominoes', 'Did dominoes happen?', 'yn', null, 'poss'],
-  ['advCreator', 'Who started the dominoes', 'joff', null, 'poss', (e, f) => (e.dominoes || f.dominoes) === 'Yes'],
-  ['advType', 'How', 'pills', ADV_TYPE_OPTIONS, 'poss', (e, f) => (e.dominoes || f.dominoes) === 'Yes'],
+  ['dominoes', 'Were dominoes created?', 'yn', null, 'picks'],
+  ['advCreator', 'Who created them', 'joff', null, 'picks', (e, f) => (e.dominoes || f.dominoes) === 'Yes'],
+  ['advType', 'How', 'pills', ADV_TYPE_OPTIONS, 'picks', (e, f) => (e.dominoes || f.dominoes) === 'Yes'],
   ['manSituation', 'Man situation', 'pills', MAN_SITUATION_OPTIONS, 'poss'],
 ];
 const bfBlank = v => v === null || v === undefined || v === '';
 const bfFieldsFor = item => (item.kind === 'shot' ? BF_SHOT_FIELDS : BF_POSS_FIELDS);
 function bfHidden() { try { return new Set(JSON.parse(localStorage.getItem('wluBackfillHide') || '[]')); } catch (e) { return new Set(); } }
 function bfDraftFor(item) {
-  const e = item.e, picksBlank = !e.pick && bfBlank(e.screens);
-  return { kind: item.kind, isNew: !!item.isNew, after: item.after != null ? item.after : null, f: item.isNew ? { end: 'Turnover' } : {}, rows: [], noPicks: false, picksBlank };
+  const e = item.e, picksBlank = bfBlank(e.screens);
+  const f = item.isNew ? { end: 'Turnover' } : {};
+  if (!item.isNew) BF_ALWAYS.forEach(k => { if (!bfBlank(e[k])) f[k] = e[k]; });
+  return { kind: item.kind, isNew: !!item.isNew, after: item.after != null ? item.after : null, f, rows: [], scr: null, picksBlank };
 }
 // What a draft writes onto the entry: only fields that were blank.
 function bfApply(e, d) {
   const out = Object.assign({}, e), f = d.f || {};
-  Object.keys(f).forEach(k => { if (!bfBlank(f[k]) && (d.isNew || bfBlank(e[k]))) out[k] = f[k]; });
+  Object.keys(f).forEach(k => { if (!bfBlank(f[k]) && (d.isNew || BF_ALWAYS.has(k) || bfBlank(e[k]))) out[k] = f[k]; });
+  if (f.dominoes === 'No') { out.advCreator = null; out.advType = null; }
   if (bfBlank(out.defender)) { out.defBeaten = e.defBeaten || null; out.beatenHow = e.beatenHow || null; }
   if (out.defBeaten !== 'Yes') out.beatenHow = e.beatenHow || null;
   if (out.end && out.end !== 'Turnover') { out.turnoverBy = null; out.causedBy = null; }
   if (d.picksBlank || d.isNew) {
     const rows = d.rows.filter(r => r.s || r.u);
-    if (rows.length) {
-      out.screens = encodeScreens(rows.map(r => ({ s: r.s, u: r.u, adv: r.res && SCREEN_ADV_RESULTS.includes(r.res) ? 'Yes' : 'No' })));
-      const m = rows[0];
-      Object.assign(out, { pick: 'Yes', pickAction: m.action || 'Pick', pickType: m.type || null, pickSpot: m.spot || null, pickScreener: m.s || null, pickUser: m.u || null, pickCoverage: m.cov || null, pickResult: m.res || null, pickScreenerDef: m.sdef || null, pickUserDef: m.udef || null });
-    } else if (d.noPicks) Object.assign(out, { screens: 'none', pick: 'No' });
+    if (d.scr === 'Yes' && rows.length) out.screens = encodeScreens(rows.map(r => ({ s: r.s, u: r.u, adv: r.adv === 'Yes' ? 'Yes' : 'No' })));
+    else if (d.scr === 'No') out.screens = 'none';
   }
   return out;
 }
@@ -14050,16 +14055,16 @@ function bfFieldHtml(fd, e, d, item) {
 }
 function bfCardHtml(item, tl) {
   const d = BF.draft, e = item.e, season = bfSeason(), hidden = bfHidden(), fields = bfFieldsFor(item);
-  const blankNow = fd => (d.isNew || bfBlank(e[fd[0]])) && (!fd[5] || fd[5](e, d.f));
+  const blankNow = fd => (d.isNew || BF_ALWAYS.has(fd[0]) || bfBlank(e[fd[0]])) && (!fd[5] || fd[5](e, d.f));
   const by = {}; BF_SECTIONS.forEach(([sec]) => { by[sec] = fields.filter(fd => fd[4] === sec && blankNow(fd)); });
   const picksOpen = d.picksBlank || d.isNew;
-  const counts = Object.fromEntries(BF_SECTIONS.map(([sec]) => [sec, sec === 'picks' ? (picksOpen ? 1 : 0) : by[sec].length]));
-  const logged = fields.filter(fd => !d.isNew && !bfBlank(e[fd[0]]) && fd[0] !== 'goalX').map(fd => `${fd[1].replace(/\?$/, '')}: <b>${escapeHtml(bfShowVal(fd[0], e[fd[0]], season))}</b>`)
-    .concat(!picksOpen ? [`Picks/screens: <b>${e.pick === 'No' || e.screens === 'none' ? 'none' : 'logged'}</b>`] : []);
+  const counts = Object.fromEntries(BF_SECTIONS.map(([sec]) => [sec, by[sec].length + (sec === 'picks' && picksOpen ? 1 : 0)]));
+  const logged = fields.filter(fd => !d.isNew && !bfBlank(e[fd[0]]) && fd[0] !== 'goalX' && !BF_ALWAYS.has(fd[0])).map(fd => `${fd[1].replace(/\?$/, '')}: <b>${escapeHtml(bfShowVal(fd[0], e[fd[0]], season))}</b>`)
+    .concat(!picksOpen ? [`Screens: <b>${e.screens === 'none' ? 'none' : decodeScreens(e.screens).length + ' logged'}</b>`] : []);
   const secHtml = BF_SECTIONS.map(([sec, name]) => {
     if (hidden.has(sec) || !counts[sec]) return '';
-    const body = sec === 'picks' ? bfRowsHtml(d, item) : by[sec].map(fd => bfFieldHtml(fd, e, d, item)).join('');
-    return `<section class="bf-box"><div class="bf-boxh">${escapeHtml(name)}${sec !== 'picks' ? ` <span class="n-note">${by[sec].length} to add</span>` : ''}</div>${body}</section>`;
+    const body = by[sec].map(fd => bfFieldHtml(fd, e, d, item)).join('') + (sec === 'picks' && picksOpen ? bfRowsHtml(d, item) : '');
+    return `<section class="bf-box"><div class="bf-boxh">${escapeHtml(name)}</div>${body}</section>`;
   }).join('');
   const toggles = `<div class="bf-toggles"><span class="n-note">Show:</span>${BF_SECTIONS.map(([sec, name]) => `<button type="button" class="pill${hidden.has(sec) ? '' : ' active'}" data-bf="sec" data-sec="${sec}">${escapeHtml(name)}${counts[sec] ? '' : ' &#10003;'}</button>`).join('')}</div>`;
   const nothing = !secHtml ? `<p class="bf-done">${BF_SECTIONS.some(([sec]) => counts[sec]) ? 'Everything left is in a hidden section.' : 'Nothing left to add on this one.'} Press <b>Save &amp; next</b> to mark it reviewed.</p>` : '';
@@ -14100,8 +14105,10 @@ async function bfSave() {
   if (BF.newItem) tl.list.splice(tl.list.findIndex(x => x.kind === 'shot' && x.e.id === BF.newItem.after) + 1, 0, BF.newItem);
   const item = tl.list[BF.idx], d = BF.draft;
   if (d.kind === 'shot' && d.f.defender && (d.f.defender === (d.f.slideDefender || item.e.slideDefender))) { BF.msg = 'The slide defender can’t be the on-ball defender.'; renderBackfill(); return; }
+  if (d.scr === 'Yes' && d.rows.some(r => (r.s || r.u) && !r.adv)) { BF.msg = 'Screens: tap Advantage Yes or No on every screen.'; renderBackfill(); return; }
+  if (d.scr === 'Yes' && d.rows.some(r => (r.sTxt && !r.s) || (r.uTxt && !r.u))) { BF.msg = 'Screens: a jersey number isn’t on the roster.'; renderBackfill(); return; }
   const same = d.rows.findIndex(r => r.s && r.s === r.u);
-  if (same >= 0) { BF.msg = `Pick / screen ${same + 1}: the screener and the ball carrier can’t be the same player.`; renderBackfill(); return; }
+  if (same >= 0) { BF.msg = `Screen ${same + 1}: the screener and the player who used it can’t be the same.`; renderBackfill(); return; }
   let res, kind = item.kind, id;
   if (d.kind === 'shot') { const out = bfApply(item.e, d); id = out.id; res = await persistShot(out); }
   else if (d.isNew) {
@@ -14135,12 +14142,21 @@ function bfInit() {
     if (a === 'all') { BF.showAll[b.dataset.k] = true; renderBackfill(); return; }
     if (a === 'sec') { const h = bfHidden(); if (h.has(b.dataset.sec)) h.delete(b.dataset.sec); else h.add(b.dataset.sec); try { localStorage.setItem('wluBackfillHide', JSON.stringify([...h])); } catch (e) { /* storage unavailable */ } renderBackfill(); return; }
     if (!d) return;
-    if (a === 'rowadd') { d.rows.push({ s: null, u: null }); d.noPicks = false; }
-    if (a === 'rowdel') { d.rows.splice(r, 1); if (!d.rows.length) d.rowsCleared = true; }
+    if (a === 'rowadd') d.rows.push({ s: null, u: null, adv: null });
+    if (a === 'scr') { d.scr = d.scr === b.dataset.v ? null : b.dataset.v; if (d.scr === 'Yes' && !d.rows.length) d.rows.push({ s: null, u: null, adv: null }); if (d.scr !== 'Yes') d.rows = []; }
+    if (a === 'rowdel') { d.rows.splice(r, 1); if (!d.rows.length) d.scr = 'No'; }
     if (a === 'nopicks') d.noPicks = !d.noPicks;
     if (a === 'more') BF.more['r' + r] = true;
     if (a === 'set') { const f = b.dataset.f, v = b.dataset.v, tgt = r != null ? d.rows[r] : d.f; tgt[f] = tgt[f] === v ? null : v; if (f === 'defender' && !tgt[f]) { delete d.f.defBeaten; delete d.f.beatenHow; } if (f === 'dominoes' && tgt[f] !== 'Yes') { delete d.f.advCreator; delete d.f.advType; } }
     BF.msg = ''; renderBackfill();
+  });
+  // Typed jersey numbers in a screen row: keep what's typed, store it only when it's on the roster.
+  wrap.addEventListener('input', ev => {
+    const t = ev.target.closest('[data-bf-row]'); if (!t || !BF.draft) return;
+    const row = BF.draft.rows[Number(t.dataset.r)], k = t.dataset.bfRow, v = normJerseyText(t.value), season = bfSeason();
+    const ok = v && (ROSTERS[season] || []).some(r => r.jersey === v);
+    row[k + 'Txt'] = t.value; row[k] = ok ? v : null;
+    const ro = wrap.querySelector(`[data-bf-ro="${k}${t.dataset.r}"]`); if (ro) ro.textContent = !v ? '' : ok ? `#${v} ${nameFor(v, season) || ''}` : `#${v} isn’t on the ${season} roster`;
   });
   wrap.addEventListener('input', ev => { const t = ev.target.closest('[data-bf-text]'); if (t && BF.draft) BF.draft.f[t.dataset.bfText] = cleanText(t.value).trim().slice(0, 60) || null; });
   wrap.addEventListener('click', ev => {
@@ -14151,7 +14167,7 @@ function bfInit() {
     renderBackfill();
   });
   document.addEventListener('keydown', ev => {
-    if (!document.getElementById('backfillView').classList.contains('active') || !BF.sid || /input|textarea|select/i.test((ev.target.tagName || ''))) return;
+    if (!document.getElementById('backfillView').classList.contains('active') || !BF.sid || /input|textarea|select/i.test((ev.target.tagName || ''))) return;   // typing a jersey: Enter doesn't save
     if (ev.key === 'ArrowRight') { ev.preventDefault(); bfGo(BF.idx + 1); }
     if (ev.key === 'ArrowLeft') { ev.preventDefault(); bfGo(Math.max(0, BF.idx - 1)); }
     if (ev.key === 'Enter' && !ev.target.closest('button')) { ev.preventDefault(); bfSave(); }
