@@ -9070,8 +9070,8 @@ function dpLockLines(side, p) {
 }
 // Plain-words reason for a player's spot: what puts him there, what holds him back, who he edges.
 const DP_SAY = {
-  off: { xp: ['creates a lot of offense', 'doesn’t create much offense yet'], gs: ['finishes his good looks', 'misses too many good looks'], dom: ['starts the dominoes', 'rarely starts dominoes'], xppt: ['makes his touches count', 'his touches don’t produce much'], ato: ['takes care of the ball and sets guys up', 'turns it over too much for what he sets up'], sel: ['takes good shots', 'takes too many low-quality shots'], adv: ['his screens get guys open', 'his screens rarely free anyone'], catch: ['scores off the catch', 'doesn’t finish off the catch'] },
-  def: { ct: ['causes turnovers', 'rarely causes turnovers'], offball: ['stays with his man off the ball', 'gets lost off the ball'], onball: ['holds up on the ball', 'gives up good looks on the ball'], beaten: ['rarely gets beaten', 'gets beaten too often'], pick: ['defends picks well', 'struggles defending picks'], slide: ['his slides hold up', 'his slides lead to goals'] },
+  off: { xp: ['creates a lot of offense', 'he doesn’t create much offense yet'], gs: ['finishes his good looks', 'he misses too many good looks'], dom: ['starts the dominoes', 'he rarely starts dominoes'], xppt: ['makes his touches count', 'his touches don’t produce much'], ato: ['takes care of the ball and sets guys up', 'he turns it over too much for what he sets up'], sel: ['takes good shots', 'he takes too many low-quality shots'], adv: ['his screens get guys open', 'his screens rarely free anyone'], catch: ['scores off the catch', 'he doesn’t finish off the catch'] },
+  def: { ct: ['causes turnovers', 'he rarely causes turnovers'], offball: ['stays with his man off the ball', 'he gets lost off the ball'], onball: ['holds up on the ball', 'he gives up good looks on the ball'], beaten: ['rarely gets beaten', 'he gets beaten too often'], pick: ['defends picks well', 'he struggles defending picks'], slide: ['his slides hold up', 'his slides lead to goals'] },
 };
 const dpOrd = n => n + (n % 100 >= 11 && n % 100 <= 13 ? 'th' : ['th', 'st', 'nd', 'rd'][n % 10] || 'th');
 function dpGroupOf(side, M, p) { return side === 'off' ? (p.pos === 'A' ? M.att : M.mid) : (p.pos === 'L' ? M.lsm : p.pos === 'D' ? M.close : M.ss); }
@@ -9084,11 +9084,11 @@ function dpWhy(side, M, j) {
   const say = (k, good) => `${DP_SAY[side][k][good ? 0 : 1]} <span class="dp-num">(${escapeHtml((p.detail || {})[k] || Math.round(p.parts[k]))}${good ? `, ${dpOrd(rankIn(k))} of ${all.length}` : ''})</span>`;
   const bits = [];
   bits.push(strong.length ? strong.map(k => say(k, true)).join(' and ') : 'solid across the board without one standout area');
-  if (weak.length) bits.push(`held back because he ${say(weak[0], false)}`);
+  if (weak.length) bits.push(`held back because ${say(weak[0], false)}`);
   // Where he sits against the guys around him in his position group.
   const grp = (dpGroupOf(side, M, p) || []).slice().sort((a, b) => M.players[b].rating - M.players[a].rating), i = grp.indexOf(j);
   const where = dpLineOfMap(M)[j], lineJs = where && M.lines[where] ? M.lines[where].js : [];
-  if (i === 0) bits.push(`top-rated ${side === 'off' ? (p.pos === 'A' ? 'attackman' : 'middie') : sdPosLabel(p).toLowerCase()}`);
+  if (i === 0) bits.push(`top-rated ${side === 'off' ? (p.pos === 'A' ? 'attackman' : 'middie') : ({ D: 'close defender', L: 'LSM', S: 'SSDM' }[p.pos] || 'SSDM')}`);
   else if (where && lineJs.length && lineJs.every(x => x === j || M.players[x].rating >= p.rating)) {
     const next = grp.find(x => !lineJs.includes(x) && M.players[x].rating <= p.rating && !(dpLineOfMap(M)[x] && DP_LINES[side].findIndex(y => y[0] === dpLineOfMap(M)[x]) < DP_LINES[side].findIndex(y => y[0] === where)));
     if (next) bits.push(`holds the last spot over #${escapeHtml(next)} ${escapeHtml(lastNameOf(M.players[next].name || ''))} by ${num(p.rating - M.players[next].rating, 1)}`);
