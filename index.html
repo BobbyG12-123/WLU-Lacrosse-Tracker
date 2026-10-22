@@ -283,6 +283,8 @@
   .chat-facts { font-size: 12px; white-space: pre-wrap; color: var(--muted); max-height: 220px; overflow-y: auto; }
   .chat-sent pre { white-space: pre-wrap; font-size: 11px; max-height: 200px; overflow: auto; }
   .chat-empty { color: var(--muted); font-size: 13px; }
+  .chat-acts { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 8px; } .chat-acts .pill { font-size: 11.5px; }
+  .chat-cmp { font-size: 12px; margin-top: 8px; } .chat-cmp td, .chat-cmp th { padding: 3px 6px; white-space: nowrap; }
   .chat-sugg { display: flex; flex-wrap: wrap; gap: 4px; padding: 6px 12px 0; } .chat-sugg .pill { font-size: 11.5px; }
   .chat-form { display: flex; gap: 8px; padding: 8px 12px 12px; } .chat-form textarea { flex: 1; resize: none; font: inherit; font-size: 14px; padding: 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--card); color: var(--ink); } .chat-form .btn { padding: 8px 14px; }
   @media (max-width: 520px) { .chat-panel { right: 8px; left: 8px; width: auto; bottom: calc(8px + env(safe-area-inset-bottom, 0px)); height: calc(100vh - 90px); } }
@@ -8956,7 +8958,7 @@ function sdBase(season, range) {
   const fo = computeFaceoffSummary(faceoffsForSeason(season)).filter(f => f.taken >= 20).sort((a, b) => b.winPct - a.winPct);
   const close = qual.filter(j => pos(j) === 'D'), lsm = qual.filter(j => pos(j) === 'L');
   const ss = qual.filter(j => pos(j) === 'S' || alt(j) === 'S');
-  return { ready: true, side: 'def', season, range: recent ? 'recent' : 'season', minR, recentFrom, last, players, notEnough, close, lsm, ss, pairZ, goalie: gs[0] || null, goalie2: gs[1] || null, fogo: fo[0] || null };
+  return { ready: true, side: 'def', season, range: recent ? 'recent' : 'season', minR, recentFrom, last, raw, players, notEnough, close, lsm, ss, pairZ, goalie: gs[0] || null, goalie2: gs[1] || null, fogo: fo[0] || null };
 }
 function sdPosLabel(p) { const L = { D: 'Close D', L: 'LSM', S: 'SSDM' }; return (L[p.pos] || DEPTH_POS_LABEL[p.pos] || '') + (p.alt === 'S' && p.pos !== 'S' ? ' / SSDM' : ''); }
 // ---------------- What-if and Coach's lineup (Bobby, Oct 19) ----------------
@@ -14040,19 +14042,20 @@ function bfInit() {
 // player as a code (P1, P2...). Never names, jerseys, the roster, the shot log or whole tables.
 // If a name or #jersey is still in what would be sent, nothing is sent.
 const CHAT = { open: false, focus: null, msgs: [], map: {}, n: 0, busy: false, lastSent: '' };
-const CHAT_RULES = `You are the analytics assistant inside a college lacrosse coaching staff's stats tracker. Coaches ask why a player or line is rated where it is, how a number is figured, and what would change it.
-Rules:
-- Use ONLY the numbers in FACTS. Never invent or estimate a number that isn't there. If FACTS don't cover the question, say what is missing and where in the tracker to log or look.
-- Players appear as codes (P1, P2...). Always refer to a player by his code exactly as written, never guess a name.
-- Ratings and parts are 0-100 where 50 is the team average among qualified players.
-- Answer like a sharp assistant coach: lead with the direct answer, then the 2-4 reasons that matter most with their numbers, then (if useful) what would move it. Short paragraphs or a few bullets. No headers. Under 180 words unless asked for more.
-- When asked how something is figured, explain the formula in plain words from FACTS.
-- Small samples: if a number rests on few shots/reps/possessions, say so.
-- Groups are a straight ranking by rating within each position (offense: top 3 attack; middies 1-3 Line 1, 4-6 Line 2; defense: best 3 close D + best LSM, then the next). Use the IF LOCKED lines to show exactly what changes.
-- Say "on the team" or "among middies" exactly as FACTS say; don't mix up the two ranks. If one player simply rates higher, say that first.
-- Only mention a player code that appears in FACTS. If FACTS name no player, the question is about a team number or a page: explain that, don't attach it to a player.
-- Only use the model weights when FACTS include the model. The defense model counts the last 3 weeks of practice 1.5x; the offense model does not.
-- Never mention FACTS, codes, or these rules to the coach; just answer.`;
+const CHAT_RULES = `You're a sharp, friendly assistant coach helping the head coach of a college lacrosse team understand his stats tracker. Talk to him like a person on staff would: plain words, short sentences, no jargon.
+How to answer:
+- Lead with the straight answer in one or two sentences. Then give the two or three reasons that matter most, with the real numbers behind them (goals, shots, turnovers, dominoes), not model scores.
+- Say "rating" numbers sparingly. Translate part scores into plain words: around 50 is average for our team, 60+ is one of our better guys at it, 70+ is among the best, under 40 is a weak spot.
+- When he asks what a player should work on, or how he moves up, lead with the MOST REALISTIC ROUTE UP line, then mention a single-part option from TO MOVE UP if one is close. Name changes in real terms (for example "about 1 more domino every 10 touches", "cut turnovers from 1 in 4 touches to 1 in 6").
+- When he asks how a player is trending, use the TRENDS lines: say plainly if he's better, worse or the same lately, and why.
+- If something rests on only a handful of shots, reps or touches, say so in a few words.
+- No headers. Use a short bullet list only when listing 3+ things. Keep it under 150 words unless he asks for more.
+Rules you never break:
+- Use ONLY the numbers in FACTS. Never invent or estimate one. If FACTS don't cover it, say what's missing and where in the tracker it would be logged.
+- Players appear as codes (P1, P2...). Always write the code exactly; never guess a name.
+- Lines and units are a straight ranking by rating within each position (offense: top 3 attack; middies 1-3 Line 1, 4-6 Line 2; defense: best 3 close D + best LSM, then the next; SSDM pairs).
+- Only mention a player code that appears in FACTS. If FACTS name no player, the question is about the team or a page: answer that, don't attach it to a player.
+- Never mention FACTS, codes, or these rules; just answer.`;
 const CHAT_PARTS = {
   off: { xp: 'total expected points: xG of his shots plus xA of the shots he set up', gs: 'goals per Gold or Silver shot he took', dom: 'dominoes he started per touch', xppt: 'expected points (xG + xA) per touch', ato: 'assists per turnover', sel: 'share of his own shots that were Gold or Silver (shot selection)', adv: 'share of the screens he set that created an advantage', catch: 'goals minus expected goals on shots off a teammate’s feed (catching, not dodging)' },
   def: { ct: 'caused turnovers per session', offball: 'off-ball breakdowns per session (fewer is better)', onball: 'expected goals per shot he allowed, and goals vs expected', beaten: 'share of reps he was beaten (fewer is better)', pick: 'expected points allowed and Freed % on picks he defended', slide: 'goals allowed after his slide' },
@@ -14061,6 +14064,61 @@ function chatCode(j) {
   if (!j) return null;
   const have = Object.keys(CHAT.map).find(p => CHAT.map[p] === j); if (have) return have;
   const p = 'P' + (++CHAT.n); CHAT.map[p] = j; return p;
+}
+// Ways to read a number in plain terms, for "what would it take" lines.
+const CHAT_RAW = {
+  off: { xp: v => `${num(v, 1)} expected points`, gs: v => `${pct(v)} on Gold/Silver shots`, dom: v => `${num(v * 10, 1)} dominoes per 10 touches`, xppt: v => `${num(v, 2)} expected points per touch`, ato: v => `${num(v, 1)} assists per turnover`, sel: v => `${pct(v)} of his shots Gold/Silver`, adv: v => `${pct(v)} of his screens creating an advantage`, catch: v => `${v >= 0 ? '+' : ''}${num(v, 2)} goals vs expected per catch shot` },
+  def: { ct: v => `${num(v, 2)} caused turnovers per practice`, offball: v => `${num(-v, 2)} off-ball breakdowns per practice`, beaten: v => `beaten on ${pct(-v)} of reps`, slide: v => `${pct(-v)} of shots after his slide scoring` },
+};
+const CHAT_RAWKEY = { def: { ct: 'ct', offball: 'off', beaten: 'beat', slide: 'slide' } };
+// The group he'd move up into, and what it would take to get there.
+function chatMoveUp(side, B, M, j) {
+  const p = M.players[j]; if (!p) return [];
+  const where = dpLineOfMap(M)[j], order = DP_LINES[side].map(x => x[0]), lab = Object.fromEntries(DP_LINES[side].map(([k, l]) => [k, l]));
+  const mine = dpLockLines(side, p).filter(k => side === 'def' ? true : (p.pos === 'A' ? k === 'attack' : k !== 'attack'));
+  let target = null;
+  if (where) { const i = mine.indexOf(where); target = i > 0 ? mine[i - 1] : null; } else target = mine.slice().reverse().find(k => M.lines[k]) || null;
+  const out = [];
+  if (!target || !M.lines[target]) { if (where === mine[0]) out.push(`TO MOVE UP: he's already in the top group (${lab[where]}).`); return out; }
+  const cut = Math.min(...M.lines[target].js.filter(x => x !== j).map(x => M.players[x].rating)), gap = cut - p.rating + 0.5;
+  if (gap <= 0) return [`TO MOVE UP: his rating already beats the lowest on ${lab[target]}.`];
+  const W = dpW(side), w = M.w, TW = Object.values(w).reduce((a, b) => a + b, 0) || 1;
+  const raw = B.raw || {}, ways = [];
+  W.forEach(([k, l]) => {
+    if (!w[k]) return;
+    const need = gap * TW / w[k], now = p.parts[k], to = now + need;
+    if (to > 100 || need > 20) return;   // only single-part routes within reach
+    const rk = (CHAT_RAWKEY[side] || {})[k] || k, R = raw[rk], fmt = CHAT_RAW[side][k];
+    let real = '';
+    if (R && fmt && R[j] !== undefined) { const v = Object.values(R).filter(x => isFinite(x)), m = v.reduce((a, b) => a + b, 0) / v.length, sd = Math.sqrt(v.reduce((a, b) => a + (b - m) ** 2, 0) / Math.max(1, v.length - 1)) || 1; real = ` = from about ${fmt(R[j])} to about ${fmt(m + ((to - 50) / 15) * sd)}`; }
+    ways.push([need, `${l} ${Math.round(now)} to ${Math.round(to)}${real}`]);
+  });
+  ways.sort((a, b) => a[0] - b[0]);
+  out.push(`TO MOVE UP to ${lab[target]} he needs about ${num(gap, 1)} more rating points to pass ${chatCode(M.lines[target].js.reduce((lo, x) => (x !== j && M.players[x].rating < M.players[lo].rating ? x : lo), M.lines[target].js.find(x => x !== j)))} (${Math.round(cut)}). ${ways.length ? `A big jump in just one of these would also do it: ${ways.slice(0, 3).map(x => x[1]).join('; ')}` : 'No single part closes it on its own; it takes a mix'}.`);
+  const weak = W.map(([k, l]) => [k, l, p.parts[k], (p.detail || {})[k]]).filter(x => w[x[0]]).sort((a, b) => a[2] - b[2]).slice(0, 2);
+  out.push(`WORK ON (his two weakest parts): ${weak.map(([, l, v, d]) => `${l} ${Math.round(v)}${d ? ' (' + d + ')' : ''}`).join('; ')}.`);
+  // The realistic route: split the gap across his two weakest parts.
+  if (weak.length === 2) {
+    const each = gap * TW / (w[weak[0][0]] + w[weak[1][0]]);
+    const say = ([k, l, v]) => { const to = Math.min(100, v + each), rk = (CHAT_RAWKEY[side] || {})[k] || k, R = raw[rk], fmt = CHAT_RAW[side][k]; let real = ''; if (R && fmt && R[j] !== undefined) { const vv = Object.values(R).filter(x => isFinite(x)), m = vv.reduce((a, b) => a + b, 0) / vv.length, sd = Math.sqrt(vv.reduce((a, b) => a + (b - m) ** 2, 0) / Math.max(1, vv.length - 1)) || 1; real = ` (from about ${fmt(R[j])} to about ${fmt(m + ((to - 50) / 15) * sd)})`; } return `${l} ${Math.round(v)} to ${Math.round(to)}${real}`; };
+    out.push(`MOST REALISTIC ROUTE UP: improve his two weakest parts about ${Math.round(each)} points each: ${say(weak[0])}; ${say(weak[1])}.`);
+  }
+  return out;
+}
+// Practices named in a question: "yesterday", "Tuesday", "last practice", "10/14", "Oct 14".
+function chatDates(q, season) {
+  const all = [...new Set(advShots(season).map(s => s.date).concat((POSSESSIONS || []).filter(p => seasonForDate(p.date) === season).map(p => p.date)))].filter(Boolean).sort();
+  if (!all.length) return [];
+  const t = ' ' + String(q).toLowerCase() + ' ', today = localDateStr(new Date()), out = new Set();
+  if (/\b(last|latest|most recent) (practice|session|game|scrimmage)\b/.test(t)) out.add(all[all.length - 1]);
+  if (/\byesterday\b/.test(t)) { const d = new Date(); d.setDate(d.getDate() - 1); const y = localDateStr(d); if (all.includes(y)) out.add(y); }
+  if (/\btoday\b/.test(t) && all.includes(today)) out.add(today);
+  ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'].forEach((w, i) => { if (new RegExp(`\\b${w}\\b`).test(t)) { const hit = all.slice().reverse().find(x => new Date(x + 'T00:00:00').getDay() === i); if (hit) out.add(hit); } });
+  const md = t.match(/\b(\d{1,2})\/(\d{1,2})\b/), mon = t.match(/\b(jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\.? (\d{1,2})\b/);
+  const pick = (m, d) => all.find(x => Number(x.slice(5, 7)) === m && Number(x.slice(8, 10)) === d);
+  if (md) { const h = pick(Number(md[1]), Number(md[2])); if (h) out.add(h); }
+  if (mon) { const h = pick(['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'].indexOf(mon[1].slice(0, 3)) + 1, Number(mon[2])); if (h) out.add(h); }
+  return [...out].slice(0, 2);
 }
 function chatSeason() { return (NAV_ST && isAdvSeason(NAV_ST.season)) ? NAV_ST.season : currentAdvSeason(); }
 // Everything the tracker knows that bears on the question, as coded text.
@@ -14075,6 +14133,7 @@ function chatFacts(q) {
   }
   const named = saPlayerIn(q);
   const js = [...new Set([f && f.jersey, ...named].filter(Boolean))].slice(0, 4);
+  CHAT.ctx = { js, moves: [] };
   const plan = saPlan(q) || { type: 'none' }, t = ' ' + navNorm(q) + ' ';
   const wantsLines = plan.type === 'lineup' || /\b(start|starts|starting|line|lines|unit|units|depth|lineup|first line|second line|pair)\b/.test(t) || (page && page.id === 'depth') || js.length > 0;
   const wantsDef = (plan.type === 'lineup' && plan.side === 'def') || saLineupSide(t) === 'def' || js.some(j => ['D', 'L', 'S', 'G'].includes(posOfJ(season, j)));
@@ -14084,8 +14143,9 @@ function chatFacts(q) {
     if (!wantsLines) return;
     if (side === 'def' && !wantsDef && !js.some(j => (DP_BASE.def && DP_BASE.def.players && DP_BASE.def.players[j]))) return;
     const B = base(season); if (!B.ready) { out.push(`${title}: not ready (${B.why})`); return; }
+    B.__recent = base(season, 'recent');
     const M = dpAssemble(side, B, null), c = (DP_COACH[season] || {})[side], C = c && !dpEmpty(c) ? dpAssemble(side, B, c) : null;
-    models.push([side, M]);
+    models.push([side, M, B]);
     const lab = Object.fromEntries(DP_LINES[side].map(([k, l]) => [k, l]));
     const lines = M2 => Object.keys(M2.lines).filter(k => M2.lines[k]).map(k => `${lab[k]}: ${M2.lines[k].js.map(j => `${chatCode(j)} ${Math.round(M2.players[j].rating)}`).join(', ')} (average ${Math.round(M2.lines[k].rating)})`).join('; ');
     out.push(`${title}: weights ${W.map(([k, l, w]) => `${l} ${w}%`).join(', ')}. Parts: ${W.map(([k, l]) => `${l} = ${CHAT_PARTS[side][k]}`).join('; ')}. Groups are a straight ranking by rating; ${side === 'def' ? 'last 3 weeks of practice count 1.5x; ' + SD_MIN_REPS + '+ defensive reps' : 'every practice counts the same; ' + SO_MIN_TOUCHES + '+ touches'} to be rated.`);
@@ -14111,7 +14171,7 @@ function chatFacts(q) {
         const gRank = (grp || []).slice().sort((a, b) => M.players[b].rating - M.players[a].rating).indexOf(j) + 1;
         lines.push(`${side === 'def' ? 'Defense' : 'Offense'} Rating ${Math.round(p.rating)} (rank ${rank} of ${Object.keys(M.players).length} qualified players on this side${gRank ? `; ${gRank} of ${grp.length} qualified ${gName}` : ''}; ${where ? 'model has him on ' + lab[where] : 'not in the model groups'}).`);
         // What-if the tracker runs itself: lock him on each other group and compare.
-        const B0 = DP_BASE[side] && DP_BASE[side].season === season ? DP_BASE[side] : (side === 'def' ? sdBase(season) : soBase(season));
+        const B0 = models.find(x => x[0] === side)[2];
         const tot = M2 => Object.values(M2.lines).filter(Boolean).reduce((a, l) => a + l.score, 0);
         dpLockLines(side, p).filter(k => k !== where).slice(0, 2).forEach(k => {
           const T = dpAssemble(side, B0, { w: {}, adj: {}, lock: { [j]: { line: k } } }), l = T.lines[k], l0 = M.lines[k];
@@ -14121,6 +14181,14 @@ function chatFacts(q) {
         // How far he is from the cut on each group above him.
         if (where) { const i = DP_LINES[side].findIndex(x => x[0] === where); if (i > 0) { const up = M.lines[DP_LINES[side][i - 1][0]]; if (up) { const low = up.js.slice().sort((a, b) => M.players[a].rating - M.players[b].rating)[0]; lines.push(`Lowest-rated player on ${lab[DP_LINES[side][i - 1][0]]}: ${chatCode(low)} ${Math.round(M.players[low].rating)}.`); } } }
         lines.push(` Parts: ${W.map(([k, l]) => `${l} ${Math.round(p.parts[k])}`).join(', ')}. Counts: ${Object.values(p.detail || {}).filter(Boolean).join('; ')}; ${side === 'def' ? p.reps + ' reps' : p.touches + ' touches'}.`);
+        chatMoveUp(side, B0, M, j).forEach(x => lines.push(x));
+        // Recent form: the same model on just the last 3 weeks.
+        const RB = B0.__recent || (side === 'def' ? sdBase(season, 'recent') : soBase(season, 'recent'));
+        if (RB && RB.ready && RB.players[j]) { const RM = dpAssemble(side, RB, null), rp = RM.players[j]; lines.push(`TRENDS: last 3 weeks rating ${Math.round(rp.rating)} vs ${Math.round(p.rating)} for the season. Biggest changes: ${W.map(([k, l]) => [l, rp.parts[k] - p.parts[k]]).sort((a, b) => Math.abs(b[1]) - Math.abs(a[1])).slice(0, 3).map(([l, dlt]) => `${l} ${dlt >= 0 ? '+' : ''}${Math.round(dlt)}`).join(', ')}. Last 3 weeks counts: ${Object.values(rp.detail || {}).filter(Boolean).slice(0, 5).join('; ')}.`); }
+        else if (RB && RB.ready) lines.push(`TRENDS: not enough reps in the last 3 weeks to rate him on just those practices.`);
+        // Offer a one-tap what-if for moving him up.
+        const wl0 = dpLineOfMap(M)[j], ord = dpLockLines(side, p).filter(k => side === 'def' ? true : (p.pos === 'A' ? k === 'attack' : k !== 'attack')), up = wl0 ? ord[ord.indexOf(wl0) - 1] : ord[ord.length - 1];
+        if (up && up !== wl0) CHAT.ctx.moves.push({ j, side, line: up, label: lab[up] });
       });
       const st = [];
       cat.forEach(([c, m]) => {
@@ -14130,8 +14198,36 @@ function chatFacts(q) {
         st.push(`${c.label} ${c.fmt(r.v).replace(/<[^>]+>/g, '')}${r.n !== undefined ? ` (n=${Math.round(r.n)})` : ''}${rk ? `, rank ${rk}/${ok.length}` : (r.n || 0) < min ? `, under the ${min} minimum` : ''}`);
       });
       if (st.length) lines.push(`Stats: ${st.join('; ')}.`);
+      // Practice by practice (most recent 8): touches, goals/shots, expected points, turnovers, dominoes.
+      const ps = Object.values(d.bySession).filter(x => x.players[j]).sort((a, b) => (a.date || '').localeCompare(b.date || '')).slice(-8);
+      if (ps.length) lines.push(`BY PRACTICE (oldest to newest): ${ps.map(x => { const b = x.players[j]; return `${x.date.slice(5)} ${x.context === 'Game' ? 'game' : ''}: ${b.shots + b.potAst + b.to} touches, ${b.g}/${b.shots} G/shots, ${num(b.xg + b.xa, 1)} xP, ${b.to} TO, ${b.dom} dom`; }).join('; ')}.`);
+      // Goals Added, screens and pick defense.
+      try { const ga = (computeGoalsAdded().rows || []).find(r => r.jersey === j); if (ga) lines.push(`GOALS ADDED: ${num(ga.total, 1)} total (offense ${num(ga.off, 1)}, defense ${num(ga.def, 1)}) over ${ga.apps} sessions.`); } catch (e) { /* page data not ready */ }
+      const sc = d.possList.filter(pp => pp.team === 'WLU'), mineAdv = sc.filter(pp => (pp.screens || []).some(x => x.s === j && x.adv === 'Yes')), setN = sc.reduce((a, pp) => a + (pp.screens || []).filter(x => x.s === j).length, 0);
+      if (setN) lines.push(`SCREENS: set ${setN}, ${mineAdv.length} possessions with his advantage screen, team scored on ${mineAdv.filter(pp => pp.goal > 0).length} of them.`);
+      const pdr = pickDefenderRows(d.possList.filter(pp => pp.pick), d.xgOf, season).find(r => r.jersey === j);
+      if (pdr) lines.push(`PICK DEFENSE: defended ${pdr.n} picks, freed the ball carrier ${pct(pdr.freed)}, expected points allowed ${num(pdr.xp, 2)} per pick.`);
       out.push(lines.join(' '));
     });
+    // A practice he named (or "last practice"): the team's day.
+    chatDates(q, season).forEach(dt => {
+      const dd = d.shots.filter(s => s.date === dt), pp = d.possList.filter(x => x.e.date === dt), wp = pp.filter(x => x.team === 'WLU');
+      if (!dd.length && !pp.length) return;
+      const g = dd.filter(s => s.goal === 1).length, xg = dd.reduce((a, s) => a + d.xgOf(s), 0), gs = dd.filter(soIsGS), to = wp.filter(x => x.to).length;
+      const top = Object.values(d.bySession).filter(x => x.date === dt).flatMap(x => Object.values(x.players)).filter(b => !isOppJersey(b.jersey)).map(b => [b.jersey, b.xg + b.xa]).sort((a, b) => b[1] - a[1]).slice(0, 3);
+      const ctxW = (dd[0] || (pp[0] || {}).e || {}).context === 'Game' ? 'game' : 'practice';
+      out.push(`${ctxW.toUpperCase()} ${dt}: ${dd.length} shots, ${g} goals (${pct(dd.length ? g / dd.length : 0)}), ${num(xg, 1)} expected goals, ${gs.length} Gold/Silver looks (${gs.filter(s => s.goal === 1).length} scored), ${wp.length} possessions, ${to} turnovers, ${dd.filter(s => s.dominoes === 'Yes').length} shots after dominoes. Most expected points that day: ${top.map(([j, v]) => `${chatCode(j)} ${num(v, 1)}`).join(', ')}.`);
+    });
+    // Goalies and faceoffs when he asks about them (or names one).
+    if (/\b(goalie|goalies|keeper|save|saves|saving|in net|cage)\b/.test(t) || js.some(j => posOfJ(season, j) === 'G')) {
+      const gl = computeGoalieScores(season).filter(r => r.faced > 0).sort((a, b) => (b.score || 0) - (a.score || 0));
+      if (gl.length) out.push(`GOALIES: ${gl.slice(0, 5).map(r => `${chatCode(r.jersey)} Goalie Score ${Math.round(r.score || 0)}, ${r.faced} faced, ${r.gsax100 >= 0 ? '+' : ''}${num(r.gsax100, 1)} saves vs expected per 100 shots`).join('; ')}.`);
+    }
+    if (/\b(faceoff|faceoffs|fogo|fogos|draw|draws)\b/.test(t) || js.some(j => posOfJ(season, j) === 'F')) {
+      const fo = computeFaceoffSummary(faceoffsForSeason(season));
+      out.push(fo.length ? `FACEOFFS: ${fo.slice(0, 5).map(r => `${chatCode(r.jersey)} ${r.won}/${r.taken} (${pct(r.winPct)})`).join('; ')}.` : `FACEOFFS: none logged in ${season} yet.`);
+    }
+    if (!js.length) { const sh = d.shots, wp = d.possList.filter(x => x.team === 'WLU'); out.push(`TEAM ${season}: ${sh.length} shots, ${sh.filter(s => s.goal === 1).length} goals, ${num(sh.reduce((a, s) => a + d.xgOf(s), 0), 1)} expected goals, ${wp.length} possessions, ${wp.filter(x => x.to).length} turnovers.`); }
     // A ranking question: the tracker's own answer.
     if (plan.type === 'rank' || plan.type === 'player') {
       const a = saRun(plan);
@@ -14174,7 +14270,7 @@ async function chatAsk(q) {
     if (!reply) throw err || new Error('no answer');
     const last = CHAT.msgs[CHAT.msgs.length - 1];
     const allowed = new Set(CHAT.msgs.filter(x => x.sent).map(x => x.sent).concat(sent).join(' ').match(/\bP\d+\b/g) || []);
-    Object.assign(last, { pending: false, html: chatUnmask(reply, allowed), reply, sent, facts });
+    Object.assign(last, { pending: false, html: chatUnmask(reply, allowed), reply, sent, facts, actions: chatActions() });
   } catch (e) {
     const last = CHAT.msgs[CHAT.msgs.length - 1];
     const why = /blocked/.test(String(e && e.message)) ? 'A name was still in what would be sent, so nothing went out.' : /429|quota|exhaust/i.test(String(e && e.message)) ? 'The free AI is at its limit for the minute. Try again shortly.' : 'The AI didn’t answer.';
@@ -14182,6 +14278,28 @@ async function chatAsk(q) {
   }
   CHAT.busy = false;
   chatDraw();
+}
+// Buttons under a reply, worked out by the tracker (nothing here goes to the AI).
+function chatActions() {
+  const c = CHAT.ctx || { js: [], moves: [] }, season = chatSeason(), nm = j => `#${j} ${lastNameOf(nameFor(j, season) || '')}`, acts = [];
+  c.js.slice(0, 2).forEach(j => acts.push({ t: `Show ${nm(j)} on this page`, k: 'show', j }));
+  c.moves.slice(0, 2).forEach(m => acts.push({ t: `Try ${nm(m.j)} on ${m.label} (What-if)`, k: 'try', j: m.j, side: m.side, line: m.line }));
+  if (c.js.length >= 2) acts.push({ t: `Compare ${c.js.slice(0, 3).map(nm).join(' vs ')}`, k: 'compare', js: c.js.slice(0, 3) });
+  return acts;
+}
+// Side-by-side table, built here from our data (never sent anywhere).
+function chatCompareHtml(js) {
+  const season = chatSeason(), B = soBase(season), M = B.ready ? dpAssemble('off', B, null) : null, D0 = sdBase(season), D = D0.ready ? dpAssemble('def', D0, null) : null;
+  const rows = [];
+  if (M && js.some(j => M.players[j])) { rows.push(['Impact Rating', js.map(j => M.players[j] ? Math.round(M.players[j].rating) : '—')]); SO_W.forEach(([k, l]) => rows.push([l, js.map(j => M.players[j] ? `${Math.round(M.players[j].parts[k])} <span class="n-note">${escapeHtml(M.players[j].detail[k] || '')}</span>` : '—')])); }
+  if (D && js.some(j => D.players[j])) { rows.push(['Defense Rating', js.map(j => D.players[j] ? Math.round(D.players[j].rating) : '—')]); SD_W.forEach(([k, l]) => rows.push([l, js.map(j => D.players[j] ? `${Math.round(D.players[j].parts[k])} <span class="n-note">${escapeHtml(D.players[j].detail[k] || '')}</span>` : '—')])); }
+  if (!rows.length) return '<p class="n-note">Not enough data to compare them yet.</p>';
+  return `<div class="table-wrap"><table class="shotlog chat-cmp"><thead><tr><th></th>${js.map(j => `<th>#${escapeHtml(j)} ${escapeHtml(lastNameOf(nameFor(j, season) || ''))}</th>`).join('')}</tr></thead><tbody>${rows.map(([l, v]) => `<tr><td>${escapeHtml(l)}</td>${v.map(x => `<td>${x}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`;
+}
+function chatDoAction(m, a) {
+  if (a.k === 'show') { CHAT.open = window.innerWidth > 700; chatDraw(); navHighlight([a.j]); const chip = [...document.querySelectorAll('.view.active .depth-chip')].find(x => new RegExp(`#${a.j}\\b`).test(x.textContent)); if (chip) { chip.scrollIntoView({ block: 'center' }); chip.classList.add('nav-hl'); } return; }
+  if (a.k === 'try') { const o = DP_WHATIF[a.side] || { w: {}, adj: {}, lock: {} }; o.lock[a.j] = { line: a.line, by: dpWho(), at: new Date().toISOString() }; DP_WHATIF[a.side] = o; DP_VIEW[a.side] = 'whatif'; CHAT.open = window.innerWidth > 700; chatDraw(); goNav('depth'); setTimeout(() => { const el = document.getElementById(a.side === 'def' ? 'depthModelDef' : 'depthModel'); if (el) el.scrollIntoView({ block: 'start' }); }, 120); return; }
+  if (a.k === 'compare') { m.cmp = m.cmp ? null : chatCompareHtml(a.js); chatDraw(); }
 }
 function chatFocusLabel(f) { return [f.jersey ? `#${f.jersey} ${nameFor(f.jersey, chatSeason()) || ''}` : '', f.row, f.label, f.value].filter(Boolean).join(' · ') + (f.panel ? ` (${f.panel})` : ''); }
 // Remember what the coach last clicked on a page: a player row or card, a stat tile, a table cell.
@@ -14216,9 +14334,9 @@ function chatDraw() {
   fab.hidden = CHAT.open; panel.hidden = !CHAT.open;
   if (!CHAT.open) return;
   const f = CHAT.focus;
-  const sugg = f && f.jersey ? ['Why is he rated here?', 'What would move him up?', 'How is this figured?', 'What is he best and worst at?'] : f ? ['How is this figured?', 'Why is it this number?', 'Who is best at this?'] : ['Who should start on offense, and why?', 'Who should start on defense, and why?', 'Who is our best off-ball player?'];
+  const sugg = f && f.jersey ? ['Why is he where he is?', 'What does he need to work on to move up?', 'Is he getting better lately?', 'What is he best and worst at?'] : f ? ['How is this figured?', 'Why is it this number?', 'Who is best at this?'] : ['Who should start on offense, and why?', 'Who should start on defense, and why?', 'Who is our best off-ball player?'];
   document.getElementById('chatFocus').innerHTML = f ? `<span>Asking about: <b>${escapeHtml(chatFocusLabel(f))}</b></span><button type="button" class="chat-x" data-chat="unfocus" title="Stop asking about this">&times;</button>` : '<span class="n-note">Tip: click a player, row or number on any page, then ask about it.</span>';
-  document.getElementById('chatLog').innerHTML = CHAT.msgs.length ? CHAT.msgs.map(m => `<div class="chat-msg ${m.role}">${m.focus ? `<div class="n-note">about ${escapeHtml(m.focus)}</div>` : ''}${m.html}${m.sent && chatShowSent() ? `<details class="chat-sent"><summary>What was sent</summary><pre>${escapeHtml(m.sent)}</pre></details>` : ''}</div>`).join('')
+  document.getElementById('chatLog').innerHTML = CHAT.msgs.length ? CHAT.msgs.map(m => `<div class="chat-msg ${m.role}">${m.focus ? `<div class="n-note">about ${escapeHtml(m.focus)}</div>` : ''}${m.html}${m.actions && m.actions.length ? `<div class="chat-acts">${m.actions.map((a, i) => `<button type="button" class="pill" data-chat="act" data-m="${CHAT.msgs.indexOf(m)}" data-a="${i}">${escapeHtml(a.t)}</button>`).join('')}</div>` : ''}${m.cmp || ''}${m.sent && chatShowSent() ? `<details class="chat-sent"><summary>What was sent</summary><pre>${escapeHtml(m.sent)}</pre></details>` : ''}</div>`).join('')
     : `<div class="chat-empty"><p>Ask anything about the numbers: why a player is where he is, how a stat is figured, what would change it.</p><p class="n-note">Only coded numbers go to the AI (P1, P2&hellip;), never names. The tracker does the math.</p></div>`;
   document.getElementById('chatSugg').innerHTML = sugg.map(s => `<button type="button" class="pill" data-chat="ask" data-q="${escapeHtml(s)}">${escapeHtml(s)}</button>`).join('');
   const log = document.getElementById('chatLog'); log.scrollTop = log.scrollHeight;
@@ -14245,6 +14363,7 @@ function chatInit() {
     if (a === 'unfocus') CHAT.focus = null;
     if (a === 'new') { CHAT.msgs = []; CHAT.map = {}; CHAT.n = 0; }
     if (a === 'ask') { chatAsk(b.dataset.q); return; }
+    if (a === 'act') { const m = CHAT.msgs[Number(b.dataset.m)]; if (m && m.actions) chatDoAction(m, m.actions[Number(b.dataset.a)]); return; }
     chatDraw();
   });
   document.getElementById('chatForm').addEventListener('submit', ev => { ev.preventDefault(); const i = document.getElementById('chatInput'); const q = i.value; i.value = ''; chatAsk(q); });
