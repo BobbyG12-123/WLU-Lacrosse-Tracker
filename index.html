@@ -279,6 +279,7 @@
   .bf-goal { width: min(260px, 100%); cursor: crosshair; } .bf-goal svg { width: 100%; height: auto; }
   .bf-logged { font: 12.5px var(--text); color: var(--muted); margin: 8px 0; } .bf-logged summary { cursor: pointer; } .bf-logged p { margin: 4px 0 0; line-height: 1.6; }
   .bf-done { font: 600 13px var(--text); color: var(--good); }
+  .bf-jin { display: flex; align-items: center; gap: 10px; } .bf-jin input { width: 80px; font: 16px var(--text); padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--card); color: var(--ink); } .bf-jin .readout { font: 500 13px var(--text); color: var(--ink); }
   .bf-scr { margin-top: 6px; } .bf-scrrow { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px; padding: 6px 0; border-top: 1px solid var(--line); }
   .bf-scrrow label { display: flex; flex-direction: column; font: 600 12px var(--text); color: var(--muted); gap: 2px; } .bf-scrrow input { width: 90px; font: 15px var(--text); padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--card); color: var(--ink); }
   .bf-scrrow .readout { font-weight: 500; color: var(--ink); min-height: 1em; } .bf-l2 { display: block; font: 600 12px var(--text); color: var(--muted); margin-bottom: 2px; }
@@ -2425,7 +2426,7 @@ firebase.initializeApp({
 // Data Health is only shown to this account (hidden for every other coach).
 const DATA_HEALTH_OWNER = 'rdglax22@icloud.com';
 let IS_DH_OWNER = false;
-const ALLOWED_COACHES = ['bgriffith@wlu.edu', 'rdglax22@icloud.com', 'wgarrett@wlu.edu', 'mccabee@wlu.edu', '5cornersports@gmail.com', 'eugenemccabe11@gmail.com', 'tfmarcille@gmail.com'];
+const ALLOWED_COACHES = ['bgriffith@wlu.edu', 'rdglax22@icloud.com', 'wgarrett@wlu.edu', 'mccabee@wlu.edu', '5cornersports@gmail.com', 'eugenemccabe11@gmail.com', 'tfmarcille@gmail.com', 'jrn8819@icloud.com'];
 
 document.getElementById('authGateBtn').addEventListener('click', () => {
   document.getElementById('authGateMsg').textContent = 'Signing in…';
@@ -3735,6 +3736,7 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
 // sub-tab picked in each tab is remembered on this device.
 function showSubpage(viewId, label) {
   if (viewId === 'efficiencyView' && label === 'xG Model') setTimeout(() => renderXg2Cone(), 0);
+  if (viewId === 'efficiencyView' && label === 'Angles') setTimeout(() => { if (ANG3D_PENDING) renderAngle3D(ANG3D_PENDING); }, 0);
   // Deferred: on page load this runs (from the remembered sub-tab) before
   // the Save Surface settings exist.
   if (viewId === 'goalieView' && label === 'Save Surface') setTimeout(() => { if (surfMode === '3d') renderSaveSurface(); }, 0);
@@ -11113,9 +11115,16 @@ function focusAng3dShot(x) {
   refreshAng3D();
 }
 function refreshAng3D() { if (ANG3D && ANG3D.last) drawAng3D(ANG3D.last); }
+let ANG3D_PENDING = null;
+function webglOn() { try { const c = document.createElement('canvas'); return !!(c.getContext('webgl2') || c.getContext('webgl')); } catch (e) { return false; } }
 function renderAngle3D(xgOf) {
   const wrap = document.getElementById('ang3dWrap');
   if (!wrap) return;
+  // Only build it when the Shooting Angles tab is showing (the other Efficiency tabs share this view).
+  const sub = wrap.closest('.subpage');
+  if (sub && !sub.classList.contains('active')) { ANG3D_PENDING = xgOf; return; }
+  ANG3D_PENDING = null;
+  if (!ANG3D && !webglOn()) { wrap.innerHTML = threeFailMsg(null, 'rgba(255,255,255,.85)'); return; }
   const all = effShots().filter(x => x.shooterJersey && shotAngleDeg(x) !== null);
   // Player picker for the 3D map.
   const sel = document.getElementById('ang3dPlayer');
@@ -13790,7 +13799,7 @@ const SA_CATALOG = [
   { off: true, id: 'usage', label: 'Usage', words: 'usage, involvement, involved, runs through', page: 'eff', fmt: SA_PCT, f: d => { const all = saPlayers(d), T = d.shots.length + all.reduce((a, p) => a + p.potAst, 0); return saMap(d, p => (p.shots + p.potAst) ? { v: (p.shots + p.potAst) / T, n: p.shots + p.potAst } : null); } },
   { off: true, id: 'possUsed', label: 'Possessions used', words: 'possessions used, ends possessions', page: 'eff', fmt: SA_PCT, f: d => { const all = saPlayers(d), T = d.shots.length + all.reduce((a, p) => a + p.to, 0); return saMap(d, p => (p.shots + p.to) ? { v: (p.shots + p.to) / T, n: p.shots + p.to } : null); } },
   { id: 'gb', label: 'Ground balls', words: 'ground balls, ground ball, gbs, gb, scrappy', page: 'eff', fmt: SA_NUM(0), f: d => saMap(d, p => p.gb ? { v: p.gb, n: p.gb } : null) },
-  { id: 'ct', label: 'Caused turnovers', words: 'caused turnovers, takeaways, takeaway, steals, forced turnovers', page: 'eff', fmt: SA_NUM(0), f: d => saMap(d, p => p.ct ? { v: p.ct, n: p.ct } : null) },
+  { id: 'ct', label: 'Caused turnovers', words: 'caused turnovers, takeaways, takeaway, steals, forced turnovers, causes turnovers, causes the most turnovers, cause turnovers, causing turnovers, forces turnovers, forcing turnovers, causes, forces', page: 'eff', fmt: SA_NUM(0), f: d => saMap(d, p => p.ct ? { v: p.ct, n: p.ct } : null) },
   { off: true, id: 'dom', label: 'Dominoes started', words: 'dominoes, starts the dominoes, initiator, initiates, breaks down, dodger, dodgers, dodging, draws slides', page: 'dominoes', fmt: SA_NUM(0), f: d => saMap(d, p => p.dominoes ? { v: p.dominoes, n: p.dominoes } : null) },
   { off: true, id: 'advCreated', label: 'Screen advantages created', words: 'screen advantages, advantages created, screens, screen, screener, screeners, picks, pick setter', page: 'picks', fmt: SA_NUM(0), f: d => { const s = saScreens(d); const m = {}; Object.keys(s.set).forEach(j => { m[j] = { v: s.adv[j] || 0, n: s.set[j], extra: `${s.adv[j] || 0} of ${s.set[j]} screens` }; }); return m; } },
   { off: true, id: 'gold', label: 'Shooting % on Gold shots', words: 'gold', min: 8, page: 'quality', fmt: SA_PCT, f: d => saTier(d, '1-Gold', true) },
@@ -13977,7 +13986,7 @@ const BF_SECTIONS = [['def', 'Defense'], ['picks', 'Dominoes & screens'], ['poss
 const BF_ALWAYS = new Set(['dominoes', 'advCreator', 'advType']);
 const BF_SHOT_FIELDS = [
   ['defender', 'On-ball defender', 'jdef', null, 'def'],
-  ['defBeaten', 'Was he beaten?', 'yn', null, 'def', (e, f) => e.defender || f.defender],
+  ['defBeaten', 'Was he beaten? (if you typed a defender)', 'yn', null, 'def'],
   ['beatenHow', 'How was he beaten?', 'pills', BEATEN_HOW_OPTIONS, 'def', (e, f) => (e.defBeaten || f.defBeaten) === 'Yes'],
   ['slideDefender', 'Slide defender', 'jdef', null, 'def'],
   ['offBallFault', 'Off-ball breakdown (who lost his man)', 'jdef', null, 'def'],
@@ -14042,13 +14051,14 @@ function bfShowVal(k, v, season) {
   return String(v).replace(/^\d-/, '');
 }
 function bfFieldHtml(fd, e, d, item) {
-  const [k, label, kind, opts] = fd, v = d.f[k];
+  const [k, label, kind, opts] = fd, v = d.f[k], season = bfSeason();
   let ctl = '';
   if (kind === 'pills') ctl = bfPills(k, v, opts);
   else if (kind === 'yn') ctl = bfPills(k, v, ['Yes', 'No']);
-  else if (kind === 'jdef') ctl = bfPicker(k, v, 'def', item);
-  else if (kind === 'joff') ctl = bfPicker(k, v, 'off', item);
-  else if (kind === 'jg') ctl = bfPicker(k, v, 'g', item);
+  else if (kind === 'jdef' || kind === 'joff' || kind === 'jg') {
+    const txt = (d.ftxt || {})[k] != null ? d.ftxt[k] : (v || '');
+    ctl = `<div class="bf-jin"><input type="text" inputmode="numeric" maxlength="3" placeholder="#" data-bf-j="${k}" value="${escapeHtml(txt)}" aria-label="${escapeHtml(label)} jersey number"><span class="readout" data-bf-ro="f_${k}">${v ? `#${escapeHtml(v)} ${escapeHtml(nameFor(v, season) || '')}` : ''}</span></div>`;
+  }
   else if (kind === 'text') ctl = `<input type="text" class="bf-text" data-bf-text="${k}" list="triggerList" maxlength="60" placeholder="Type or pick, e.g. Rub" value="${escapeHtml(v || '')}">`;
   else if (kind === 'goal') ctl = `<div class="bf-goal" data-bf-goal="1">${goalSVG(buildGoalGrid([]), { metric: 'score', interactive: false, labels: false, grid: true })}</div><span class="n-note">${d.f.goalX != null ? escapeHtml(goalZoneName(d.f.goalX, d.f.goalY)) + ' &middot; tap again to move it' : 'Tap where the shot went'}</span>`;
   return `<div class="bf-q"><div class="bf-lab">${escapeHtml(label)}</div>${ctl}</div>`;
@@ -14070,7 +14080,7 @@ function bfCardHtml(item, tl) {
   const nothing = !secHtml ? `<p class="bf-done">${BF_SECTIONS.some(([sec]) => counts[sec]) ? 'Everything left is in a hidden section.' : 'Nothing left to add on this one.'} Press <b>Save &amp; next</b> to mark it reviewed.</p>` : '';
   return `${bfMatchHtml(item, tl)}
     ${toggles}
-    <p class="bf-hint">Tap what you see on film. Skip anything you’re not sure of. <b>Enter</b> = save &amp; next.</p>
+    <p class="bf-hint">Type jersey numbers and tap the rest. Skip anything you’re not sure of. In a number box, <b>Enter</b> jumps to the next box (and saves after the last one); elsewhere <b>Enter</b> = save &amp; next.</p>
     ${secHtml}${nothing}
     ${logged.length ? `<details class="bf-logged"><summary>Already logged (${logged.length}), not changed here</summary><p>${logged.join(' &middot; ')}</p></details>` : ''}
     <div class="bf-actions"><button type="button" class="btn secondary" data-bf="prev">&larr; Back</button><button type="button" class="btn" data-bf="save">${d.isNew ? 'Save possession' : 'Save &amp; next'} &rarr;</button><button type="button" class="btn secondary" data-bf="skip">Skip</button>
@@ -14106,6 +14116,8 @@ async function bfSave() {
   const item = tl.list[BF.idx], d = BF.draft;
   if (d.kind === 'shot' && d.f.defender && (d.f.defender === (d.f.slideDefender || item.e.slideDefender))) { BF.msg = 'The slide defender can’t be the on-ball defender.'; renderBackfill(); return; }
   if (d.scr === 'Yes' && d.rows.some(r => (r.s || r.u) && !r.adv)) { BF.msg = 'Screens: tap Advantage Yes or No on every screen.'; renderBackfill(); return; }
+  const badF = Object.keys(d.ftxt || {}).find(k => normJerseyText(d.ftxt[k]) && !d.f[k]);
+  if (badF) { BF.msg = `#${normJerseyText(d.ftxt[badF])} isn’t on the roster; fix it or clear the box.`; renderBackfill(); return; }
   if (d.scr === 'Yes' && d.rows.some(r => (r.sTxt && !r.s) || (r.uTxt && !r.u))) { BF.msg = 'Screens: a jersey number isn’t on the roster.'; renderBackfill(); return; }
   const same = d.rows.findIndex(r => r.s && r.s === r.u);
   if (same >= 0) { BF.msg = `Screen ${same + 1}: the screener and the player who used it can’t be the same.`; renderBackfill(); return; }
@@ -14149,6 +14161,19 @@ function bfInit() {
     if (a === 'more') BF.more['r' + r] = true;
     if (a === 'set') { const f = b.dataset.f, v = b.dataset.v, tgt = r != null ? d.rows[r] : d.f; tgt[f] = tgt[f] === v ? null : v; if (f === 'defender' && !tgt[f]) { delete d.f.defBeaten; delete d.f.beatenHow; } if (f === 'dominoes' && tgt[f] !== 'Yes') { delete d.f.advCreator; delete d.f.advType; } }
     BF.msg = ''; renderBackfill();
+  });
+  // Typed jersey numbers on a field: same idea.
+  wrap.addEventListener('input', ev => {
+    const t = ev.target.closest('[data-bf-j]'); if (!t || !BF.draft) return;
+    const k = t.dataset.bfJ, v = normJerseyText(t.value), season = bfSeason(), ok = v && (ROSTERS[season] || []).some(r => r.jersey === v);
+    BF.draft.ftxt = BF.draft.ftxt || {}; BF.draft.ftxt[k] = t.value; BF.draft.f[k] = ok ? v : null;
+    const ro = wrap.querySelector(`[data-bf-ro="f_${k}"]`); if (ro) ro.textContent = !v ? '' : ok ? `#${v} ${nameFor(v, season) || ''}` : `#${v} isn’t on the ${season} roster`;
+  });
+  wrap.addEventListener('keydown', ev => {
+    const t = ev.target.closest('[data-bf-j], [data-bf-row]'); if (!t || ev.key !== 'Enter') return;
+    ev.preventDefault();
+    const all = [...wrap.querySelectorAll('[data-bf-j], [data-bf-row]')], i = all.indexOf(t);
+    if (i >= 0 && i < all.length - 1) all[i + 1].focus(); else { t.blur(); bfSave(); }
   });
   // Typed jersey numbers in a screen row: keep what's typed, store it only when it's on the roster.
   wrap.addEventListener('input', ev => {
