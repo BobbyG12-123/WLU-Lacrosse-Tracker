@@ -322,6 +322,7 @@
   .dp-layout { display: grid; grid-template-columns: minmax(0, 1fr) 250px; gap: 16px; align-items: start; }
   .dp-side { position: sticky; top: calc(70px + env(safe-area-inset-top, 0px)); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; background: var(--card); display: flex; flex-direction: column; gap: 6px; }
   .dp-wh { font: 700 12px var(--text); letter-spacing: .06em; text-transform: uppercase; color: var(--navy-3); margin: 0 0 2px; }
+  .dp-why { font-family: var(--text); font-size: 12.5px; line-height: 1.45; color: var(--ink); margin-top: 3px; } .dp-why .dp-num { color: var(--muted); font-size: 11.5px; }
   .dp-wbtn { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
   @media (max-width: 900px) { .dp-layout { grid-template-columns: 1fr; } .dp-side { position: static; order: -1; } }
   .depth-chip .depth-pos { grid-row: 1 / span 2; grid-column: 2; }
@@ -8866,9 +8867,9 @@ function soBase(season, range) {
     const c = C[j], parts = {}; let tot = 0;
     SO_W.forEach(([k, , w]) => { parts[k] = soPts(z[k][j]); tot += w * parts[k]; });
     players[j] = { j, name: nameFor(j, season), pos: pos(j), rating: tot / SO_W.reduce((a, x) => a + x[2], 0), parts, touches: c.touch,
-      detail: { xp: `${num(c.xg + c.xa, 1)} xP (${num(c.xg, 1)} xG + ${num(c.xa, 1)} xA)`, gs: `${c.gsG} of ${c.gsN} on Gold/Silver`, dom: `${c.dom} dominoes on ${c.touch} touches`,
+      detail: { xp: `${num(c.xg + c.xa, 1)} expected points: ${num(c.xg, 1)} xG + ${num(c.xa, 1)} xA`, gs: `${c.gsG} of ${c.gsN} on Gold/Silver`, dom: `${c.dom} dominoes on ${c.touch} touches`,
         xppt: `${num(c.touch ? (c.xg + c.xa) / c.touch : 0, 2)} xP per touch`, ato: `${c.ast} assists, ${c.to} turnovers`, sel: `${c.gsN} of ${c.shots} shots Gold/Silver`,
-        adv: c.scr ? `${c.adv} advantages on ${c.scr} screens set` : 'no screens logged', catch: c.catN ? `${c.catG} goals on ${num(c.catXg, 1)} xG off the catch (${c.catN} shots)` : 'no catch shots' } };
+        adv: c.scr ? `${c.adv} advantages on ${c.scr} screens set` : 'no screens logged', catch: c.catN ? `${c.catG} goals on ${num(c.catXg, 1)} xG off the catch, ${c.catN} shots` : 'no catch shots' } };
   });
   const att = qual.filter(j => pos(j) === 'A'), mid = qual.filter(j => pos(j) === 'M');
   return { ready: true, side: 'off', season, last, range: recent ? 'recent' : 'season', recentFrom, minT, raw, players, notEnough, att, mid, pairZ: () => 0, pairNote: () => '' };
@@ -9067,6 +9068,34 @@ function dpLockLines(side, p) {
   if (side === 'off') return p.pos === 'A' ? ['attack', 'mid1', 'mid2', 'mid3'] : ['mid1', 'mid2', 'mid3', 'attack'];
   const out = []; if (p.pos === 'D' || p.pos === 'L') out.push('unit1', 'unit2'); if (p.pos === 'S' || p.alt === 'S') out.push('ssdm1', 'ssdm2'); return out;
 }
+// Plain-words reason for a player's spot: what puts him there, what holds him back, who he edges.
+const DP_SAY = {
+  off: { xp: ['creates a lot of offense', 'doesn’t create much offense yet'], gs: ['finishes his good looks', 'misses too many good looks'], dom: ['starts the dominoes', 'rarely starts dominoes'], xppt: ['makes his touches count', 'his touches don’t produce much'], ato: ['takes care of the ball and sets guys up', 'turns it over too much for what he sets up'], sel: ['takes good shots', 'takes too many low-quality shots'], adv: ['his screens get guys open', 'his screens rarely free anyone'], catch: ['scores off the catch', 'doesn’t finish off the catch'] },
+  def: { ct: ['causes turnovers', 'rarely causes turnovers'], offball: ['stays with his man off the ball', 'gets lost off the ball'], onball: ['holds up on the ball', 'gives up good looks on the ball'], beaten: ['rarely gets beaten', 'gets beaten too often'], pick: ['defends picks well', 'struggles defending picks'], slide: ['his slides hold up', 'his slides lead to goals'] },
+};
+const dpOrd = n => n + (n % 100 >= 11 && n % 100 <= 13 ? 'th' : ['th', 'st', 'nd', 'rd'][n % 10] || 'th');
+function dpGroupOf(side, M, p) { return side === 'off' ? (p.pos === 'A' ? M.att : M.mid) : (p.pos === 'L' ? M.lsm : p.pos === 'D' ? M.close : M.ss); }
+function dpWhy(side, M, j) {
+  const p = M.players[j], W = dpW(side), w = M.w || {}, all = Object.values(M.players);
+  const rankIn = k => all.filter(x => x.parts[k] > p.parts[k]).length + 1;
+  const used = W.filter(([k]) => (w[k] === undefined ? 1 : w[k]) > 0);
+  const strong = used.map(([k]) => k).sort((a, b) => p.parts[b] - p.parts[a]).filter(k => p.parts[k] >= 55).slice(0, 2);
+  const weak = used.map(([k]) => k).sort((a, b) => p.parts[a] - p.parts[b]).filter(k => p.parts[k] <= 42).slice(0, 1);
+  const say = (k, good) => `${DP_SAY[side][k][good ? 0 : 1]} <span class="dp-num">(${escapeHtml((p.detail || {})[k] || Math.round(p.parts[k]))}${good ? `, ${dpOrd(rankIn(k))} of ${all.length}` : ''})</span>`;
+  const bits = [];
+  bits.push(strong.length ? strong.map(k => say(k, true)).join(' and ') : 'solid across the board without one standout area');
+  if (weak.length) bits.push(`held back because he ${say(weak[0], false)}`);
+  // Where he sits against the guys around him in his position group.
+  const grp = (dpGroupOf(side, M, p) || []).slice().sort((a, b) => M.players[b].rating - M.players[a].rating), i = grp.indexOf(j);
+  const where = dpLineOfMap(M)[j], lineJs = where && M.lines[where] ? M.lines[where].js : [];
+  if (i === 0) bits.push(`top-rated ${side === 'off' ? (p.pos === 'A' ? 'attackman' : 'middie') : sdPosLabel(p).toLowerCase()}`);
+  else if (where && lineJs.length && lineJs.every(x => x === j || M.players[x].rating >= p.rating)) {
+    const next = grp.find(x => !lineJs.includes(x) && M.players[x].rating <= p.rating && !(dpLineOfMap(M)[x] && DP_LINES[side].findIndex(y => y[0] === dpLineOfMap(M)[x]) < DP_LINES[side].findIndex(y => y[0] === where)));
+    if (next) bits.push(`holds the last spot over #${escapeHtml(next)} ${escapeHtml(lastNameOf(M.players[next].name || ''))} by ${num(p.rating - M.players[next].rating, 1)}`);
+  } else if (!where && i > 0) bits.push(`${num(M.players[grp[i - 1]].rating - p.rating, 1)} behind #${escapeHtml(grp[i - 1])} ${escapeHtml(lastNameOf(M.players[grp[i - 1]].name || ''))}`);
+  const txt = bits.join('; ');
+  return txt.charAt(0).toUpperCase() + txt.slice(1) + '.';
+}
 function dpReason(side, p) { return dpW(side).map(([k, lab]) => [lab, p.parts[k]]).sort((a, b) => b[1] - a[1]).slice(0, 2).map(([lab, v]) => `${lab.toLowerCase()} ${Math.round(v)}`).join(', '); }
 function dpLineOfMap(M) { const m = {}; Object.keys(M.lines || {}).forEach(k => { const l = M.lines[k]; if (l) l.js.forEach(j => { m[j] = k; }); }); return m; }
 // What the current view is built from.
@@ -9099,7 +9128,7 @@ function dpRender(side, bodyOnly) {
     </div>${DP_OPEN === side + j ? `<div class="dp-parts">${W.map(([k, l]) => `<span class="dp-part"><span>${escapeHtml(l)} <b>${Math.round(p.parts[k])}</b>${Math.round(p.parts[k]) !== Math.round(p.modelParts[k]) ? ` <span class="n-note">(model ${Math.round(p.modelParts[k])})</span>` : ''}</span>
       <button type="button" class="pill" data-dp="${side}" data-act="part-" data-k="${k}" data-j="${escapeHtml(j)}">&minus;${DP_STEP}</button><button type="button" class="pill" data-dp="${side}" data-act="part+" data-k="${k}" data-j="${escapeHtml(j)}">+${DP_STEP}</button></span>`).join('')}</div>` : ''}`;
   const chip = j => { const p = M.players[j]; const diff = Math.round(p.rating) !== Math.round(p.modelRating);
-    return `<div class="depth-chip" style="display:block;"><b>#${escapeHtml(j)} ${escapeHtml(p.name)}</b> ${mv(j)} <span class="n-note" style="font-style:normal;">${side === 'def' ? escapeHtml(sdPosLabel(p)) + ' &middot; ' : ''}${word} <b>${Math.round(p.rating)}</b>${diff ? ` <span class="n-note">(model ${Math.round(p.modelRating)})</span>` : ''} &middot; best at ${escapeHtml(dpReason(side, p))} &middot; ${side === 'def' ? p.reps + ' reps' : p.touches + ' touches'}</span> ${tag(j)}${ctrls(j, p)}</div>`; };
+    return `<div class="depth-chip" style="display:block;"><b>#${escapeHtml(j)} ${escapeHtml(p.name)}</b> ${mv(j)} <span class="n-note" style="font-style:normal;">${side === 'def' ? escapeHtml(sdPosLabel(p)) + ' &middot; ' : ''}${word} <b>${Math.round(p.rating)}</b>${diff ? ` <span class="n-note">(model ${Math.round(p.modelRating)})</span>` : ''} <span class="n-note">&middot; ${side === 'def' ? p.reps + ' reps' : p.touches + ' touches'}</span></span><div class="dp-why">${dpWhy(side, M, j)}</div>${tag(j)}${ctrls(j, p)}</div>`; };
   const lineHtml = (k, title) => { const l = M.lines[k];
     if (!l) return `<div class="depth-line"><div class="depth-line-head">${title}</div><p class="n-note">Not enough qualified players at this position yet.</p></div>`;
     return `<div class="depth-line"><div class="depth-line-head">${title} &middot; avg ${Math.round(l.rating)}</div>${l.js.map(chip).join('')}
