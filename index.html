@@ -8970,7 +8970,7 @@ const DP_STEP = 5;
 let DP_VIEW = { off: 'model', def: 'model' }, DP_WHATIF = { off: null, def: null }, DP_OPEN = null, DP_CLEAR = null;
 const DP_COACH = {};
 const DP_LINES = {
-  off: [['attack', 'Attack', 'Attack'], ['mid1', 'Middies · Line 1', 'Line 1'], ['mid2', 'Middies · Line 2', 'Line 2']],
+  off: [['attack', 'Attack', 'Attack'], ['mid1', 'Middies · Line 1', 'Line 1'], ['mid2', 'Middies · Line 2', 'Line 2'], ['mid3', 'Middies · Line 3', 'Line 3']],
   def: [['unit1', 'Close D + LSM · Unit 1', 'Unit 1'], ['unit2', 'Close D + LSM · Unit 2', 'Unit 2'], ['ssdm1', 'SSDM · Pair 1', 'SSDM 1'], ['ssdm2', 'SSDM · Pair 2', 'SSDM 2']],
 };
 const dpW = side => (side === 'def' ? SD_W : SO_W);
@@ -9024,7 +9024,8 @@ function soAssemble(B, opt) {
   const attack = dpBest(B.att, 3, 'attack', lockOf, all, grp);
   const mid1 = dpBest(B.mid, 3, 'mid1', lockOf, all, grp);
   const mid2 = mid1 ? dpBest(B.mid.filter(j => !mid1.js.includes(j)), 3, 'mid2', lockOf, all, grp) : null;
-  [attack, mid1, mid2].forEach(l => { if (!l) return; let bk = null, bz = -9; for (let a = 0; a < 3; a++) for (let b = a + 1; b < 3; b++) { const z0 = B.pairZ(l.js[a], l.js[b]); if (z0 > bz) { bz = z0; bk = [l.js[a], l.js[b]]; } } l.bestPair = bk && B.pairNote(bk[0], bk[1]) ? { js: bk, note: B.pairNote(bk[0], bk[1]) } : null; });
+  const mid3 = mid2 ? dpBest(B.mid.filter(j => !mid1.js.includes(j) && !mid2.js.includes(j)), 3, 'mid3', lockOf, all, grp) : null;
+  [attack, mid1, mid2, mid3].forEach(l => { if (!l) return; let bk = null, bz = -9; for (let a = 0; a < 3; a++) for (let b = a + 1; b < 3; b++) { const z0 = B.pairZ(l.js[a], l.js[b]); if (z0 > bz) { bz = z0; bk = [l.js[a], l.js[b]]; } } l.bestPair = bk && B.pairNote(bk[0], bk[1]) ? { js: bk, note: B.pairNote(bk[0], bk[1]) } : null; });
   // Crossover flags: an attackman who'd make a middie line, or a middie who'd crack the attack.
   const flags = [], att = B.att, mid = B.mid;
   const midLine = [mid1, mid2].filter(Boolean).flatMap(l => l.js), lowestMid = midLine.slice().sort((a, b) => players[a].rating - players[b].rating)[0];
@@ -9033,7 +9034,7 @@ function soAssemble(B, opt) {
     flags.push({ j, to: 'M', text: `Consider #${j} ${players[j].name} at midfield: he's not in the top 3 attack, but his ${Math.round(players[j].rating)} would rank ${rank === 1 ? '1st' : rank === 2 ? '2nd' : rank === 3 ? '3rd' : rank + 'th'} among middies, ahead of #${lowestMid} ${players[lowestMid].name} (${Math.round(players[lowestMid].rating)}).` });
   });
   if (attack) { const lowAtt = attack.js.slice().sort((a, b) => players[a].rating - players[b].rating)[0]; mid.filter(j => !attack.js.includes(j) && players[j].rating > players[lowAtt].rating).forEach(j => flags.push({ j, to: 'A', text: `#${j} ${players[j].name} (middie, ${Math.round(players[j].rating)}) rates higher than #${lowAtt} ${players[lowAtt].name} (${Math.round(players[lowAtt].rating)}) in the attack trio.` })); }
-  return Object.assign({}, B, { players, w, attack, mid1, mid2, flags, lines: { attack, mid1, mid2 } });
+  return Object.assign({}, B, { players, w, attack, mid1, mid2, mid3, flags, lines: { attack, mid1, mid2, mid3 } });
 }
 function sdAssemble(B, opt) {
   if (!B.ready) return B;
@@ -9063,7 +9064,7 @@ function sdAssemble(B, opt) {
 const dpAssemble = (side, B, opt) => (side === 'def' ? sdAssemble(B, opt) : soAssemble(B, opt));
 // Which lines a player can be locked to.
 function dpLockLines(side, p) {
-  if (side === 'off') return p.pos === 'A' ? ['attack', 'mid1', 'mid2'] : ['mid1', 'mid2', 'attack'];
+  if (side === 'off') return p.pos === 'A' ? ['attack', 'mid1', 'mid2', 'mid3'] : ['mid1', 'mid2', 'mid3', 'attack'];
   const out = []; if (p.pos === 'D' || p.pos === 'L') out.push('unit1', 'unit2'); if (p.pos === 'S' || p.alt === 'S') out.push('ssdm1', 'ssdm2'); return out;
 }
 function dpReason(side, p) { return dpW(side).map(([k, lab]) => [lab, p.parts[k]]).sort((a, b) => b[1] - a[1]).slice(0, 2).map(([lab, v]) => `${lab.toLowerCase()} ${Math.round(v)}`).join(', '); }
@@ -9142,7 +9143,7 @@ function dpRender(side, bodyOnly) {
 }
 const dpPct = (w, tot) => (tot ? Math.round(1000 * w / tot) / 10 : 0);
 function sdOneHtml(lab, g, fmt) { return `<div class="depth-chip" style="display:block;"><b>${lab}</b> ${g ? `#${escapeHtml(g.jersey)} ${escapeHtml(g.name)} <span class="n-note" style="font-style:normal;">${fmt(g)}</span>` : '<span class="n-note">Not enough data yet.</span>'}</div>`; }
-function soSubText(B) { return `${B.range === 'recent' ? `<b>Last 3 weeks</b> (practices since ${escapeHtml(B.recentFrom)}): ` : ''}From logged data only. Impact Rating 0&ndash;100, 50 = average rated attack/middie, built from ${SO_W.map(([, l]) => l.toLowerCase()).join(', ')}. Drag the sliders to change the weights. ${B.range === 'recent' ? 'Only the last 3 weeks count' : 'Every practice counts the same'}; ${B.minT}+ touches to be rated; small samples are pulled toward the team. Lines are a straight ranking: top 3 attack, then middies 1&ndash;3 and 4&ndash;6.`; }
+function soSubText(B) { return `${B.range === 'recent' ? `<b>Last 3 weeks</b> (practices since ${escapeHtml(B.recentFrom)}): ` : ''}From logged data only. Impact Rating 0&ndash;100, 50 = average rated attack/middie, built from ${SO_W.map(([, l]) => l.toLowerCase()).join(', ')}. Drag the sliders to change the weights. ${B.range === 'recent' ? 'Only the last 3 weeks count' : 'Every practice counts the same'}; ${B.minT}+ touches to be rated; small samples are pulled toward the team. Lines are a straight ranking: top 3 attack, then middies 1&ndash;3, 4&ndash;6 and 7&ndash;9.`; }
 function sdSubText(B) { return `${B.range === 'recent' ? `<b>Last 3 weeks</b> (practices since ${escapeHtml(B.recentFrom)}): ` : ''}From logged data only. Defense Rating 0&ndash;100, 50 = average qualified defender: ${SD_W.map(([, l, w]) => `${l} ${w}%`).join(' · ')}. ${B.range === 'recent' ? 'Only the last 3 weeks count' : `Practices since ${escapeHtml(B.recentFrom)} count 1.5&times;`}; ${B.minR}+ defensive reps (on-ball, slides, breakdowns, caused turnovers, picks defended) to qualify. Small samples are pulled toward the team rate. Units are a straight ranking: the best 3 close D + the best LSM, then the next; SSDM pairs the same way.`; }
 // Plain list of the changes in a set, with who made them.
 function dpChangeList(side, opt) {
@@ -14053,7 +14054,7 @@ How to answer:
 Rules you never break:
 - Use ONLY the numbers in FACTS. Never invent or estimate one. If FACTS don't cover it, say what's missing and where in the tracker it would be logged.
 - Players appear as codes (P1, P2...). Always write the code exactly; never guess a name.
-- Lines and units are a straight ranking by rating within each position (offense: top 3 attack; middies 1-3 Line 1, 4-6 Line 2; defense: best 3 close D + best LSM, then the next; SSDM pairs).
+- Lines and units are a straight ranking by rating within each position (offense: top 3 attack; middies 1-3 Line 1, 4-6 Line 2, 7-9 Line 3; defense: best 3 close D + best LSM, then the next; SSDM pairs).
 - Only mention a player code that appears in FACTS. If FACTS name no player, the question is about the team or a page: answer that, don't attach it to a player.
 - Never mention FACTS, codes, or these rules; just answer.`;
 const CHAT_PARTS = {
@@ -14401,7 +14402,7 @@ function saRun(plan) {
       if (!M.ready) return { title: 'Model Starting Offense', filt: season, rows: [], note: M.why, page: 'depth' };
       const line = (lab, l) => l ? `<li><b>${lab}</b> <em>line ${Math.round(l.score)}</em><br>${l.js.map(j => `#${navEsc(j)} ${navEsc(M.players[j].name)} <span class="v">${Math.round(M.players[j].rating)}</span>`).join(' · ')}</li>` : '';
       return { title: 'Model Starting Offense', filt: `${season} · Impact Rating · ${SO_MIN_TOUCHES}+ touches`, rows: [], page: 'depth',
-        html: `<ol>${line('Attack', M.attack)}${line('Middies · Line 1', M.mid1)}${line('Middies · Line 2', M.mid2)}</ol>${saCoachNote('off', season, M)}${M.flags.length ? `<p class="sa-n">${M.flags.slice(0, 2).map(f => navEsc(f.text)).join('<br>')}</p>` : ''}<p class="sa-n">Impact Rating: expected points, Gold + Silver shooting, dominoes, xP per touch, assist/TO, shot selection, advantage per pick and scoring off the catch (weights set on the Depth Chart).</p>` };
+        html: `<ol>${line('Attack', M.attack)}${line('Middies · Line 1', M.mid1)}${line('Middies · Line 2', M.mid2)}${line('Middies · Line 3', M.mid3)}</ol>${saCoachNote('off', season, M)}${M.flags.length ? `<p class="sa-n">${M.flags.slice(0, 2).map(f => navEsc(f.text)).join('<br>')}</p>` : ''}<p class="sa-n">Impact Rating: expected points, Gold + Silver shooting, dominoes, xP per touch, assist/TO, shot selection, advantage per pick and scoring off the catch (weights set on the Depth Chart).</p>` };
     }
     const out0 = {};
     const P = plan.pick, isC = P.kind === 'concept', meta = P.c;
@@ -14958,7 +14959,7 @@ function renderMethods() {
       ex: 'If #22 sets an advantage screen on 20 possessions and we score on 9 of them, he is at 0.45 goals/poss; with the team at 0.30 on possessions without a screen advantage, his lift is +0.15. If we score 0.25 on his other on-field possessions, his Screen Edge is +0.20. Points/Poss also counts the assist on each assisted goal. Advantages Created ranks who breaks the defense with screens most often; per 10 possessions adjusts for playing time.' },
     so: { t: 'Model Starting Offense', page: 'depth', q: 'Who should start on offense, from everything we log?',
       what: 'An Impact Rating (0–100, 50 = average rated attackman or middie) from logged data only, then the top 3 attack and two middie lines as a straight ranking. Coaches set the weights with the sliders on the Depth Chart.',
-      steps: ['Eight parts, even weights to start: expected points (xG + xA, total), Gold + Silver shooting % (goals per Gold/Silver shot), dominoes created (per touch), xP per touch, assist / TO, shot selection (share of his shots that are Gold/Silver), advantage per pick (share of his screens that created an advantage), off-ball scoring off the catch (goals minus xG on shots off a feed).', 'Each part is compared with the team (0–100, 50 = average); small samples are pulled toward the team. Every practice counts the same; 20+ touches to be rated; positions come from the Depth Chart.', 'Lines are a straight ranking: top 3 attack; middies 1–3 = Line 1, 4–6 = Line 2. Drag a weight slider and the lines re-rank as you drag; Save for staff makes it the shared Coach’s lineup.'],
+      steps: ['Eight parts, even weights to start: expected points (xG + xA, total), Gold + Silver shooting % (goals per Gold/Silver shot), dominoes created (per touch), xP per touch, assist / TO, shot selection (share of his shots that are Gold/Silver), advantage per pick (share of his screens that created an advantage), off-ball scoring off the catch (goals minus xG on shots off a feed).', 'Each part is compared with the team (0–100, 50 = average); small samples are pulled toward the team. Every practice counts the same; 20+ touches to be rated; positions come from the Depth Chart.', 'Lines are a straight ranking: top 3 attack; middies 1–3 = Line 1, 4–6 = Line 2, 7–9 = Line 3. Drag a weight slider and the lines re-rank as you drag; Save for staff makes it the shared Coach’s lineup.'],
       ex: 'If #19 is the 4th-best attackman but rates higher than a Line 2 middie, the panel says to consider him at midfield.' },
     sd: { t: 'Model Starting Defense', page: 'depth', q: 'Who should start on defense, from everything we log?',
       what: 'A Defense Rating (0–100, 50 = average qualified close defender, LSM or SSDM) from logged data only, then the best close D + LSM unit, two SSDMs, a second unit, and the Goalie and FOGO picks.',
