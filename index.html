@@ -14036,9 +14036,15 @@ function scrimModel(noAdj) {
     P[j] = { j, touch: t, use, pShot: pS / z, pFeed: pF / z, pTo: pT / z, mix, fin, dom: (p.dominoes + 15 * rDom) / (t + 15),
       shots: p.shots, scr: (scr[j] || 0) / ses, advRate: ((adv[j] || 0) + 4 * 0.7) / ((scr[j] || 0) + 4), thin: t < 20 };
   });
-  // Rostered players with nothing logged still take their touches, at replacement level.
+  // Rostered players with nothing logged still take their touches. A bench middie with no data is assumed to play
+  // like the bench middies who do have data (same position, not in the top 8); anyone else, at replacement level.
+  const top8 = (SC.plan && SC.plan.top8) || [], benchLike = j => posOfJ(season, j) === 'M' && !top8.includes(j);
+  const peers = Object.values(P).filter(x => x.touch >= 10 && benchLike(x.j)), avgOf = f => peers.reduce((a, x) => a + f(x), 0) / peers.length;
+  const benchProf = peers.length >= 2 ? { use: avgOf(x => x.use), pShot: avgOf(x => x.pShot), pFeed: avgOf(x => x.pFeed), pTo: avgOf(x => x.pTo), mix: [0, 1, 2].map(i => avgOf(x => x.mix[i])), fin: [0, 1, 2].map(i => avgOf(x => x.fin[i].a / (x.fin[i].a + x.fin[i].b))), dom: avgOf(x => x.dom) } : null;
   rosterPlayers(season).forEach(r => { const j = r.jersey; if (!j || P[j]) return;
-    P[j] = { j, touch: 0, use: rUse, pShot: rShot, pFeed: rFeed, pTo: rTo, mix: rMix.slice(), fin: rFin.map(x => ({ a: 12 * x, b: 12 * (1 - x) })), dom: rDom, shots: 0, scr: 0, advRate: 0.7, thin: true, none: true }; });
+    const b = benchLike(j) && benchProf;
+    P[j] = b ? { j, touch: 0, use: b.use, pShot: b.pShot, pFeed: b.pFeed, pTo: b.pTo, mix: b.mix.slice(), fin: b.fin.map(x => ({ a: 8 * x, b: 8 * (1 - x) })), dom: b.dom, shots: 0, scr: 0, advRate: 0.7, thin: true, none: true, like: 'bench' }
+      : { j, touch: 0, use: rUse, pShot: rShot, pFeed: rFeed, pTo: rTo, mix: rMix.slice(), fin: rFin.map(x => ({ a: 12 * x, b: 12 * (1 - x) })), dom: rDom, shots: 0, scr: 0, advRate: 0.7, thin: true, none: true }; });
   // What dominoes are worth, from every logged shot: finishing after dominoes vs without, against all shots.
   const sh = d.shots.filter(s => !isOppJersey(s.shooterJersey)), gr = a => (a.length ? a.filter(s => s.goal === 1).length / a.length : 0);
   const gAll = gr(sh) || 0.35, domYes = gr(sh.filter(s => s.dominoes === 'Yes')) / gAll || 1.12, domNo = gr(sh.filter(s => s.dominoes !== 'Yes')) / gAll || 0.86;
@@ -14348,7 +14354,7 @@ function scrimWhy(r, rows) {
     `The ball goes most to ${ball.join(' and ')}. Goals come mostly from ${sc.join(', ')}.`,
     `${pct(r.fed)} of its shots come off a feed; dominoes lift the look on ${pct(r.dom)} of possessions; ${pct(r.gs)} of shots are Gold or Silver (average ${pct(avg('gs'))}); it turns it over on ${pct(r.to)} of possessions (average ${pct(avg('to'))}).`,
     `Roles: ${roles}. Chemistry ×${num(r.chem, 2)} (from how those roles have connected on every logged feed).`,
-    `<b>Biggest strength:</b> ${words[best]}. <b>Weak spot:</b> ${words[worst]}.`].concat(scrimThin(r.six).length ? [`⚠ <b>Little data</b> on ${scrimThin(r.six).join(', ')}: they’re treated as replacement level (below the team average) until more is logged, so this line could be better or worse than shown.`] : []).map(x => `<p>${x}</p>`).join('');
+    `<b>Biggest strength:</b> ${words[best]}. <b>Weak spot:</b> ${words[worst]}.`].concat(scrimThin(r.six).length ? [`⚠ <b>Little data</b> on ${scrimThin(r.six).join(', ')}: a bench middie with nothing logged is assumed to play like the bench middies who have been logged; anyone else with little data is pulled toward a below-average player. This line could be better or worse than shown.`] : []).map(x => `<p>${x}</p>`).join('');
 }
 // ---- small SVG charts ----
 function scrimGauge(p) {
