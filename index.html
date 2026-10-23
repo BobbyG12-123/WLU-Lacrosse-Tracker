@@ -14019,8 +14019,13 @@ function scrimModel(noAdj) {
   // Little data is pulled toward a replacement-level player (below the team average: a guy who hasn't been on the field
   // much usually has a reason), not toward the team average. No data at all = replacement level.
   const uses = all.map(p => (p.shots + p.potAst + p.to) / Math.max(1, p.sessions.size)).filter(x => x > 0).sort((a, b) => a - b);
-  const rUse = uses.length ? uses[Math.floor(uses.length * 0.25)] : 3, rTo = Math.min(0.6, tTo * 1.2), rSF = 1 - rTo, rShot = rSF * tShot / (tShot + tFeed), rFeed = rSF - rShot;
-  const rFin = tFin.map(x => x * 0.85), rMix0 = [tMix[0] * 0.8, tMix[1], tMix[2] * 1.2], rMt = rMix0.reduce((a, b) => a + b, 0), rMix = rMix0.map(x => x / rMt), rDom = tDom * 0.7;
+  const q = (arr, f) => { const a = arr.filter(x => isFinite(x)).sort((x, y) => x - y); return a.length ? a[Math.min(a.length - 1, Math.floor(f * a.length))] : null; };
+  const rated = all.filter(p => p.shots + p.potAst + p.to >= 30), tt = p => p.shots + p.potAst + p.to;
+  const rUse = q(uses, 0.25) || 3, rTo = Math.min(0.6, q(rated.map(p => p.to / tt(p)), 0.75) || tTo * 1.2), rSF = 1 - rTo, rShot = rSF * tShot / (tShot + tFeed), rFeed = rSF - rShot;
+  const tierRate = (p, i) => { const a = p.ownShots.filter(s => ti(s.shotQuality) === i); return a.length >= 5 ? a.filter(s => s.goal === 1).length / a.length : NaN; };
+  const rFin = [0, 1, 2].map(i => Math.min(tFin[i], q(rated.map(p => tierRate(p, i)), 0.25) || tFin[i] * 0.85));
+  const gsShare = p => p.shots ? p.ownShots.filter(s => ti(s.shotQuality) < 2).length / p.shots : NaN, rGs = q(rated.map(gsShare), 0.25) || (tMix[0] + tMix[1]) * 0.85;
+  const rMix0 = [rGs * tMix[0] / (tMix[0] + tMix[1]), rGs * tMix[1] / (tMix[0] + tMix[1]), 1 - rGs], rMix = rMix0, rDom = q(rated.map(p => p.dominoes / tt(p)), 0.25) || tDom * 0.7;
   all.forEach(p => {
     const j = p.jersey, t = p.shots + p.potAst + p.to; if (!t) return;
     const k = 30, pS = (p.shots + k * rShot) / (t + k), pF = (p.potAst + k * rFeed) / (t + k), pT = (p.to + k * rTo) / (t + k), z = pS + pF + pT;
@@ -14077,7 +14082,7 @@ function scrimBeta(a, b) { // quick beta draw via two gammas (Marsaglia-Tsang)
   const g = k => { if (k < 1) return g(k + 1) * Math.pow(SCRIM_RNG(), 1 / k); const dd = k - 1 / 3, c = 1 / Math.sqrt(9 * dd); for (;;) { let x, v; do { const u1 = SCRIM_RNG() || 1e-9, u2 = SCRIM_RNG(); x = Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2); v = 1 + c * x; } while (v <= 0); v = v * v * v; const u = SCRIM_RNG(); if (u < 1 - 0.0331 * x ** 4 || Math.log(u) < 0.5 * x * x + dd * (1 - v + Math.log(v))) return dd * v; } };
   const x = g(a), y = g(b); return x / (x + y);
 }
-const scrimStat = () => ({ poss: 0, to: 0, shots: 0, gs: 0, dom: 0, fed: 0, fedG: 0, goals: 0, goalsBy: {}, touch: {} });
+const scrimStat = () => ({ xg: 0, poss: 0, to: 0, shots: 0, gs: 0, dom: 0, fed: 0, fedG: 0, goals: 0, goalsBy: {}, touch: {} });
 const scrimNorm = () => { const u1 = SCRIM_RNG() || 1e-9, u2 = SCRIM_RNG(); return Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2); };
 const scrimLogit = p => Math.log(p / (1 - p)), scrimInv = x => 1 / (1 + Math.exp(-x));
 // One "world": each player's true finishing drawn from his posterior, plus that day's form.
@@ -14112,6 +14117,7 @@ function scrimPossessions(M, line, n, world, ctx, calib, typeOverride, st) {
         if (scrimOpt('types')) pr *= typeMult(type);
         pr *= calib * ctx.oppDef;
         pr = scrimInv(scrimLogit(Math.min(0.95, Math.max(0.01, pr))) + world.team);
+        if (st) st.xg += pr;
         const made = SCRIM_RNG() < pr;
         if (made) { g++; pts += fedBy >= 0 ? 2 : 1; }
         if (st) { st.shots++; if (t < 2) st.gs++; if (lifted) st.dom++; if (fedBy >= 0) { st.fed++; if (made) st.fedG++; } if (made) { st.goals++; st.goalsBy[p.j] = (st.goalsBy[p.j] || 0) + 1; } }
@@ -14288,15 +14294,16 @@ function scrimGroups() {
   return out;
 }
 function scrimLineStats(M, calib, ctx, six, reps) {
-  const st = scrimStat(), per = [];
-  for (let r = 0; r < reps; r++) {
-    const w = scrimWorld(M, six), lam = ctx.poss; let n = 0, L = Math.exp(-lam), pr = 1; do { n++; pr *= SCRIM_RNG(); } while (pr > L); n--;
-    per.push(scrimPossessions(M, six, n, w, ctx, calib, undefined, st).g);
-  }
-  const e15 = scrimMean(per), sd = Math.sqrt(per.reduce((a, b) => a + (b - e15) ** 2, 0) / Math.max(1, per.length - 1)), gpp = st.goals / Math.max(1, st.poss);
+  // Rate a lineup by expected goals (each shot counts its chance of going in), over many simulated days.
+  const st = scrimStat(), per = [], N = 25; reps = 80;
+  for (let r = 0; r < reps; r++) { const w = scrimWorld(M, six), x0 = st.xg; scrimPossessions(M, six, N, w, ctx, calib, undefined, st); per.push((st.xg - x0) / N); }
+  const gpp = st.xg / Math.max(1, st.poss), P = ctx.poss, e15 = gpp * P;
+  const vb = per.reduce((a, v) => a + (v - gpp) ** 2, 0) / Math.max(1, per.length - 1);
+  const sd = Math.sqrt(P * gpp * (1 - gpp) + P * P * vb + gpp * gpp * P);   // shot luck + good/bad days + how many possessions
+  const pseudo = [Math.max(0, e15 - 1.28 * sd), e15 + 1.28 * sd];
   const ps = six.map(j => M.P[j]).filter(Boolean), us = ps.reduce((a, p) => a + p.use, 0); let cw = 0, cs = 0;
   ps.forEach(a => ps.forEach(b => { if (a === b) return; const w2 = (a.use / us) * (b.use / us); cw += w2 * (M.roleMult[a.role + '>' + b.role] || 1); cs += w2; }));
-  return { e15, p10: scrimQ(per, 0.1), p90: scrimQ(per, 0.9), sd, gpp, to: st.to / Math.max(1, st.poss), gs: st.gs / Math.max(1, st.shots), dom: st.dom / Math.max(1, st.poss), fed: st.fed / Math.max(1, st.shots),
+  return { e15, p10: Math.round(pseudo[0]), p90: Math.round(pseudo[1]), sd, gpp, to: st.to / Math.max(1, st.poss), gs: st.gs / Math.max(1, st.shots), dom: st.dom / Math.max(1, st.poss), fed: st.fed / Math.max(1, st.shots),
     shift: 1 - Math.pow(1 - gpp, ctx.poss / 3), chem: cs ? cw / cs : 1, touch: st.touch, goalsBy: st.goalsBy, goals: st.goals };
 }
 // Builds the table in chunks so the page stays responsive.
