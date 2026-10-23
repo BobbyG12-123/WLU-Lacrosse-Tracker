@@ -14218,7 +14218,7 @@ function scrimWorkerSrc() {
   return [`let SCRIM_SEED = 1; const SC = { plan: { opts: {} } };`, `const SCRIM_TYPES = ${JSON.stringify(SCRIM_TYPES)}; const SCRIM_OPTS = ${JSON.stringify(SCRIM_OPTS)};`,
     `const SCRIM_RNG = ${SCRIM_RNG.toString()}; const scrimNorm = ${scrimNorm.toString()}; const scrimLogit = ${scrimLogit.toString()}; const scrimInv = ${scrimInv.toString()}; const scrimStat = ${scrimStat.toString()};`,
     ...fns.map(f => f.toString()),
-    `onmessage = e => { const d = e.data; SC.plan.opts = d.opts; SCRIM_SEED = d.seed; postMessage(d.fn === 'days' ? scrimDaysCore(d.M, d.calib, d.J, d.D, d.seed) : scrimSimCore(d.M, d.calib, d.state, d.N, d.cfg)); };`].join('\n');
+    `let W_M = null, W_J = null, W_C = 1; onmessage = e => { const d = e.data; if (d.opts) SC.plan.opts = d.opts; if (d.fn === 'init') { W_M = d.M; W_J = d.J; W_C = d.calib; postMessage({ ready: 1 }); return; } if (d.fn === 'day') { postMessage(scrimDaysCore(W_M, W_C, W_J, d.D, d.seed)); return; } SCRIM_SEED = d.seed; postMessage(scrimSimCore(d.M, d.calib, d.state, d.N, d.cfg)); };`].join('\n');
 }
 function scrimSimulateAsync(M, calib, state, N, maxW) {
   let url; try { url = URL.createObjectURL(new Blob([scrimWorkerSrc()], { type: 'text/javascript' })); } catch (e) { return Promise.resolve(scrimSimulate(M, calib, state, Math.min(N, 3000))); }
@@ -14560,18 +14560,22 @@ function scrimDaysCore(M, calib, J, D, seed) {
   return { s1, s2, pm, opt, optMid, optAtt, expMid, expAtt, D };
 }
 function scrimMeanWorld(M, js) { const W = { fin: {}, team: 0 }; js.forEach(j => { const p = M.P[j]; if (p) W.fin[j] = p.fin.map(f => Math.min(0.95, f.a / (f.a + f.b) * (p.finMult || 1))); }); return W; }
-// Run a job on background workers (falls back to the page if workers aren't available).
-function scrimWorkerJobs(payloads) {
-  let url; try { url = URL.createObjectURL(new Blob([scrimWorkerSrc()], { type: 'text/javascript' })); } catch (e) { return Promise.reject(e); }
-  const opts = Object.fromEntries(SCRIM_OPTS.map(o => [o[0], scrimOpt(o[0])]));
-  return Promise.all(payloads.map(pl => new Promise((res, rej) => { const w = new Worker(url); w.onmessage = e => { res(e.data); w.terminate(); }; w.onerror = err => { rej(err); w.terminate(); }; w.postMessage(Object.assign({ opts }, pl)); })))
-    .finally(() => URL.revokeObjectURL(url));
-}
+// Days are handed out in small batches to whoever is free: the background workers (set up once with the
+// lineups) and the page itself between screen updates. Each batch has a fixed seed, so the result doesn't
+// depend on who ran it. (On Macs the workers often run on the slower efficiency cores, so the page helps.)
 async function scrimDays(M, calib, J, D) {
-  const W = Math.max(1, Math.min(8, (navigator.hardwareConcurrency || 2) - 1)), per = Array.from({ length: W }, (_, k) => Math.floor(D / W) + (k < D % W ? 1 : 0)).filter(x => x > 0);
-  let parts;
-  try { parts = await scrimWorkerJobs(per.map((d, k) => ({ fn: 'days', M, calib, J, D: d, seed: 7770 + k * 101 }))); }
-  catch (e) { console.error('workers', e); const keep = SCRIM_SEED; parts = [scrimDaysCore(M, calib, J, Math.min(D, 12), 7770)]; SCRIM_SEED = keep; }
+  const jobs = []; for (let d = 0, k = 0; d < D; d += 2, k++) jobs.push({ D: Math.min(2, D - d), seed: 7770 + k * 101 });
+  const parts = []; let next = 0, url = null;
+  const opts = Object.fromEntries(SCRIM_OPTS.map(o => [o[0], scrimOpt(o[0])]));
+  const worker = () => new Promise(res => { let w; try { w = new Worker(url); } catch (e) { return res(); }
+    const take = () => { if (next >= jobs.length) { w.terminate(); return res(); } const j = jobs[next++]; w.onmessage = e => { parts.push(e.data); take(); }; w.postMessage({ fn: 'day', D: j.D, seed: j.seed }); };
+    w.onerror = e => { console.error('worker', e); w.terminate(); res(); };
+    w.onmessage = () => take(); w.postMessage({ fn: 'init', M, calib, J, opts }); });
+  const page = async () => { while (next < jobs.length) { const j = jobs[next++], keep = SCRIM_SEED; parts.push(scrimDaysCore(M, calib, J, j.D, j.seed)); SCRIM_SEED = keep; await new Promise(r => setTimeout(r, 0)); } };
+  const W = Math.max(0, Math.min(8, (navigator.hardwareConcurrency || 2) - 1));
+  try { url = URL.createObjectURL(new Blob([scrimWorkerSrc()], { type: 'text/javascript' })); } catch (e) { url = null; }
+  await Promise.all((url ? Array.from({ length: W }, worker) : []).concat([page()]));
+  if (url) URL.revokeObjectURL(url);
   const o = parts[0]; parts.slice(1).forEach(p => { ['s1', 's2', 'pm', 'opt', 'optMid', 'optAtt', 'expMid', 'expAtt'].forEach(k => { for (let i = 0; i < p[k].length; i++) o[k][i] += p[k][i]; }); o.D += p.D; });
   return o;
 }
