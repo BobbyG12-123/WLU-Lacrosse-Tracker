@@ -253,6 +253,19 @@
   body.player-mode .chat-fab, body.player-mode .chat-panel { display: none !important; }
   .chat-fab { position: fixed; right: 16px; bottom: calc(16px + env(safe-area-inset-bottom, 0px)); z-index: 60; width: 46px; height: 46px; border-radius: 50%; border: 1px solid rgba(255,255,255,.25); background: #0B2545; color: #fff; font-size: 20px; line-height: 1; padding: 0; box-shadow: 0 4px 14px rgba(0,0,0,.22); cursor: pointer; display: flex; align-items: center; justify-content: center; }
   .chat-fab[hidden], .chat-panel[hidden] { display: none !important; }
+  .sc-row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 6px 0; } .sc-row .btn { padding: 8px 14px; }
+  .sc-g { font: 600 13px var(--text); display: flex; gap: 6px; align-items: center; margin-right: 12px; } .sc-g select, .sc-g input { font: 13px var(--text); padding: 3px 6px; }
+  .sc-opts { margin: 6px 0; font: 13px var(--text); } .sc-opts summary { cursor: pointer; font-weight: 600; } .sc-opts label { display: block; margin: 3px 0 3px 8px; }
+  .sc-sum { font: 15px var(--text); margin: 0 0 8px; }
+  .sc-q { border-top: 1px solid var(--line); padding: 8px 0; } .sc-qh { display: flex; flex-wrap: wrap; gap: 10px; align-items: baseline; font-family: var(--text); }
+  .sc-line { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; margin: 4px 0 0 10px; font-family: var(--text); } .sc-ln { font: 600 12px var(--text); color: var(--muted); min-width: 92px; }
+  .sc-v { margin-left: auto; font: 13px var(--text); } .sc-p { font-size: 12px; padding: 3px 8px; } .sc-why { width: 100%; margin-left: 96px; }
+  .sc-tag { font: 700 10.5px var(--text); color: var(--good); border: 1px solid var(--good); border-radius: 999px; padding: 0 6px; }
+  .sc-swap { display: flex; flex-wrap: wrap; gap: 4px; margin: 6px 0 0 96px; }
+  .sc-opp { border-top: 1px solid var(--line); padding: 6px 0; } .sc-fields { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px; } .sc-fields label { display: flex; flex-direction: column; font: 600 11.5px var(--text); color: var(--muted); } .sc-fields input { width: 96px; font: 13px var(--text); padding: 3px 6px; }
+  .sc-warn { font: 600 12px var(--text); color: var(--critical); margin: 4px 0 0 10px; }
+  .sc-ul { margin: 6px 0; padding-left: 18px; font: 13px var(--text); line-height: 1.55; }
+  @media print { body.printing-scrim .view:not(#scrimView), body.printing-scrim .sc-opts, body.printing-scrim .sc-row, body.printing-scrim .chat-fab { display: none !important; } }
   .bf-panel { max-width: 760px; }
   .bf-top { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-bottom: 8px; font-family: var(--text); }
   .bf-strip { display: flex; flex-wrap: wrap; gap: 3px; margin-bottom: 10px; max-height: 92px; overflow-y: auto; }
@@ -2386,6 +2399,10 @@
 
   <section id="briefView" class="view"><div id="briefWrap"></div></section>
   <section id="profileView" class="view"><div id="profileWrap"></div></section>
+  <section id="scrimView" class="view pm-off">
+    <p class="view-intro">Lineups for the scrimmages under our rules, simulated possession by possession.</p>
+    <div id="scrimWrap"></div>
+  </section>
   <section id="backfillView" class="view pm-off">
     <p class="view-intro">Go back through a practice on film and fill in defense, picks, screens and missed turnovers, shot by shot.</p>
     <div id="backfillWrap"></div>
@@ -3009,6 +3026,10 @@ async function loadAll() {
     DP_COACH[season] = o;
     if (window.__appReady && season === DEPTH_SEASON) { dpRender('off'); dpRender('def'); }
   }, e => console.error('coach lineup sync error', e)));
+  DB.doc('app/scrimPlan').onSnapshot(snap => {
+    try { SC.plan = snap.exists ? Object.assign(scrimPlanDefaults(), JSON.parse(snap.data().json || '{}')) : null; } catch (e) { SC.plan = null; }
+    if (window.__appReady && document.getElementById('scrimView').classList.contains('active') && !SC.busy) renderScrim();
+  }, e => console.error('scrimmage plan sync error', e));
   ADV_SEASONS.forEach(season => DB.doc('app/backfill_' + season).onSnapshot(snap => {
     const d = snap.exists ? snap.data() : {}; Object.keys(d).forEach(k => { if (/^r_/.test(k)) BF.reviewed[k] = 1; });
     if (window.__appReady && document.getElementById('backfillView').classList.contains('active')) renderBackfill();
@@ -3716,6 +3737,7 @@ function switchTab(viewId) {
   if (viewId === 'reportsView') renderReports();
   if (viewId === 'depthView') renderDepthChart();
   if (viewId === 'backfillView') { bfInit(); renderBackfill(); }
+  if (viewId === 'scrimView') { scrimInit(); renderScrim(); }
   if (viewId === 'goalieView') { renderGoalieHeat(); renderGoalieAdvanced(); }
   if (viewId === 'faceoffView') renderFaceoffs();
   if (viewId === 'tableView') renderTable();
@@ -8805,7 +8827,7 @@ function renderDepthChart() {
   };
   const groups = POS_CODES.filter(c => c !== 'X').map(c => [c, DEPTH_POS_LABEL[c]]).concat([[null, 'Unassigned']]);
   const unassigned = everyone.filter(j => !posOf(j));
-  wrap.innerHTML = `<details${depthEditJ || unassigned.length ? ' open' : ''}><summary class="panel-title" style="cursor:pointer;">Positions${unassigned.length ? ` &middot; ${unassigned.length} unassigned` : ''}</summary>
+  wrap.innerHTML = `<details${depthEditJ || unassigned.length ? ' open' : ''}><summary style="cursor:pointer; list-style-position:inside;"><span class="panel-title" style="display:inline;">Positions</span>${unassigned.length ? ` <span class="n-note">&middot; ${unassigned.length} unassigned</span>` : ''}</summary>
     <p class="panel-sub">Tap a player&rsquo;s position to change it, and set anything else he plays. Saved for every coach. The lineups above use these.</p>
     ${groups.map(([c, label]) => { const g = everyone.filter(j => (c ? posOf(j) === c : !posOf(j))).sort((a, b) => Number(a) - Number(b)); return g.length ? `<p class="panel-sub" style="margin:10px 0 4px;"><b>${escapeHtml(label)}</b> (${g.length})</p><div class="depth-rest">${g.map(chip).join('')}</div>` : ''; }).join('')}</details>`;
   document.querySelectorAll('#depthView [data-edit]').forEach(b => b.addEventListener('click', () => { depthEditJ = depthEditJ === b.dataset.edit ? null : b.dataset.edit; renderDepthChart(); }));
@@ -13502,7 +13524,7 @@ const NAV = [
   { id: 'lab', name: 'Analytics Lab', pages: [
     ['labhome', 'Lab Home', 'labView'], ['methods', 'Methods', 'methodsView'], ['xg', 'xG Model', 'efficiencyView', 'xG Model'], ['xgover', 'Expected-Goals Overview', 'efficiencyView', 'Overview'],
     ['ga', 'Goals Added', 'efficiencyView', 'Goals Added'], ['projsk', 'Skater Projections', 'playerView', 'Projections'], ['projgk', 'Goalie Projections', 'goalieView', 'Projections']] },
-  { id: 'pers', name: 'Personnel', pages: [['profile', 'Player Profile', 'profileView'], ['compare', 'Compare', 'compareView'], ['depth', 'Depth Chart', 'depthView'], ['roster', 'Roster', 'playerView', 'Roster']] },
+  { id: 'pers', name: 'Personnel', pages: [['profile', 'Player Profile', 'profileView'], ['compare', 'Compare', 'compareView'], ['depth', 'Depth Chart', 'depthView'], ['scrim', 'Scrimmage Planner', 'scrimView'], ['roster', 'Roster', 'playerView', 'Roster']] },
   { id: 'rec', name: 'Recruiting', pages: [['recruits', 'Recruits', 'recruitsView'], ['board', 'Board', 'boardView']] },
   { id: 'data', name: 'Data', pages: [['shotlog', 'Shot Log', 'tableView'], ['health', 'Data Health', 'healthView'], ['where', 'Where Did It Go?', 'whereView']] },
 ];
@@ -13642,7 +13664,8 @@ const NAV_KW = {
   labhome: 'lab models analytics advanced metrics 3d all models', xg: 'xg expected goals model shot cone 3d how likely score look chance how it works',
   xgover: 'expected goals overview model', ga: 'goals added value credit impact contribution who helps most offense defense',
   projsk: 'projections projected projection forecast 17 games goals assists points season predict true level role bump', projgk: 'goalie projections projected saves forecast',
-  compare: 'compare comparison side by side versus two players seasons', depth: 'depth chart lines starters first line second line rotation who starts',
+  compare: 'compare comparison side by side versus two players seasons', scrim: 'scrimmage planner simulation simulate lineups lines quarters vmi lenoir rhyne win probability expected goals plan rotation',
+  depth: 'depth chart lines starters first line second line rotation who starts',
   roster: 'roster players list jerseys numbers add player', recruits: 'recruits recruiting prospects evaluations ratings high school', board: 'board recruiting board top targets',
   shotlog: 'shot log all shots raw data edit delete entries list', health: 'data health coverage missing logging quality reps needed sample size export backup import lr data', where: 'where did it go old tab moved find old page map',
 };
@@ -13895,6 +13918,443 @@ function saPlan(q) {
   return { type: 'rank', pick, n: n || 3, dir, filters };
 }
 // ---- running a plan ----
+// ---------------- Scrimmage Planner (Bobby, Oct 22) ----------------
+// Builds quarter-by-quarter offensive lineups for a set of scrimmages under the coaches' rules,
+// then simulates every possession thousands of times to give each line, quarter and game an
+// expected score, a ceiling (90th percentile) and a floor (10th), plus win chances vs the opponent.
+// The plan (rules, opponents, chosen lines, options) is shared: app/scrimPlan. Nothing is sent anywhere.
+//
+// Player model (from logged 2027 data, small samples pulled to the team):
+//   touches = shots + shots set up + turnovers; each touch is a shot, a feed or a turnover;
+//   shot quality mix (Gold/Silver/Bronze) and finishing on each tier; dominoes per touch.
+// Possession: someone gets the ball (by usage) -> turnover, shot, or feed to a teammate who shoots;
+//   dominoes can lift the look a tier; the goal chance is his finishing on that tier, adjusted for
+//   good/bad days, crowding, role chemistry, possession type, practice-to-game calibration and the
+//   opponent's defense. Their possessions are simulated against our defense and goalie the same way.
+let SCRIM_SEED = 0x2545F491;
+const SCRIM_RNG = () => { let s = SCRIM_SEED; s ^= s << 13; s ^= s >>> 17; s ^= s << 5; SCRIM_SEED = s; return ((s >>> 0) % 1e9) / 1e9; };
+const scrimSeed = n => { SCRIM_SEED = (n >>> 0) || 1; };
+const SCRIM_OPTS = [
+  ['steps', 'Step-by-step possessions (dominoes lift the look, feeds lead to catch shots)', true],
+  ['usage', 'Usage tradeoff (crowded lines share the ball, efficiency shifts with it)', true],
+  ['roles', 'Role chemistry (creator / finisher / screener pairs, from all logged feeds)', true],
+  ['calib', 'Practice-to-game calibration (an average line scores like last season’s games)', true],
+  ['days', 'Good and bad days (whole-day form for each player and the team)', true],
+  ['types', 'Possession types (half-field, transition, zone, man-up mix from game tags)', true],
+  ['varposs', 'Possessions that vary from quarter to quarter', true],
+  ['opp', 'Opponent adjustment (their defense vs our offense)', true],
+  ['winprob', 'Win probability (their offense vs our defense)', true],
+  ['ourD', 'Our defense and goalie in the win probability', true],
+  ['fo', 'Possession battle (faceoff % shifts possessions)', true],
+  ['special', 'Special teams (man-up and man-down possessions)', true],
+  ['situ', 'Situational line use (best line for settled vs transition)', true],
+  ['match', 'Matchup notes (their top defenders and goalie)', true],
+  ['scen', 'Scenario tools (player out, hot goalie, starting score)', true],
+];
+const SCRIM_MODES = [['raw', 'Raw best'], ['mix', 'Mix: learn every pair'], ['floor', 'Safest floor'], ['target', 'Best chance to score X']];
+const SC = { plan: null, res: null, busy: false, view: 'coach', edit: null, msg: '' };
+function scrimSeason() { return currentAdvSeason(); }
+function scrimName(j) { return lastNameOf(nameFor(j, scrimSeason()) || '#' + j); }
+function scrimOpt(k) { const p = SC.plan; return p && p.opts && p.opts[k] !== undefined ? !!p.opts[k] : !!(SCRIM_OPTS.find(o => o[0] === k) || [])[2]; }
+// ---- player model ----
+function scrimModel() {
+  const season = scrimSeason(), d = soData(season), xgOf = d.xgOf, P = {};
+  const tiers = ['1-Gold', '2-Silver', '3-Bronze'], ti = q => Math.max(0, tiers.indexOf(q));
+  const all = Object.values(d.players).filter(p => p.jersey && !isOppJersey(p.jersey));
+  const T = { touch: 0, shots: 0, feeds: 0, to: 0, dom: 0, tierN: [0, 0, 0], tierG: [0, 0, 0], catN: [0, 0, 0] };
+  all.forEach(p => { T.touch += p.shots + p.potAst + p.to; T.shots += p.shots; T.feeds += p.potAst; T.to += p.to; T.dom += p.dominoes;
+    p.ownShots.forEach(s => { const t = ti(s.shotQuality); T.tierN[t]++; if (s.goal === 1) T.tierG[t]++; if (s.assistJersey && Number(s.offDodge) !== 1) T.catN[t]++; }); });
+  const tShot = T.shots / T.touch, tFeed = T.feeds / T.touch, tTo = T.to / T.touch, tDom = T.dom / T.touch;
+  const tMix = T.tierN.map(n => n / Math.max(1, T.shots)), tFin = T.tierG.map((g, i) => (g + 1) / (T.tierN[i] + 3)), tCat = T.catN.map(n => n / Math.max(1, T.catN.reduce((a, b) => a + b, 0)));
+  // Between-day spread in finishing (method of moments on per-practice goal rates).
+  let vb = [], mean = T.tierG.reduce((a, b) => a + b, 0) / Math.max(1, T.shots);
+  all.forEach(p => { const byS = {}; p.ownShots.forEach(s => { const k = sessKey(s); (byS[k] = byS[k] || [0, 0])[0] += 1; if (s.goal === 1) byS[k][1] += 1; });
+    const xs = Object.values(byS).filter(x => x[0] >= 3); if (xs.length < 4) return;
+    const r = xs.map(x => x[1] / x[0]), m = r.reduce((a, b) => a + b, 0) / r.length, v = r.reduce((a, b) => a + (b - m) ** 2, 0) / (r.length - 1);
+    const binom = xs.reduce((a, x) => a + m * (1 - m) / x[0], 0) / xs.length; vb.push(Math.max(0, v - binom)); });
+  vb.sort((a, b) => a - b);
+  const dayVar = vb.length ? vb[Math.floor(vb.length / 2)] : 0.01;
+  const daySd = Math.max(0.12, Math.min(0.6, Math.sqrt(dayVar) / Math.max(0.05, mean * (1 - mean))));   // on the logit scale
+  // Team-wide day effect: spread of team goal rate across practices.
+  const tbyS = {}; all.forEach(p => p.ownShots.forEach(s => { const k = sessKey(s); (tbyS[k] = tbyS[k] || [0, 0])[0]++; if (s.goal === 1) tbyS[k][1]++; }));
+  const tr = Object.values(tbyS).filter(x => x[0] >= 15).map(x => x[1] / x[0]);
+  const tm = tr.reduce((a, b) => a + b, 0) / Math.max(1, tr.length), tv = tr.length > 2 ? tr.reduce((a, b) => a + (b - tm) ** 2, 0) / (tr.length - 1) : 0;
+  const tbin = Object.values(tbyS).filter(x => x[0] >= 15).reduce((a, x) => a + tm * (1 - tm) / x[0], 0) / Math.max(1, tr.length);
+  const teamDaySd = Math.max(0.05, Math.min(0.4, Math.sqrt(Math.max(0, tv - tbin)) / Math.max(0.05, tm * (1 - tm))));
+  // Screens set / advantages, for roles.
+  const scr = {}, adv = {}; d.possList.filter(pp => pp.team === 'WLU').forEach(pp => (pp.screens || []).forEach(x => { if (x.s && !isOppJersey(x.s)) { scr[x.s] = (scr[x.s] || 0) + 1; if (x.adv === 'Yes') adv[x.s] = (adv[x.s] || 0) + 1; } }));
+  const sessN = Math.max(1, new Set(d.shots.map(sessKey)).size);
+  all.forEach(p => {
+    const j = p.jersey, t = p.shots + p.potAst + p.to; if (!t) return;
+    const k = 30, pS = (p.shots + k * tShot) / (t + k), pF = (p.potAst + k * tFeed) / (t + k), pT = (p.to + k * tTo) / (t + k), z = pS + pF + pT;
+    const n = [0, 0, 0], g = [0, 0, 0]; p.ownShots.forEach(s => { const i = ti(s.shotQuality); n[i]++; if (s.goal === 1) g[i]++; });
+    const mix = n.map((x, i) => (x + 10 * tMix[i]) / (p.shots + 10));
+    const fin = n.map((x, i) => ({ a: g[i] + 12 * tFin[i], b: x - g[i] + 12 * (1 - tFin[i]) }));   // Beta posterior per tier
+    P[j] = { j, touch: t, use: t / Math.max(1, p.sessions.size), pShot: pS / z, pFeed: pF / z, pTo: pT / z, mix, fin, dom: (p.dominoes + 15 * tDom) / (t + 15),
+      shots: p.shots, scr: (scr[j] || 0) / Math.max(1, p.sessions.size), advRate: ((adv[j] || 0) + 4 * 0.7) / ((scr[j] || 0) + 4) };
+  });
+  // Roles: creator (dominoes + feeds), finisher (finishing + catch shots), screener (screens set).
+  const vals = k => Object.values(P).map(x => x[k]), zf = (k, v) => { const a = vals(k), m = a.reduce((x, y) => x + y, 0) / a.length, sd = Math.sqrt(a.reduce((x, y) => x + (y - m) ** 2, 0) / Math.max(1, a.length - 1)) || 1; return (v - m) / sd; };
+  Object.values(P).forEach(x => { x.finRate = x.fin.reduce((a, f, i) => a + x.mix[i] * f.a / (f.a + f.b), 0); x.creat = x.dom + x.pFeed; });
+  Object.values(P).forEach(x => { const c = zf('creat', x.creat), f = zf('finRate', x.finRate), s = zf('scr', x.scr); const best = Math.max(c, f, s); x.role = best < 0.3 ? 'balanced' : best === c ? 'creator' : best === f ? 'finisher' : 'screener'; });
+  // Role-pair chemistry from every logged feed: goals vs expected when a role feeds a role.
+  const pr = {}; let pg = 0, px = 0;
+  d.shots.forEach(s => { const a = P[s.assistJersey], b = P[s.shooterJersey]; if (!a || !b || s.assistJersey === s.shooterJersey) return; const key = a.role + '>' + b.role, x = xgOf(s), r = (pr[key] = pr[key] || { g: 0, x: 0, n: 0 }); r.g += s.goal === 1 ? 1 : 0; r.x += x; r.n++; pg += s.goal === 1 ? 1 : 0; px += x; });
+  const base = px ? pg / px : 1, roleMult = {};
+  Object.keys(pr).forEach(k => { const r = pr[k]; roleMult[k] = Math.max(0.85, Math.min(1.15, ((r.g + 20 * base * (r.x / r.n)) / (r.x + 20 * (r.x / r.n))) / base)); });
+  const meanUse = Object.values(P).reduce((a, x) => a + x.use, 0) / Math.max(1, Object.keys(P).length);
+  return { P, tMix, tFin, tCat, daySd, teamDaySd, roleMult, meanUse, sessN, pairs: pr };
+}
+// ---- opponent / game context ----
+function scrimCtx(game) {
+  const p = SC.plan, o = (p.opps || {})[game.opp] || {}, wl = p.wl || {};
+  const d3 = wl.d3Eff || 0.267, ourPace = wl.pace || 35, theirPace = o.pace || ourPace;
+  const div = o.div || { off: 1, def: 1 };
+  // Our goals per possession vs this defense, relative to an average D3 defense.
+  const oppDef = scrimOpt('opp') ? (o.adjDef && o.lgEff ? (o.adjDef / o.lgEff) * (div.def || 1) : 1) : 1;
+  const oppOffRate = (o.adjOff && o.lgEff ? (o.adjOff / o.lgEff) * (div.off || 1) : 1) * d3;
+  const poss = (ourPace + theirPace) / 2 / 4;   // possessions per team per quarter
+  return { o, oppDef, oppOffRate, poss, wl };
+}
+const SCRIM_TYPES = [['half', 0.526, 0.278], ['trans', 0.366, 0.209], ['zone', 0.051, 0.094], ['manup', 0.057, 0.361]];
+function scrimPick(arr, w) { let t = 0; w.forEach(x => { t += x; }); let r = SCRIM_RNG() * t; for (let i = 0; i < arr.length; i++) { r -= w[i]; if (r <= 0) return arr[i]; } return arr[arr.length - 1]; }
+function scrimBeta(a, b) { // quick beta draw via two gammas (Marsaglia-Tsang)
+  const g = k => { if (k < 1) return g(k + 1) * Math.pow(SCRIM_RNG(), 1 / k); const dd = k - 1 / 3, c = 1 / Math.sqrt(9 * dd); for (;;) { let x, v; do { const u1 = SCRIM_RNG() || 1e-9, u2 = SCRIM_RNG(); x = Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2); v = 1 + c * x; } while (v <= 0); v = v * v * v; const u = SCRIM_RNG(); if (u < 1 - 0.0331 * x ** 4 || Math.log(u) < 0.5 * x * x + dd * (1 - v + Math.log(v))) return dd * v; } };
+  const x = g(a), y = g(b); return x / (x + y);
+}
+const scrimNorm = () => { const u1 = SCRIM_RNG() || 1e-9, u2 = SCRIM_RNG(); return Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2); };
+const scrimLogit = p => Math.log(p / (1 - p)), scrimInv = x => 1 / (1 + Math.exp(-x));
+// One "world": each player's true finishing drawn from his posterior, plus that day's form.
+function scrimWorld(M, js) {
+  const W = { fin: {}, team: scrimOpt('days') ? scrimNorm() * M.teamDaySd : 0 };
+  js.forEach(j => { const p = M.P[j]; if (!p) return; const day = scrimOpt('days') ? scrimNorm() * M.daySd : 0; W.fin[j] = p.fin.map(f => scrimInv(scrimLogit(Math.min(0.97, Math.max(0.03, scrimBeta(f.a, f.b)))) + day)); });
+  return W;
+}
+// Simulate n possessions for one line of six; returns goals and points arrays (one per possession).
+function scrimPossessions(M, line, n, world, ctx, calib, typeOverride) {
+  const ps = line.map(j => M.P[j]).filter(Boolean); if (!ps.length) return { g: 0, pts: 0, n };
+  const useSum = ps.reduce((a, p) => a + p.use, 0), normal = M.meanUse * 6;
+  const share = ps.map(p => p.use / useSum), crowd = scrimOpt('usage') ? ps.map((p, i) => Math.max(0.88, Math.min(1.12, Math.pow((share[i]) / (p.use / normal), -0.15)))) : ps.map(() => 1);
+  let g = 0, pts = 0;
+  const typeMult = t => { const all = 0.248; const r = SCRIM_TYPES.find(x => x[0] === t); return r ? r[2] / all : 1; };
+  for (let k = 0; k < n; k++) {
+    const type = typeOverride || (scrimOpt('types') ? scrimPick(SCRIM_TYPES.map(x => x[0]).filter(x => scrimOpt('special') ? x !== 'manup' : true), SCRIM_TYPES.filter(x => scrimOpt('special') ? x[0] !== 'manup' : true).map(x => x[1])) : 'half');
+    let i = scrimPick(ps.map((_, x) => x), share), fedBy = -1, lifted = 0;
+    const steps = scrimOpt('steps');
+    for (let step = 0; step < 3; step++) {
+      const p = ps[i], r = SCRIM_RNG();
+      if (steps && SCRIM_RNG() < p.dom) lifted = 1;
+      if (r < p.pTo / crowd[i]) break;   // turnover
+      if (r < p.pTo / crowd[i] + p.pShot || !steps || step === 2) {
+        // shot: tier from his mix (catch shots lean on the team catch mix), lifted a tier by dominoes
+        let mix = fedBy >= 0 ? p.mix.map((m, t) => 0.5 * m + 0.5 * M.tCat[t]) : p.mix, t = scrimPick([0, 1, 2], mix);
+        if (lifted && t > 0 && SCRIM_RNG() < 0.5) t--;
+        let pr = (world.fin[p.j] || [0.4, 0.3, 0.15])[t] * crowd[i];
+        if (fedBy >= 0 && scrimOpt('roles')) pr *= M.roleMult[ps[fedBy].role + '>' + p.role] || 1;
+        if (scrimOpt('types')) pr *= typeMult(type);
+        pr *= calib * ctx.oppDef;
+        pr = scrimInv(scrimLogit(Math.min(0.95, Math.max(0.01, pr))) + world.team);
+        if (SCRIM_RNG() < pr) { g++; pts += fedBy >= 0 ? 2 : 1; }
+        break;
+      }
+      // feed to a teammate who shoots next
+      fedBy = i; const others = ps.map((_, x) => x).filter(x => x !== i); i = scrimPick(others, others.map(x => share[x]));
+    }
+  }
+  return { g, pts, n };
+}
+// Calibration: an average line (usage-weighted roster) should score like last season's games (0.248 goals/possession).
+function scrimCalib(M) {
+  if (!scrimOpt('calib')) return 1;
+  const js = Object.keys(M.P).sort((a, b) => M.P[b].use - M.P[a].use).slice(0, 18); let g = 0, n = 0;
+  for (let k = 0; k < 60; k++) { const line = []; const pool = js.slice(); for (let s = 0; s < 6; s++) line.push(pool.splice(Math.floor(SCRIM_RNG() * pool.length), 1)[0]);
+    const r = scrimPossessions(M, line, 120, scrimWorld(M, line), { oppDef: 1 }, 1); g += r.g; n += r.n; }
+  const model = g / Math.max(1, n); return model > 0 ? (SC.plan.wl && SC.plan.wl.gpp || 0.248) / model : 1;
+}
+// ---- plan helpers ----
+function scrimPools() {
+  const season = scrimSeason(), p = SC.plan, top8 = p.top8 || [];
+  const otherMid = rosterPlayers(season).map(r => r.jersey).filter(j => posOfJ(season, j) === 'M' && !top8.includes(j) && !(p.out || []).includes(j));
+  return { top8: top8.filter(j => !(p.out || []).includes(j)), otherMid };
+}
+function scrimQuarterPool(q) { const P = scrimPools(); return q.mid === 'top8' ? P.top8 : q.mid === 'other' ? P.otherMid : (q.midList || []); }
+// Expected goals per possession for a six (cached) and its spread.
+function scrimLineValue(M, ctx, calib, six, cache) {
+  const key = six.slice().sort().join(',') + '|' + ctx.o.name; if (cache[key]) return cache[key];
+  const reps = 40, per = 25, vals = [];
+  for (let r = 0; r < reps; r++) { const w = scrimWorld(M, six), x = scrimPossessions(M, six, per, w, ctx, calib); vals.push(x.g / per); }
+  const m = vals.reduce((a, b) => a + b, 0) / reps, sd = Math.sqrt(vals.reduce((a, b) => a + (b - m) ** 2, 0) / (reps - 1));
+  return (cache[key] = { m, sd });
+}
+function scrimCombos(list, n) { const out = []; const go = (i, cur) => { if (cur.length === n) { out.push(cur.slice()); return; } for (let x = i; x < list.length; x++) { cur.push(list[x]); go(x + 1, cur); cur.pop(); } }; go(0, []); return out; }
+// Optimizer: simulated annealing over each quarter's lines (and attack trio when it's a choice).
+function scrimOptimize(M, calib) {
+  const p = SC.plan, mode = p.mode || 'raw', cache = {}, Q = p.quarters;
+  const ctxs = p.games.map(g => scrimCtx(g)), gameOf = qi => Math.floor(qi / 4);
+  const state = Q.map((q, qi) => {
+    const pool = scrimQuarterPool(q), keep = (p.lines || {})[qi];
+    const att = q.attack.length > 3 ? (keep && keep.att) || q.attack.slice(0, 3) : q.attack.slice(0, 3);
+    let lines = keep && keep.lines && keep.lines.length ? keep.lines.map(l => l.slice()) : null;
+    if (!lines || lines.length !== (q.nLines || 3) || lines.some(l => l.some(j => !pool.includes(j)))) {
+      // Start from a legal plan: starters on line 1, each "play more" guy on a second line, the rest shuffled in.
+      const nL = q.nLines || 3; lines = Array.from({ length: nL }, () => []);
+      (q.starters || []).filter(j => pool.includes(j)).slice(0, 3).forEach(j => lines[0].push(j));
+      (q.favor || []).filter(j => pool.includes(j)).forEach((j, i) => { const li = 1 + (i % Math.max(1, nL - 1)); if (nL > 1 && lines[li].length < 3 && !lines[li].includes(j)) lines[li].push(j); if (!lines[0].includes(j) && lines[0].length < 3) lines[0].push(j); });
+      const order = pool.slice().sort(() => SCRIM_RNG() - 0.5); let oi = 0;
+      lines.forEach(l => { let guard = 0; while (l.length < 3 && guard++ < 50) { const j = order[oi++ % order.length]; if (!l.includes(j)) l.push(j); } });
+    }
+    return { att, lines, pool, locked: !!(keep && keep.locked) };
+  });
+  const lineScore = (qi, l, att) => { const v = scrimLineValue(M, ctxs[gameOf(qi)], calib, att.concat(l), cache); return mode === 'floor' ? v.m - 1.0 * v.sd : mode === 'target' ? v.m + 0.5 * v.sd : v.m; };
+  const valid = (qi, st) => { const q = Q[qi]; if (st.lines.some(l => new Set(l).size !== 3)) return false; if ((q.starters || []).some(j => !st.lines[0].includes(j))) return false;
+    // No two lines the same, and nobody on more than 2 lines in a quarter (when there are enough guys).
+    if (new Set(st.lines.map(l => l.slice().sort().join(','))).size !== st.lines.length) return false;
+    if (st.pool.length >= 6) { const c = {}; for (const l of st.lines) for (const j of l) { c[j] = (c[j] || 0) + 1; if (c[j] > 2) return false; } }
+    if (q.favor && q.favor.length) { for (const j of q.favor) if (st.lines.filter(l => l.includes(j)).length < 2 && st.lines.length >= 3) return false; } return true; };
+  // If a starting plan breaks a rule, reshuffle it until it doesn't.
+  const valid0 = (qi, st) => valid(qi, st);
+  state.forEach((st, qi) => { const q = Q[qi]; let tries = 0; while (!st.locked && !valid0(qi, st) && tries++ < 200) {
+    const nL = st.lines.length, lines = Array.from({ length: nL }, () => []);
+    (q.starters || []).filter(j => st.pool.includes(j)).slice(0, 3).forEach(j => lines[0].push(j));
+    (q.favor || []).filter(j => st.pool.includes(j)).forEach((j, i) => { const li = 1 + (i % Math.max(1, nL - 1)); if (nL > 1 && lines[li].length < 3 && !lines[li].includes(j)) lines[li].push(j); });
+    const order = st.pool.slice().sort(() => SCRIM_RNG() - 0.5); let oi = 0; lines.forEach(l => { let g = 0; while (l.length < 3 && g++ < 60) { const j = order[oi++ % order.length]; if (!l.includes(j)) l.push(j); } });
+    st.lines = lines; } });
+  const total = () => { let t = 0; const pairs = new Set(), mins = {}; state.forEach((st, qi) => { const sh = 1 / st.lines.length; st.lines.forEach(l => { t += sh * lineScore(qi, l, st.att); l.forEach(j => { mins[j] = (mins[j] || 0) + sh; }); for (let a = 0; a < 3; a++) for (let b = a + 1; b < 3; b++) pairs.add([l[a], l[b]].sort().join('-')); }); });
+    if (mode === 'mix') { const top = scrimPools().top8; let need = 0; for (let a = 0; a < top.length; a++) for (let b = a + 1; b < top.length; b++) if (pairs.has([top[a], top[b]].sort().join('-'))) need++; t += 0.012 * need; }
+    // Everyone in the top 8 gets real time: at least ~1.5 quarters' worth across the top-8 quarters.
+    const top = scrimPools().top8; top.forEach(j => { const short = Math.max(0, 1.5 - (mins[j] || 0)); t -= 0.6 * short; });
+    return t; };
+  let cur = total(), temp = 0.05;
+  for (let it = 0; it < 2500; it++) {
+    const qi = Math.floor(SCRIM_RNG() * state.length), st = state[qi]; if (st.locked || !st.pool.length) continue;
+    const back = { att: st.att.slice(), lines: st.lines.map(l => l.slice()) };
+    if (Q[qi].attack.length > 3 && SCRIM_RNG() < 0.25) { const out = Math.floor(SCRIM_RNG() * 3), cand = Q[qi].attack.filter(j => !st.att.includes(j)); if (cand.length) st.att[out] = cand[Math.floor(SCRIM_RNG() * cand.length)]; }
+    else { const li = Math.floor(SCRIM_RNG() * st.lines.length), pos = Math.floor(SCRIM_RNG() * 3), cand = st.pool.filter(j => !st.lines[li].includes(j)); if (!cand.length) continue; st.lines[li][pos] = cand[Math.floor(SCRIM_RNG() * cand.length)]; }
+    if (!valid(qi, st)) { st.att = back.att; st.lines = back.lines; continue; }
+    const nv = total(); if (nv >= cur || SCRIM_RNG() < Math.exp((nv - cur) / temp)) cur = nv; else { st.att = back.att; st.lines = back.lines; }
+    temp *= 0.998;
+  }
+  return state;
+}
+// ---- the full simulation of both games ----
+function scrimSimulate(M, calib, state, N) {
+  const p = SC.plan, Q = p.quarters, out = { q: Q.map(() => []), qOpp: Q.map(() => []), lines: state.map(st => st.lines.map(() => [])), games: p.games.map(() => ({ us: [], them: [] })), N };
+  const ctxs = p.games.map(g => scrimCtx(g));
+  const goalie = (p.goalie && computeGoalieScores(scrimSeason()).find(r => r.jersey === p.goalie)) || null, gAll = computeGoalieScores(scrimSeason()).filter(r => r.faced >= 25);
+  const gAvg = gAll.length ? gAll.reduce((a, r) => a + (r.gsax100 || 0), 0) / gAll.length : 0;
+  const hot = p.hotGoalie ? 0.93 : 1;
+  for (let n = 0; n < N; n++) {
+    const gameTot = p.games.map(() => ({ us: 0, them: 0 }));
+    p.games.forEach((g, gi) => { const s0 = (p.startScore && p.startScore[gi]) || 0; gameTot[gi].us += Math.max(0, s0); gameTot[gi].them += Math.max(0, -s0); });
+    const everyone = [...new Set(state.flatMap(st => st.att.concat(...st.lines)))];
+    const worlds = p.games.map(() => scrimWorld(M, everyone));
+    state.forEach((st, qi) => {
+      const gi = Math.floor(qi / 4), ctx = ctxs[gi], w = worlds[gi];
+      let possUs = ctx.poss, possThem = ctx.poss;
+      if (scrimOpt('fo')) { const f = (p.wl && p.wl.fo) || 0.5, fo = ctx.o.fo || 0.5, edge = (f - fo) * 0.6; possUs *= 1 + edge; possThem *= 1 - edge; }
+      const draw = m => { if (!scrimOpt('varposs')) return Math.round(m); const lam = m * Math.exp(scrimNorm() * 0.15); let k = 0, L = Math.exp(-lam), pr = 1; do { k++; pr *= SCRIM_RNG(); } while (pr > L); return k - 1; };
+      const nUs = draw(possUs), nThem = draw(possThem);
+      let qg = 0;
+      // our possessions split across the lines by time share
+      const shares = st.lines.map(() => 1 / st.lines.length);
+      st.lines.forEach((l, li) => { const k = Math.round(nUs * shares[li] + (SCRIM_RNG() - 0.5)); const r = scrimPossessions(M, st.att.concat(l), Math.max(0, k), w, ctx, calib * hot); out.lines[qi][li].push(r.g); qg += r.g; });
+      // man-up chances for us
+      if (scrimOpt('special')) { const lam = ((p.wl && p.wl.emoChances) || 2.6) / 4; let k = 0; if (SCRIM_RNG() < lam) k = 1; for (let x = 0; x < k; x++) if (SCRIM_RNG() < Math.min(0.7, ((p.wl && p.wl.emo) || 0.361) * ((ctx.o.defEmo || 0.33) / 0.33) * (scrimOpt('opp') ? 1 : 1))) qg++; }
+      out.q[qi].push(qg); gameTot[gi].us += qg;
+      if (scrimOpt('winprob')) {
+        let rate = ctx.oppOffRate * ((p.wl && p.wl.defRel) || 0.62);
+        if (scrimOpt('ourD') && goalie) rate = Math.max(0.05, rate - ((goalie.gsax100 || 0) - gAvg) / 100 * 0.95);
+        rate = scrimInv(scrimLogit(Math.min(0.9, Math.max(0.03, rate))) + (scrimOpt('days') ? scrimNorm() * M.teamDaySd * 0.6 : 0));
+        let tg = 0; for (let x = 0; x < nThem; x++) if (SCRIM_RNG() < rate) tg++;
+        if (scrimOpt('special')) { const lam = ((p.wl && p.wl.mdChances) || 3.8) / 4; if (SCRIM_RNG() < lam && SCRIM_RNG() < Math.min(0.7, ((p.wl && p.wl.md) || 0.283) * ((ctx.o.offEmo || 0.33) / 0.33))) tg++; }
+        out.qOpp[qi].push(tg); gameTot[gi].them += tg;
+      }
+    });
+    gameTot.forEach((t, gi) => { out.games[gi].us.push(t.us); out.games[gi].them.push(t.them); });
+  }
+  return out;
+}
+const scrimQ = (a, q) => { const s = a.slice().sort((x, y) => x - y); return s.length ? s[Math.min(s.length - 1, Math.floor(q * s.length))] : 0; };
+const scrimMean = a => (a.length ? a.reduce((x, y) => x + y, 0) / a.length : 0);
+// ---- backtest: predict each player's goals in each practice from his other practices ----
+function scrimBacktest(M) {
+  const season = scrimSeason(), d = soData(season), rows = [];
+  Object.values(d.players).forEach(p => {
+    const byS = {}; p.ownShots.forEach(s => { (byS[sessKey(s)] = byS[sessKey(s)] || []).push(s); });
+    const keys = Object.keys(byS); if (keys.length < 5) return;
+    keys.forEach(k => {
+      const other = p.ownShots.filter(s => sessKey(s) !== k), today = byS[k];
+      const g = other.filter(s => s.goal === 1).length, rate = (g + 12 * 0.35) / (other.length + 12);
+      const exp = today.length * rate, sd = Math.sqrt(today.length * rate * (1 - rate) + (today.length * rate * (1 - rate) * M.daySd) ** 2);
+      const act = today.filter(s => s.goal === 1).length;
+      rows.push({ exp, act, lo: exp - 1.28 * sd, hi: exp + 1.28 * sd });
+    });
+  });
+  const n = rows.length, mae = n ? rows.reduce((a, r) => a + Math.abs(r.exp - r.act), 0) / n : 0, cover = n ? rows.filter(r => r.act >= r.lo && r.act <= r.hi).length / n : 0;
+  const me = scrimMean(rows.map(r => r.exp)), ma = scrimMean(rows.map(r => r.act));
+  const cov = rows.reduce((a, r) => a + (r.exp - me) * (r.act - ma), 0), corr = cov / Math.sqrt(rows.reduce((a, r) => a + (r.exp - me) ** 2, 0) * rows.reduce((a, r) => a + (r.act - ma) ** 2, 0) || 1);
+  return { n, mae, cover, corr };
+}
+// ---- sensitivity: whose finishing moves the plan most ----
+function scrimSensitivity(M, calib, state) {
+  const ctxs = SC.plan.games.map(g => scrimCtx(g)), base = {}, js = [...new Set(state.flatMap(st => st.att.concat(...st.lines)))];
+  const planE = mod => { const keep = SCRIM_SEED; scrimSeed(987654321); let t = 0; state.forEach((st, qi) => { const ctx = ctxs[Math.floor(qi / 4)]; st.lines.forEach(l => { const six = st.att.concat(l); let v = 0; const reps = 30; for (let r = 0; r < reps; r++) { const w = scrimWorld(M, six); if (mod) Object.keys(mod).forEach(j => { if (w.fin[j]) w.fin[j] = w.fin[j].map(x => Math.min(0.95, Math.max(0.02, x * mod[j]))); }); v += scrimPossessions(M, six, 20, w, ctx, calib).g / 20; } t += v / reps * ctx.poss / st.lines.length; }); }); SCRIM_SEED = keep; return t; };
+  const b = planE(null);
+  return js.map(j => { const p = M.P[j]; if (!p) return null; const n = p.shots, rel = Math.min(0.6, 1 / Math.sqrt(Math.max(4, n))); const up = planE({ [j]: 1 + rel }), dn = planE({ [j]: 1 - rel }); return { j, swing: up - dn, shots: n }; }).filter(Boolean).sort((a, b2) => b2.swing - a.swing).slice(0, 6);
+}
+// ---- Scrimmage Planner page ----
+function scrimPlanDefaults() {
+  return { mode: 'raw', opts: {}, top8: [], out: [], goalie: null, hotGoalie: false, startScore: [0, 0], games: [], quarters: [], opps: {}, wl: {}, lines: {} };
+}
+async function scrimSave() { if (!DB || !SC.plan) return; try { await DB.doc('app/scrimPlan').set({ json: JSON.stringify(SC.plan), by: dpWho(), at: new Date().toISOString() }); SC.msg = 'Saved for the staff.'; } catch (e) { SC.msg = 'Save failed.'; } renderScrim(); }
+function scrimReason(M, line, att) {
+  const ps = line.map(j => M.P[j]).filter(Boolean), roles = {}; ps.forEach(p => { (roles[p.role] = roles[p.role] || []).push(scrimName(p.j)); });
+  const bits = []; if (roles.creator) bits.push(`${roles.creator.join(' & ')} create${roles.creator.length > 1 ? '' : 's'}`); if (roles.finisher) bits.push(`${roles.finisher.join(' & ')} finish${roles.finisher.length > 1 ? '' : 'es'}`); if (roles.screener) bits.push(`${roles.screener.join(' & ')} screen${roles.screener.length > 1 ? '' : 's'}`);
+  if (ps.length === 3 && ps.every(p => p.use > M.meanUse * 1.35)) bits.push('three ball-dominant guys share one ball');
+  return bits.join('; ') || 'balanced line';
+}
+function scrimRun() {
+  if (SC.busy) return; SC.busy = true; SC.msg = 'Building and simulating…'; renderScrim();
+  setTimeout(() => {
+    try {
+      const M = scrimModel(), calib = scrimCalib(M), state = scrimOptimize(M, calib);
+      const sim = scrimSimulate(M, calib, state, 2000);
+      const p = SC.plan; p.lines = {}; state.forEach((st, qi) => { p.lines[qi] = { att: st.att, lines: st.lines, locked: !!(SC.plan.lockedQ || {})[qi] }; });
+      const ctxs = p.games.map(g => scrimCtx(g)), cache = {};
+      const situ = scrimOpt('situ') ? state.map((st, qi) => { const ctx = ctxs[Math.floor(qi / 4)]; const v = st.lines.map(l => { const six = st.att.concat(l); let h = 0, t = 0; for (let r = 0; r < 15; r++) { const w = scrimWorld(M, six); h += scrimPossessions(M, six, 20, w, ctx, calib, 'half').g; t += scrimPossessions(M, six, 20, w, ctx, calib, 'trans').g; } return { h, t }; }); return { half: v.reduce((b, x, i) => (x.h > v[b].h ? i : b), 0), trans: v.reduce((b, x, i) => (x.t > v[b].t ? i : b), 0) }; }) : null;
+      SC.res = { M, calib, state, sim, situ, back: scrimBacktest(M), sens: scrimSensitivity(M, calib, state), at: new Date() };
+      SC.msg = '';
+    } catch (e) { console.error('scrimmage sim', e); SC.msg = 'Simulation error: ' + e.message; }
+    SC.busy = false; renderScrim();
+  }, 30);
+}
+function scrimFmt(a) { return `<b>${num(scrimMean(a), 1)}</b> <span class="n-note">(${scrimQ(a, 0.1)}–${scrimQ(a, 0.9)})</span>`; }
+function scrimWin(us, them) { let w = 0; for (let i = 0; i < us.length; i++) w += us[i] > them[i] ? 1 : us[i] === them[i] ? 0.5 : 0; return us.length ? w / us.length : null; }
+function renderScrim() {
+  const wrap = document.getElementById('scrimWrap'); if (!wrap) return;
+  const p = SC.plan;
+  if (!p || !p.quarters || !p.quarters.length) { wrap.innerHTML = `<div class="panel"><p class="panel-title">Scrimmage Planner</p><p class="panel-sub">No scrimmage plan is set up yet.</p></div>`; return; }
+  const R = SC.res, season = scrimSeason(), nm = j => `${escapeHtml(scrimName(j))}`, chip = (j, qi, li, pos) => `<button type="button" class="pill sc-p${SC.edit && SC.edit.qi === qi && SC.edit.li === li && SC.edit.pos === pos ? ' active' : ''}" data-sc="pick" data-qi="${qi}" data-li="${li}" data-pos="${pos}" title="Tap to swap">#${escapeHtml(j)} ${nm(j)}</button>`;
+  const opts = `<details class="sc-opts"><summary>Model options (${SCRIM_OPTS.filter(o => scrimOpt(o[0])).length} of ${SCRIM_OPTS.length} on)</summary>${SCRIM_OPTS.map(([k, l]) => `<label><input type="checkbox" data-sc-opt="${k}" ${scrimOpt(k) ? 'checked' : ''}> ${escapeHtml(l)}</label>`).join('')}</details>`;
+  const modes = `<div class="sc-row"><span class="n-note">Best means:</span>${SCRIM_MODES.map(([k, l]) => `<button type="button" class="pill${(p.mode || 'raw') === k ? ' active' : ''}" data-sc="mode" data-v="${k}">${escapeHtml(l)}</button>`).join('')}</div>`;
+  const views = `<div class="sc-row"><span class="n-note">View:</span>${[['coach', 'Coach card'], ['analyst', 'Analyst']].map(([k, l]) => `<button type="button" class="pill${SC.view === k ? ' active' : ''}" data-sc="view" data-v="${k}">${l}</button>`).join('')}</div>`;
+  const oppSel = gi => `<select data-sc-opp="${gi}">${Object.keys(p.opps).map(k => `<option value="${k}" ${p.games[gi].opp === k ? 'selected' : ''}>${escapeHtml(p.opps[k].name)}</option>`).join('')}</select>`;
+  const top = `<div class="panel"><p class="panel-title">Scrimmage Planner</p>
+    <p class="panel-sub">Builds each quarter’s offensive lines under your rules, then plays every possession out ${R ? R.sim.N.toLocaleString() : '2,000'} times. Each number is expected goals with the floor–ceiling range (10th–90th percentile). Tap any player in a line to swap him.</p>
+    <div class="sc-row">${p.games.map((g, gi) => `<label class="sc-g">${escapeHtml(g.name)} vs ${oppSel(gi)}</label>`).join('')}</div>
+    ${modes}${views}${opts}
+    <div class="sc-row"><button type="button" class="btn" data-sc="run">${R ? 'Rebuild &amp; re-simulate' : 'Build lineups &amp; simulate'}</button>${R ? `<button type="button" class="btn secondary" data-sc="resim">Re-simulate my edits</button>` : ''}<button type="button" class="btn secondary" data-sc="save">Save plan for staff</button><button type="button" class="btn secondary" data-sc="print">Print coach card</button></div>
+    ${SC.msg ? `<p class="bf-msg">${escapeHtml(SC.msg)}</p>` : ''}${SC.busy ? '<p class="n-note">Working… this takes a few seconds.</p>' : ''}</div>`;
+  if (!R) { wrap.innerHTML = top + scrimRulesHtml() + scrimLoggingHtml(); return; }
+  const games = p.games.map((g, gi) => {
+    const us = R.sim.games[gi].us, them = R.sim.games[gi].them, win = scrimOpt('winprob') ? scrimWin(us, them) : null;
+    const rows = R.state.map((st, qi) => ({ st, qi })).filter(x => Math.floor(x.qi / 4) === gi).map(({ st, qi }) => {
+      const qWin = scrimOpt('winprob') ? scrimWin(R.sim.q[qi], R.sim.qOpp[qi]) : null, situ = R.situ && R.situ[qi];
+      const lines = st.lines.map((l, li) => `<div class="sc-line"><span class="sc-ln">Line ${li + 1}${li === 0 ? ' (starts)' : ''}</span>${l.map((j, pos) => chip(j, qi, li, pos)).join('')}<span class="sc-v">${scrimFmt(R.sim.lines[qi][li])}</span>${SC.view === 'analyst' ? `<span class="n-note sc-why">${escapeHtml(scrimReason(R.M, l, st.att))}</span>` : ''}${situ && SC.view === 'analyst' ? `${situ.half === li ? '<span class="sc-tag">best settled</span>' : ''}${situ.trans === li ? '<span class="sc-tag">best after FO / transition</span>' : ''}` : ''}</div>`).join('');
+      return `<div class="sc-q"><div class="sc-qh"><b>${escapeHtml(p.quarters[qi].label)}</b> <span class="n-note">Attack: ${st.att.map((j, pos) => p.quarters[qi].attack.length > 3 ? chip(j, qi, 'a', pos) : `#${escapeHtml(j)} ${nm(j)}`).join(' · ')}</span><span class="sc-v">Quarter: ${scrimFmt(R.sim.q[qi])}${qWin !== null ? ` &middot; win the quarter ${pct(qWin)}` : ''}</span></div>${lines}${scrimWarn(qi, st)}${SC.edit && SC.edit.qi === qi ? scrimSwapHtml(qi) : ''}</div>`;
+    }).join('');
+    return `<div class="panel sc-game"><p class="panel-title">${escapeHtml(g.name)} vs ${escapeHtml(p.opps[g.opp].name)}</p>
+      <p class="sc-sum">We score ${scrimFmt(us)}${scrimOpt('winprob') ? ` &middot; they score ${scrimFmt(them)} &middot; <b>win chance ${pct(win)}</b>` : ''}</p>${rows}</div>`;
+  }).join('');
+  const analyst = SC.view !== 'analyst' ? '' : `<div class="panel"><p class="panel-title">How far to trust it</p>
+      <p class="panel-sub"><b>Backtest:</b> predicting each player’s goals in each practice from his other practices, ${R.back.n} player-days: typical miss ${num(R.back.mae, 2)} goals, correlation ${num(R.back.corr, 2)}, and ${pct(R.back.cover)} of actual results landed inside the predicted 80% range (should be near 80%).</p>
+      <p class="panel-sub"><b>Calibration:</b> an average line is scaled ×${num(R.calib, 2)} so it scores like last season’s games (${num((p.wl.gpp || 0.248), 3)} goals per possession). Good/bad-day spread: individual ${num(R.M.daySd, 2)}, team ${num(R.M.teamDaySd, 2)} (logit).</p>
+      <p class="panel-sub"><b>Whose numbers move the plan most</b> (finishing ±1 standard error): ${R.sens.map(x => `#${escapeHtml(x.j)} ${nm(x.j)} ±${num(x.swing / 2, 2)} goals (${x.shots} shots)`).join(' · ')}.</p>
+      <p class="panel-sub"><b>Roles</b> (from logged data): ${Object.values(R.M.P).filter(x => R.state.some(st => st.att.concat(...st.lines).includes(x.j))).map(x => `#${escapeHtml(x.j)} ${nm(x.j)} ${x.role}`).join(' · ')}.</p></div>
+    ${scrimOppHtml()}${scrimOpt('match') ? scrimMatchHtml() : ''}${scrimOpt('scen') ? scrimScenHtml() : ''}${scrimRulesHtml()}${scrimLoggingHtml()}${scrimActualHtml()}`;
+  wrap.innerHTML = top + games + analyst;
+}
+// Hand edits can break a rule; say so (the coach can keep it).
+function scrimWarn(qi, st) {
+  const q = SC.plan.quarters[qi], w = [], c = {};
+  st.lines.forEach(l => l.forEach(j => { c[j] = (c[j] || 0) + 1; }));
+  (q.starters || []).forEach(j => { if (!st.lines[0].includes(j)) w.push(`${scrimName(j)} isn’t on the starting line`); });
+  if (st.lines.length >= 3) (q.favor || []).forEach(j => { if ((c[j] || 0) < 2) w.push(`${scrimName(j)} is on only ${c[j] || 0} line${c[j] === 1 ? '' : 's'}`); });
+  Object.keys(c).forEach(j => { if (c[j] > 2) w.push(`${scrimName(j)} is on ${c[j]} lines`); });
+  if (new Set(st.lines.map(l => l.slice().sort().join(','))).size !== st.lines.length) w.push('two lines are the same');
+  return w.length ? `<div class="sc-warn">&#9888; ${w.map(escapeHtml).join(' · ')}</div>` : '';
+}
+function scrimSwapHtml(qi) {
+  const e = SC.edit, st = SC.res.state[qi], q = SC.plan.quarters[qi];
+  const pool = e.li === 'a' ? q.attack.filter(j => !st.att.includes(j)) : scrimQuarterPool(q).filter(j => !st.lines[e.li].includes(j));
+  return `<div class="sc-swap"><span class="n-note">Swap in:</span>${pool.map(j => `<button type="button" class="pill" data-sc="swap" data-j="${escapeHtml(j)}">#${escapeHtml(j)} ${escapeHtml(scrimName(j))}</button>`).join('')}<button type="button" class="pill" data-sc="cancel">Cancel</button></div>`;
+}
+function scrimOppHtml() {
+  const p = SC.plan, f = (k, o, key, label, step) => `<label>${label}<input type="number" step="${step || 0.01}" data-sc-oppf="${k}" data-key="${key}" value="${o[key] !== undefined ? o[key] : ''}"></label>`;
+  return `<div class="panel"><p class="panel-title">Opponents</p><p class="panel-sub">From LacrosseReference 2026 (last season). Division gaps are not measured anywhere (D1, D2 and D3 are rated separately), so “strength vs D3” is our assumption: 1.00 = plays like an average D3 team. Edit any number and re-simulate.</p>
+    ${Object.keys(p.opps).map(k => { const o = p.opps[k]; return `<div class="sc-opp"><b>${escapeHtml(o.name)}</b> <span class="n-note">${escapeHtml(o.note || '')}</span><div class="sc-fields">
+      ${f(k, o, 'adjOff', 'Adj. offense (goals/poss)', 0.001)}${f(k, o, 'adjDef', 'Adj. defense allowed', 0.001)}${f(k, o, 'lgEff', 'Their league average', 0.001)}${f(k, o, 'pace', 'Possessions/game', 0.1)}${f(k, o, 'fo', 'Faceoff %', 0.01)}${f(k, o, 'offEmo', 'Man-up eff.', 0.01)}${f(k, o, 'defEmo', 'Man-down eff. allowed', 0.01)}
+      <label>Offense strength vs D3<input type="number" step="0.05" data-sc-oppf="${k}" data-key="div.off" value="${(o.div || {}).off || 1}"></label><label>Defense strength vs D3 (lower = tougher)<input type="number" step="0.05" data-sc-oppf="${k}" data-key="div.def" value="${(o.div || {}).def || 1}"></label></div></div>`; }).join('')}</div>`;
+}
+function scrimMatchHtml() {
+  const p = SC.plan, rows = Object.keys(p.opps).map(k => { const o = p.opps[k]; return o.notes && o.notes.length ? `<li><b>${escapeHtml(o.name)}:</b> ${o.notes.map(escapeHtml).join(' · ')}</li>` : `<li><b>${escapeHtml(o.name)}:</b> no player data.</li>`; }).join('');
+  return `<div class="panel"><p class="panel-title">Matchup notes</p><p class="panel-sub">Their top cover defenders and goalie from LacrosseReference. Watch which of our lines draws their top pole.</p><ul class="sc-ul">${rows}</ul></div>`;
+}
+function scrimScenHtml() {
+  const p = SC.plan, P = scrimPools(), everyone = [...new Set(P.top8.concat(p.out || [], ...p.quarters.map(q => q.attack)))];
+  const goalies = computeGoalieScores(scrimSeason()).filter(r => r.faced >= 25);
+  return `<div class="panel"><p class="panel-title">Scenarios</p>
+    <div class="sc-row"><span class="n-note">Player out:</span>${everyone.map(j => `<button type="button" class="pill${(p.out || []).includes(j) ? ' active' : ''}" data-sc="out" data-j="${escapeHtml(j)}">#${escapeHtml(j)} ${escapeHtml(scrimName(j))}</button>`).join('')}</div>
+    <div class="sc-row"><span class="n-note">Our goalie:</span>${goalies.map(g => `<button type="button" class="pill${p.goalie === g.jersey ? ' active' : ''}" data-sc="goalie" data-j="${escapeHtml(g.jersey)}">#${escapeHtml(g.jersey)} ${escapeHtml(scrimName(g.jersey))}</button>`).join('')}</div>
+    <div class="sc-row"><button type="button" class="pill${p.hotGoalie ? ' active' : ''}" data-sc="hot">Their goalie is hot (−7% on our finishing)</button></div>
+    <div class="sc-row">${p.games.map((g, gi) => `<label class="sc-g">${escapeHtml(g.name)} starting score (us − them) <input type="number" step="1" data-sc-start="${gi}" value="${(p.startScore || [])[gi] || 0}"></label>`).join('')}</div>
+    <p class="n-note">Change anything here, then Re-simulate.</p></div>`;
+}
+function scrimRulesHtml() {
+  const p = SC.plan, P = scrimPools();
+  return `<div class="panel"><p class="panel-title">Rules</p><p class="panel-sub">Top 8 middies: ${P.top8.map(j => `#${escapeHtml(j)} ${escapeHtml(scrimName(j))}`).join(', ')}. Other middies (bench quarters): ${P.otherMid.map(j => `#${escapeHtml(j)} ${escapeHtml(scrimName(j))}`).join(', ')}.</p>
+    <div class="table-wrap"><table class="shotlog"><thead><tr><th>Quarter</th><th>Middies</th><th>Attack</th><th>Must start</th><th>Play more</th><th>Lines</th></tr></thead><tbody>${p.quarters.map((q, qi) => `<tr><td>${escapeHtml(q.label)}</td><td>${q.mid === 'top8' ? 'Top 8' : 'Other middies'}</td><td>${q.attack.map(j => escapeHtml(scrimName(j))).join(', ')}${q.attack.length > 3 ? ' <span class="n-note">(best 3)</span>' : ''}</td><td>${(q.starters || []).map(j => escapeHtml(scrimName(j))).join(', ') || '—'}</td><td>${(q.favor || []).map(j => escapeHtml(scrimName(j))).join(', ') || '—'}</td><td><input type="number" min="2" max="4" step="1" value="${q.nLines || 3}" data-sc-nl="${qi}" style="width:52px"></td></tr>`).join('')}</tbody></table></div></div>`;
+}
+function scrimLoggingHtml() {
+  return `<div class="panel"><p class="panel-title">Logging plan for the scrimmages</p><ol class="sc-ul">
+    <li>One staffer runs the <b>lineup bar</b> on the Log page: set the 6 on offense every shift change (offense row) — that is what lets us compare each line’s real result to its prediction.</li>
+    <li>A second person logs shots as usual (shooter, assist, quality, result) and every no-shot possession (turnover, failed clear).</li>
+    <li>Set the session to <b>Scrimmage</b> with the opponent’s name, so the comparison below picks it up.</li>
+    <li>If you can’t keep up live, log from film afterwards with Backfill — but the lineup bar has to be set while it happens.</li></ol></div>`;
+}
+// Predicted vs actual: scrimmage sessions with the lineup bar logged.
+function scrimActualHtml() {
+  const R = SC.res; if (!R) return '';
+  const sess = Object.values(LIVE_SESSIONS).filter(s => s.context === 'Scrimmage' && s.date >= localDateStr(new Date(Date.now() - 3 * 864e5)));
+  const rows = [];
+  sess.forEach(s => { const by = {}; (s.shots || []).filter(x => x.team !== 'OPP').forEach(x => { const t = x.stintId && s.stints.find(y => y.id === x.stintId); if (!t) return; const k = t.offense.slice().sort().join(','); (by[k] = by[k] || { g: 0, sh: 0, six: t.offense }).sh++; if (x.goal === 1) by[k].g++; }); Object.values(by).forEach(v => rows.push(Object.assign({ date: s.date }, v))); });
+  if (!rows.length) return `<div class="panel"><p class="panel-title">Predicted vs actual</p><p class="panel-sub">Fills in once a scrimmage is logged with the lineup bar set.</p></div>`;
+  const ctx = scrimCtx(SC.plan.games[0]), cache = {};
+  return `<div class="panel"><p class="panel-title">Predicted vs actual</p><div class="table-wrap"><table class="shotlog"><thead><tr><th>Date</th><th>On the field</th><th>Shots</th><th>Goals</th><th>Predicted goals/poss</th></tr></thead><tbody>${rows.map(r => `<tr><td>${escapeHtml(r.date)}</td><td>${r.six.map(j => escapeHtml(scrimName(j))).join(', ')}</td><td>${r.sh}</td><td>${r.g}</td><td>${num(scrimLineValue(R.M, ctx, R.calib, r.six, cache).m, 3)}</td></tr>`).join('')}</tbody></table></div></div>`;
+}
+function scrimInit() {
+  const wrap = document.getElementById('scrimWrap'); if (!wrap || wrap.__sc) return; wrap.__sc = true;
+  wrap.addEventListener('click', ev => {
+    const b = ev.target.closest('[data-sc]'); if (!b) return; const a = b.dataset.sc, p = SC.plan;
+    if (a === 'run') { (SC.plan.lockedQ = {}); Object.keys(p.lines || {}).forEach(k => { if (p.lines[k].locked) SC.plan.lockedQ[k] = true; }); scrimRun(); return; }
+    if (a === 'resim') { scrimResim(); return; }
+    if (a === 'save') { scrimSave(); return; }
+    if (a === 'print') { SC.view = 'coach'; renderScrim(); setTimeout(() => window.print(), 50); return; }
+    if (a === 'mode') { p.mode = b.dataset.v; }
+    if (a === 'view') SC.view = b.dataset.v;
+    if (a === 'pick') { const qi = Number(b.dataset.qi), li = b.dataset.li === 'a' ? 'a' : Number(b.dataset.li); SC.edit = { qi, li, pos: Number(b.dataset.pos) }; }
+    if (a === 'cancel') SC.edit = null;
+    if (a === 'swap' && SC.edit) { const e = SC.edit, st = SC.res.state[e.qi]; if (e.li === 'a') st.att[e.pos] = b.dataset.j; else st.lines[e.li][e.pos] = b.dataset.j; p.lines[e.qi] = { att: st.att, lines: st.lines, locked: true }; SC.edit = null; scrimResim(); return; }
+    if (a === 'out') { const j = b.dataset.j; p.out = (p.out || []).includes(j) ? p.out.filter(x => x !== j) : (p.out || []).concat(j); }
+    if (a === 'goalie') p.goalie = p.goalie === b.dataset.j ? null : b.dataset.j;
+    if (a === 'hot') p.hotGoalie = !p.hotGoalie;
+    renderScrim();
+  });
+  wrap.addEventListener('change', ev => {
+    const t = ev.target, p = SC.plan;
+    if (t.dataset.scOpt) { p.opts = p.opts || {}; p.opts[t.dataset.scOpt] = t.checked; }
+    if (t.dataset.scOpp !== undefined) p.games[Number(t.dataset.scOpp)].opp = t.value;
+    if (t.dataset.scOppf) { const o = p.opps[t.dataset.scOppf], k = t.dataset.key, v = Number(t.value); if (k.startsWith('div.')) { o.div = o.div || {}; o.div[k.slice(4)] = v; } else o[k] = v; }
+    if (t.dataset.scStart !== undefined) { p.startScore = p.startScore || [0, 0]; p.startScore[Number(t.dataset.scStart)] = Number(t.value) || 0; }
+    if (t.dataset.scNl !== undefined) p.quarters[Number(t.dataset.scNl)].nLines = Math.max(2, Math.min(4, Number(t.value) || 3));
+    renderScrim();
+  });
+}
+// Re-simulate the current lines (after an edit) without searching again.
+function scrimResim() {
+  if (!SC.res || SC.busy) return; SC.busy = true; renderScrim();
+  setTimeout(() => { try { const M = SC.res.M, calib = scrimCalib(M); SC.res.sim = scrimSimulate(M, calib, SC.res.state, 2000); SC.res.calib = calib; SC.res.sens = scrimSensitivity(M, calib, SC.res.state); } catch (e) { console.error(e); SC.msg = 'Simulation error: ' + e.message; } SC.busy = false; renderScrim(); }, 30);
+}
 // ---------------- Backfill (Bobby, Oct 20) ----------------
 // Go back through a practice on film, shot by shot in the order they were logged, and add
 // defense, picks / screens and missed turnovers. Every field is optional. Saves through the
