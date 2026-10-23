@@ -14837,8 +14837,10 @@ function scrimSnap() {
 }
 function scrimDiff(a, b, label) {
   if (!a || !b) return null; const was = r => a.rk[scrimSixKey(r.gi, r.att, r.mids)];
-  const moved = SC.uni.rows.filter(r => (r.rank <= 10 || (was(r) && was(r) <= 10)) && Math.abs((was(r) || 41) - r.rank) >= 3).sort((x, y) => Math.abs(y.rank - (was(y) || 41)) - Math.abs(x.rank - (was(x) || 41))).slice(0, 6)
-    .map(r => `${SC.plan.games[r.gi].name}: ${r.att.map(scrimName).join('-')} / ${r.mids.map(scrimName).join('-')} ${was(r) ? '#' + was(r) : 'outside the top 40'} → #${r.rank}`);
+  const txt = r => `${r.att.map(scrimName).join('-')} / ${r.mids.map(scrimName).join('-')} ${was(r) ? '#' + was(r) : 'outside the top 40'} → #${r.rank}`, seen = {};
+  SC.uni.rows.filter(r => (r.rank <= 10 || (was(r) && was(r) <= 10)) && Math.abs((was(r) || 41) - r.rank) >= 3).sort((x, y) => Math.abs(y.rank - (was(y) || 41)) - Math.abs(x.rank - (was(x) || 41)))
+    .forEach(r => { const t = txt(r); (seen[t] = seen[t] || []).push(r.gi); });   // the same move in both games shows once
+  const moved = Object.keys(seen).slice(0, 6).map(t => `${seen[t].length === SC.plan.games.length && seen[t].length > 1 ? 'Both games' : seen[t].map(gi => SC.plan.games[gi].name).join(', ')}: ${t}`);
   const games = b.games.map((g, gi) => `${SC.plan.games[gi].name}: ${g.us - a.games[gi].us >= 0 ? '+' : ''}${num(g.us - a.games[gi].us, 2)} goals, win ${pct(a.games[gi].win)} → ${pct(g.win)}`);
   return { label, moved, games, changedQ: b.lines.filter((v, i) => v !== a.lines[i]).length };
 }
