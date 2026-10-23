@@ -14300,7 +14300,8 @@ function scrimWin(us, them) { let w = 0; for (let i = 0; i < us.length; i++) w +
 // Walks every path a possession can take (who touches it, turnover / shot / feed, up to 3 touches,
 // dominoes along the way, possession type) and adds up the chance of a goal. Same rules as the
 // possession simulation, so the two agree; this one has no random noise and is ~50x faster.
-function scrimEV(M, six, world, ctx, calib, out) {   // out (optional): turnovers, shot mix, goals and touches by player
+// cache (optional, one Map per day and opponent): shot values per shooter / feeder role / crowding, shared by every lineup.
+function scrimEV(M, six, world, ctx, calib, out, cache) {   // out (optional): turnovers, shot mix, goals and touches by player
   const ps = six.map(j => M.P[j]).filter(Boolean); if (!ps.length) return 0;
   const useSum = ps.reduce((a, p) => a + p.use, 0), normal = M.meanUse * 6, share = ps.map(p => p.use / useSum);
   const crowd = scrimOpt('usage') ? ps.map((p, i) => Math.max(0.88, Math.min(1.12, Math.pow(share[i] / (p.use / normal), -0.15)))) : ps.map(() => 1);
@@ -14312,11 +14313,13 @@ function scrimEV(M, six, world, ctx, calib, out) {   // out (optional): turnover
   // Shot value for shooter i fed by f (f = -1: unassisted), after dominoes (A1) or without (A0): computed once.
   const n = ps.length, A1 = new Float64Array(n * (n + 1)), A0 = new Float64Array(n * (n + 1)), GS = out ? new Float64Array(n * (n + 1)) : null;
   for (let i = 0; i < n; i++) for (let f = -1; f < n; f++) { if (f === i) continue;
+    const ix0 = i * (n + 1) + f + 1; let cr = crowd[i], key = null;
+    if (cache) { const qc = Math.round(cr * 400); cr = qc / 400; key = ps[i].j + '|' + (f < 0 ? '-' : roles ? ps[f].role : 'x') + '|' + qc; const hit = cache.get(key); if (hit) { A1[ix0] = hit[0]; A0[ix0] = hit[1]; if (GS) GS[ix0] = hit[2]; continue; } }
     const p = ps[i], mix = f >= 0 ? p.mix.map((m, k) => 0.5 * m + 0.5 * M.tCat[k]) : p.mix, fin = world.fin[p.j] || [0.4, 0.3, 0.15], rm = f >= 0 && roles ? (M.roleMult[ps[f].role + '>' + p.role] || 1) : 1;
     let e1 = 0, e0 = 0;
-    for (let k = 0; k < 3; k++) { if (!mix[k]) continue; const b0 = fin[k] * crowd[i] * rm * base;
+    for (let k = 0; k < 3; k++) { if (!mix[k]) continue; const b0 = fin[k] * cr * rm * base;
       for (const [w, mul] of tmul) { if (steps) { e1 += mix[k] * w * g(b0 * (M.domYes || 1.12) * mul); e0 += mix[k] * w * g(b0 * (M.domNo || 0.86) * mul); } else { const v = mix[k] * w * g(b0 * mul); e1 += v; e0 += v; } } }
-    A1[i * (n + 1) + f + 1] = e1; A0[i * (n + 1) + f + 1] = e0; if (GS) GS[i * (n + 1) + f + 1] = mix[0] + mix[1]; }
+    A1[ix0] = e1; A0[ix0] = e0; if (GS) GS[ix0] = mix[0] + mix[1]; if (key) cache.set(key, [e1, e0, mix[0] + mix[1]]); }
   let ev = 0;
   const visit = (i, fed, L, step, pr) => {
     const p = ps[i], Ln = steps ? 1 - (1 - L) * (1 - p.dom) : 0, t = Math.min(1, p.pTo / crowd[i]);
@@ -14544,8 +14547,8 @@ function scrimDaysCore(M, calib, J, D, seed) {
   const s1 = new Float64Array(n), s2 = new Float64Array(n), pm = new Float64Array(n * 16), opt = new Float64Array(n), optMid = new Float64Array(nG * U.nMT), optAtt = new Float64Array(nG * U.nAT), expMid = new Float64Array(nP), expAtt = new Float64Array(nP), val = new Float64Array(n);
   const sixes = R.map(r => U.AT[r[1]].concat(U.MT[r[2]]).map(i => S.players[i]));
   for (let d = 0; d < D; d++) {
-    const w = scrimWorld(M, S.players);
-    for (let r = 0; r < n; r++) { const ctx = J.ctxs[R[r][0]], ev = scrimEV(M, sixes[r], w, ctx, calib), lam = ctx.poss * ev; s1[r] += ev; s2[r] += ev * ev; val[r] = lam;
+    const w = scrimWorld(M, S.players), caches = J.ctxs.map(() => new Map());
+    for (let r = 0; r < n; r++) { const gi = R[r][0], ctx = J.ctxs[gi], ev = scrimEV(M, sixes[r], w, ctx, calib, null, caches[gi]), lam = ctx.poss * ev; s1[r] += ev; s2[r] += ev * ev; val[r] = lam;
       let pk = Math.exp(-lam), cum = 0; const o = r * 16; for (let k = 0; k < 15; k++) { pm[o + k] += pk; cum += pk; pk *= lam / (k + 1); } pm[o + 15] += Math.max(0, 1 - cum); }
     const res = scrimPlanSearch(S, U, val, null, J.base, J.iters, 0.05, 0.001, null); if (!res) continue;
     const seenR = new Set(), seenM = new Set(), seenA = new Set();
@@ -14589,8 +14592,8 @@ async function scrimRunAll(label) {
     const S = scrimSearchCfg(M, pools), U = scrimRowsBuild(S), cfg = scrimSimCfg(), ctxs = cfg.ctxs, n = U.rows.length;
     // 1. A quick base plan from each lineup's value at average form.
     const mw = scrimMeanWorld(M, S.players), sixOf = r => U.AT[U.rows[r][1]].concat(U.MT[U.rows[r][2]]).map(i => S.players[i]);
-    const v0 = new Float64Array(n), desc = new Array(n);
-    for (let r = 0; r < n; r++) { const out = { to: 0, shot: 0, gs: 0, dom: 0, fed: 0, g: [0, 0, 0, 0, 0, 0], t: [0, 0, 0, 0, 0, 0] }, ctx = ctxs[U.rows[r][0]]; v0[r] = ctx.poss * scrimEV(M, sixOf(r), mw, ctx, calib, out); desc[r] = out; }
+    const v0 = new Float64Array(n), desc = new Array(n), mc = ctxs.map(() => new Map());
+    for (let r = 0; r < n; r++) { const out = { to: 0, shot: 0, gs: 0, dom: 0, fed: 0, g: [0, 0, 0, 0, 0, 0], t: [0, 0, 0, 0, 0, 0] }, gi = U.rows[r][0], ctx = ctxs[gi]; v0[r] = ctx.poss * scrimEV(M, sixOf(r), mw, ctx, calib, out, mc[gi]); desc[r] = out; }
     scrimSeed(4242); const base = scrimPlanSearch(S, U, v0, null, null, 20000, 0.3, 0.002, null);
     if (!base) throw new Error('no plan fits the pools (check the attack and middie pools)');
     // 2. Every lineup on the same simulated days, and the best plan on each day (Optimal %).
