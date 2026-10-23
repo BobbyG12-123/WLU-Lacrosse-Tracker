@@ -14114,8 +14114,10 @@ function scrimPossessions(M, line, n, world, ctx, calib, typeOverride, st) {
 function scrimCalib(M) {
   if (!scrimOpt('calib')) return 1;
   const js = Object.keys(M.P).sort((a, b) => M.P[b].use - M.P[a].use).slice(0, 18); let g = 0, n = 0;
-  for (let k = 0; k < 60; k++) { const line = []; const pool = js.slice(); for (let s = 0; s < 6; s++) line.push(pool.splice(Math.floor(SCRIM_RNG() * pool.length), 1)[0]);
+  const keep = SCRIM_SEED; scrimSeed(24680);   // same draws every time, so a rebuild never moves the numbers by itself
+  for (let k = 0; k < 150; k++) { const line = []; const pool = js.slice(); for (let s = 0; s < 6; s++) line.push(pool.splice(Math.floor(SCRIM_RNG() * pool.length), 1)[0]);
     const r = scrimPossessions(M, line, 120, scrimWorld(M, line), { oppDef: 1 }, 1); g += r.g; n += r.n; }
+  SCRIM_SEED = keep;
   const model = g / Math.max(1, n); return model > 0 ? (SC.plan.wl && SC.plan.wl.gpp || 0.248) / model : 1;
 }
 // ---- plan helpers ----
