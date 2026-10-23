@@ -14104,10 +14104,14 @@ function scrimOptimize(M, calib) {
   });
   const lineScore = (qi, l, att) => { const v = scrimLineValue(M, ctxs[gameOf(qi)], calib, att.concat(l), cache); return mode === 'floor' ? v.m - 1.0 * v.sd : mode === 'target' ? v.m + 0.5 * v.sd : v.m; };
   const valid = (qi, st) => { const q = Q[qi]; if (st.lines.some(l => new Set(l).size !== 3)) return false; if ((q.starters || []).some(j => !st.lines[0].includes(j))) return false;
+    // No two lines the same, and nobody on more than 2 lines in a quarter (when there are enough guys).
+    if (new Set(st.lines.map(l => l.slice().sort().join(','))).size !== st.lines.length) return false;
+    if (st.pool.length >= 6) { const c = {}; for (const l of st.lines) for (const j of l) { c[j] = (c[j] || 0) + 1; if (c[j] > 2) return false; } }
     if (q.favor && q.favor.length) { for (const j of q.favor) if (st.lines.filter(l => l.includes(j)).length < 2 && st.lines.length >= 3) return false; } return true; };
   const total = () => { let t = 0; const pairs = new Set(), mins = {}; state.forEach((st, qi) => { const sh = 1 / st.lines.length; st.lines.forEach(l => { t += sh * lineScore(qi, l, st.att); l.forEach(j => { mins[j] = (mins[j] || 0) + sh; }); for (let a = 0; a < 3; a++) for (let b = a + 1; b < 3; b++) pairs.add([l[a], l[b]].sort().join('-')); }); });
     if (mode === 'mix') { const top = scrimPools().top8; let need = 0; for (let a = 0; a < top.length; a++) for (let b = a + 1; b < top.length; b++) if (pairs.has([top[a], top[b]].sort().join('-'))) need++; t += 0.012 * need; }
-    const top = scrimPools().top8, lo = top.length ? Math.min(...top.map(j => mins[j] || 0)) : 0; t += 0.02 * Math.min(lo, 1.5);   // everyone in the top 8 gets real time
+    // Everyone in the top 8 gets real time: at least ~1.5 quarters' worth across the top-8 quarters.
+    const top = scrimPools().top8; top.forEach(j => { const short = Math.max(0, 1.5 - (mins[j] || 0)); t -= 0.6 * short; });
     return t; };
   let cur = total(), temp = 0.05;
   for (let it = 0; it < 2500; it++) {
