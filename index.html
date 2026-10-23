@@ -14612,7 +14612,7 @@ function renderScrim() {
     <div class="sc-row"><button type="button" class="btn" data-sc="run">${R ? 'Rebuild' : 'Build lineups &amp; simulate'}</button><button type="button" class="btn secondary" data-sc="save">Save plan for staff</button><button type="button" class="btn secondary" data-sc="print">Print coach card</button></div>
     ${R ? '<p class="n-note">Sliders, options and scenarios rebuild everything on their own (lines, plan, results). Quarters you edited by hand stay as you set them.</p>' : ''}
     <p class="bf-msg" id="scMsg">${escapeHtml(SC.msg || '')}</p>${SC.busy ? '<p class="n-note">Working… a few seconds.</p>' : ''}</div>`;
-  if (!R || !SC.uni) { wrap.innerHTML = top + scrimRulesHtml() + scrimLoggingHtml(); return; }
+  if (!R || !SC.uni || !R.sim || !R.state) { wrap.innerHTML = top + scrimRulesHtml() + scrimLoggingHtml(); return; }
   const U = SC.uni;
   // 1. Likely result, in words
   const picture = `<div class="panel"><p class="panel-title">Likely result</p><div class="sc-res">${p.games.map((g, gi) => { const us = R.sim.games[gi].us, them = R.sim.games[gi].them, win = scrimWin(us, them), qs = R.state.map((s, qi) => qi).filter(qi => Math.floor(qi / 4) === gi);
@@ -14820,6 +14820,8 @@ function scrimDiff(a, b, label) {
   return { label, moved, games, changedQ };
 }
 // ---- Run everything: lineups on shared days, the best plan + 4 strong alternatives, 20,000 games for the plan ----
+// Progress text while a run is going (the rest of the page keeps showing the last result).
+function scrimMsg(t) { SC.msg = t; const m = document.getElementById('scMsg'); if (m) m.textContent = t; }
 async function scrimRunAll(label) {
   if (SC.busy) { SC.queued = label || true; return; }
   SC.busy = true; SC.msg = 'Rating every lineup on 400 shared simulated days…'; const before = scrimSnap(); renderScrim();
@@ -14827,9 +14829,9 @@ async function scrimRunAll(label) {
   try {
     const calib = scrimCalib(scrimModel(true)) * scrimLearned(), M = scrimModel();
     SC.impBase = null; SC.impRep = undefined; SC.res = Object.assign(SC.res || {}, { M }); SC.uni = scrimUniverseSync(M, calib); scrimScore();
-    SC.msg = 'Building the best plan and 4 alternatives…'; renderScrim(); await new Promise(r => setTimeout(r, 20));
+    scrimMsg('Building the best plan and 4 alternatives…'); await new Promise(r => setTimeout(r, 20));
     const plans = []; for (let k = 0; k < 5; k++) { scrimSeed(1000 + k * 7919); plans.push(scrimOptimize(M, calib, plans)); }
-    SC.msg = 'Playing out 20,000 games for the best plan…'; renderScrim();
+    scrimMsg('Playing out 20,000 games for the best plan…');
     const simA = await scrimSimulateAsync(M, calib, plans[0], 20000);
     const alt = await Promise.all(plans.slice(1).map(st => scrimSimulateAsync(M, calib, st, 4000)));
     SC.plans = plans.map((st, k) => ({ state: st, sim: k ? alt[k - 1] : simA }));
