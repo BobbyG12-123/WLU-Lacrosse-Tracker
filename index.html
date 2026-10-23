@@ -14108,6 +14108,14 @@ function scrimOptimize(M, calib) {
     if (new Set(st.lines.map(l => l.slice().sort().join(','))).size !== st.lines.length) return false;
     if (st.pool.length >= 6) { const c = {}; for (const l of st.lines) for (const j of l) { c[j] = (c[j] || 0) + 1; if (c[j] > 2) return false; } }
     if (q.favor && q.favor.length) { for (const j of q.favor) if (st.lines.filter(l => l.includes(j)).length < 2 && st.lines.length >= 3) return false; } return true; };
+  // If a starting plan breaks a rule, reshuffle it until it doesn't.
+  const valid0 = (qi, st) => valid(qi, st);
+  state.forEach((st, qi) => { const q = Q[qi]; let tries = 0; while (!st.locked && !valid0(qi, st) && tries++ < 200) {
+    const nL = st.lines.length, lines = Array.from({ length: nL }, () => []);
+    (q.starters || []).filter(j => st.pool.includes(j)).slice(0, 3).forEach(j => lines[0].push(j));
+    (q.favor || []).filter(j => st.pool.includes(j)).forEach((j, i) => { const li = 1 + (i % Math.max(1, nL - 1)); if (nL > 1 && lines[li].length < 3 && !lines[li].includes(j)) lines[li].push(j); });
+    const order = st.pool.slice().sort(() => SCRIM_RNG() - 0.5); let oi = 0; lines.forEach(l => { let g = 0; while (l.length < 3 && g++ < 60) { const j = order[oi++ % order.length]; if (!l.includes(j)) l.push(j); } });
+    st.lines = lines; } });
   const total = () => { let t = 0; const pairs = new Set(), mins = {}; state.forEach((st, qi) => { const sh = 1 / st.lines.length; st.lines.forEach(l => { t += sh * lineScore(qi, l, st.att); l.forEach(j => { mins[j] = (mins[j] || 0) + sh; }); for (let a = 0; a < 3; a++) for (let b = a + 1; b < 3; b++) pairs.add([l[a], l[b]].sort().join('-')); }); });
     if (mode === 'mix') { const top = scrimPools().top8; let need = 0; for (let a = 0; a < top.length; a++) for (let b = a + 1; b < top.length; b++) if (pairs.has([top[a], top[b]].sort().join('-'))) need++; t += 0.012 * need; }
     // Everyone in the top 8 gets real time: at least ~1.5 quarters' worth across the top-8 quarters.
