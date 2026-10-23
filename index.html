@@ -14287,9 +14287,9 @@ function scrimWorkerSrc() {
     ...fns.map(f => f.toString()),
     `onmessage = e => { const d = e.data; SC.plan.opts = d.opts; SCRIM_SEED = d.seed; postMessage(scrimSimCore(d.M, d.calib, d.state, d.N, d.cfg)); };`].join('\n');
 }
-function scrimSimulateAsync(M, calib, state, N) {
+function scrimSimulateAsync(M, calib, state, N, maxW) {
   let url; try { url = URL.createObjectURL(new Blob([scrimWorkerSrc()], { type: 'text/javascript' })); } catch (e) { return Promise.resolve(scrimSimulate(M, calib, state, Math.min(N, 3000))); }
-  const W = Math.max(1, Math.min(4, (navigator.hardwareConcurrency || 2) - 1)), per = Math.ceil(N / W), cfg = scrimSimCfg(), opts = Object.fromEntries(SCRIM_OPTS.map(o => [o[0], scrimOpt(o[0])]));
+  const W = Math.max(1, Math.min(maxW || 4, (navigator.hardwareConcurrency || 2) - 1)), per = Math.ceil(N / W), cfg = scrimSimCfg(), opts = Object.fromEntries(SCRIM_OPTS.map(o => [o[0], scrimOpt(o[0])]));
   const jobs = Array.from({ length: W }, (_, k) => new Promise((res, rej) => { const w = new Worker(url); w.onmessage = e => { res(e.data); w.terminate(); }; w.onerror = err => { rej(err); w.terminate(); };
     w.postMessage({ M, calib, state: JSON.parse(JSON.stringify(state)), N: per, cfg, opts, seed: (0x9E3779B9 * (k + 1) + Date.now()) >>> 0 || 1 }); }));
   return Promise.all(jobs).then(parts => { URL.revokeObjectURL(url); return scrimMerge(parts); }).catch(e => { console.error('workers', e); return scrimSimulate(M, calib, state, Math.min(N, 3000)); });
@@ -14831,9 +14831,8 @@ async function scrimRunAll(label) {
     SC.impBase = null; SC.impRep = undefined; SC.res = Object.assign(SC.res || {}, { M }); SC.uni = scrimUniverseSync(M, calib); scrimScore();
     scrimMsg('Building the best plan and 4 alternatives…'); await new Promise(r => setTimeout(r, 20));
     const plans = []; for (let k = 0; k < 5; k++) { scrimSeed(1000 + k * 7919); plans.push(scrimOptimize(M, calib, plans)); }
-    scrimMsg('Playing out 20,000 games for the best plan…');
-    const simA = await scrimSimulateAsync(M, calib, plans[0], 20000);
-    const alt = await Promise.all(plans.slice(1).map(st => scrimSimulateAsync(M, calib, st, 4000)));
+    scrimMsg('Playing out 20,000 games for the best plan and 4,000 for each alternative…');
+    const [simA, ...alt] = await Promise.all(plans.map((st, k) => scrimSimulateAsync(M, calib, st, k ? 4000 : 20000, k ? 2 : 4)));
     SC.plans = plans.map((st, k) => ({ state: st, sim: k ? alt[k - 1] : simA }));
     const p = SC.plan; p.lines = {}; plans[0].forEach((st, qi) => { p.lines[qi] = { att: st.att, lines: st.lines, mins: st.mins, locked: !!(p.lockedQ || {})[qi] }; });
     SC.res = { M, calib, state: plans[0], sim: simA, back: SC.back || (SC.back = scrimBacktest(M)), sens: scrimSensitivity(M, calib, plans[0]), at: new Date() };
@@ -14904,10 +14903,10 @@ function scrimAccuracyHtml() {
 // ---- Top 5 plans ----
 function scrimPlansHtml() {
   const P = SC.plans; if (!P || P.length < 2) return '';
-  const base = P[0], sig = st => st.map(s => s.lines.map(l => l.slice().sort().join()).join('|'));
+  const base = P[0];
   return `<div class="panel"><p class="panel-title">Top 5 plans</p><p class="panel-sub">The best plan your rules allow, plus 4 strong alternatives that use different lines. Plan A is played out 20,000 times; the others 4,000. If two plans are within a couple of points of win chance, they’re effectively tied — pick the one you like.</p>
-    <div class="sc-plans">${P.map((x, k) => { const s0 = sig(base.state), s1 = sig(x.state), dq = s1.filter((v, i) => v !== s0[i]).length;
-      return `<div class="sc-plan${SC.res.state === x.state ? ' on' : ''}"><b>Plan ${'ABCDE'[k]}</b>${x.sim.games.map((g, gi) => `<span>${escapeHtml(SC.plan.games[gi].name)}: <b>${num(scrimMean(g.us), 1)}</b>–${num(scrimMean(g.them), 1)} · win ${pct(scrimWin(g.us, g.them))}</span>`).join('')}<span class="n-note">${k ? `${dq} quarter${dq === 1 ? '' : 's'} differ from Plan A` : 'the best plan'}</span>${SC.res.state === x.state ? '<span class="sc-tag">in use</span>' : `<button type="button" class="pill" data-sc="useplan" data-k="${k}">Use Plan ${'ABCDE'[k]}</button>`}</div>`; }).join('')}</div></div>`;
+    <div class="sc-plans">${P.map((x, k) => { const nL = x.state.reduce((t, st) => t + st.lines.length, 0), dq = x.state.reduce((t, st, qi) => t + st.lines.filter(l => !base.state[qi].lines.some(b => b.slice().sort().join() === l.slice().sort().join())).length, 0);
+      return `<div class="sc-plan${SC.res.state === x.state ? ' on' : ''}"><b>Plan ${'ABCDE'[k]}</b>${x.sim.games.map((g, gi) => `<span>${escapeHtml(SC.plan.games[gi].name)}: <b>${num(scrimMean(g.us), 1)}</b>–${num(scrimMean(g.them), 1)} · win ${pct(scrimWin(g.us, g.them))}</span>`).join('')}<span class="n-note">${k ? `${dq} of ${nL} lines differ from Plan A` : 'the best plan'}</span>${SC.res.state === x.state ? '<span class="sc-tag">in use</span>' : `<button type="button" class="pill" data-sc="useplan" data-k="${k}">Use Plan ${'ABCDE'[k]}</button>`}</div>`; }).join('')}</div></div>`;
 }
 // ---- What changed ----
 function scrimChangedHtml() {
