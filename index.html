@@ -263,6 +263,7 @@
   .sc-tag { font: 700 10.5px var(--text); color: var(--good); border: 1px solid var(--good); border-radius: 999px; padding: 0 6px; }
   .sc-swap { display: flex; flex-wrap: wrap; gap: 4px; margin: 6px 0 0 96px; }
   .sc-opp { border-top: 1px solid var(--line); padding: 6px 0; } .sc-fields { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px; } .sc-fields label { display: flex; flex-direction: column; font: 600 11.5px var(--text); color: var(--muted); } .sc-fields input { width: 96px; font: 13px var(--text); padding: 3px 6px; }
+  .sc-warn { font: 600 12px var(--text); color: var(--critical); margin: 4px 0 0 10px; }
   .sc-ul { margin: 6px 0; padding-left: 18px; font: 13px var(--text); line-height: 1.55; }
   @media print { body.printing-scrim .view:not(#scrimView), body.printing-scrim .sc-opts, body.printing-scrim .sc-row, body.printing-scrim .chat-fab { display: none !important; } }
   .bf-panel { max-width: 760px; }
@@ -13930,7 +13931,9 @@ function saPlan(q) {
 //   dominoes can lift the look a tier; the goal chance is his finishing on that tier, adjusted for
 //   good/bad days, crowding, role chemistry, possession type, practice-to-game calibration and the
 //   opponent's defense. Their possessions are simulated against our defense and goalie the same way.
-const SCRIM_RNG = (() => { let s = 0x2545F491; return () => { s ^= s << 13; s ^= s >>> 17; s ^= s << 5; return ((s >>> 0) % 1e9) / 1e9; }; })();
+let SCRIM_SEED = 0x2545F491;
+const SCRIM_RNG = () => { let s = SCRIM_SEED; s ^= s << 13; s ^= s >>> 17; s ^= s << 5; SCRIM_SEED = s; return ((s >>> 0) % 1e9) / 1e9; };
+const scrimSeed = n => { SCRIM_SEED = (n >>> 0) || 1; };
 const SCRIM_OPTS = [
   ['steps', 'Step-by-step possessions (dominoes lift the look, feeds lead to catch shots)', true],
   ['usage', 'Usage tradeoff (crowded lines share the ball, efficiency shifts with it)', true],
@@ -14195,7 +14198,7 @@ function scrimBacktest(M) {
 // ---- sensitivity: whose finishing moves the plan most ----
 function scrimSensitivity(M, calib, state) {
   const ctxs = SC.plan.games.map(g => scrimCtx(g)), base = {}, js = [...new Set(state.flatMap(st => st.att.concat(...st.lines)))];
-  const planE = mod => { let t = 0; state.forEach((st, qi) => { const ctx = ctxs[Math.floor(qi / 4)]; st.lines.forEach(l => { const six = st.att.concat(l); let v = 0; const reps = 12; for (let r = 0; r < reps; r++) { const w = scrimWorld(M, six); if (mod) Object.keys(mod).forEach(j => { if (w.fin[j]) w.fin[j] = w.fin[j].map(x => Math.min(0.95, Math.max(0.02, x * mod[j]))); }); v += scrimPossessions(M, six, 20, w, ctx, calib).g / 20; } t += v / reps * ctx.poss / st.lines.length; }); }); return t; };
+  const planE = mod => { const keep = SCRIM_SEED; scrimSeed(987654321); let t = 0; state.forEach((st, qi) => { const ctx = ctxs[Math.floor(qi / 4)]; st.lines.forEach(l => { const six = st.att.concat(l); let v = 0; const reps = 30; for (let r = 0; r < reps; r++) { const w = scrimWorld(M, six); if (mod) Object.keys(mod).forEach(j => { if (w.fin[j]) w.fin[j] = w.fin[j].map(x => Math.min(0.95, Math.max(0.02, x * mod[j]))); }); v += scrimPossessions(M, six, 20, w, ctx, calib).g / 20; } t += v / reps * ctx.poss / st.lines.length; }); }); SCRIM_SEED = keep; return t; };
   const b = planE(null);
   return js.map(j => { const p = M.P[j]; if (!p) return null; const n = p.shots, rel = Math.min(0.6, 1 / Math.sqrt(Math.max(4, n))); const up = planE({ [j]: 1 + rel }), dn = planE({ [j]: 1 - rel }); return { j, swing: up - dn, shots: n }; }).filter(Boolean).sort((a, b2) => b2.swing - a.swing).slice(0, 6);
 }
@@ -14207,7 +14210,7 @@ async function scrimSave() { if (!DB || !SC.plan) return; try { await DB.doc('ap
 function scrimReason(M, line, att) {
   const ps = line.map(j => M.P[j]).filter(Boolean), roles = {}; ps.forEach(p => { (roles[p.role] = roles[p.role] || []).push(scrimName(p.j)); });
   const bits = []; if (roles.creator) bits.push(`${roles.creator.join(' & ')} create${roles.creator.length > 1 ? '' : 's'}`); if (roles.finisher) bits.push(`${roles.finisher.join(' & ')} finish${roles.finisher.length > 1 ? '' : 'es'}`); if (roles.screener) bits.push(`${roles.screener.join(' & ')} screen${roles.screener.length > 1 ? '' : 's'}`);
-  const use = ps.reduce((a, p) => a + p.use, 0); if (use > M.meanUse * 3 * 1.25) bits.push('three ball-dominant guys share one ball');
+  if (ps.length === 3 && ps.every(p => p.use > M.meanUse * 1.35)) bits.push('three ball-dominant guys share one ball');
   return bits.join('; ') || 'balanced line';
 }
 function scrimRun() {
@@ -14248,7 +14251,7 @@ function renderScrim() {
     const rows = R.state.map((st, qi) => ({ st, qi })).filter(x => Math.floor(x.qi / 4) === gi).map(({ st, qi }) => {
       const qWin = scrimOpt('winprob') ? scrimWin(R.sim.q[qi], R.sim.qOpp[qi]) : null, situ = R.situ && R.situ[qi];
       const lines = st.lines.map((l, li) => `<div class="sc-line"><span class="sc-ln">Line ${li + 1}${li === 0 ? ' (starts)' : ''}</span>${l.map((j, pos) => chip(j, qi, li, pos)).join('')}<span class="sc-v">${scrimFmt(R.sim.lines[qi][li])}</span>${SC.view === 'analyst' ? `<span class="n-note sc-why">${escapeHtml(scrimReason(R.M, l, st.att))}</span>` : ''}${situ && SC.view === 'analyst' ? `${situ.half === li ? '<span class="sc-tag">best settled</span>' : ''}${situ.trans === li ? '<span class="sc-tag">best after FO / transition</span>' : ''}` : ''}</div>`).join('');
-      return `<div class="sc-q"><div class="sc-qh"><b>${escapeHtml(p.quarters[qi].label)}</b> <span class="n-note">Attack: ${st.att.map((j, pos) => p.quarters[qi].attack.length > 3 ? chip(j, qi, 'a', pos) : `#${escapeHtml(j)} ${nm(j)}`).join(' · ')}</span><span class="sc-v">Quarter: ${scrimFmt(R.sim.q[qi])}${qWin !== null ? ` &middot; win the quarter ${pct(qWin)}` : ''}</span></div>${lines}${SC.edit && SC.edit.qi === qi ? scrimSwapHtml(qi) : ''}</div>`;
+      return `<div class="sc-q"><div class="sc-qh"><b>${escapeHtml(p.quarters[qi].label)}</b> <span class="n-note">Attack: ${st.att.map((j, pos) => p.quarters[qi].attack.length > 3 ? chip(j, qi, 'a', pos) : `#${escapeHtml(j)} ${nm(j)}`).join(' · ')}</span><span class="sc-v">Quarter: ${scrimFmt(R.sim.q[qi])}${qWin !== null ? ` &middot; win the quarter ${pct(qWin)}` : ''}</span></div>${lines}${scrimWarn(qi, st)}${SC.edit && SC.edit.qi === qi ? scrimSwapHtml(qi) : ''}</div>`;
     }).join('');
     return `<div class="panel sc-game"><p class="panel-title">${escapeHtml(g.name)} vs ${escapeHtml(p.opps[g.opp].name)}</p>
       <p class="sc-sum">We score ${scrimFmt(us)}${scrimOpt('winprob') ? ` &middot; they score ${scrimFmt(them)} &middot; <b>win chance ${pct(win)}</b>` : ''}</p>${rows}</div>`;
@@ -14260,6 +14263,16 @@ function renderScrim() {
       <p class="panel-sub"><b>Roles</b> (from logged data): ${Object.values(R.M.P).filter(x => R.state.some(st => st.att.concat(...st.lines).includes(x.j))).map(x => `#${escapeHtml(x.j)} ${nm(x.j)} ${x.role}`).join(' · ')}.</p></div>
     ${scrimOppHtml()}${scrimOpt('match') ? scrimMatchHtml() : ''}${scrimOpt('scen') ? scrimScenHtml() : ''}${scrimRulesHtml()}${scrimLoggingHtml()}${scrimActualHtml()}`;
   wrap.innerHTML = top + games + analyst;
+}
+// Hand edits can break a rule; say so (the coach can keep it).
+function scrimWarn(qi, st) {
+  const q = SC.plan.quarters[qi], w = [], c = {};
+  st.lines.forEach(l => l.forEach(j => { c[j] = (c[j] || 0) + 1; }));
+  (q.starters || []).forEach(j => { if (!st.lines[0].includes(j)) w.push(`${scrimName(j)} isn’t on the starting line`); });
+  if (st.lines.length >= 3) (q.favor || []).forEach(j => { if ((c[j] || 0) < 2) w.push(`${scrimName(j)} is on only ${c[j] || 0} line${c[j] === 1 ? '' : 's'}`); });
+  Object.keys(c).forEach(j => { if (c[j] > 2) w.push(`${scrimName(j)} is on ${c[j]} lines`); });
+  if (new Set(st.lines.map(l => l.slice().sort().join(','))).size !== st.lines.length) w.push('two lines are the same');
+  return w.length ? `<div class="sc-warn">&#9888; ${w.map(escapeHtml).join(' · ')}</div>` : '';
 }
 function scrimSwapHtml(qi) {
   const e = SC.edit, st = SC.res.state[qi], q = SC.plan.quarters[qi];
