@@ -14842,7 +14842,7 @@ async function scrimRunAll(label) {
     scrimMsg('Playing out 20,000 games for the best plan and 4,000 for each alternative…');
     const [simA, ...alt] = await Promise.all(plans.map((st, k) => scrimSimulateAsync(M, calib, st, k ? 4000 : 20000, k ? 2 : 4)));
     SC.plans = plans.map((st, k) => ({ state: st, sim: k ? alt[k - 1] : simA }));
-    const p = SC.plan; p.lines = {}; plans[0].forEach((st, qi) => { p.lines[qi] = { att: st.att, lines: st.lines, mins: st.mins, locked: !!(p.lockedQ || {})[qi] }; });
+    const p = SC.plan; p.lines = {}; plans[0].forEach((st, qi) => { p.lines[qi] = { att: st.att, lines: st.lines, mins: st.mins, locked: !!st.locked }; });
     SC.res = { M, calib, state: plans[0], sim: simA, back: SC.back || (SC.back = scrimBacktest(M)), sens: scrimSensitivity(M, calib, plans[0]), at: new Date() };
     SC.stale = false; SC.msg = '';
     SC.changed = label ? scrimDiff(before, scrimSnap(), label) : null;
@@ -14855,7 +14855,7 @@ async function scrimUsePlan(k) {
   const P = SC.plans && SC.plans[k]; if (!P) return; const before = scrimSnap();
   SC.res.state = P.state; SC.busy = true; SC.msg = 'Playing out 20,000 games for that plan…'; renderScrim();
   SC.res.sim = await scrimSimulateAsync(SC.res.M, SC.res.calib, P.state, 20000);
-  const p = SC.plan; p.lines = {}; P.state.forEach((st, qi) => { p.lines[qi] = { att: st.att, lines: st.lines, mins: st.mins, locked: !!(p.lockedQ || {})[qi] }; });
+  const p = SC.plan; p.lines = {}; P.state.forEach((st, qi) => { p.lines[qi] = { att: st.att, lines: st.lines, mins: st.mins, locked: !!st.locked }; });
   SC.changed = scrimDiff(before, scrimSnap(), `Plan ${'ABCDE'[k]}`); SC.busy = false; SC.msg = ''; renderScrim();
 }
 // ---- Saved scenarios, side by side ----
