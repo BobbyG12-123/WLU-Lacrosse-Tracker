@@ -14620,7 +14620,7 @@ function scrimScenHtml() {
 function scrimRulesHtml() {
   const p = SC.plan, P = scrimPools();
   return `<div class="panel"><p class="panel-title">Rules</p><p class="panel-sub">Top 8 middies: ${P.top8.map(j => `#${escapeHtml(j)} ${escapeHtml(scrimName(j))}`).join(', ')}. Other middies (bench quarters): ${P.otherMid.map(j => `#${escapeHtml(j)} ${escapeHtml(scrimName(j))}`).join(', ')}.</p>
-    <div class="table-wrap"><table class="shotlog"><thead><tr><th>Quarter</th><th>Middies</th><th>Attack</th><th>Must start</th><th>Play more</th><th>Lines</th></tr></thead><tbody>${p.quarters.map((q, qi) => `<tr><td>${escapeHtml(q.label)}</td><td>${q.mid === 'top8' ? 'Top 8' : 'Other middies'}</td><td>${q.attack.map(j => escapeHtml(scrimName(j))).join(', ')}${q.attack.length > 3 ? ' <span class="n-note">(best 3)</span>' : ''}</td><td>${(q.starters || []).map(j => escapeHtml(scrimName(j))).join(', ') || '—'}</td><td>${(q.favor || []).map(j => escapeHtml(scrimName(j))).join(', ') || '—'}</td><td><input type="number" min="2" max="4" step="1" value="${q.nLines || 3}" data-sc-nl="${qi}" style="width:52px"></td></tr>`).join('')}</tbody></table></div></div>`;
+    <div class="table-wrap"><table class="shotlog"><thead><tr><th>Quarter</th><th>Middies</th><th>Attack</th><th>Must start</th><th>Play more</th><th>Lines</th></tr></thead><tbody>${p.quarters.map((q, qi) => `<tr><td>${escapeHtml(q.label)}</td><td>${q.mid === 'top8' ? 'Top 8' : 'Other middies'}</td><td>${q.attack.map(j => escapeHtml(scrimName(j))).join(', ')}${q.attack.length > 3 ? ' <span class="n-note">(best 3)</span>' : ''}</td><td>${(q.starters || []).map(j => escapeHtml(scrimName(j))).join(', ') || '—'}</td><td>${(q.favor || []).map(j => escapeHtml(scrimName(j))).join(', ') || '—'}</td><td><input type="number" min="1" max="4" step="1" value="${q.nLines || 3}" data-sc-nl="${qi}" style="width:52px"></td></tr>`).join('')}</tbody></table></div></div>`;
 }
 function scrimLoggingHtml() {
   return `<div class="panel"><p class="panel-title">Logging plan for the scrimmages</p><ol class="sc-ul">
@@ -14693,7 +14693,7 @@ function scrimInit() {
       const rest = 15 - st.mins[li], others = st.mins.map((m, k) => (k === li ? 0 : m)), ot = others.reduce((x, y) => x + y, 0);
       st.mins = st.mins.map((m, k) => (k === li ? m : ot ? Math.round(rest * m / ot * 2) / 2 : Math.round(rest / (st.mins.length - 1) * 2) / 2));
       p.lines[qi] = Object.assign({}, p.lines[qi] || {}, { att: st.att, lines: st.lines, mins: st.mins }); scrimResim(); return; }
-    if (t.dataset.scNl !== undefined) p.quarters[Number(t.dataset.scNl)].nLines = Math.max(2, Math.min(4, Number(t.value) || 3));
+    if (t.dataset.scNl !== undefined) p.quarters[Number(t.dataset.scNl)].nLines = Math.max(1, Math.min(4, Number(t.value) || 3)); SC.stale = !!SC.res;
     renderScrim();
   });
 }
