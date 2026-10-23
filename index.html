@@ -3888,14 +3888,14 @@ function pmEnter(p) {
   const mine = s => s && Object.keys(p.seasons).some(ss => p.seasons[ss] === s);
   const isDefender = allShotEntries().some(s => (mine(s.defender) && s.defender === p.seasons[seasonForDate(s.date)]) || (mine(s.slideDefender) && s.slideDefender === p.seasons[seasonForDate(s.date)]) || (mine(s.offBallFault) && s.offBallFault === p.seasons[seasonForDate(s.date)]))
     || allShotEntries().concat(POSSESSIONS).some(e => [e.pickScreenerDef, e.pickUserDef].some(j => j && j === p.seasons[seasonForDate(e.date)]));
-  const show = { briefView: false, methodsView: false, labView: false, whereView: false, profileView: isPlayer, logView: false, playerView: isPlayer, goalieView: isGoalie, defenseView: isDefender, efficiencyView: isPlayer, faceoffView: PLAYER_MODE.fogo,
+  const show = { briefView: false, methodsView: false, labView: false, whereView: false, profileView: isPlayer || isGoalie, logView: false, playerView: isPlayer, goalieView: isGoalie, defenseView: isDefender, efficiencyView: isPlayer, faceoffView: PLAYER_MODE.fogo,
     tableView: true, compareView: isPlayer, opponentView: false, reportsView: true, depthView: false, healthView: false, recruitsView: false, boardView: false };
   Object.keys(show).forEach(id => {
     document.querySelectorAll(`.tab-btn[data-view="${id}"]`).forEach(b => b.classList.toggle('pm-off', !show[id]));
     document.getElementById(id).classList.toggle('pm-off', !show[id]);
   });
   pmRerenderAll();
-  switchTab(isGoalie ? 'goalieView' : (isPlayer ? 'playerView' : 'tableView'));
+  switchTab(isGoalie && !isPlayer ? 'profileView' : isGoalie ? 'goalieView' : (isPlayer ? 'playerView' : 'tableView'));
   window.scrollTo(0, 0);
   if (!PM_OBSERVER) PM_OBSERVER = new MutationObserver(pmScheduleSweep);
   PM_OBSERVER.observe(document.body, { childList: true, subtree: true, characterData: true });
@@ -3931,6 +3931,7 @@ function pmRerenderAll() {
   populatePlayerSelectForSeason(heatSeason);
   populateGoalieSelectForSeason(goalieHeatSeason);
   rerenderAfterShotsChange();
+  renderProfile();   // the profile isn't redrawn by anything else, so it never shows the other mode's page
   renderFaceoffs();
   renderCompare();
 }
@@ -13747,13 +13748,28 @@ function navItems() {
     try { rptPeriods('practice').slice(0, 60).forEach((p, i) => { const dt = new Date(p.date + 'T00:00:00'); const words = dt.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' }) + ' ' + dt.toLocaleDateString('en-US', { month: 'short' }) + ' ' + (dt.getMonth() + 1) + '/' + dt.getDate();
       items.push({ k: 'Session', t: rptLabel('practice', p), s: 'Command Center › Reports', kw: 'session report ' + words + ' ' + (p.context || '') + ' ' + (p.opponent || '') + (i === 0 ? ' last latest most recent today yesterday' : ''), go: () => navOpenSession(p.key) }); }); } catch (e) { /* no sessions yet */ }
     const season = currentLogSeason ? currentLogSeason() : SEASONS[SEASONS.length - 1];
-    (ROSTERS[season] || []).filter(r => r.name && r.jersey).forEach(r => items.push({ k: 'Player', t: `#${r.jersey} ${r.name}`, s: 'Player profile', kw: 'player profile', go: () => profileOpen(r.jersey) }));
+    const info = navPlayerInfo(season), squash = x => String(x || '').toLowerCase().replace(/[^a-z]/g, '');
+    (ROSTERS[season] || []).filter(r => r.name && r.jersey).forEach(r => { const g = info.g[r.jersey], p = info.p[r.jersey], goalie = r.roles.includes('goalie') && g;
+      items.push({ k: goalie ? 'Goalie' : 'Player', t: `#${r.jersey} ${r.name}`, s: goalie ? `Goalie profile · ${g}` : `Player profile${p ? ' · ' + p : ''}`, kw: `${goalie ? 'goalie keeper' : 'player'} profile ${r.name.trim().split(/\s+/).map((w, i, a) => squash(a.slice(i).join(''))).join(' ')}`, go: () => profileOpen(r.jersey) }); });
   }
   return items;
 }
 // Whole-word matching, ranked: title words count most, then the page's
 // vocabulary, then where it lives. A page that covers every word beats one
 // of its sections; a typed question favors the matching coach question.
+// Quick stats for the search dropdown, worked out once per data change.
+let NAV_PINFO = null;
+function navPlayerInfo(season) {
+  const key = season + '|' + SHOTS.length + '|' + OPP_SHOTS.length; if (NAV_PINFO && NAV_PINFO.key === key) return NAV_PINFO;
+  const o = { key, p: {}, g: {} };
+  try { const sh = SHOTS.filter(s => seasonForDate(s.date) === season && !s.seed && s.team !== 'OPP'), ss = computeShooterScores(season, 'shooting').list;
+    (ROSTERS[season] || []).forEach(r => { const j = r.jersey, m = sh.filter(s => s.shooterJersey === j); if (!m.length && !sh.some(s => s.assistJersey === j)) return; const sc = ss.find(x => x.jersey === j);
+      o.p[j] = `${m.filter(s => s.goal === 1).length} G · ${sh.filter(s => s.assistJersey === j && s.goal === 1).length} A · ${m.length} shots${sc && sc.score !== null ? ' · Shooter Score ' + Math.round(sc.score) : ''}`; }); } catch (e) { /* stats not ready */ }
+  try { const all = allShotEntries().filter(s => s.onKeeper === 1 && s.goalieJersey && seasonForDate(s.date) === season), gs = computeGoalieScores(season);
+    rosterGoalies(season).forEach(g => { const m = all.filter(s => s.goalieJersey === g.jersey); if (!m.length) return; const r = gs.find(x => x.jersey === g.jersey);
+      o.g[g.jersey] = `${pct(m.filter(s => s.goal !== 1).length / m.length)} save % · ${m.length} faced${r && r.score !== null ? ' · Goalie Score ' + Math.round(r.score) : ''}`; }); } catch (e) { /* stats not ready */ }
+  return (NAV_PINFO = o);
+}
 function navFind(items, q) {
   const raw = navNorm(q).trim(); if (!raw) return [];
   const typed = raw.split(/\s+/), all = navExpand(q).split(/\s+/), words = all.filter(w => !NAV_STOP.has(w)), use = words.length ? words : all;
@@ -16216,16 +16232,45 @@ const PF_SPLITS = {
   role: { label: 'Create / Finish / Keep / Defend', groups: [['Create', ['adv', 'look', 'screen']], ['Finish', ['finish']], ['Keep the ball', ['security', 'takeaway']], ['Defend', ['onball', 'goalie']]] },
 };
 let pfSplit = 'phase', pfShut = {};
+// Goalie profile: the goalie numbers from the Goaltending pages, for one goalie, on one page.
+function pfGoalieHtml(season, j) {
+  const all = allShotEntries().filter(s => s.onKeeper === 1 && s.goalieJersey && seasonForDate(s.date) === season), mine = all.filter(s => s.goalieJersey === j);
+  const sv = a => (a.length ? a.filter(s => s.goal !== 1).length / a.length : null), cl = a => { const sv0 = a.filter(s => s.goal !== 1); return sv0.length ? sv0.filter(s => s.cleanSave === 1).length / sv0.length : null; };
+  const rows = computeGoalieScores(season).filter(r => r.faced > 0).sort((a, b) => (b.score || 0) - (a.score || 0)), g = rows.find(r => r.jersey === j);
+  const kpi = (label, v, sub) => `<div class="pf-k"><span class="cap">${label}</span><span class="v">${v}</span><span class="d">${sub}</span></div>`;
+  const sgn = v => (v >= 0 ? '+' : '−') + Math.abs(v).toFixed(1);
+  const tiers = [['1-Gold', 'Gold'], ['2-Silver', 'Silver'], ['3-Bronze', 'Bronze']].map(([q, l]) => { const m = mine.filter(s => s.shotQuality === q), t = all.filter(s => s.shotQuality === q); return `<tr><td>${l}</td><td>${m.length}</td><td><b>${m.length ? pct(sv(m)) : '—'}</b></td><td>${t.length ? pct(sv(t)) : '—'}</td><td>${m.length && t.length ? `<span class="${sv(m) >= sv(t) ? 'sc-up' : 'sc-dn'}">${sgn((sv(m) - sv(t)) * 100)} pts</span>` : ''}</td></tr>`; }).join('');
+  const sit = [['Screened', s => s.screened === 'Yes'], ['Not screened', s => s.screened === 'No'], ['Not set', s => s.goalieSet === 'No'], ['Set', s => s.goalieSet === 'Yes']].map(([l, f]) => { const m = mine.filter(f); return m.length ? `<span class="pill sm">${l}: <b>${pct(sv(m))}</b> <span class="n-note">(${m.length})</span></span>` : ''; }).join('');
+  const tr = computeGoalieTrends(allShotEntries().filter(s => seasonForDate(s.date) === season)).find(t => t.name.startsWith('#' + j + ' '));
+  const link = (label, act) => `<button type="button" class="pill" data-pfg="${act}" data-j="${escapeHtml(j)}">${label} &rsaquo;</button>`;
+  return `<div class="pf-hero"><div class="pf-j">${escapeHtml(j)}</div><div><h2>${escapeHtml(nameFor(j, season) || '')}</h2><div class="pf-meta">Goalie · ${mine.length} shots faced, ${mine.filter(s => s.goal !== 1).length} saves (${escapeHtml(season)})</div></div></div>
+    <div class="panel"><div class="pf-ks">${kpi('Goalie Score', g && g.score !== null ? Math.round(g.score) : '—', g ? `#${rows.indexOf(g) + 1} of ${rows.length} goalies · 50 = team average` : 'not enough shots yet')}
+      ${kpi('Save %', mine.length ? pct(sv(mine)) : '—', `${mine.length} faced · team ${pct(sv(all))}`)}
+      ${kpi('Saves above expected', g && isFinite(g.gsax100) ? sgn(g.gsax100) : '—', 'per 100 shots, from shot quality')}
+      ${kpi('Shooter-adjusted', g && isFinite(g.sae100) ? sgn(g.sae100) : '—', 'per 100 shots, vs who shot it')}</div>
+    <div class="table-wrap"><table class="shotlog"><thead><tr><th>Shot quality</th><th>Faced</th><th>His save %</th><th>Team save %</th><th>vs team</th></tr></thead><tbody>${tiers}</tbody></table></div>
+    <p class="panel-sub">Clean saves (no rebound): <b>${cl(mine) !== null ? pct(cl(mine)) : '—'}</b> of his saves · team ${cl(all) !== null ? pct(cl(all)) : '—'}.${tr ? ` Trend: save % over his shots in order, by quarter of the season: ${tr.points.map(p => pct(p.value)).join(' → ')} (${tr.delta >= 0 ? '+' : '−'}${Math.abs(tr.delta * 100).toFixed(1)} pts).` : ''}</p>
+    ${sit ? `<div class="sc-row"><span class="n-note">Situations:</span>${sit}</div>` : ''}
+    <div class="sc-row">${link('Save Surface (where he saves)', 'surface')}${link('Save Map (from where)', 'savemap')}${link('Goalie Score breakdown', 'gscore')}</div></div>`;
+}
+document.addEventListener('click', ev => { const b = ev.target.closest('[data-pfg]'); if (!b) return; const j = b.dataset.j, a = b.dataset.pfg;
+  if (a === 'surface') surfGoalie = j;
+  if (a === 'savemap') { const sel = document.getElementById('goalieSelect'); if (sel && [...sel.options].some(o => o.value === j)) sel.value = j; }
+  goNav(a); });
 function renderProfile() {
   const wrap = document.getElementById('profileWrap'); if (!wrap) return;
   const season = briefSeason();
   const shots = SHOTS.filter(s => seasonForDate(s.date) === season && !s.seed && s.team !== 'OPP');
   if (PLAYER_MODE) profilePlayer = pmJersey(season) || '';
-  const roster = (ROSTERS[season] || []).filter(r => r.jersey && shots.some(s => s.shooterJersey === r.jersey || s.assistJersey === r.jersey));
+  // Goalies with shots faced are in the list too and get a goalie profile (they have no shots or assists of their own).
+  const gFaced = j => allShotEntries().some(s => s.onKeeper === 1 && s.goalieJersey === j && seasonForDate(s.date) === season);
+  const isG = j => rosterGoalies(season).some(g => g.jersey === j);
+  const roster = (ROSTERS[season] || []).filter(r => r.jersey && (shots.some(s => s.shooterJersey === r.jersey || s.assistJersey === r.jersey) || (isG(r.jersey) && gFaced(r.jersey))));
   if (!roster.some(r => r.jersey === profilePlayer)) { const top = computeShooterScores(season, 'shooting').list[0]; profilePlayer = top ? top.jersey : (roster[0] ? roster[0].jersey : ''); }
   const picker = PLAYER_MODE ? '' : `<div class="pf-pick">${roster.map(r => `<button type="button" class="${r.jersey === profilePlayer ? 'on' : ''}" data-nprofile="${escapeHtml(r.jersey)}">#${escapeHtml(r.jersey)} ${escapeHtml(lastNameOf(nameFor(r.jersey, season)))}</button>`).join('')}</div>`;
   const j = profilePlayer;
   if (!j) { wrap.innerHTML = `<p class="view-intro">No ${escapeHtml(season)} players with shots yet.</p>`; return; }
+  if (isG(j) && !shots.some(s => s.shooterJersey === j || s.assistJersey === j)) { wrap.innerHTML = picker + pfGoalieHtml(season, j); return; }
   const mine = shots.filter(s => s.shooterJersey === j), goals = mine.filter(s => s.goal === 1).length, assists = shots.filter(s => s.assistJersey === j && s.goal === 1).length;
   const ssList = computeShooterScores(season, 'shooting').list, ss = ssList.find(r => r.jersey === j);
   const recList = computeShooterScores(season, 'shooting', briefFrom()).list, rec = recList.find(r => r.jersey === j);
