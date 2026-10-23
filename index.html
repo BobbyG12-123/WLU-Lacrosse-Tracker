@@ -273,6 +273,7 @@
   .sc-cs { display: flex; flex-direction: column; align-items: flex-end; font-family: var(--text); } .sc-cs b { font-size: 22px; } .sc-cs span { font-size: 10.5px; color: var(--muted); }
   .sc-tick { position: absolute; top: 4px; right: 8px; color: var(--good); font-weight: 700; }
   .sc-rk { font: 700 11.5px var(--text); padding: 1px 7px; border-radius: 999px; background: var(--line); } .sc-rk.top { background: color-mix(in srgb, var(--good) 22%, transparent); color: var(--good); }
+  .sc-thin { font: 600 11.5px var(--text); color: #B7791F; } .sc-line .sc-thin { margin-left: 8px; }
   .sc-pwhy { font: 12px var(--text); color: var(--muted); margin: 4px 0 0 10px; } .sc-stale { font: 600 13px var(--text); color: #B7791F; margin: 6px 0; }
   .sc-det > summary { cursor: pointer; }
   .sc-vis { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; }
@@ -14015,15 +14016,38 @@ function scrimModel(noAdj) {
   // Screens set / advantages, for roles.
   const scr = {}, adv = {}; d.possList.filter(pp => pp.team === 'WLU').forEach(pp => (pp.screens || []).forEach(x => { if (x.s && !isOppJersey(x.s)) { scr[x.s] = (scr[x.s] || 0) + 1; if (x.adv === 'Yes') adv[x.s] = (adv[x.s] || 0) + 1; } }));
   const sessN = Math.max(1, new Set(d.shots.map(sessKey)).size);
+  // Little data is pulled toward a replacement-level player (below the team average: a guy who hasn't been on the field
+  // much usually has a reason), not toward the team average. No data at all = replacement level.
+  const uses = all.map(p => (p.shots + p.potAst + p.to) / Math.max(1, p.sessions.size)).filter(x => x > 0).sort((a, b) => a - b);
+  const q = (arr, f) => { const a = arr.filter(x => isFinite(x)).sort((x, y) => x - y); return a.length ? a[Math.min(a.length - 1, Math.floor(f * a.length))] : null; };
+  const rated = all.filter(p => p.shots + p.potAst + p.to >= 30), tt = p => p.shots + p.potAst + p.to;
+  const rUse = q(uses, 0.25) || 3, rTo = Math.min(0.6, q(rated.map(p => p.to / tt(p)), 0.75) || tTo * 1.2), rSF = 1 - rTo, rShot = rSF * tShot / (tShot + tFeed), rFeed = rSF - rShot;
+  const tierRate = (p, i) => { const a = p.ownShots.filter(s => ti(s.shotQuality) === i); return a.length >= 5 ? a.filter(s => s.goal === 1).length / a.length : NaN; };
+  const rFin = [0, 1, 2].map(i => Math.min(tFin[i], q(rated.map(p => tierRate(p, i)), 0.25) || tFin[i] * 0.85));
+  const gsShare = p => p.shots ? p.ownShots.filter(s => ti(s.shotQuality) < 2).length / p.shots : NaN, rGs = q(rated.map(gsShare), 0.25) || (tMix[0] + tMix[1]) * 0.85;
+  const rMix0 = [rGs * tMix[0] / (tMix[0] + tMix[1]), rGs * tMix[1] / (tMix[0] + tMix[1]), 1 - rGs], rMix = rMix0, rDom = q(rated.map(p => p.dominoes / tt(p)), 0.25) || tDom * 0.7;
   all.forEach(p => {
     const j = p.jersey, t = p.shots + p.potAst + p.to; if (!t) return;
-    const k = 30, pS = (p.shots + k * tShot) / (t + k), pF = (p.potAst + k * tFeed) / (t + k), pT = (p.to + k * tTo) / (t + k), z = pS + pF + pT;
+    const k = 30, pS = (p.shots + k * rShot) / (t + k), pF = (p.potAst + k * rFeed) / (t + k), pT = (p.to + k * rTo) / (t + k), z = pS + pF + pT;
     const n = [0, 0, 0], g = [0, 0, 0]; p.ownShots.forEach(s => { const i = ti(s.shotQuality); n[i]++; if (s.goal === 1) g[i]++; });
-    const mix = n.map((x, i) => (x + 10 * tMix[i]) / (p.shots + 10));
-    const fin = n.map((x, i) => ({ a: g[i] + 12 * tFin[i], b: x - g[i] + 12 * (1 - tFin[i]) }));   // Beta posterior per tier
-    P[j] = { j, touch: t, use: t / Math.max(1, p.sessions.size), pShot: pS / z, pFeed: pF / z, pTo: pT / z, mix, fin, dom: (p.dominoes + 15 * tDom) / (t + 15),
-      shots: p.shots, scr: (scr[j] || 0) / Math.max(1, p.sessions.size), advRate: ((adv[j] || 0) + 4 * 0.7) / ((scr[j] || 0) + 4) };
+    const mix = n.map((x, i) => (x + 10 * rMix[i]) / (p.shots + 10));
+    const fin = n.map((x, i) => ({ a: g[i] + 12 * rFin[i], b: x - g[i] + 12 * (1 - rFin[i]) }));   // Beta posterior per tier
+    const ses = Math.max(1, p.sessions.size), use = (t + 2 * rUse) / (ses + 2);   // touches per practice, pulled toward replacement for few practices
+    P[j] = { j, touch: t, use, pShot: pS / z, pFeed: pF / z, pTo: pT / z, mix, fin, dom: (p.dominoes + 15 * rDom) / (t + 15),
+      shots: p.shots, scr: (scr[j] || 0) / ses, advRate: ((adv[j] || 0) + 4 * 0.7) / ((scr[j] || 0) + 4), thin: t < 20 };
   });
+  // Rostered players with nothing logged still take their touches. A bench middie with no data is assumed to play
+  // like the bench middies who do have data (same position, not in the top 8); anyone else, at replacement level.
+  const top8 = (SC.plan && SC.plan.top8) || [], benchLike = j => posOfJ(season, j) === 'M' && !top8.includes(j);
+  const peers = Object.values(P).filter(x => x.touch >= 10 && benchLike(x.j)), avgOf = f => peers.reduce((a, x) => a + f(x), 0) / peers.length;
+  const benchProf = peers.length >= 2 ? { use: avgOf(x => x.use), pShot: avgOf(x => x.pShot), pFeed: avgOf(x => x.pFeed), pTo: avgOf(x => x.pTo), mix: [0, 1, 2].map(i => avgOf(x => x.mix[i])), fin: [0, 1, 2].map(i => avgOf(x => x.fin[i].a / (x.fin[i].a + x.fin[i].b))), dom: avgOf(x => x.dom) } : null;
+  rosterPlayers(season).forEach(r => { const j = r.jersey; if (!j || P[j]) return;
+    const b = benchLike(j) && benchProf;
+    P[j] = b ? { j, touch: 0, use: b.use, pShot: b.pShot, pFeed: b.pFeed, pTo: b.pTo, mix: b.mix.slice(), fin: b.fin.map(x => ({ a: 8 * x, b: 8 * (1 - x) })), dom: b.dom, shots: 0, scr: 0, advRate: 0.7, thin: true, none: true, like: 'bench' }
+      : { j, touch: 0, use: rUse, pShot: rShot, pFeed: rFeed, pTo: rTo, mix: rMix.slice(), fin: rFin.map(x => ({ a: 12 * x, b: 12 * (1 - x) })), dom: rDom, shots: 0, scr: 0, advRate: 0.7, thin: true, none: true }; });
+  // What dominoes are worth, from every logged shot: finishing after dominoes vs without, against all shots.
+  const sh = d.shots.filter(s => !isOppJersey(s.shooterJersey)), gr = a => (a.length ? a.filter(s => s.goal === 1).length / a.length : 0);
+  const gAll = gr(sh) || 0.35, domYes = gr(sh.filter(s => s.dominoes === 'Yes')) / gAll || 1.12, domNo = gr(sh.filter(s => s.dominoes !== 'Yes')) / gAll || 0.86;
   // Roles: creator (dominoes + feeds), finisher (finishing + catch shots), screener (screens set).
   const vals = k => Object.values(P).map(x => x[k]), zf = (k, v) => { const a = vals(k), m = a.reduce((x, y) => x + y, 0) / a.length, sd = Math.sqrt(a.reduce((x, y) => x + (y - m) ** 2, 0) / Math.max(1, a.length - 1)) || 1; return (v - m) / sd; };
   Object.values(P).forEach(x => { x.finRate = x.fin.reduce((a, f, i) => a + x.mix[i] * f.a / (f.a + f.b), 0); x.creat = x.dom + x.pFeed; });
@@ -14034,7 +14058,7 @@ function scrimModel(noAdj) {
   const base = px ? pg / px : 1, roleMult = {};
   Object.keys(pr).forEach(k => { const r = pr[k]; roleMult[k] = Math.max(0.85, Math.min(1.15, ((r.g + 20 * base * (r.x / r.n)) / (r.x + 20 * (r.x / r.n))) / base)); });
   const meanUse = Object.values(P).reduce((a, x) => a + x.use, 0) / Math.max(1, Object.keys(P).length);
-  const out = { P, tMix, tFin, tCat, daySd, teamDaySd, roleMult, meanUse, sessN, pairs: pr };
+  const out = { P, tMix, tFin, tCat, daySd, teamDaySd, roleMult, meanUse, sessN, pairs: pr, domYes, domNo };
   if (!noAdj) scrimApplyAdj(out);
   return out;
 }
@@ -14064,7 +14088,7 @@ function scrimBeta(a, b) { // quick beta draw via two gammas (Marsaglia-Tsang)
   const g = k => { if (k < 1) return g(k + 1) * Math.pow(SCRIM_RNG(), 1 / k); const dd = k - 1 / 3, c = 1 / Math.sqrt(9 * dd); for (;;) { let x, v; do { const u1 = SCRIM_RNG() || 1e-9, u2 = SCRIM_RNG(); x = Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2); v = 1 + c * x; } while (v <= 0); v = v * v * v; const u = SCRIM_RNG(); if (u < 1 - 0.0331 * x ** 4 || Math.log(u) < 0.5 * x * x + dd * (1 - v + Math.log(v))) return dd * v; } };
   const x = g(a), y = g(b); return x / (x + y);
 }
-const scrimStat = () => ({ poss: 0, to: 0, shots: 0, gs: 0, dom: 0, fed: 0, fedG: 0, goals: 0, goalsBy: {}, touch: {} });
+const scrimStat = () => ({ xg: 0, poss: 0, to: 0, shots: 0, gs: 0, dom: 0, fed: 0, fedG: 0, goals: 0, goalsBy: {}, touch: {} });
 const scrimNorm = () => { const u1 = SCRIM_RNG() || 1e-9, u2 = SCRIM_RNG(); return Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2); };
 const scrimLogit = p => Math.log(p / (1 - p)), scrimInv = x => 1 / (1 + Math.exp(-x));
 // One "world": each player's true finishing drawn from his posterior, plus that day's form.
@@ -14093,12 +14117,13 @@ function scrimPossessions(M, line, n, world, ctx, calib, typeOverride, st) {
       if (r < p.pTo / crowd[i] + p.pShot || !steps || step === 2) {
         // shot: tier from his mix (catch shots lean on the team catch mix), lifted a tier by dominoes
         let mix = fedBy >= 0 ? p.mix.map((m, t) => 0.5 * m + 0.5 * M.tCat[t]) : p.mix, t = scrimPick([0, 1, 2], mix);
-        if (lifted && t > 0 && SCRIM_RNG() < 0.5) t--;
         let pr = (world.fin[p.j] || [0.4, 0.3, 0.15])[t] * crowd[i];
+        if (steps) pr *= lifted ? (M.domYes || 1.12) : (M.domNo || 0.86);   // measured: finishing after dominoes vs without
         if (fedBy >= 0 && scrimOpt('roles')) pr *= M.roleMult[ps[fedBy].role + '>' + p.role] || 1;
         if (scrimOpt('types')) pr *= typeMult(type);
         pr *= calib * ctx.oppDef;
         pr = scrimInv(scrimLogit(Math.min(0.95, Math.max(0.01, pr))) + world.team);
+        if (st) st.xg += pr;
         const made = SCRIM_RNG() < pr;
         if (made) { g++; pts += fedBy >= 0 ? 2 : 1; }
         if (st) { st.shots++; if (t < 2) st.gs++; if (lifted) st.dom++; if (fedBy >= 0) { st.fed++; if (made) st.fedG++; } if (made) { st.goals++; st.goalsBy[p.j] = (st.goalsBy[p.j] || 0) + 1; } }
@@ -14275,15 +14300,16 @@ function scrimGroups() {
   return out;
 }
 function scrimLineStats(M, calib, ctx, six, reps) {
-  const st = scrimStat(), per = [];
-  for (let r = 0; r < reps; r++) {
-    const w = scrimWorld(M, six), lam = ctx.poss; let n = 0, L = Math.exp(-lam), pr = 1; do { n++; pr *= SCRIM_RNG(); } while (pr > L); n--;
-    per.push(scrimPossessions(M, six, n, w, ctx, calib, undefined, st).g);
-  }
-  const e15 = scrimMean(per), sd = Math.sqrt(per.reduce((a, b) => a + (b - e15) ** 2, 0) / Math.max(1, per.length - 1)), gpp = st.goals / Math.max(1, st.poss);
+  // Rate a lineup by expected goals (each shot counts its chance of going in), over many simulated days.
+  const st = scrimStat(), per = [], N = 25; reps = 80;
+  for (let r = 0; r < reps; r++) { const w = scrimWorld(M, six), x0 = st.xg; scrimPossessions(M, six, N, w, ctx, calib, undefined, st); per.push((st.xg - x0) / N); }
+  const gpp = st.xg / Math.max(1, st.poss), P = ctx.poss, e15 = gpp * P;
+  const vb = per.reduce((a, v) => a + (v - gpp) ** 2, 0) / Math.max(1, per.length - 1);
+  const sd = Math.sqrt(P * gpp * (1 - gpp) + P * P * vb + gpp * gpp * P);   // shot luck + good/bad days + how many possessions
+  const pseudo = [Math.max(0, e15 - 1.28 * sd), e15 + 1.28 * sd];
   const ps = six.map(j => M.P[j]).filter(Boolean), us = ps.reduce((a, p) => a + p.use, 0); let cw = 0, cs = 0;
   ps.forEach(a => ps.forEach(b => { if (a === b) return; const w2 = (a.use / us) * (b.use / us); cw += w2 * (M.roleMult[a.role + '>' + b.role] || 1); cs += w2; }));
-  return { e15, p10: scrimQ(per, 0.1), p90: scrimQ(per, 0.9), sd, gpp, to: st.to / Math.max(1, st.poss), gs: st.gs / Math.max(1, st.shots), dom: st.dom / Math.max(1, st.poss), fed: st.fed / Math.max(1, st.shots),
+  return { e15, p10: Math.round(pseudo[0]), p90: Math.round(pseudo[1]), sd, gpp, to: st.to / Math.max(1, st.poss), gs: st.gs / Math.max(1, st.shots), dom: st.dom / Math.max(1, st.poss), fed: st.fed / Math.max(1, st.shots),
     shift: 1 - Math.pow(1 - gpp, ctx.poss / 3), chem: cs ? cw / cs : 1, touch: st.touch, goalsBy: st.goalsBy, goals: st.goals };
 }
 // Builds the table in chunks so the page stays responsive.
@@ -14302,7 +14328,9 @@ function scrimUniverse(M, calib, done) {
 // Impact score of a six with the weight sliders (same parts as the Depth Chart).
 function scrimImpact(six) {
   const B = SC.impBase || (SC.impBase = soBase(scrimSeason())), w = (SC.plan && SC.plan.iw) || {}, W = SO_W.map(([k, , d]) => [k, isFinite(w[k]) ? w[k] : d]), tw = W.reduce((a, x) => a + x[1], 0) || 1;
-  const one = j => { const p = B.ready && B.players[j]; return p ? W.reduce((a, [k, v]) => a + v * p.parts[k], 0) / tw : 50; };
+  // Players without an Impact Rating (too little data) count at replacement level: the 25th percentile of rated players.
+  if (SC.impRep === undefined) { const v = B.ready ? Object.values(B.players).map(p => W.reduce((a, [k, x]) => a + x * p.parts[k], 0) / tw).sort((a, b) => a - b) : []; SC.impRep = v.length ? v[Math.floor(v.length * 0.25)] : 40; }
+  const one = j => { const p = B.ready && B.players[j]; return p ? W.reduce((a, [k, v]) => a + v * p.parts[k], 0) / tw : SC.impRep; };
   return six.reduce((a, j) => a + one(j), 0) / six.length;
 }
 const SCRIM_COLS = [
@@ -14326,7 +14354,7 @@ function scrimWhy(r, rows) {
     `The ball goes most to ${ball.join(' and ')}. Goals come mostly from ${sc.join(', ')}.`,
     `${pct(r.fed)} of its shots come off a feed; dominoes lift the look on ${pct(r.dom)} of possessions; ${pct(r.gs)} of shots are Gold or Silver (average ${pct(avg('gs'))}); it turns it over on ${pct(r.to)} of possessions (average ${pct(avg('to'))}).`,
     `Roles: ${roles}. Chemistry ×${num(r.chem, 2)} (from how those roles have connected on every logged feed).`,
-    `<b>Biggest strength:</b> ${words[best]}. <b>Weak spot:</b> ${words[worst]}.`].map(x => `<p>${x}</p>`).join('');
+    `<b>Biggest strength:</b> ${words[best]}. <b>Weak spot:</b> ${words[worst]}.`].concat(scrimThin(r.six).length ? [`⚠ <b>Little data</b> on ${scrimThin(r.six).join(', ')}: a bench middie with nothing logged is assumed to play like the bench middies who have been logged; anyone else with little data is pulled toward a below-average player. This line could be better or worse than shown.`] : []).map(x => `<p>${x}</p>`).join('');
 }
 // ---- small SVG charts ----
 function scrimGauge(p) {
@@ -14436,7 +14464,7 @@ function scrimRun() {
   setTimeout(() => {
     try {
       const calib = scrimCalib(scrimModel(true)), M = scrimModel();   // calibration from the unadjusted roster, so sliders count in full
-      SC.impBase = null; SC.uni = scrimUniverseSync(M, calib); scrimScore();
+      SC.impBase = null; SC.impRep = undefined; SC.res = Object.assign(SC.res || {}, { M }); SC.uni = scrimUniverseSync(M, calib); scrimScore();
       const state = scrimOptimize(M, calib), sim = scrimSimulate(M, calib, state, 2000);
       const p = SC.plan; p.lines = {}; state.forEach((st, qi) => { p.lines[qi] = { att: st.att, lines: st.lines, mins: st.mins, locked: !!(SC.plan.lockedQ || {})[qi] }; });
       SC.res = { M, calib, state, sim, back: scrimBacktest(M), sens: scrimSensitivity(M, calib, state), at: new Date() };
@@ -14463,7 +14491,8 @@ function scrimScore() {
   U.groups.forEach(g => {
     const R = U.rows.filter(r => r.grp === g.key), z = k => { const v = R.map(r => r[k]), m = scrimMean(v), sd = Math.sqrt(scrimMean(v.map(x => (x - m) ** 2))) || 1; return r => (r[k] - m) / sd; };
     const zs = z(floor ? 'bad' : 'e15'), zi = z('imp');
-    R.forEach(r => { r.score = Math.max(0, Math.min(100, 50 + 15 * ((1 - b) * zs(r) + b * zi(r)))); });
+    // Each little-data player costs 4 points: an unknown is a risk the coach can't plan around.
+    const M = SC.res && SC.res.M; R.forEach(r => { const thin = M ? r.six.filter(j => M.P[j] && M.P[j].thin).length : 0; r.thinN = thin; r.score = Math.max(0, Math.min(100, 50 + 15 * ((1 - b) * zs(r) + b * zi(r)) - 4 * thin)); });
     R.slice().sort((a, c) => c.score - a.score).forEach((r, i) => { r.rank = i + 1; r.of = R.length; });
   });
   SC.rowIdx = {}; U.rows.forEach(r => { SC.rowIdx[r.grp + '|' + r.six.slice().sort().join(',')] = r; });
@@ -14476,6 +14505,7 @@ function scrimRankWith(qi, row, must) {
 }
 function scrimRowFor(qi, six) { const q = SC.plan.quarters[qi]; return SC.rowIdx && SC.rowIdx[q.mid + '|' + q.attack.join(',') + '|' + six.slice().sort().join(',')]; }
 // Plain-words strength of a lineup (one line), from scrimWhy's comparison.
+function scrimThin(six) { const M = SC.res && SC.res.M; if (!M) return []; return six.filter(j => M.P[j] && M.P[j].thin).map(j => `${scrimName(j)} (${M.P[j].touch} touches)`); }
 function scrimStrength(r, rows) {
   const peers = rows.filter(x => x.grp === r.grp), avg = k => scrimMean(peers.map(x => x[k])), sd = k => { const m = avg(k); return Math.sqrt(scrimMean(peers.map(x => (x[k] - m) ** 2))) || 1; };
   const z = { gs: (r.gs - avg('gs')) / sd('gs'), to: -(r.to - avg('to')) / sd('to'), dom: (r.dom - avg('dom')) / sd('dom'), fed: (r.fed - avg('fed')) / sd('fed'), sd: -(r.sd - avg('sd')) / sd('sd') };
@@ -14509,12 +14539,12 @@ function renderScrim() {
   const used = {}; R.state.forEach((st, qi) => st.lines.forEach(l => { const r = scrimRowFor(qi, st.att.concat(l)); if (r) used[r.id] = (used[r.id] || 0) + 1; }));
   const bestCards = `<div class="panel"><p class="panel-title">Best lineups</p><p class="panel-sub">Top 5 in each group. Score blends the simulation (${100 - blend}%) with your Impact weights (${blend}%). ✓ = in the plan.</p>
     ${U.groups.map(g => { const rows = U.rows.filter(r => r.grp === g.key).sort((a, b) => b.score - a.score).slice(0, 5);
-      return `<p class="sc-gh">${escapeHtml(g.name)}</p><div class="sc-best">${rows.map(r => `<div class="sc-card${used[r.id] ? ' sc-in' : ''}" data-sc="card" data-id="${r.id}"><span class="sc-rank">#${r.rank}</span><div class="sc-cm"><b>${r.mids.map(nm).join(' · ')}</b><span class="n-note">with ${r.att.map(nm).join(' · ')}</span><span class="sc-cw">${escapeHtml(scrimStrength(r, U.rows))}</span></div><div class="sc-cs"><b>${Math.round(r.score)}</b><span>score</span><span class="n-note">${num(r.e15, 1)} goals / 15 min</span></div>${used[r.id] ? '<span class="sc-tick">✓</span>' : ''}</div>`).join('')}</div>`; }).join('')}</div>`;
+      return `<p class="sc-gh">${escapeHtml(g.name)}</p><div class="sc-best">${rows.map(r => `<div class="sc-card${used[r.id] ? ' sc-in' : ''}" data-sc="card" data-id="${r.id}"><span class="sc-rank">#${r.rank}</span><div class="sc-cm"><b>${r.mids.map(nm).join(' · ')}</b><span class="n-note">with ${r.att.map(nm).join(' · ')}</span><span class="sc-cw">${escapeHtml(scrimStrength(r, U.rows))}</span>${scrimThin(r.six).length ? `<span class="sc-thin">⚠ little data: ${escapeHtml(scrimThin(r.six).join(', '))}</span>` : ''}</div><div class="sc-cs"><b>${Math.round(r.score)}</b><span>score</span><span class="n-note">${num(r.e15, 1)} goals / 15 min</span></div>${used[r.id] ? '<span class="sc-tick">✓</span>' : ''}</div>`).join('')}</div>`; }).join('')}</div>`;
   // 3. The plan: each line with its rank
   const games = p.games.map((g, gi) => {
     const rows = R.state.map((st, qi) => ({ st, qi })).filter(x => Math.floor(x.qi / 4) === gi).map(({ st, qi }) => {
       const q = p.quarters[qi];
-      const lines = st.lines.map((l, li) => { const r = scrimRowFor(qi, st.att.concat(l)); const must = li === 0 ? (q.starters || []).filter(j => l.includes(j)) : (q.favor || []).filter(j => l.includes(j)); const rw = scrimRankWith(qi, r, must); return `<div class="sc-line"><span class="sc-ln">Line ${li + 1}${li === 0 ? ' (starts)' : ''}<input type="number" class="sc-min" min="0" max="15" step="0.5" value="${num((st.mins || [])[li] || 15 / st.lines.length, 1)}" data-sc-min="${qi}:${li}" title="Minutes of the 15"> min</span>${l.map((j, pos) => chip(j, qi, li, pos)).join('')}${r ? `<span class="sc-rk${r.rank <= 5 || (rw && rw.rank <= 2) ? ' top' : ''}">#${r.rank} of ${r.of}</span>${rw && rw.of > 1 ? `<span class="n-note">#${rw.rank} of ${rw.of} lines with ${escapeHtml(must.map(scrimName).join(' + '))}</span>` : ''}<span class="sc-v">score ${Math.round(r.score)}</span>` : ''}</div>`; }).join('');
+      const lines = st.lines.map((l, li) => { const r = scrimRowFor(qi, st.att.concat(l)); const must = li === 0 ? (q.starters || []).filter(j => l.includes(j)) : (q.favor || []).filter(j => l.includes(j)); const rw = scrimRankWith(qi, r, must); return `<div class="sc-line"><span class="sc-ln">Line ${li + 1}${li === 0 ? ' (starts)' : ''}<input type="number" class="sc-min" min="0" max="15" step="0.5" value="${num((st.mins || [])[li] || 15 / st.lines.length, 1)}" data-sc-min="${qi}:${li}" title="Minutes of the 15"> min</span>${l.map((j, pos) => chip(j, qi, li, pos)).join('')}${r ? `<span class="sc-rk${r.rank <= 5 || (rw && rw.rank <= 2) ? ' top' : ''}">#${r.rank} of ${r.of}</span>${rw && rw.of > 1 ? `<span class="n-note">#${rw.rank} of ${rw.of} lines with ${escapeHtml(must.map(scrimName).join(' + '))}</span>` : ''}<span class="sc-v">score ${Math.round(r.score)}</span>` : ''}${scrimThin(l).length ? `<span class="sc-thin">⚠ little data: ${escapeHtml(scrimThin(l).join(', '))}</span>` : ''}</div>`; }).join('');
       const why = scrimPlanWhy(qi, st);
       return `<div class="sc-q"><div class="sc-qh"><b>${escapeHtml(p.quarters[qi].label)}</b> <span class="n-note">Attack: ${st.att.map((j, pos) => p.quarters[qi].attack.length > 3 ? chip(j, qi, 'a', pos) : nm(j)).join(' · ')}</span><span class="sc-v">${num(scrimMean(R.sim.q[qi]), 1)} goals expected</span></div>${lines}${why}${scrimWarn(qi, st)}${SC.edit && SC.edit.qi === qi ? scrimSwapHtml(qi) : ''}</div>`;
     }).join('');
@@ -14637,7 +14667,7 @@ function scrimInit() {
     const t = ev.target;
     if (t.dataset.scBlend) { SC.plan.blend = Number(t.value); t.closest('.dp-w').querySelector('span').innerHTML = `Score = simulation <b>${100 - SC.plan.blend}%</b> + your Impact weights <b>${SC.plan.blend}%</b>`; return; }
     if (!t.dataset.scIw) return;
-    SC.plan.iw = SC.plan.iw || {}; SC.plan.iw[t.dataset.scIw] = Number(t.value); scrimScore();
+    SC.plan.iw = SC.plan.iw || {}; SC.plan.iw[t.dataset.scIw] = Number(t.value); SC.impRep = undefined; scrimScore();
     const tb = document.getElementById('scTable'); if (tb) tb.innerHTML = scrimTableHtml();
     const tot = SO_W.reduce((a, [k, , d]) => a + (isFinite(SC.plan.iw[k]) ? SC.plan.iw[k] : d), 0); t.closest('.dp-w').querySelector('b').textContent = dpPct(Number(t.value), tot) + '%';
   });
