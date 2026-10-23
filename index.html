@@ -14181,8 +14181,9 @@ function scrimOptimize(M, calib, prior) {
     // Only quarters you set by hand are kept; the rest start fresh, so the same settings always give the same plan.
     const pool = scrimQuarterPool(q), keep0 = (p.lines || {})[qi], keep = keep0 && (keep0.locked || (p.lockedQ || {})[qi]) ? keep0 : null;
     const att = q.attack.length > 3 ? (keep && keep.att) || q.attack.slice(0, 3) : q.attack.slice(0, 3);
-    let lines = keep && keep.lines && keep.lines.length ? keep.lines.map(l => l.slice()) : null;
+    let lines = keep && keep.lines && keep.lines.length ? keep.lines.map(l => l.slice()) : null, fits = true;
     if (!lines || lines.length !== (q.nLines || 3) || lines.some(l => l.some(j => !pool.includes(j)))) {
+      fits = false;
       // Start from a legal plan: starters on line 1, each "play more" guy on a second line, the rest shuffled in.
       const nL = q.nLines || 3; lines = Array.from({ length: nL }, () => []);
       (q.starters || []).filter(j => pool.includes(j)).slice(0, 3).forEach(j => lines[0].push(j));
@@ -14190,8 +14191,8 @@ function scrimOptimize(M, calib, prior) {
       const order = pool.slice().sort(() => SCRIM_RNG() - 0.5); let oi = 0;
       lines.forEach(l => { let guard = 0; while (l.length < 3 && guard++ < 50) { const j = order[oi++ % order.length]; if (!l.includes(j)) l.push(j); } });
     }
-    const mins = keep && keep.mins && keep.mins.length === lines.length ? keep.mins.slice() : lines.map(() => 15 / lines.length);
-    return { att, lines, pool, mins, locked: !!(keep && keep.locked) };
+    const mins = keep0 && keep0.mins && keep0.mins.length === lines.length ? keep0.mins.slice() : lines.map(() => 15 / lines.length);   // minutes you set stay
+    return { att, lines, pool, mins, locked: !!(keep && keep.locked && fits) };
   });
   const lineScore = (qi, l, att) => { const r = scrimRowFor(qi, att.concat(l)); if (r) return r.score / 100; const v = scrimLineValue(M, ctxs[gameOf(qi)], calib, att.concat(l), cache); return v.m * 2; };
   const valid = (qi, st) => { const q = Q[qi]; if (st.lines.some(l => new Set(l).size !== 3)) return false; if ((q.starters || []).some(j => !st.lines[0].includes(j))) return false;
@@ -14637,7 +14638,7 @@ function renderScrim() {
       const q = p.quarters[qi];
       const lines = st.lines.map((l, li) => { const r = scrimRowFor(qi, st.att.concat(l)); const must = li === 0 ? (q.starters || []).filter(j => l.includes(j)) : (q.favor || []).filter(j => l.includes(j)); const rw = scrimRankWith(qi, r, must); return `<div class="sc-line"><span class="sc-ln">Line ${li + 1}${li === 0 ? ' (starts)' : ''}<input type="number" class="sc-min" min="0" max="15" step="0.5" value="${num((st.mins || [])[li] || 15 / st.lines.length, 1)}" data-sc-min="${qi}:${li}" title="Minutes of the 15"> min</span>${l.map((j, pos) => chip(j, qi, li, pos)).join('')}${r && !r.rank ? `<span class="sc-fill">fill-in: ${escapeHtml(l.filter(j => SC.res.M.P[j] && SC.res.M.P[j].none).map(scrimName).join(', '))} (no data)</span>` : ''}${r && r.rank ? `<span class="sc-rk${r.rank <= 5 || (rw && rw.rank <= 2) ? ' top' : ''}">#${r.rank} of ${r.of}</span>${rw && rw.of > 1 ? `<span class="n-note">#${rw.rank} of ${rw.of} lines with ${escapeHtml(must.map(scrimName).join(' + '))}</span>` : ''}<span class="sc-v">score ${Math.round(r.score)}</span>` : ''}${scrimThin(l).length ? `<span class="sc-thin">⚠ little data: ${escapeHtml(scrimThin(l).join(', '))}</span>` : ''}</div>`; }).join('');
       const why = scrimPlanWhy(qi, st);
-      return `<div class="sc-q"><div class="sc-qh"><b>${escapeHtml(p.quarters[qi].label)}</b> <span class="n-note">Attack: ${st.att.map((j, pos) => p.quarters[qi].attack.length > 3 ? chip(j, qi, 'a', pos) : nm(j)).join(' · ')}</span><span class="sc-v">${num(scrimMean(R.sim.q[qi]), 1)} goals expected</span></div>${lines}${why}${scrimWarn(qi, st)}${SC.edit && SC.edit.qi === qi ? scrimSwapHtml(qi) : ''}</div>`;
+      return `<div class="sc-q"><div class="sc-qh"><b>${escapeHtml(p.quarters[qi].label)}</b>${(p.lines[qi] || {}).locked ? ` <span class="sc-tag">set by hand</span> <button type="button" class="pill" data-sc="unlock" data-qi="${qi}">Let the model pick</button>` : ''} <span class="n-note">Attack: ${st.att.map((j, pos) => p.quarters[qi].attack.length > 3 ? chip(j, qi, 'a', pos) : nm(j)).join(' · ')}</span><span class="sc-v">${num(scrimMean(R.sim.q[qi]), 1)} goals expected</span></div>${lines}${why}${scrimWarn(qi, st)}${SC.edit && SC.edit.qi === qi ? scrimSwapHtml(qi) : ''}</div>`;
     }).join('');
     return `<div class="panel sc-game"><p class="panel-title">${escapeHtml(g.name)} plan vs ${escapeHtml(p.opps[g.opp].name)}</p><p class="n-note">Tap a player to swap him. #rank = where that line ranks among every line its group could use.</p>${rows}</div>`;
   }).join('');
@@ -14732,6 +14733,7 @@ function scrimInit() {
     const b = ev.target.closest('[data-sc]'); if (!b) return; const a = b.dataset.sc, p = SC.plan;
     if (a === 'run') { (SC.plan.lockedQ = {}); Object.keys(p.lines || {}).forEach(k => { if (p.lines[k].locked) SC.plan.lockedQ[k] = true; }); scrimRun(); return; }
     if (a === 'useplan') { scrimUsePlan(Number(b.dataset.k)); return; }
+    if (a === 'unlock') { const qi = Number(b.dataset.qi); if (p.lines[qi]) p.lines[qi].locked = false; scrimRunAll(p.quarters[qi].label + ' back to the model'); return; }
     if (a === 'lock') { scrimLock(); return; }
     if (a === 'scsave') { const n = (document.getElementById('scScName') || {}).value, sc = scrimScenarioNow((n || '').trim()); if (!sc) return; p.scenarios = (p.scenarios || []).concat(sc).slice(-12); SC.cmp = (SC.cmp || (p.scenarios.slice(-3).map(x => x.id))).filter(id => id !== sc.id).concat(sc.id).slice(-4); scrimSave(); return; }
     if (a === 'sccmp') { const id = b.dataset.id, c = (SC.cmp || (p.scenarios || []).slice(-3).map(x => x.id)).slice(), i = c.indexOf(id); if (i >= 0) c.splice(i, 1); else c.push(id); SC.cmp = c.slice(-4); }
@@ -14757,7 +14759,7 @@ function scrimInit() {
     if (a === 'shownone') SC.showNone = !SC.showNone;
     if (a === 'adjj') SC.adjJ = SC.adjJ === b.dataset.j ? null : b.dataset.j;
     if (a === 'adjreset') { if (p.adj) delete p.adj[b.dataset.j]; scrimRecalc('reset ' + scrimName(b.dataset.j)); }
-    if (a === 'iwreset') { SO_W.forEach(([k, , d]) => scrimSetWeight(k, d)); scrimRunAll('reset Impact weights'); return; }
+    if (a === 'iwreset') { SO_W.forEach(([k, , d]) => scrimSetWeight(k, d)); if (dpEmpty(DP_WHATIF.off)) { DP_WHATIF.off = null; DP_VIEW.off = 'model'; } scrimRunAll('reset Impact weights'); return; }
     if (a === 'out') { const j = b.dataset.j, o = (p.out || []).includes(j); p.out = o ? p.out.filter(x => x !== j) : (p.out || []).concat(j); scrimRecalc(`${scrimName(j)} ${o ? 'back in' : 'out'}`); }
     if (a === 'goalie') { p.goalie = p.goalie === b.dataset.j ? null : b.dataset.j; scrimRecalc('our goalie'); }
     if (a === 'hot') { p.hotGoalie = !p.hotGoalie; scrimRecalc(p.hotGoalie ? 'their goalie hot' : 'their goalie normal'); }
@@ -14840,7 +14842,7 @@ async function scrimRunAll(label) {
     scrimMsg('Playing out 20,000 games for the best plan and 4,000 for each alternative…');
     const [simA, ...alt] = await Promise.all(plans.map((st, k) => scrimSimulateAsync(M, calib, st, k ? 4000 : 20000, k ? 2 : 4)));
     SC.plans = plans.map((st, k) => ({ state: st, sim: k ? alt[k - 1] : simA }));
-    const p = SC.plan; p.lines = {}; plans[0].forEach((st, qi) => { p.lines[qi] = { att: st.att, lines: st.lines, mins: st.mins, locked: !!(p.lockedQ || {})[qi] }; });
+    const p = SC.plan; p.lines = {}; plans[0].forEach((st, qi) => { p.lines[qi] = { att: st.att, lines: st.lines, mins: st.mins, locked: !!st.locked }; });
     SC.res = { M, calib, state: plans[0], sim: simA, back: SC.back || (SC.back = scrimBacktest(M)), sens: scrimSensitivity(M, calib, plans[0]), at: new Date() };
     SC.stale = false; SC.msg = '';
     SC.changed = label ? scrimDiff(before, scrimSnap(), label) : null;
@@ -14853,14 +14855,14 @@ async function scrimUsePlan(k) {
   const P = SC.plans && SC.plans[k]; if (!P) return; const before = scrimSnap();
   SC.res.state = P.state; SC.busy = true; SC.msg = 'Playing out 20,000 games for that plan…'; renderScrim();
   SC.res.sim = await scrimSimulateAsync(SC.res.M, SC.res.calib, P.state, 20000);
-  const p = SC.plan; p.lines = {}; P.state.forEach((st, qi) => { p.lines[qi] = { att: st.att, lines: st.lines, mins: st.mins, locked: !!(p.lockedQ || {})[qi] }; });
+  const p = SC.plan; p.lines = {}; P.state.forEach((st, qi) => { p.lines[qi] = { att: st.att, lines: st.lines, mins: st.mins, locked: !!st.locked }; });
   SC.changed = scrimDiff(before, scrimSnap(), `Plan ${'ABCDE'[k]}`); SC.busy = false; SC.msg = ''; renderScrim();
 }
 // ---- Saved scenarios, side by side ----
 function scrimScenarioNow(name) {
   const p = SC.plan, R = SC.res; if (!R || !R.sim) return null;
   return { id: Date.now().toString(36), name: name || `Scenario ${(p.scenarios || []).length + 1}`, by: dpWho(), at: new Date().toISOString(),
-    set: { adj: JSON.parse(JSON.stringify(p.adj || {})), w: scrimWeights().w, blend: p.blend !== undefined ? p.blend : 30, mode: p.mode || 'raw', out: (p.out || []).slice(), goalie: p.goalie || null, hot: !!p.hotGoalie, opts: Object.assign({}, p.opts || {}) },
+    set: { adj: JSON.parse(JSON.stringify(p.adj || {})), w: Object.assign({}, scrimWeights().w), blend: p.blend !== undefined ? p.blend : 30, mode: p.mode || 'raw', out: (p.out || []).slice(), goalie: p.goalie || null, hot: !!p.hotGoalie, opts: Object.assign({}, p.opts || {}) },
     res: { games: R.sim.games.map((g, gi) => ({ name: p.games[gi].name, opp: p.opps[p.games[gi].opp].name, us: scrimMean(g.us), them: scrimMean(g.them), win: scrimWin(g.us, g.them), lo: scrimQ(g.us, 0.1), hi: scrimQ(g.us, 0.9) })),
       lines: R.state.map(st => ({ att: st.att, lines: st.lines })) } };
 }
@@ -14885,11 +14887,13 @@ function scrimLearned() {   // shrunk ratio of actual to predicted goals over lo
   const a = rows.reduce((s, r) => s + r.actual.us, 0), pd = rows.reduce((s, r) => s + r.pred.us, 0); return Math.max(0.75, Math.min(1.25, (a + 20) / (pd + 20)));
 }
 function scrimHistRows() {
-  const out = [];
+  const out = [], best = {};
   SCRIM_HIST.forEach(h => h.games.forEach(g => {
     const s = Object.values(LIVE_SESSIONS).filter(x => (x.context === 'Scrimmage' || x.context === 'Game') && x.date >= h.at.slice(0, 10) && (x.opponent || '').toLowerCase().includes(g.opp.toLowerCase().split(/[\s-]/)[0])).sort((a, b) => a.date.localeCompare(b.date))[0];
     let actual = null; if (s) { const sh = s.shots || [], opp = sh.filter(x => x.team === 'OPP'); actual = { us: sh.filter(x => x.team !== 'OPP' && x.goal === 1).length, them: opp.length ? opp.filter(x => x.goal === 1).length : null, date: s.date }; }
-    out.push({ h, pred: g, actual });
+    const row = { h, pred: g, actual }, k = actual && s ? s.date + '|' + g.opp : null;
+    if (k) { if (best[k] && best[k].h.at >= h.at) return; if (best[k]) out.splice(out.indexOf(best[k]), 1); best[k] = row; }
+    out.push(row);
   }));
   return out;
 }
