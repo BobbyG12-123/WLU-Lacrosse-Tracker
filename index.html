@@ -313,6 +313,7 @@
   .bf-chip.part { background: color-mix(in srgb, #E8A317 22%, var(--card)); border-color: #E8A317; }
   .bf-chip.cur { outline: 2px solid var(--navy-3); outline-offset: 1px; }
   .bf-match { display: flex; gap: 12px; align-items: center; padding: 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--card-2, #F8F9FB); margin-bottom: 10px; font-family: var(--text); }
+  .bf-tobox .bf-q { display: inline-block; margin-right: 28px; vertical-align: top; } .bf-tobox .bf-jin input { width: 80px; font-size: 18px; }
   .bf-big { font-size: 17px; font-weight: 700; } .bf-sub { font-size: 13px; margin-top: 2px; }
   .bf-res { font-size: 12px; padding: 1px 7px; border-radius: 999px; background: var(--line); margin-left: 4px; } .bf-res.goal { background: var(--good); color: #fff; }
   .bf-field { width: 92px; flex: none; } .bf-field rect { fill: #2f7d32; stroke: #fff; stroke-width: 1; } .bf-field line { stroke: #fff; stroke-width: .6; } .bf-field .g { fill: #fff; } .bf-field .shot { fill: #FFD54F; stroke: #000; stroke-width: .6; } .bf-field .goal { fill: #ff5252; stroke: #fff; stroke-width: .8; }
@@ -15217,7 +15218,20 @@ function bfFieldHtml(fd, e, d, item) {
   else if (kind === 'goal') ctl = `<div class="bf-goal" data-bf-goal="1">${goalSVG(buildGoalGrid([]), { metric: 'score', interactive: false, labels: false, grid: true })}</div><span class="n-note">${d.f.goalX != null ? escapeHtml(goalZoneName(d.f.goalX, d.f.goalY)) + ' &middot; tap again to move it' : 'Tap where the shot went'}</span>`;
   return `<div class="bf-q"><div class="bf-lab">${escapeHtml(label)}</div>${ctl}</div>`;
 }
+// A new turnover: two typed numbers like the Log page (turned over by, caused by), the rest folded away.
+function bfTurnoverHtml(item, tl) {
+  const d = BF.draft, e = item.e, sh = tl.list.find(x => x.kind === 'shot' && x.e.id === Number(item.after));
+  const rest = BF_POSS_FIELDS.filter(fd => fd[0] !== 'turnoverBy' && fd[0] !== 'causedBy' && (!fd[5] || fd[5](e, d.f)));
+  const box = (name, body) => `<section class="bf-box"><div class="bf-boxh">${escapeHtml(name)}</div>${body}</section>`;
+  const more = box('Possession', rest.filter(fd => fd[4] === 'poss').map(fd => bfFieldHtml(fd, e, d, item)).join('')) + box('Dominoes & screens', rest.filter(fd => fd[4] === 'picks').map(fd => bfFieldHtml(fd, e, d, item)).join('') + bfRowsHtml(d, item));
+  return `<div class="bf-match"><div><div class="bf-big">Turnover <span class="n-note">after shot ${sh ? sh.n : ''}</span></div><div class="bf-sub">Type who turned it over, Enter, then who caused it (leave it blank if unforced), Enter saves.</div></div></div>
+    <section class="bf-box bf-tobox">${bfFieldHtml(['turnoverBy', 'Turnover (#)', 'joff'], e, d, item)}${bfFieldHtml(['causedBy', 'Caused by (#) — blank = unforced', 'jdef'], e, d, item)}</section>
+    <details class="bf-logged"${BF.toMore ? ' open' : ''} data-bf-tomore="1"><summary>More (optional): how it started, man situation, dominoes, screens</summary>${more}</details>
+    <div class="bf-actions"><button type="button" class="btn" data-bf="save">Save turnover &rarr;</button><button type="button" class="btn secondary" data-bf="saveagain">Save + another turnover here</button><button type="button" class="btn secondary" data-bf="cancelnew">Cancel</button></div>
+    ${BF.msg ? `<p class="bf-msg${/can’t|failed|type who/i.test(BF.msg) ? ' bad' : ''}">${BF.msg}</p>` : ''}`;
+}
 function bfCardHtml(item, tl) {
+  if (item.isNew) return bfTurnoverHtml(item, tl);
   const d = BF.draft, e = item.e, season = bfSeason(), hidden = bfHidden(), fields = bfFieldsFor(item);
   const blankNow = fd => (d.isNew || BF_ALWAYS.has(fd[0]) || bfBlank(e[fd[0]])) && (!fd[5] || fd[5](e, d.f));
   const by = {}; BF_SECTIONS.forEach(([sec]) => { by[sec] = fields.filter(fd => fd[4] === sec && blankNow(fd)); });
@@ -15238,7 +15252,7 @@ function bfCardHtml(item, tl) {
     ${secHtml}${nothing}
     ${logged.length ? `<details class="bf-logged"><summary>Already logged (${logged.length}), not changed here</summary><p>${logged.join(' &middot; ')}</p></details>` : ''}
     <div class="bf-actions"><button type="button" class="btn secondary" data-bf="prev">&larr; Back</button><button type="button" class="btn" data-bf="save">${d.isNew ? 'Save possession' : 'Save &amp; next'} &rarr;</button><button type="button" class="btn secondary" data-bf="skip">Skip</button>
-    ${item.kind === 'shot' ? `<button type="button" class="btn secondary" data-bf="addposs">+ Possession here</button>` : ''}${d.isNew ? `<button type="button" class="btn secondary" data-bf="cancelnew">Cancel</button>` : ''}</div>
+    ${item.kind === 'shot' ? `<button type="button" class="btn secondary" data-bf="addposs" title="Or press T">+ Turnover here</button>` : ''}${d.isNew ? `<button type="button" class="btn secondary" data-bf="cancelnew">Cancel</button>` : ''}</div>
     ${BF.msg ? `<p class="bf-msg${/can’t|failed/i.test(BF.msg) ? ' bad' : ''}">${BF.msg}</p>` : ''}`;
 }
 function renderBackfill() {
@@ -15258,13 +15272,14 @@ function renderBackfill() {
   const item = tl.list[BF.idx];
   if (!BF.draft) BF.draft = bfDraftFor(item);
   const rev = tl.list.filter(x => !x.isNew && bfIsRev(BF.sid, x.kind, x.e.id)).length;
-  const strip = tl.list.map((x, i) => `<button type="button" class="bf-chip ${x.isNew ? 'part' : bfState(BF.sid, x)}${i === BF.idx ? ' cur' : ''}" data-bf="go" data-i="${i}" title="${x.kind === 'shot' ? 'Shot ' + x.n : 'Possession'}">${x.kind === 'shot' ? x.n : 'P'}</button>`).join('');
+  const strip = tl.list.map((x, i) => `<button type="button" class="bf-chip ${x.isNew ? 'part' : bfState(BF.sid, x)}${i === BF.idx ? ' cur' : ''}" data-bf="go" data-i="${i}" title="${x.kind === 'shot' ? 'Shot ' + x.n : x.e.end === 'Turnover' ? 'Turnover' : 'Possession'}">${x.kind === 'shot' ? x.n : x.e.end === 'Turnover' ? 'TO' : 'P'}</button>`).join('');
   wrap.innerHTML = `<div class="panel bf-panel"><div class="bf-top"><button type="button" class="pill" data-bf="list">&larr; Practices</button><b>${escapeHtml(sess.date)} practice</b><span class="n-note">${rev} of ${tl.list.length} reviewed · green = reviewed, gold = has some data</span></div>
     <div class="bf-strip">${strip}</div>${item ? bfCardHtml(item, tl) : '<p>No shots in this practice.</p>'}</div>`;
   const cur = wrap.querySelector('.bf-chip.cur'); if (cur) cur.scrollIntoView({ block: 'nearest', inline: 'center' });
   const gw = wrap.querySelector('[data-bf-goal] svg'); if (gw && BF.draft && BF.draft.f.goalX != null) { const [x, y] = goalMouthPoint(BF.draft.f.goalX, BF.draft.f.goalY); makeMarker(gw, 1.6, 0.5).place(x, y); }
 }
 async function bfSave() {
+  const again = BF.again; BF.again = null;   // only the save that was asked for opens another turnover
   const sess = LIVE_SESSIONS[BF.sid], tl = bfTimeline(sess);
   if (BF.newItem) tl.list.splice(tl.list.findIndex(x => x.kind === 'shot' && x.e.id === BF.newItem.after) + 1, 0, BF.newItem);
   const item = tl.list[BF.idx], d = BF.draft;
@@ -15275,6 +15290,7 @@ async function bfSave() {
   if (d.scr === 'Yes' && d.rows.some(r => (r.sTxt && !r.s) || (r.uTxt && !r.u))) { BF.msg = 'Screens: a jersey number isn’t on the roster.'; renderBackfill(); return; }
   const same = d.rows.findIndex(r => r.s && r.s === r.u);
   if (same >= 0) { BF.msg = `Screen ${same + 1}: the screener and the player who used it can’t be the same.`; renderBackfill(); return; }
+  if (d.isNew && !d.f.turnoverBy) { BF.msg = 'Type who turned it over (or Cancel).'; renderBackfill(); const i = document.querySelector('[data-bf-j="turnoverBy"]'); if (i) i.focus(); return; }
   let res, kind = item.kind, id;
   if (d.kind === 'shot') { const out = bfApply(item.e, d); id = out.id; res = await persistShot(out); }
   else if (d.isNew) {
@@ -15286,9 +15302,15 @@ async function bfSave() {
   if (res === 'error') { BF.msg = 'Save failed — please try again.'; renderBackfill(); return; }
   try { await DB.doc('app/backfill_' + bfSeason()).set({ [bfKey(BF.sid, kind, id)]: dpWho() + ' ' + new Date().toISOString().slice(0, 10) }, { merge: true }); } catch (e) { console.error('backfill mark', e); }
   BF.reviewed[bfKey(BF.sid, kind, id)] = 1;
-  BF.msg = `Saved ${kind === 'shot' ? 'shot ' + item.n : 'possession'}.${res === 'queued' ? ' (Offline — it will sync.)' : ''}`;
+  const toTxt = d.isNew ? `turnover by #${d.f.turnoverBy}${d.f.causedBy ? `, caused by #${d.f.causedBy}` : ' (unforced)'}` : null;
+  BF.msg = `Saved ${kind === 'shot' ? 'shot ' + item.n : toTxt || 'possession'}.${res === 'queued' ? ' (Offline — it will sync.)' : ''}`;
   BF.idx++; BF.draft = null; BF.more = {}; BF.showAll = {};
+  if (again != null) {   // "Save + another turnover here": open a fresh one after the same shot
+    const after = again, tl2 = bfTimeline(LIVE_SESSIONS[BF.sid]);
+    BF.newItem = { kind: 'poss', isNew: true, after, e: { end: 'Turnover' } }; BF.idx = tl2.list.findIndex(x => x.kind === 'shot' && x.e.id === after) + 1; BF.draft = bfDraftFor(BF.newItem);
+  }
   bfRemember(); renderBackfill();
+  if (BF.newItem) { const i = document.querySelector('[data-bf-j="turnoverBy"]'); if (i) i.focus(); }
 }
 function bfRemember() { try { const m = JSON.parse(localStorage.getItem('wluBackfillPos') || '{}'); m[BF.sid] = BF.idx; localStorage.setItem('wluBackfillPos', JSON.stringify(m)); } catch (e) { /* storage unavailable */ } }
 function bfGo(i) { BF.idx = i; BF.draft = null; BF.more = {}; BF.showAll = {}; BF.msg = ''; if (BF.newItem) BF.newItem = null; bfRemember(); renderBackfill(); }
@@ -15303,7 +15325,8 @@ function bfInit() {
     if (a === 'prev') { bfGo(Math.max(0, BF.idx - 1)); return; }
     if (a === 'skip') { bfGo(BF.idx + 1); return; }
     if (a === 'save') { bfSave(); return; }
-    if (a === 'addposs') { const sess = LIVE_SESSIONS[BF.sid], tl = bfTimeline(sess), it = tl.list[BF.idx]; BF.newItem = { kind: 'poss', isNew: true, after: it.e.id, e: { end: 'Turnover' } }; BF.idx = BF.idx + 1; BF.draft = bfDraftFor(BF.newItem); BF.msg = ''; renderBackfill(); return; }
+    if (a === 'saveagain') { BF.again = BF.newItem ? BF.newItem.after : null; bfSave(); return; }
+    if (a === 'addposs') { const sess = LIVE_SESSIONS[BF.sid], tl = bfTimeline(sess), it = tl.list[BF.idx]; if (!it || it.kind !== 'shot') return; BF.newItem = { kind: 'poss', isNew: true, after: it.e.id, e: { end: 'Turnover' } }; BF.idx = BF.idx + 1; BF.draft = bfDraftFor(BF.newItem); BF.msg = ''; renderBackfill(); const i = document.querySelector('[data-bf-j="turnoverBy"]'); if (i) i.focus(); return; }
     if (a === 'cancelnew') { BF.newItem = null; bfGo(Math.max(0, BF.idx - 1)); return; }
     if (a === 'all') { BF.showAll[b.dataset.k] = true; renderBackfill(); return; }
     if (a === 'sec') { const h = bfHidden(); if (h.has(b.dataset.sec)) h.delete(b.dataset.sec); else h.add(b.dataset.sec); try { localStorage.setItem('wluBackfillHide', JSON.stringify([...h])); } catch (e) { /* storage unavailable */ } renderBackfill(); return; }
@@ -15326,7 +15349,7 @@ function bfInit() {
   wrap.addEventListener('keydown', ev => {
     const t = ev.target.closest('[data-bf-j], [data-bf-row]'); if (!t || ev.key !== 'Enter') return;
     ev.preventDefault();
-    const all = [...wrap.querySelectorAll('[data-bf-j], [data-bf-row]')], i = all.indexOf(t);
+    const all = [...wrap.querySelectorAll('[data-bf-j], [data-bf-row]')].filter(x => x.offsetParent !== null), i = all.indexOf(t);
     if (i >= 0 && i < all.length - 1) all[i + 1].focus(); else { t.blur(); bfSave(); }
   });
   // Typed jersey numbers in a screen row: keep what's typed, store it only when it's on the roster.
@@ -15337,6 +15360,7 @@ function bfInit() {
     row[k + 'Txt'] = t.value; row[k] = ok ? v : null;
     const ro = wrap.querySelector(`[data-bf-ro="${k}${t.dataset.r}"]`); if (ro) ro.textContent = !v ? '' : ok ? `#${v} ${nameFor(v, season) || ''}` : `#${v} isn’t on the ${season} roster`;
   });
+  wrap.addEventListener('toggle', ev => { if (ev.target.dataset && ev.target.dataset.bfTomore) BF.toMore = ev.target.open; }, true);
   wrap.addEventListener('input', ev => { const t = ev.target.closest('[data-bf-text]'); if (t && BF.draft) BF.draft.f[t.dataset.bfText] = cleanText(t.value).trim().slice(0, 60) || null; });
   wrap.addEventListener('click', ev => {
     const g = ev.target.closest('[data-bf-goal]'); if (!g || !BF.draft) return;
@@ -15347,6 +15371,7 @@ function bfInit() {
   });
   document.addEventListener('keydown', ev => {
     if (!document.getElementById('backfillView').classList.contains('active') || !BF.sid || /input|textarea|select/i.test((ev.target.tagName || ''))) return;   // typing a jersey: Enter doesn't save
+    if ((ev.key === 't' || ev.key === 'T') && !BF.newItem) { const btn = document.querySelector('[data-bf="addposs"]'); if (btn) { ev.preventDefault(); btn.click(); } return; }
     if (ev.key === 'ArrowRight') { ev.preventDefault(); bfGo(BF.idx + 1); }
     if (ev.key === 'ArrowLeft') { ev.preventDefault(); bfGo(Math.max(0, BF.idx - 1)); }
     if (ev.key === 'Enter' && !ev.target.closest('button')) { ev.preventDefault(); bfSave(); }
