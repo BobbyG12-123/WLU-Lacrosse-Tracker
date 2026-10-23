@@ -263,6 +263,19 @@
   .sc-tag { font: 700 10.5px var(--text); color: var(--good); border: 1px solid var(--good); border-radius: 999px; padding: 0 6px; }
   .sc-swap { display: flex; flex-wrap: wrap; gap: 4px; margin: 6px 0 0 96px; }
   .sc-opp { border-top: 1px solid var(--line); padding: 6px 0; } .sc-fields { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px; } .sc-fields label { display: flex; flex-direction: column; font: 600 11.5px var(--text); color: var(--muted); } .sc-fields input { width: 96px; font: 13px var(--text); padding: 3px 6px; }
+  .sc-vis { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; }
+  .sc-vcard { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; } .sc-vt { font: 700 14px var(--text); margin: 0 0 4px; }
+  .sc-vrow { display: flex; align-items: center; gap: 14px; } .sc-gauge { width: 130px; } .sc-gtxt { font: 700 16px var(--text); fill: var(--ink); } .sc-gsub { font: 9px var(--text); fill: var(--muted); }
+  .sc-vnum { display: flex; flex-direction: column; font: 13px var(--text); } .sc-big { font: 24px var(--text); white-space: nowrap; } .sc-vnum .n-note { font-size: 12px; }
+  .sc-hist, .sc-qc { width: 100%; height: auto; max-height: 150px; } .sc-ax { font: 9px var(--text); fill: var(--muted); }
+  .sc-leg { display: flex; flex-wrap: wrap; gap: 10px; font: 11.5px var(--text); color: var(--muted); } .sc-leg i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 4px; vertical-align: -1px; }
+  .sc-scat { width: 100%; height: auto; margin-bottom: 6px; }
+  .sc-tab th.sc-th { cursor: pointer; white-space: normal; min-width: 70px; } .sc-tab th.sc-th.on { color: var(--navy-3); } .sc-tab tr[data-sc="row"] { cursor: pointer; } .sc-tab tr.on td { background: color-mix(in srgb, var(--navy-3) 8%, transparent); } .sc-tab tr.sc-used td:first-child { font-weight: 700; }
+  .sc-whyrow td { background: var(--card-2, #F8F9FB); font: 13px var(--text); line-height: 1.55; white-space: normal; } .sc-whyrow p { margin: 3px 0; }
+  .sc-chip { font: 12px var(--text); border: 1px solid var(--line); border-radius: 999px; padding: 1px 8px; display: inline-flex; align-items: center; gap: 2px; }
+  .sc-sliders { display: flex; flex-direction: column; gap: 14px; } .sc-adj { border-color: #E8A317 !important; }
+  .sc-grid { border-collapse: collapse; font: 12px var(--text); } .sc-grid th, .sc-grid td { padding: 5px 7px; text-align: center; border: 1px solid var(--line); } .sc-gx { background: var(--line); }
+  .sc-bar { display: grid; grid-template-columns: 150px 1fr 54px; align-items: center; gap: 8px; font: 13px var(--text); margin: 3px 0; } .sc-bar i { display: block; height: 12px; background: var(--navy-3); border-radius: 3px; } .sc-bar b { text-align: right; }
   .sc-min { width: 46px; margin: 0 2px 0 6px; font: 12px var(--text); padding: 1px 4px; }
   .sc-warn { font: 600 12px var(--text); color: var(--critical); margin: 4px 0 0 10px; }
   .sc-ul { margin: 6px 0; padding-left: 18px; font: 13px var(--text); line-height: 1.55; }
@@ -14009,7 +14022,18 @@ function scrimModel() {
   const base = px ? pg / px : 1, roleMult = {};
   Object.keys(pr).forEach(k => { const r = pr[k]; roleMult[k] = Math.max(0.85, Math.min(1.15, ((r.g + 20 * base * (r.x / r.n)) / (r.x + 20 * (r.x / r.n))) / base)); });
   const meanUse = Object.values(P).reduce((a, x) => a + x.use, 0) / Math.max(1, Object.keys(P).length);
-  return { P, tMix, tFin, tCat, daySd, teamDaySd, roleMult, meanUse, sessN, pairs: pr };
+  const out = { P, tMix, tFin, tCat, daySd, teamDaySd, roleMult, meanUse, sessN, pairs: pr };
+  scrimApplyAdj(out);
+  return out;
+}
+// "If he plays well or poorly": per-player sliders (percent) on finishing, turnovers, look quality, dominoes and touches.
+const SCRIM_ADJ = [['fin', 'Finishing'], ['to', 'Turnovers'], ['look', 'Look quality'], ['dom', 'Dominoes'], ['use', 'Touches']];
+function scrimApplyAdj(M) {
+  const adj = (SC.plan && SC.plan.adj) || {};
+  Object.keys(adj).forEach(j => { const p = M.P[j], a = adj[j]; if (!p || !a) return; const f = k => 1 + (Number(a[k]) || 0) / 100;
+    p.finMult = f('fin'); p.use *= f('use'); p.dom = Math.min(0.9, p.dom * f('dom'));
+    const to = Math.min(0.9, p.pTo * f('to')), rest = 1 - to, sf = p.pShot + p.pFeed || 1; p.pShot = p.pShot / sf * rest; p.pFeed = p.pFeed / sf * rest; p.pTo = to;
+    const lk = (Number(a.look) || 0) / 100; if (lk) { const m = [p.mix[0] * (1 + lk), p.mix[1], p.mix[2] * Math.max(0.05, 1 - lk)], tt = m[0] + m[1] + m[2]; p.mix = m.map(x => x / tt); } });
 }
 // ---- opponent / game context ----
 function scrimCtx(game) {
@@ -14028,29 +14052,32 @@ function scrimBeta(a, b) { // quick beta draw via two gammas (Marsaglia-Tsang)
   const g = k => { if (k < 1) return g(k + 1) * Math.pow(SCRIM_RNG(), 1 / k); const dd = k - 1 / 3, c = 1 / Math.sqrt(9 * dd); for (;;) { let x, v; do { const u1 = SCRIM_RNG() || 1e-9, u2 = SCRIM_RNG(); x = Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2); v = 1 + c * x; } while (v <= 0); v = v * v * v; const u = SCRIM_RNG(); if (u < 1 - 0.0331 * x ** 4 || Math.log(u) < 0.5 * x * x + dd * (1 - v + Math.log(v))) return dd * v; } };
   const x = g(a), y = g(b); return x / (x + y);
 }
+const scrimStat = () => ({ poss: 0, to: 0, shots: 0, gs: 0, dom: 0, fed: 0, fedG: 0, goals: 0, goalsBy: {}, touch: {} });
 const scrimNorm = () => { const u1 = SCRIM_RNG() || 1e-9, u2 = SCRIM_RNG(); return Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2); };
 const scrimLogit = p => Math.log(p / (1 - p)), scrimInv = x => 1 / (1 + Math.exp(-x));
 // One "world": each player's true finishing drawn from his posterior, plus that day's form.
 function scrimWorld(M, js) {
   const W = { fin: {}, team: scrimOpt('days') ? scrimNorm() * M.teamDaySd : 0 };
-  js.forEach(j => { const p = M.P[j]; if (!p) return; const day = scrimOpt('days') ? scrimNorm() * M.daySd : 0; W.fin[j] = p.fin.map(f => scrimInv(scrimLogit(Math.min(0.97, Math.max(0.03, scrimBeta(f.a, f.b)))) + day)); });
+  js.forEach(j => { const p = M.P[j]; if (!p) return; const day = scrimOpt('days') ? scrimNorm() * M.daySd : 0; W.fin[j] = p.fin.map(f => Math.min(0.95, scrimInv(scrimLogit(Math.min(0.97, Math.max(0.03, scrimBeta(f.a, f.b)))) + day) * (p.finMult || 1))); });
   return W;
 }
 // Simulate n possessions for one line of six; returns goals and points arrays (one per possession).
-function scrimPossessions(M, line, n, world, ctx, calib, typeOverride) {
+function scrimPossessions(M, line, n, world, ctx, calib, typeOverride, st) {
   const ps = line.map(j => M.P[j]).filter(Boolean); if (!ps.length) return { g: 0, pts: 0, n };
   const useSum = ps.reduce((a, p) => a + p.use, 0), normal = M.meanUse * 6;
   const share = ps.map(p => p.use / useSum), crowd = scrimOpt('usage') ? ps.map((p, i) => Math.max(0.88, Math.min(1.12, Math.pow((share[i]) / (p.use / normal), -0.15)))) : ps.map(() => 1);
   let g = 0, pts = 0;
   const typeMult = t => { const all = 0.248; const r = SCRIM_TYPES.find(x => x[0] === t); return r ? r[2] / all : 1; };
   for (let k = 0; k < n; k++) {
+    if (st) st.poss++;
     const type = typeOverride || (scrimOpt('types') ? scrimPick(SCRIM_TYPES.map(x => x[0]).filter(x => scrimOpt('special') ? x !== 'manup' : true), SCRIM_TYPES.filter(x => scrimOpt('special') ? x[0] !== 'manup' : true).map(x => x[1])) : 'half');
     let i = scrimPick(ps.map((_, x) => x), share), fedBy = -1, lifted = 0;
     const steps = scrimOpt('steps');
     for (let step = 0; step < 3; step++) {
       const p = ps[i], r = SCRIM_RNG();
       if (steps && SCRIM_RNG() < p.dom) lifted = 1;
-      if (r < p.pTo / crowd[i]) break;   // turnover
+      if (st) st.touch[p.j] = (st.touch[p.j] || 0) + 1;
+      if (r < p.pTo / crowd[i]) { if (st) st.to++; break; }   // turnover
       if (r < p.pTo / crowd[i] + p.pShot || !steps || step === 2) {
         // shot: tier from his mix (catch shots lean on the team catch mix), lifted a tier by dominoes
         let mix = fedBy >= 0 ? p.mix.map((m, t) => 0.5 * m + 0.5 * M.tCat[t]) : p.mix, t = scrimPick([0, 1, 2], mix);
@@ -14060,7 +14087,9 @@ function scrimPossessions(M, line, n, world, ctx, calib, typeOverride) {
         if (scrimOpt('types')) pr *= typeMult(type);
         pr *= calib * ctx.oppDef;
         pr = scrimInv(scrimLogit(Math.min(0.95, Math.max(0.01, pr))) + world.team);
-        if (SCRIM_RNG() < pr) { g++; pts += fedBy >= 0 ? 2 : 1; }
+        const made = SCRIM_RNG() < pr;
+        if (made) { g++; pts += fedBy >= 0 ? 2 : 1; }
+        if (st) { st.shots++; if (t < 2) st.gs++; if (lifted) st.dom++; if (fedBy >= 0) { st.fed++; if (made) st.fedG++; } if (made) { st.goals++; st.goalsBy[p.j] = (st.goalsBy[p.j] || 0) + 1; } }
         break;
       }
       // feed to a teammate who shoots next
@@ -14152,7 +14181,7 @@ function scrimOptimize(M, calib) {
 }
 // ---- the full simulation of both games ----
 function scrimSimulate(M, calib, state, N) {
-  const p = SC.plan, Q = p.quarters, out = { q: Q.map(() => []), qOpp: Q.map(() => []), lines: state.map(st => st.lines.map(() => [])), games: p.games.map(() => ({ us: [], them: [] })), N };
+  const p = SC.plan, Q = p.quarters, out = { stat: scrimStat(), q: Q.map(() => []), qOpp: Q.map(() => []), lines: state.map(st => st.lines.map(() => [])), games: p.games.map(() => ({ us: [], them: [] })), N };
   const ctxs = p.games.map(g => scrimCtx(g));
   const goalie = (p.goalie && computeGoalieScores(scrimSeason()).find(r => r.jersey === p.goalie)) || null, gAll = computeGoalieScores(scrimSeason()).filter(r => r.faced >= 25);
   const gAvg = gAll.length ? gAll.reduce((a, r) => a + (r.gsax100 || 0), 0) / gAll.length : 0;
@@ -14171,7 +14200,7 @@ function scrimSimulate(M, calib, state, N) {
       let qg = 0;
       // our possessions split across the lines by time share
       const tm = (st.mins || []).reduce((a, b) => a + b, 0), shares = st.lines.map((_, li) => (tm ? st.mins[li] / tm : 1 / st.lines.length));
-      st.lines.forEach((l, li) => { const k = Math.round(nUs * shares[li] + (SCRIM_RNG() - 0.5)); const r = scrimPossessions(M, st.att.concat(l), Math.max(0, k), w, ctx, calib * hot); out.lines[qi][li].push(r.g); qg += r.g; });
+      st.lines.forEach((l, li) => { const k = Math.round(nUs * shares[li] + (SCRIM_RNG() - 0.5)); const r = scrimPossessions(M, st.att.concat(l), Math.max(0, k), w, ctx, calib * hot, undefined, out.stat); out.lines[qi][li].push(r.g); qg += r.g; });
       // man-up chances for us
       if (scrimOpt('special')) { const lam = ((p.wl && p.wl.emoChances) || 2.6) / 4; let k = 0; if (SCRIM_RNG() < lam) k = 1; for (let x = 0; x < k; x++) if (SCRIM_RNG() < Math.min(0.7, ((p.wl && p.wl.emo) || 0.361) * ((ctx.o.defEmo || 0.33) / 0.33) * (scrimOpt('opp') ? 1 : 1))) qg++; }
       const counts = (qi % 4) + 1 >= scrimStart(gi).q;   // quarters before the starting point are already played
@@ -14219,6 +14248,160 @@ function scrimSensitivity(M, calib, state) {
   const b = planE(null);
   return js.map(j => { const p = M.P[j]; if (!p) return null; const n = p.shots, rel = Math.min(0.6, 1 / Math.sqrt(Math.max(4, n))); const up = planE({ [j]: 1 + rel }), dn = planE({ [j]: 1 - rel }); return { j, swing: up - dn, shots: n }; }).filter(Boolean).sort((a, b2) => b2.swing - a.swing).slice(0, 6);
 }
+// ---- Every lineup the rules allow, simulated and rated ----
+function scrimGroups() {
+  const p = SC.plan, seen = {}, out = [];
+  p.quarters.forEach((q, qi) => {
+    const key = q.mid + '|' + q.attack.join(','); const gi = Math.floor(qi / 4);
+    if (seen[key]) { seen[key].labels.push(q.label); return; }
+    const g = { key, labels: [q.label], gi, attackOpts: q.attack.length > 3 ? scrimCombos(q.attack, 3) : [q.attack.slice(0, 3)], pool: scrimQuarterPool(q), name: q.mid === 'top8' ? 'Top 8' : 'Other middies' };
+    seen[key] = g; out.push(g);
+  });
+  out.forEach(g => { g.name = `${g.name} (${g.labels.join(', ')})`; });
+  return out;
+}
+function scrimLineStats(M, calib, ctx, six, reps) {
+  const st = scrimStat(), per = [];
+  for (let r = 0; r < reps; r++) {
+    const w = scrimWorld(M, six), lam = ctx.poss; let n = 0, L = Math.exp(-lam), pr = 1; do { n++; pr *= SCRIM_RNG(); } while (pr > L); n--;
+    per.push(scrimPossessions(M, six, n, w, ctx, calib, undefined, st).g);
+  }
+  const e15 = scrimMean(per), sd = Math.sqrt(per.reduce((a, b) => a + (b - e15) ** 2, 0) / Math.max(1, per.length - 1)), gpp = st.goals / Math.max(1, st.poss);
+  const ps = six.map(j => M.P[j]).filter(Boolean), us = ps.reduce((a, p) => a + p.use, 0); let cw = 0, cs = 0;
+  ps.forEach(a => ps.forEach(b => { if (a === b) return; const w2 = (a.use / us) * (b.use / us); cw += w2 * (M.roleMult[a.role + '>' + b.role] || 1); cs += w2; }));
+  return { e15, p10: scrimQ(per, 0.1), p90: scrimQ(per, 0.9), sd, gpp, to: st.to / Math.max(1, st.poss), gs: st.gs / Math.max(1, st.shots), dom: st.dom / Math.max(1, st.poss), fed: st.fed / Math.max(1, st.shots),
+    shift: 1 - Math.pow(1 - gpp, ctx.poss / 3), chem: cs ? cw / cs : 1, touch: st.touch, goalsBy: st.goalsBy, goals: st.goals };
+}
+// Builds the table in chunks so the page stays responsive.
+function scrimUniverse(M, calib, done) {
+  const groups = scrimGroups(), ctxs = SC.plan.games.map(g => scrimCtx(g)), jobs = [];
+  groups.forEach(g => g.attackOpts.forEach(att => scrimCombos(g.pool, 3).forEach(mids => jobs.push({ g, att, mids }))));
+  const rows = []; let i = 0; const keep = SCRIM_SEED; scrimSeed(13579);
+  const step = () => {
+    const end = Math.min(jobs.length, i + 30);
+    for (; i < end; i++) { const j = jobs[i], six = j.att.concat(j.mids); rows.push(Object.assign({ id: i, grp: j.g.key, grpName: j.g.name, att: j.att, mids: j.mids, six }, scrimLineStats(M, calib, ctxs[j.g.gi], six, 30))); }
+    SC.msg = `Simulating every lineup… ${i} of ${jobs.length}`; const m = document.getElementById('scMsg'); if (m) m.textContent = SC.msg;
+    if (i < jobs.length) setTimeout(step, 0); else { SCRIM_SEED = keep; SC.msg = ''; done(rows, groups); }
+  };
+  step();
+}
+// Impact score of a six with the weight sliders (same parts as the Depth Chart).
+function scrimImpact(six) {
+  const B = SC.impBase || (SC.impBase = soBase(scrimSeason())), w = (SC.plan && SC.plan.iw) || {}, W = SO_W.map(([k, , d]) => [k, isFinite(w[k]) ? w[k] : d]), tw = W.reduce((a, x) => a + x[1], 0) || 1;
+  const one = j => { const p = B.ready && B.players[j]; return p ? W.reduce((a, [k, v]) => a + v * p.parts[k], 0) / tw : 50; };
+  return six.reduce((a, j) => a + one(j), 0) / six.length;
+}
+const SCRIM_COLS = [
+  ['e15', 'Expected goals / 15 min', 1, v => num(v, 2)], ['p10', 'Floor', 1, v => num(v, 0)], ['p90', 'Ceiling', 1, v => num(v, 0)], ['shift', 'Scores in a 5-min shift', 1, v => pct(v)],
+  ['gpp', 'Goals / possession', 1, v => num(v, 3)], ['to', 'Turnovers / possession', -1, v => pct(v)], ['gs', 'Gold+Silver share of shots', 1, v => pct(v)], ['dom', 'Dominoes lift / possession', 1, v => pct(v)],
+  ['fed', 'Shots off a feed', 1, v => pct(v)], ['chem', 'Role chemistry', 1, v => '×' + num(v, 2)], ['sd', 'Risk (swing)', -1, v => '±' + num(v, 2)], ['imp', 'Impact (your sliders)', 1, v => num(v, 1)], ['used', 'Times in your plan', 1, v => String(v)],
+];
+// Why a lineup rates where it does, in plain words, against the other lines it competes with.
+function scrimWhy(r, rows) {
+  const peers = rows.filter(x => x.grp === r.grp), avg = k => scrimMean(peers.map(x => x[k])), sd = k => { const m = avg(k); return Math.sqrt(scrimMean(peers.map(x => (x[k] - m) ** 2))) || 1; };
+  const nm = j => `#${j} ${scrimName(j)}`, tot = Object.values(r.touch).reduce((a, b) => a + b, 0) || 1;
+  const ball = Object.keys(r.touch).sort((a, b) => r.touch[b] - r.touch[a]).slice(0, 2).map(j => `${nm(j)} (${pct(r.touch[j] / tot)})`);
+  const gtot = Object.values(r.goalsBy).reduce((a, b) => a + b, 0) || 1, sc = Object.keys(r.goalsBy).sort((a, b) => r.goalsBy[b] - r.goalsBy[a]).slice(0, 2).map(j => `${nm(j)} ${pct(r.goalsBy[j] / gtot)}`);
+  const z = { gs: (r.gs - avg('gs')) / sd('gs'), to: -(r.to - avg('to')) / sd('to'), dom: (r.dom - avg('dom')) / sd('dom'), fed: (r.fed - avg('fed')) / sd('fed'), chem: (r.chem - avg('chem')) / sd('chem') };
+  const words = { gs: 'look quality', to: 'ball security', dom: 'starting dominoes', fed: 'scoring off the catch', chem: 'how the roles fit' };
+  const best = Object.keys(z).sort((a, b) => z[b] - z[a])[0], worst = Object.keys(z).sort((a, b) => z[a] - z[b])[0], M = SC.res.M;
+  const roles = r.six.map(j => M.P[j] ? `${scrimName(j)} ${M.P[j].role}` : null).filter(Boolean).join(', ');
+  const d = r.e15 - avg('e15');
+  return [`<b>${num(r.e15, 2)} expected goals in a full 15 minutes</b> (${d >= 0 ? '+' : ''}${num(d, 2)} vs the average line it competes with); a bad day ${r.p10}, a good day ${r.p90}.`,
+    `The ball goes most to ${ball.join(' and ')}. Goals come mostly from ${sc.join(', ')}.`,
+    `${pct(r.fed)} of its shots come off a feed; dominoes lift the look on ${pct(r.dom)} of possessions; ${pct(r.gs)} of shots are Gold or Silver (average ${pct(avg('gs'))}); it turns it over on ${pct(r.to)} of possessions (average ${pct(avg('to'))}).`,
+    `Roles: ${roles}. Chemistry ×${num(r.chem, 2)} (from how those roles have connected on every logged feed).`,
+    `<b>Biggest strength:</b> ${words[best]}. <b>Weak spot:</b> ${words[worst]}.`].map(x => `<p>${x}</p>`).join('');
+}
+// ---- small SVG charts ----
+function scrimGauge(p) {
+  const a = Math.PI * (1 - p), x = 60 + 48 * Math.cos(a), y = 58 - 48 * Math.sin(a);
+  return `<svg viewBox="0 0 120 70" class="sc-gauge"><path d="M12 58 A48 48 0 0 1 108 58" fill="none" stroke="var(--line)" stroke-width="10"/><path d="M12 58 A48 48 0 0 1 ${x.toFixed(1)} ${y.toFixed(1)}" fill="none" stroke="${p >= 0.5 ? 'var(--good)' : 'var(--critical)'}" stroke-width="10"/><text x="60" y="54" text-anchor="middle" class="sc-gtxt">${pct(p)}</text><text x="60" y="67" text-anchor="middle" class="sc-gsub">win chance</text></svg>`;
+}
+function scrimHist(us, them) {
+  const max = Math.max(12, scrimQ(us, 0.995), scrimQ(them, 0.995)), cnt = a => { const c = Array(max + 1).fill(0); a.forEach(v => { c[Math.min(max, v)]++; }); return c.map(x => x / a.length); };
+  const cu = cnt(us), ct = cnt(them), top = Math.max(...cu, ...ct) || 1, W = 440, H = 120, bw = W / (max + 1);
+  const bars = cu.map((v, i) => `<rect x="${(i * bw + 1).toFixed(1)}" y="${(H - 18 - v / top * (H - 30)).toFixed(1)}" width="${(bw - 2).toFixed(1)}" height="${(v / top * (H - 30)).toFixed(1)}" fill="var(--navy-3)" opacity=".85"><title>We score ${i}: ${pct(v)} of games</title></rect>`).join('');
+  const line = ct.map((v, i) => `${(i * bw + bw / 2).toFixed(1)},${(H - 18 - v / top * (H - 30)).toFixed(1)}`).join(' ');
+  const mx = v => (v * bw + bw / 2).toFixed(1), mu = scrimMean(us);
+  return `<svg viewBox="0 0 ${W} ${H}" class="sc-hist"><line x1="0" x2="${W}" y1="${H - 18}" y2="${H - 18}" stroke="var(--line)"/>${bars}<polyline points="${line}" fill="none" stroke="var(--critical)" stroke-width="2"><title>Their score</title></polyline>
+    <rect x="${mx(scrimQ(us, 0.1))}" y="2" width="${(mx(scrimQ(us, 0.9)) - mx(scrimQ(us, 0.1))).toFixed(1)}" height="6" fill="var(--good)" opacity=".5"><title>Our floor to ceiling</title></rect><line x1="${mx(mu)}" x2="${mx(mu)}" y1="0" y2="${H - 18}" stroke="var(--good)" stroke-dasharray="3 2"/>
+    ${Array.from({ length: max + 1 }, (_, i) => i % 2 === 0 ? `<text x="${mx(i)}" y="${H - 5}" text-anchor="middle" class="sc-ax">${i}</text>` : '').join('')}</svg>
+    <div class="sc-leg"><span><i style="background:var(--navy-3)"></i>our goals</span><span><i style="background:var(--critical)"></i>their goals</span><span><i style="background:var(--good)"></i>our floor–ceiling</span></div>`;
+}
+function scrimQChart(gi) {
+  const R = SC.res, qs = R.state.map((st, qi) => qi).filter(qi => Math.floor(qi / 4) === gi), W = 440, H = 120, bw = W / qs.length, top = Math.max(4, ...qs.map(qi => scrimQ(R.sim.q[qi], 0.9)), ...qs.map(qi => scrimQ(R.sim.qOpp[qi], 0.9)));
+  const y = v => (H - 20 - v / top * (H - 30)).toFixed(1);
+  return `<svg viewBox="0 0 ${W} ${H}" class="sc-qc"><line x1="0" x2="${W}" y1="${H - 20}" y2="${H - 20}" stroke="var(--line)"/>${qs.map((qi, k) => { const x = k * bw, us = R.sim.q[qi], th = R.sim.qOpp[qi], mu = scrimMean(us), mt = scrimMean(th);
+    return `<rect x="${(x + bw * 0.18).toFixed(1)}" y="${y(mu)}" width="${(bw * 0.32).toFixed(1)}" height="${(H - 20 - y(mu)).toFixed(1)}" fill="var(--navy-3)"><title>${SC.plan.quarters[qi].label}: we score ${num(mu, 1)} (${scrimQ(us, 0.1)}–${scrimQ(us, 0.9)})</title></rect>
+      <line x1="${(x + bw * 0.34).toFixed(1)}" x2="${(x + bw * 0.34).toFixed(1)}" y1="${y(scrimQ(us, 0.9))}" y2="${y(scrimQ(us, 0.1))}" stroke="var(--good)" stroke-width="2"/>
+      ${th.length ? `<rect x="${(x + bw * 0.52).toFixed(1)}" y="${y(mt)}" width="${(bw * 0.28).toFixed(1)}" height="${(H - 20 - y(mt)).toFixed(1)}" fill="var(--critical)" opacity=".55"><title>They score ${num(mt, 1)}</title></rect>` : ''}
+      <text x="${(x + bw / 2).toFixed(1)}" y="${H - 6}" text-anchor="middle" class="sc-ax">${escapeHtml(SC.plan.quarters[qi].label.replace(/^G\d /, ''))}</text><text x="${(x + bw * 0.15).toFixed(1)}" y="${(Number(y(mu)) + 11).toFixed(1)}" text-anchor="end" class="sc-ax">${num(mu, 1)}</text>`; }).join('')}</svg>`;
+}
+function scrimScatter(rows, groups) {
+  if (!rows.length) return '';
+  const bad = r => Math.max(0, r.e15 - 1.28 * r.sd);   // a bad day, on a continuous scale
+  const W = 520, H = 230, xs = rows.map(r => r.e15), ys = rows.map(bad), x0 = Math.min(...xs), x1 = Math.max(...xs), y0 = Math.min(...ys), y1 = Math.max(...ys);
+  const X = v => (40 + (v - x0) / ((x1 - x0) || 1) * (W - 60)).toFixed(1), Y = v => (H - 30 - (v - y0) / ((y1 - y0) || 1) * (H - 50)).toFixed(1);
+  const colors = ['var(--navy-3)', '#E8A317', 'var(--good)', 'var(--critical)'], gi = Object.fromEntries(groups.map((g, i) => [g.key, i]));
+  const best = rows.slice().sort((a, b) => b.e15 - a.e15).slice(0, 3).map(r => r.id);
+  return `<svg viewBox="0 0 ${W} ${H}" class="sc-scat"><line x1="40" x2="${W - 20}" y1="${H - 30}" y2="${H - 30}" stroke="var(--line)"/><line x1="40" x2="40" y1="10" y2="${H - 30}" stroke="var(--line)"/>
+    <text x="${W / 2}" y="${H - 8}" text-anchor="middle" class="sc-ax">expected goals per 15 min →</text><text x="12" y="${H / 2}" class="sc-ax" transform="rotate(-90 12 ${H / 2})" text-anchor="middle">bad-day goals →</text>
+    ${rows.map(r => `<circle cx="${X(r.e15)}" cy="${Y(bad(r))}" r="${best.includes(r.id) ? 5 : 3}" fill="${colors[gi[r.grp] % colors.length]}" opacity="${best.includes(r.id) ? 1 : 0.55}" data-sc="row" data-id="${r.id}" style="cursor:pointer"><title>${r.mids.map(scrimName).join('-')} + ${r.att.map(scrimName).join('-')}: ${num(r.e15, 2)} (${r.p10}–${r.p90})</title></circle>`).join('')}
+    ${best.map((id, k) => { const r = rows.find(x => x.id === id); return `<text x="${(Number(X(r.e15)) - 4).toFixed(1)}" y="${(Number(Y(bad(r))) + 3).toFixed(1)}" text-anchor="end" class="sc-ax" style="font-weight:700">${k + 1}</text>`; }).join('')}</svg>
+    <p class="n-note" style="margin:2px 0;">Top right = scores the most and holds up on a bad day. Best: ${best.map((id, k) => { const r = rows.find(x => x.id === id); return `<b>${k + 1}</b> ${escapeHtml(r.mids.map(scrimName).join('-'))} + ${escapeHtml(r.att.map(scrimName).join('-'))} (${num(r.e15, 2)})`; }).join(' · ')}</p>
+    <div class="sc-leg">${groups.map((g, i) => `<span><i style="background:${colors[i % colors.length]}"></i>${escapeHtml(g.name)}</span>`).join('')}</div>`;
+}
+function scrimPairGrid(rows) {
+  const top = scrimPools().top8, grp = scrimGroups()[0]; if (!grp) return '';
+  const R = rows.filter(r => r.grp === grp.key), base = scrimMean(R.map(r => r.e15));
+  const v = (a, b) => { const l = R.filter(r => r.mids.includes(a) && r.mids.includes(b)); return l.length ? scrimMean(l.map(r => r.e15)) - base : 0; };
+  const cells = top.map(a => top.map(b => (a === b ? null : v(a, b)))), mx = Math.max(0.01, ...cells.flat().filter(x => x !== null).map(Math.abs));
+  return `<div class="table-wrap"><table class="sc-grid"><thead><tr><th></th>${top.map(j => `<th>${escapeHtml(scrimName(j))}</th>`).join('')}</tr></thead><tbody>${top.map((a, i) => `<tr><th>${escapeHtml(scrimName(a))}</th>${top.map((b, k) => { const x = cells[i][k]; if (x === null) return '<td class="sc-gx"></td>'; const c = x >= 0 ? `rgba(12,163,12,${(0.12 + 0.6 * x / mx).toFixed(2)})` : `rgba(208,59,59,${(0.12 + 0.6 * -x / mx).toFixed(2)})`; return `<td style="background:${c}" title="${escapeHtml(scrimName(a))} + ${escapeHtml(scrimName(b))}: ${x >= 0 ? '+' : ''}${num(x, 2)} goals per 15 vs an average top-8 line">${x >= 0 ? '+' : ''}${num(x, 2)}</td>`; }).join('')}</tr>`).join('')}</tbody></table></div>`;
+}
+function scrimGoalShare() {
+  const st = SC.res.sim.stat, tot = Object.values(st.goalsBy).reduce((a, b) => a + b, 0) || 1, rows = Object.keys(st.goalsBy).sort((a, b) => st.goalsBy[b] - st.goalsBy[a]).slice(0, 12), mx = st.goalsBy[rows[0]] || 1;
+  return rows.map(j => `<div class="sc-bar"><span>#${escapeHtml(j)} ${escapeHtml(scrimName(j))}</span><i style="width:${(st.goalsBy[j] / mx * 100).toFixed(0)}%"></i><b>${pct(st.goalsBy[j] / tot)}</b></div>`).join('');
+}
+// ---- table with multi-column sort ----
+function scrimTableHtml() {
+  const U = SC.uni; if (!U) return `<p class="n-note" id="scMsg">${escapeHtml(SC.msg || 'Simulating every lineup…')}</p>`;
+  const used = {}; SC.res.state.forEach(st => st.lines.forEach(l => { const k = st.att.concat(l).slice().sort().join(','); used[k] = (used[k] || 0) + 1; }));
+  U.rows.forEach(r => { r.imp = scrimImpact(r.six); r.used = used[r.six.slice().sort().join(',')] || 0; });
+  const f = SC.filt || {}, srt = SC.sort && SC.sort.length ? SC.sort : [{ k: 'e15', d: -1 }];
+  let rows = U.rows.filter(r => (!f.grp || r.grp === f.grp) && (!f.must || !f.must.length || f.must.every(j => r.six.includes(j))) && (!f.used || r.used));
+  rows.sort((a, b) => { for (const s of srt) { const d = (a[s.k] - b[s.k]) * s.d; if (Math.abs(d) > 1e-9) return d > 0 ? 1 : -1; } return 0; });
+  const shown = SC.showAll ? rows : rows.slice(0, 40), col = Object.fromEntries(SCRIM_COLS.map(c => [c[0], c]));
+  const everyone = [...new Set(U.rows.flatMap(r => r.six))].sort((a, b) => Number(a) - Number(b));
+  return `<div class="sc-row"><span class="n-note">Show:</span><button type="button" class="pill${!f.grp ? ' active' : ''}" data-sc="fgrp" data-v="">All</button>${U.groups.map(g => `<button type="button" class="pill${f.grp === g.key ? ' active' : ''}" data-sc="fgrp" data-v="${escapeHtml(g.key)}">${escapeHtml(g.name)}</button>`).join('')}<button type="button" class="pill${f.used ? ' active' : ''}" data-sc="fused">Only lines in my plan</button></div>
+    <div class="sc-row"><span class="n-note">Must include:</span>${everyone.map(j => `<button type="button" class="pill sc-p${(f.must || []).includes(j) ? ' active' : ''}" data-sc="fmust" data-j="${escapeHtml(j)}">${escapeHtml(scrimName(j))}</button>`).join('')}</div>
+    <div class="sc-row"><span class="n-note">Sorted by:</span>${srt.map((s, i) => `<span class="sc-chip">${i + 1}. ${escapeHtml(col[s.k][1])} ${s.d < 0 ? '↓' : '↑'}${srt.length > 1 ? ` <button type="button" class="chat-x" data-sc="unsort" data-k="${s.k}">&times;</button>` : ''}</span>`).join('')}<span class="n-note">Click a column to sort; shift-click (or long-press) to add a second sort.</span></div>
+    <p class="n-note">${rows.length} lineups · click a row for the full reasoning.</p>
+    <div class="table-wrap"><table class="shotlog sc-tab"><thead><tr><th>Middies</th><th>Attack</th>${SCRIM_COLS.map(c => { const s = srt.findIndex(x => x.k === c[0]); return `<th data-sc="sort" data-k="${c[0]}" class="sc-th${s >= 0 ? ' on' : ''}">${escapeHtml(c[1])}${s >= 0 ? ` ${srt[s].d < 0 ? '↓' : '↑'}${srt.length > 1 ? s + 1 : ''}` : ''}</th>`; }).join('')}</tr></thead><tbody>
+    ${shown.map(r => `<tr data-sc="row" data-id="${r.id}" class="${SC.open === r.id ? 'on' : ''}${r.used ? ' sc-used' : ''}"><td>${r.mids.map(j => escapeHtml(scrimName(j))).join('-')}</td><td>${r.att.map(j => escapeHtml(scrimName(j))).join('-')}</td>${SCRIM_COLS.map(c => `<td>${c[3](r[c[0]])}</td>`).join('')}</tr>${SC.open === r.id ? `<tr class="sc-whyrow"><td colspan="${SCRIM_COLS.length + 2}">${scrimWhy(r, U.rows)}</td></tr>` : ''}`).join('')}</tbody></table></div>
+    ${rows.length > 40 ? `<button type="button" class="pill" data-sc="showall">${SC.showAll ? 'Show top 40' : `Show all ${rows.length}`}</button>` : ''}`;
+}
+// ---- sliders ----
+function scrimSlidersHtml() {
+  const p = SC.plan, w = p.iw || {}, adj = p.adj || {}, sel = SC.adjJ;
+  const everyone = SC.uni ? [...new Set(SC.uni.rows.flatMap(r => r.six))].sort((a, b) => Number(a) - Number(b)) : [];
+  const wTot = SO_W.reduce((a, [k, , d]) => a + (isFinite(w[k]) ? w[k] : d), 0) || 1;
+  return `<div class="sc-sliders"><div><p class="dp-wh">Impact weights <span class="n-note">rank the lineup table</span></p>${SO_W.map(([k, l, d]) => { const v = isFinite(w[k]) ? w[k] : d; return `<label class="dp-w"><span>${escapeHtml(l)} <b>${dpPct(v, wTot)}%</b></span><input type="range" min="0" max="40" step="0.5" value="${v}" data-sc-iw="${k}"></label>`; }).join('')}<button type="button" class="pill" data-sc="iwreset">Reset weights</button></div>
+    <div><p class="dp-wh">If a player plays well or poorly <span class="n-note">re-simulates everything</span></p>
+      <div class="sc-row">${everyone.map(j => `<button type="button" class="pill sc-p${sel === j ? ' active' : ''}${adj[j] && Object.values(adj[j]).some(x => x) ? ' sc-adj' : ''}" data-sc="adjj" data-j="${escapeHtml(j)}">${escapeHtml(scrimName(j))}</button>`).join('')}</div>
+      ${sel ? `<p class="n-note">#${escapeHtml(sel)} ${escapeHtml(scrimName(sel))}: move a slider and the whole plan re-simulates.</p>${SCRIM_ADJ.map(([k, l]) => { const v = (adj[sel] || {})[k] || 0; return `<label class="dp-w"><span>${escapeHtml(l)} <b>${v > 0 ? '+' : ''}${v}%</b>${k === 'to' ? ' <span class="n-note">(+ = more turnovers)</span>' : ''}</span><input type="range" min="-30" max="30" step="5" value="${v}" data-sc-adj="${escapeHtml(sel)}:${k}"></label>`; }).join('')}<button type="button" class="pill" data-sc="adjreset" data-j="${escapeHtml(sel)}">Reset ${escapeHtml(scrimName(sel))}</button>` : '<p class="n-note">Pick a player.</p>'}
+      ${Object.keys(adj).filter(j => Object.values(adj[j] || {}).some(x => x)).length ? `<p class="n-note">Adjusted: ${Object.keys(adj).filter(j => Object.values(adj[j] || {}).some(x => x)).map(j => `${escapeHtml(scrimName(j))} (${SCRIM_ADJ.filter(([k]) => adj[j][k]).map(([k, l]) => `${l} ${adj[j][k] > 0 ? '+' : ''}${adj[j][k]}%`).join(', ')})`).join(' · ')}</p>` : ''}
+    </div></div>`;
+}
+// Re-simulate everything after a slider moves (same lines; table rebuilt).
+let SCRIM_T = null;
+function scrimRecalc() {
+  clearTimeout(SCRIM_T); SCRIM_T = setTimeout(() => {
+    if (!SC.res) return; SC.busy = true; SC.msg = 'Re-simulating with the adjustments…'; renderScrim();
+    setTimeout(() => { try { const M = scrimModel(), calib = scrimCalib(M); SC.res.M = M; SC.res.calib = calib; SC.res.sim = scrimSimulate(M, calib, SC.res.state, 2000);
+      SC.uni = null; scrimUniverse(M, calib, (rows, groups) => { SC.uni = { rows, groups }; SC.busy = false; renderScrim(); }); } catch (e) { console.error(e); SC.busy = false; SC.msg = 'Simulation error: ' + e.message; renderScrim(); } }, 30);
+  }, 350);
+}
 // ---- Scrimmage Planner page ----
 // Where a game's simulation starts: quarter 1 at 0-0 unless a scenario says otherwise.
 function scrimStart(gi) { const p = SC.plan, s = (p.startAt || [])[gi]; if (s) return { q: Math.max(1, Math.min(4, Number(s.q) || 1)), us: Math.max(0, Number(s.us) || 0), them: Math.max(0, Number(s.them) || 0) }; const old = (p.startScore || [])[gi] || 0; return { q: 1, us: Math.max(0, old), them: Math.max(0, -old) }; }
@@ -14242,7 +14425,8 @@ function scrimRun() {
       const ctxs = p.games.map(g => scrimCtx(g)), cache = {};
       const situ = scrimOpt('situ') ? state.map((st, qi) => { const ctx = ctxs[Math.floor(qi / 4)]; const v = st.lines.map(l => { const six = st.att.concat(l); let h = 0, t = 0; for (let r = 0; r < 15; r++) { const w = scrimWorld(M, six); h += scrimPossessions(M, six, 20, w, ctx, calib, 'half').g; t += scrimPossessions(M, six, 20, w, ctx, calib, 'trans').g; } return { h, t }; }); return { half: v.reduce((b, x, i) => (x.h > v[b].h ? i : b), 0), trans: v.reduce((b, x, i) => (x.t > v[b].t ? i : b), 0) }; }) : null;
       SC.res = { M, calib, state, sim, situ, back: scrimBacktest(M), sens: scrimSensitivity(M, calib, state), at: new Date() };
-      SC.msg = '';
+      SC.msg = ''; SC.uni = null; SC.impBase = null;
+      setTimeout(() => scrimUniverse(M, calib, (rows, groups) => { SC.uni = { rows, groups }; renderScrim(); }), 50);
     } catch (e) { console.error('scrimmage sim', e); SC.msg = 'Simulation error: ' + e.message; }
     SC.busy = false; renderScrim();
   }, 30);
@@ -14263,7 +14447,7 @@ function renderScrim() {
     <div class="sc-row">${p.games.map((g, gi) => `<label class="sc-g">${escapeHtml(g.name)} vs ${oppSel(gi)}</label>`).join('')}</div>
     ${modes}${views}${opts}
     <div class="sc-row"><button type="button" class="btn" data-sc="run">${R ? 'Rebuild &amp; re-simulate' : 'Build lineups &amp; simulate'}</button>${R ? `<button type="button" class="btn secondary" data-sc="resim">Re-simulate my edits</button>` : ''}<button type="button" class="btn secondary" data-sc="save">Save plan for staff</button><button type="button" class="btn secondary" data-sc="print">Print coach card</button></div>
-    ${SC.msg ? `<p class="bf-msg">${escapeHtml(SC.msg)}</p>` : ''}${SC.busy ? '<p class="n-note">Working… this takes a few seconds.</p>' : ''}</div>`;
+    <p class="bf-msg" id="scMsg">${escapeHtml(SC.msg || '')}</p>${SC.busy ? '<p class="n-note">Working… this takes a few seconds.</p>' : ''}</div>`;
   if (!R) { wrap.innerHTML = top + scrimRulesHtml() + scrimLoggingHtml(); return; }
   const games = p.games.map((g, gi) => {
     const us = R.sim.games[gi].us, them = R.sim.games[gi].them, win = scrimOpt('winprob') ? scrimWin(us, them) : null;
@@ -14281,7 +14465,17 @@ function renderScrim() {
       <p class="panel-sub"><b>Whose numbers move the plan most</b> (finishing ±1 standard error): ${R.sens.map(x => `#${escapeHtml(x.j)} ${nm(x.j)} ±${num(x.swing / 2, 2)} goals (${x.shots} shots)`).join(' · ')}.</p>
       <p class="panel-sub"><b>Roles</b> (from logged data): ${Object.values(R.M.P).filter(x => R.state.some(st => st.att.concat(...st.lines).includes(x.j))).map(x => `#${escapeHtml(x.j)} ${nm(x.j)} ${x.role}`).join(' · ')}.</p></div>
     ${scrimOppHtml()}${scrimOpt('match') ? scrimMatchHtml() : ''}${scrimOpt('scen') ? scrimScenHtml() : ''}${scrimRulesHtml()}${scrimLoggingHtml()}${scrimActualHtml()}`;
-  wrap.innerHTML = top + games + analyst;
+  // Visual summary: win gauge, the score spread over every simulated game, quarter by quarter.
+  const best = SC.uni ? SC.uni.groups.map(g => { const r = SC.uni.rows.filter(x => x.grp === g.key).sort((a, b) => b.e15 - a.e15)[0], avg = scrimMean(SC.uni.rows.filter(x => x.grp === g.key).map(x => x.e15)); return r ? `<li><b>${escapeHtml(g.name)}:</b> ${r.mids.map(j => escapeHtml(scrimName(j))).join('-')} with ${r.att.map(j => escapeHtml(scrimName(j))).join('-')} &mdash; ${num(r.e15, 2)} goals per 15 (+${num(r.e15 - avg, 2)} over the average line).</li>` : ''; }).join('') : '';
+  const visual = `<div class="panel"><p class="panel-title">The picture</p><div class="sc-vis">${p.games.map((g, gi) => { const us = R.sim.games[gi].us, them = R.sim.games[gi].them, win = scrimOpt('winprob') ? scrimWin(us, them) : null;
+      return `<div class="sc-vcard"><p class="sc-vt">${escapeHtml(g.name)} vs ${escapeHtml(p.opps[g.opp].name)}</p><div class="sc-vrow">${win !== null ? scrimGauge(win) : ''}<div class="sc-vnum"><span class="sc-big"><b>${num(scrimMean(us), 1)}</b> to <b>${num(scrimMean(them), 1)}</b></span><span class="n-note">expected final</span><span class="n-note">we score ${scrimQ(us, 0.1)}–${scrimQ(us, 0.9)} on 8 of 10 days</span></div></div>
+        <p class="n-note" style="margin:6px 0 2px;">How many goals we score across ${R.sim.N.toLocaleString()} simulated games</p>${scrimHist(us, them)}<p class="n-note" style="margin:8px 0 2px;">Quarter by quarter (bar = expected, green line = floor to ceiling)</p>${scrimQChart(gi)}</div>`; }).join('')}</div>
+    ${best ? `<p class="dp-wh" style="margin-top:10px;">Best lines by group</p><ul class="sc-ul">${best}</ul>` : ''}</div>`;
+  const lineups = `<div class="panel"><p class="panel-title">Every lineup, simulated</p><p class="panel-sub">Every middie trio (and attack trio where there’s a choice) the rules allow, each played out 30 times over a full quarter against that game’s opponent. Sort by any rating; click a row to see why it rates where it does.</p>
+    <div class="dp-layout"><div class="dp-main">${SC.uni ? scrimScatter(SC.uni.rows.filter(r => !(SC.filt || {}).grp || r.grp === SC.filt.grp), SC.uni.groups) : ''}<div id="scTable">${scrimTableHtml()}</div></div><aside class="dp-side">${scrimSlidersHtml()}</aside></div></div>`;
+  const extras = SC.uni ? `<div class="panel"><p class="panel-title">Who works together</p><p class="panel-sub">Each cell: how many more (green) or fewer (red) goals per 15 minutes a top-8 line scores when both of those middies are on it, against the average top-8 line.</p>${scrimPairGrid(SC.uni.rows)}
+    <p class="dp-wh" style="margin-top:12px;">Who scores our goals in the plan</p>${scrimGoalShare()}</div>` : '';
+  wrap.innerHTML = top + visual + games + lineups + extras + analyst;
 }
 // Hand edits can break a rule; say so (the coach can keep it).
 function scrimWarn(qi, st) {
@@ -14354,13 +14548,32 @@ function scrimInit() {
     if (a === 'pick') { const qi = Number(b.dataset.qi), li = b.dataset.li === 'a' ? 'a' : Number(b.dataset.li); SC.edit = { qi, li, pos: Number(b.dataset.pos) }; }
     if (a === 'cancel') SC.edit = null;
     if (a === 'swap' && SC.edit) { const e = SC.edit, st = SC.res.state[e.qi]; if (e.li === 'a') st.att[e.pos] = b.dataset.j; else st.lines[e.li][e.pos] = b.dataset.j; p.lines[e.qi] = { att: st.att, lines: st.lines, mins: st.mins, locked: true }; SC.edit = null; scrimResim(); return; }
+    if (a === 'fgrp') { SC.filt = Object.assign({}, SC.filt, { grp: b.dataset.v || null }); }
+    if (a === 'fused') { SC.filt = Object.assign({}, SC.filt, { used: !(SC.filt || {}).used }); }
+    if (a === 'fmust') { const m = ((SC.filt || {}).must || []).slice(), j = b.dataset.j, i = m.indexOf(j); if (i >= 0) m.splice(i, 1); else m.push(j); SC.filt = Object.assign({}, SC.filt, { must: m }); }
+    if (a === 'sort') { const k = b.dataset.k, col = SCRIM_COLS.find(c => c[0] === k), cur = (SC.sort || []).slice(), i = cur.findIndex(x => x.k === k);
+      if (ev.shiftKey || SC.addSort) { if (i >= 0) cur[i].d *= -1; else cur.push({ k, d: col[2] > 0 ? -1 : 1 }); SC.sort = cur; } else SC.sort = [{ k, d: i === 0 && cur.length === 1 ? cur[0].d * -1 : (col[2] > 0 ? -1 : 1) }]; }
+    if (a === 'unsort') SC.sort = (SC.sort || []).filter(x => x.k !== b.dataset.k);
+    if (a === 'row') { const id = Number(b.dataset.id); SC.open = SC.open === id ? null : id; if (b.tagName === 'circle') { SC.showAll = true; setTimeout(() => { const r = document.querySelector(`tr[data-id="${id}"]`); if (r) r.scrollIntoView({ block: 'center' }); }, 60); } }
+    if (a === 'showall') SC.showAll = !SC.showAll;
+    if (a === 'adjj') SC.adjJ = SC.adjJ === b.dataset.j ? null : b.dataset.j;
+    if (a === 'adjreset') { if (p.adj) delete p.adj[b.dataset.j]; scrimRecalc(); }
+    if (a === 'iwreset') p.iw = {};
     if (a === 'out') { const j = b.dataset.j; p.out = (p.out || []).includes(j) ? p.out.filter(x => x !== j) : (p.out || []).concat(j); }
     if (a === 'goalie') p.goalie = p.goalie === b.dataset.j ? null : b.dataset.j;
     if (a === 'hot') p.hotGoalie = !p.hotGoalie;
     renderScrim();
   });
+  wrap.addEventListener('input', ev => {
+    const t = ev.target; if (!t.dataset.scIw) return;
+    SC.plan.iw = SC.plan.iw || {}; SC.plan.iw[t.dataset.scIw] = Number(t.value);
+    const tb = document.getElementById('scTable'); if (tb) tb.innerHTML = scrimTableHtml();
+    const tot = SO_W.reduce((a, [k, , d]) => a + (isFinite(SC.plan.iw[k]) ? SC.plan.iw[k] : d), 0); t.closest('.dp-w').querySelector('b').textContent = dpPct(Number(t.value), tot) + '%';
+  });
   wrap.addEventListener('change', ev => {
     const t = ev.target, p = SC.plan;
+    if (t.dataset.scAdj) { const [j, k] = t.dataset.scAdj.split(':'); p.adj = p.adj || {}; p.adj[j] = Object.assign({}, p.adj[j], { [k]: Number(t.value) }); scrimRecalc(); return; }
+    if (t.dataset.scIw) { renderScrim(); return; }
     if (t.dataset.scOpt) { p.opts = p.opts || {}; p.opts[t.dataset.scOpt] = t.checked; }
     if (t.dataset.scOpp !== undefined) p.games[Number(t.dataset.scOpp)].opp = t.value;
     if (t.dataset.scOppf) { const o = p.opps[t.dataset.scOppf], k = t.dataset.key, v = Number(t.value); if (k.startsWith('div.')) { o.div = o.div || {}; o.div[k.slice(4)] = v; } else o[k] = v; }
