@@ -266,8 +266,8 @@
   .sc-vis { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; }
   .sc-vcard { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; } .sc-vt { font: 700 14px var(--text); margin: 0 0 4px; }
   .sc-vrow { display: flex; align-items: center; gap: 14px; } .sc-gauge { width: 130px; } .sc-gtxt { font: 700 16px var(--text); fill: var(--ink); } .sc-gsub { font: 9px var(--text); fill: var(--muted); }
-  .sc-vnum { display: flex; flex-direction: column; font: 22px var(--text); } .sc-vnum .n-note { font-size: 12px; }
-  .sc-hist, .sc-qc { width: 100%; height: auto; } .sc-ax { font: 9px var(--text); fill: var(--muted); }
+  .sc-vnum { display: flex; flex-direction: column; font: 13px var(--text); } .sc-big { font: 24px var(--text); white-space: nowrap; } .sc-vnum .n-note { font-size: 12px; }
+  .sc-hist, .sc-qc { width: 100%; height: auto; max-height: 150px; } .sc-ax { font: 9px var(--text); fill: var(--muted); }
   .sc-leg { display: flex; flex-wrap: wrap; gap: 10px; font: 11.5px var(--text); color: var(--muted); } .sc-leg i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 4px; vertical-align: -1px; }
   .sc-scat { width: 100%; height: auto; margin-bottom: 6px; }
   .sc-tab th.sc-th { cursor: pointer; white-space: normal; min-width: 70px; } .sc-tab th.sc-th.on { color: var(--navy-3); } .sc-tab tr[data-sc="row"] { cursor: pointer; } .sc-tab tr.on td { background: color-mix(in srgb, var(--navy-3) 8%, transparent); } .sc-tab tr.sc-used td:first-child { font-weight: 700; }
@@ -14320,7 +14320,7 @@ function scrimGauge(p) {
 }
 function scrimHist(us, them) {
   const max = Math.max(12, scrimQ(us, 0.995), scrimQ(them, 0.995)), cnt = a => { const c = Array(max + 1).fill(0); a.forEach(v => { c[Math.min(max, v)]++; }); return c.map(x => x / a.length); };
-  const cu = cnt(us), ct = cnt(them), top = Math.max(...cu, ...ct) || 1, W = 300, H = 120, bw = W / (max + 1);
+  const cu = cnt(us), ct = cnt(them), top = Math.max(...cu, ...ct) || 1, W = 440, H = 120, bw = W / (max + 1);
   const bars = cu.map((v, i) => `<rect x="${(i * bw + 1).toFixed(1)}" y="${(H - 18 - v / top * (H - 30)).toFixed(1)}" width="${(bw - 2).toFixed(1)}" height="${(v / top * (H - 30)).toFixed(1)}" fill="var(--navy-3)" opacity=".85"><title>We score ${i}: ${pct(v)} of games</title></rect>`).join('');
   const line = ct.map((v, i) => `${(i * bw + bw / 2).toFixed(1)},${(H - 18 - v / top * (H - 30)).toFixed(1)}`).join(' ');
   const mx = v => (v * bw + bw / 2).toFixed(1), mu = scrimMean(us);
@@ -14330,13 +14330,13 @@ function scrimHist(us, them) {
     <div class="sc-leg"><span><i style="background:var(--navy-3)"></i>our goals</span><span><i style="background:var(--critical)"></i>their goals</span><span><i style="background:var(--good)"></i>our floor–ceiling</span></div>`;
 }
 function scrimQChart(gi) {
-  const R = SC.res, qs = R.state.map((st, qi) => qi).filter(qi => Math.floor(qi / 4) === gi), W = 300, H = 130, bw = W / qs.length, top = Math.max(4, ...qs.map(qi => scrimQ(R.sim.q[qi], 0.9)), ...qs.map(qi => scrimQ(R.sim.qOpp[qi], 0.9)));
+  const R = SC.res, qs = R.state.map((st, qi) => qi).filter(qi => Math.floor(qi / 4) === gi), W = 440, H = 120, bw = W / qs.length, top = Math.max(4, ...qs.map(qi => scrimQ(R.sim.q[qi], 0.9)), ...qs.map(qi => scrimQ(R.sim.qOpp[qi], 0.9)));
   const y = v => (H - 20 - v / top * (H - 30)).toFixed(1);
   return `<svg viewBox="0 0 ${W} ${H}" class="sc-qc"><line x1="0" x2="${W}" y1="${H - 20}" y2="${H - 20}" stroke="var(--line)"/>${qs.map((qi, k) => { const x = k * bw, us = R.sim.q[qi], th = R.sim.qOpp[qi], mu = scrimMean(us), mt = scrimMean(th);
     return `<rect x="${(x + bw * 0.18).toFixed(1)}" y="${y(mu)}" width="${(bw * 0.32).toFixed(1)}" height="${(H - 20 - y(mu)).toFixed(1)}" fill="var(--navy-3)"><title>${SC.plan.quarters[qi].label}: we score ${num(mu, 1)} (${scrimQ(us, 0.1)}–${scrimQ(us, 0.9)})</title></rect>
       <line x1="${(x + bw * 0.34).toFixed(1)}" x2="${(x + bw * 0.34).toFixed(1)}" y1="${y(scrimQ(us, 0.9))}" y2="${y(scrimQ(us, 0.1))}" stroke="var(--good)" stroke-width="2"/>
       ${th.length ? `<rect x="${(x + bw * 0.52).toFixed(1)}" y="${y(mt)}" width="${(bw * 0.28).toFixed(1)}" height="${(H - 20 - y(mt)).toFixed(1)}" fill="var(--critical)" opacity=".55"><title>They score ${num(mt, 1)}</title></rect>` : ''}
-      <text x="${(x + bw / 2).toFixed(1)}" y="${H - 6}" text-anchor="middle" class="sc-ax">${escapeHtml(SC.plan.quarters[qi].label.replace(/^G\d /, ''))}</text><text x="${(x + bw * 0.34).toFixed(1)}" y="${(Number(y(mu)) - 3).toFixed(1)}" text-anchor="middle" class="sc-ax">${num(mu, 1)}</text>`; }).join('')}</svg>`;
+      <text x="${(x + bw / 2).toFixed(1)}" y="${H - 6}" text-anchor="middle" class="sc-ax">${escapeHtml(SC.plan.quarters[qi].label.replace(/^G\d /, ''))}</text><text x="${(x + bw * 0.15).toFixed(1)}" y="${(Number(y(mu)) + 11).toFixed(1)}" text-anchor="end" class="sc-ax">${num(mu, 1)}</text>`; }).join('')}</svg>`;
 }
 function scrimScatter(rows, groups) {
   if (!rows.length) return '';
@@ -14466,7 +14466,7 @@ function renderScrim() {
   // Visual summary: win gauge, the score spread over every simulated game, quarter by quarter.
   const best = SC.uni ? SC.uni.groups.map(g => { const r = SC.uni.rows.filter(x => x.grp === g.key).sort((a, b) => b.e15 - a.e15)[0], avg = scrimMean(SC.uni.rows.filter(x => x.grp === g.key).map(x => x.e15)); return r ? `<li><b>${escapeHtml(g.name)}:</b> ${r.mids.map(j => escapeHtml(scrimName(j))).join('-')} with ${r.att.map(j => escapeHtml(scrimName(j))).join('-')} &mdash; ${num(r.e15, 2)} goals per 15 (+${num(r.e15 - avg, 2)} over the average line).</li>` : ''; }).join('') : '';
   const visual = `<div class="panel"><p class="panel-title">The picture</p><div class="sc-vis">${p.games.map((g, gi) => { const us = R.sim.games[gi].us, them = R.sim.games[gi].them, win = scrimOpt('winprob') ? scrimWin(us, them) : null;
-      return `<div class="sc-vcard"><p class="sc-vt">${escapeHtml(g.name)} vs ${escapeHtml(p.opps[g.opp].name)}</p><div class="sc-vrow">${win !== null ? scrimGauge(win) : ''}<div class="sc-vnum"><b>${num(scrimMean(us), 1)}</b> to <b>${num(scrimMean(them), 1)}</b><span class="n-note">most likely final</span><span class="n-note">we score ${scrimQ(us, 0.1)}–${scrimQ(us, 0.9)} on 8 of 10 days</span></div></div>
+      return `<div class="sc-vcard"><p class="sc-vt">${escapeHtml(g.name)} vs ${escapeHtml(p.opps[g.opp].name)}</p><div class="sc-vrow">${win !== null ? scrimGauge(win) : ''}<div class="sc-vnum"><span class="sc-big"><b>${num(scrimMean(us), 1)}</b> to <b>${num(scrimMean(them), 1)}</b></span><span class="n-note">expected final</span><span class="n-note">we score ${scrimQ(us, 0.1)}–${scrimQ(us, 0.9)} on 8 of 10 days</span></div></div>
         <p class="n-note" style="margin:6px 0 2px;">How many goals we score across ${R.sim.N.toLocaleString()} simulated games</p>${scrimHist(us, them)}<p class="n-note" style="margin:8px 0 2px;">Quarter by quarter (bar = expected, green line = floor to ceiling)</p>${scrimQChart(gi)}</div>`; }).join('')}</div>
     ${best ? `<p class="dp-wh" style="margin-top:10px;">Best lines by group</p><ul class="sc-ul">${best}</ul>` : ''}</div>`;
   const lineups = `<div class="panel"><p class="panel-title">Every lineup, simulated</p><p class="panel-sub">Every middie trio (and attack trio where there’s a choice) the rules allow, each played out 30 times over a full quarter against that game’s opponent. Sort by any rating; click a row to see why it rates where it does.</p>
