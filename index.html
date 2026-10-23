@@ -273,6 +273,7 @@
   .sc-cs { display: flex; flex-direction: column; align-items: flex-end; font-family: var(--text); } .sc-cs b { font-size: 22px; } .sc-cs span { font-size: 10.5px; color: var(--muted); }
   .sc-tick { position: absolute; top: 4px; right: 8px; color: var(--good); font-weight: 700; }
   .sc-rk { font: 700 11.5px var(--text); padding: 1px 7px; border-radius: 999px; background: var(--line); } .sc-rk.top { background: color-mix(in srgb, var(--good) 22%, transparent); color: var(--good); }
+  .sc-fill { font: 600 11.5px var(--text); color: var(--muted); border: 1px dashed var(--line); border-radius: 999px; padding: 1px 8px; }
   .sc-thin { font: 600 11.5px var(--text); color: #B7791F; } .sc-line .sc-thin { margin-left: 8px; }
   .sc-pwhy { font: 12px var(--text); color: var(--muted); margin: 4px 0 0 10px; } .sc-stale { font: 600 13px var(--text); color: #B7791F; margin: 6px 0; }
   .sc-det > summary { cursor: pointer; }
@@ -14334,7 +14335,7 @@ function scrimImpact(six) {
   return six.reduce((a, j) => a + one(j), 0) / six.length;
 }
 const SCRIM_COLS = [
-  ['score', 'Score (0–100)', 1, v => String(Math.round(v))], ['rank', 'Rank in group', -1, v => '#' + v],
+  ['score', 'Score (0–100)', 1, v => String(Math.round(v))], ['rank', 'Rank in group', -1, v => (v ? '#' + v : 'no data')],
   ['e15', 'Expected goals / 15 min', 1, v => num(v, 2)], ['p10', 'Floor', 1, v => num(v, 0)], ['p90', 'Ceiling', 1, v => num(v, 0)], ['shift', 'Scores in a 5-min shift', 1, v => pct(v)],
   ['gpp', 'Goals / possession', 1, v => num(v, 3)], ['to', 'Turnovers / possession', -1, v => pct(v)], ['gs', 'Gold+Silver share of shots', 1, v => pct(v)], ['dom', 'Dominoes lift / possession', 1, v => pct(v)],
   ['fed', 'Shots off a feed', 1, v => pct(v)], ['chem', 'Role chemistry', 1, v => '×' + num(v, 2)], ['sd', 'Risk (swing)', -1, v => '±' + num(v, 2)], ['imp', 'Impact (your sliders)', 1, v => num(v, 1)], ['used', 'Times in your plan', 1, v => String(v)],
@@ -14412,7 +14413,7 @@ function scrimTableHtml() {
   const used = {}; SC.res.state.forEach(st => st.lines.forEach(l => { const k = st.att.concat(l).slice().sort().join(','); used[k] = (used[k] || 0) + 1; }));
   U.rows.forEach(r => { r.used = used[r.six.slice().sort().join(',')] || 0; });
   const f = SC.filt || {}, srt = SC.sort && SC.sort.length ? SC.sort : [{ k: 'score', d: -1 }];
-  let rows = U.rows.filter(r => (!f.grp || r.grp === f.grp) && (!f.must || !f.must.length || f.must.every(j => r.six.includes(j))) && (!f.used || r.used));
+  let rows = U.rows.filter(r => (SC.showNone || !r.noneN) && (!f.grp || r.grp === f.grp) && (!f.must || !f.must.length || f.must.every(j => r.six.includes(j))) && (!f.used || r.used));
   rows.sort((a, b) => { for (const s of srt) { const d = (a[s.k] - b[s.k]) * s.d; if (Math.abs(d) > 1e-9) return d > 0 ? 1 : -1; } return 0; });
   const shown = SC.showAll ? rows : rows.slice(0, 40), col = Object.fromEntries(SCRIM_COLS.map(c => [c[0], c]));
   const everyone = [...new Set(U.rows.flatMap(r => r.six))].sort((a, b) => Number(a) - Number(b));
@@ -14492,8 +14493,10 @@ function scrimScore() {
     const R = U.rows.filter(r => r.grp === g.key), z = k => { const v = R.map(r => r[k]), m = scrimMean(v), sd = Math.sqrt(scrimMean(v.map(x => (x - m) ** 2))) || 1; return r => (r[k] - m) / sd; };
     const zs = z(floor ? 'bad' : 'e15'), zi = z('imp');
     // Each little-data player costs 4 points: an unknown is a risk the coach can't plan around.
-    const M = SC.res && SC.res.M; R.forEach(r => { const thin = M ? r.six.filter(j => M.P[j] && M.P[j].thin).length : 0; r.thinN = thin; r.score = Math.max(0, Math.min(100, 50 + 15 * ((1 - b) * zs(r) + b * zi(r)) - 4 * thin)); });
-    R.slice().sort((a, c) => c.score - a.score).forEach((r, i) => { r.rank = i + 1; r.of = R.length; });
+    const M = SC.res && SC.res.M; R.forEach(r => { const thin = M ? r.six.filter(j => M.P[j] && M.P[j].thin && !M.P[j].none).length : 0, none = M ? r.six.filter(j => M.P[j] && M.P[j].none).length : 0; r.thinN = thin; r.noneN = none; r.score = Math.max(0, Math.min(100, 50 + 15 * ((1 - b) * zs(r) + b * zi(r)) - 4 * thin - 20 * none)); });
+    const known = R.filter(r => !r.noneN);
+    known.slice().sort((a, c) => c.score - a.score).forEach((r, i) => { r.rank = i + 1; r.of = known.length; });
+    R.filter(r => r.noneN).forEach(r => { r.rank = null; r.of = known.length; });
   });
   SC.rowIdx = {}; U.rows.forEach(r => { SC.rowIdx[r.grp + '|' + r.six.slice().sort().join(',')] = r; });
 }
@@ -14505,7 +14508,7 @@ function scrimRankWith(qi, row, must) {
 }
 function scrimRowFor(qi, six) { const q = SC.plan.quarters[qi]; return SC.rowIdx && SC.rowIdx[q.mid + '|' + q.attack.join(',') + '|' + six.slice().sort().join(',')]; }
 // Plain-words strength of a lineup (one line), from scrimWhy's comparison.
-function scrimThin(six) { const M = SC.res && SC.res.M; if (!M) return []; return six.filter(j => M.P[j] && M.P[j].thin).map(j => `${scrimName(j)} (${M.P[j].touch} touches)`); }
+function scrimThin(six) { const M = SC.res && SC.res.M; if (!M) return []; return six.filter(j => M.P[j] && M.P[j].thin && !M.P[j].none).map(j => `${scrimName(j)} (${M.P[j].touch} touches)`); }
 function scrimStrength(r, rows) {
   const peers = rows.filter(x => x.grp === r.grp), avg = k => scrimMean(peers.map(x => x[k])), sd = k => { const m = avg(k); return Math.sqrt(scrimMean(peers.map(x => (x[k] - m) ** 2))) || 1; };
   const z = { gs: (r.gs - avg('gs')) / sd('gs'), to: -(r.to - avg('to')) / sd('to'), dom: (r.dom - avg('dom')) / sd('dom'), fed: (r.fed - avg('fed')) / sd('fed'), sd: -(r.sd - avg('sd')) / sd('sd') };
@@ -14538,13 +14541,15 @@ function renderScrim() {
   // 2. Best lineups, as simple ranked cards
   const used = {}; R.state.forEach((st, qi) => st.lines.forEach(l => { const r = scrimRowFor(qi, st.att.concat(l)); if (r) used[r.id] = (used[r.id] || 0) + 1; }));
   const bestCards = `<div class="panel"><p class="panel-title">Best lineups</p><p class="panel-sub">Top 5 in each group. Score blends the simulation (${100 - blend}%) with your Impact weights (${blend}%). ✓ = in the plan.</p>
-    ${U.groups.map(g => { const rows = U.rows.filter(r => r.grp === g.key).sort((a, b) => b.score - a.score).slice(0, 5);
-      return `<p class="sc-gh">${escapeHtml(g.name)}</p><div class="sc-best">${rows.map(r => `<div class="sc-card${used[r.id] ? ' sc-in' : ''}" data-sc="card" data-id="${r.id}"><span class="sc-rank">#${r.rank}</span><div class="sc-cm"><b>${r.mids.map(nm).join(' · ')}</b><span class="n-note">with ${r.att.map(nm).join(' · ')}</span><span class="sc-cw">${escapeHtml(scrimStrength(r, U.rows))}</span>${scrimThin(r.six).length ? `<span class="sc-thin">⚠ little data: ${escapeHtml(scrimThin(r.six).join(', '))}</span>` : ''}</div><div class="sc-cs"><b>${Math.round(r.score)}</b><span>score</span><span class="n-note">${num(r.e15, 1)} goals / 15 min</span></div>${used[r.id] ? '<span class="sc-tick">✓</span>' : ''}</div>`).join('')}</div>`; }).join('')}</div>`;
+    <div class="sc-row"><button type="button" class="pill${SC.showNone ? ' active' : ''}" data-sc="shownone">Show players with no data</button><span class="n-note">${SC.showNone ? 'Showing everyone.' : 'Hidden: players with nothing logged.'}</span></div>
+    ${U.groups.map(g => { const rows = U.rows.filter(r => r.grp === g.key && (SC.showNone || !r.noneN)).sort((a, b) => b.score - a.score).slice(0, 5);
+      if (!rows.length) return `<p class="sc-gh">${escapeHtml(g.name)}</p><p class="n-note">Every possible line here has a player with nothing logged.</p>`;
+      return `<p class="sc-gh">${escapeHtml(g.name)}</p><div class="sc-best">${rows.map(r => `<div class="sc-card${used[r.id] ? ' sc-in' : ''}" data-sc="card" data-id="${r.id}"><span class="sc-rank">${r.rank ? '#' + r.rank : '—'}</span><div class="sc-cm"><b>${r.mids.map(nm).join(' · ')}</b><span class="n-note">with ${r.att.map(nm).join(' · ')}</span><span class="sc-cw">${escapeHtml(scrimStrength(r, U.rows))}</span>${scrimThin(r.six).length ? `<span class="sc-thin">⚠ little data: ${escapeHtml(scrimThin(r.six).join(', '))}</span>` : ''}</div><div class="sc-cs"><b>${Math.round(r.score)}</b><span>score</span><span class="n-note">${num(r.e15, 1)} goals / 15 min</span></div>${used[r.id] ? '<span class="sc-tick">✓</span>' : ''}</div>`).join('')}</div>`; }).join('')}</div>`;
   // 3. The plan: each line with its rank
   const games = p.games.map((g, gi) => {
     const rows = R.state.map((st, qi) => ({ st, qi })).filter(x => Math.floor(x.qi / 4) === gi).map(({ st, qi }) => {
       const q = p.quarters[qi];
-      const lines = st.lines.map((l, li) => { const r = scrimRowFor(qi, st.att.concat(l)); const must = li === 0 ? (q.starters || []).filter(j => l.includes(j)) : (q.favor || []).filter(j => l.includes(j)); const rw = scrimRankWith(qi, r, must); return `<div class="sc-line"><span class="sc-ln">Line ${li + 1}${li === 0 ? ' (starts)' : ''}<input type="number" class="sc-min" min="0" max="15" step="0.5" value="${num((st.mins || [])[li] || 15 / st.lines.length, 1)}" data-sc-min="${qi}:${li}" title="Minutes of the 15"> min</span>${l.map((j, pos) => chip(j, qi, li, pos)).join('')}${r ? `<span class="sc-rk${r.rank <= 5 || (rw && rw.rank <= 2) ? ' top' : ''}">#${r.rank} of ${r.of}</span>${rw && rw.of > 1 ? `<span class="n-note">#${rw.rank} of ${rw.of} lines with ${escapeHtml(must.map(scrimName).join(' + '))}</span>` : ''}<span class="sc-v">score ${Math.round(r.score)}</span>` : ''}${scrimThin(l).length ? `<span class="sc-thin">⚠ little data: ${escapeHtml(scrimThin(l).join(', '))}</span>` : ''}</div>`; }).join('');
+      const lines = st.lines.map((l, li) => { const r = scrimRowFor(qi, st.att.concat(l)); const must = li === 0 ? (q.starters || []).filter(j => l.includes(j)) : (q.favor || []).filter(j => l.includes(j)); const rw = scrimRankWith(qi, r, must); return `<div class="sc-line"><span class="sc-ln">Line ${li + 1}${li === 0 ? ' (starts)' : ''}<input type="number" class="sc-min" min="0" max="15" step="0.5" value="${num((st.mins || [])[li] || 15 / st.lines.length, 1)}" data-sc-min="${qi}:${li}" title="Minutes of the 15"> min</span>${l.map((j, pos) => chip(j, qi, li, pos)).join('')}${r && !r.rank ? `<span class="sc-fill">fill-in: ${escapeHtml(l.filter(j => SC.res.M.P[j] && SC.res.M.P[j].none).map(scrimName).join(', '))} (no data)</span>` : ''}${r && r.rank ? `<span class="sc-rk${r.rank <= 5 || (rw && rw.rank <= 2) ? ' top' : ''}">#${r.rank} of ${r.of}</span>${rw && rw.of > 1 ? `<span class="n-note">#${rw.rank} of ${rw.of} lines with ${escapeHtml(must.map(scrimName).join(' + '))}</span>` : ''}<span class="sc-v">score ${Math.round(r.score)}</span>` : ''}${scrimThin(l).length ? `<span class="sc-thin">⚠ little data: ${escapeHtml(scrimThin(l).join(', '))}</span>` : ''}</div>`; }).join('');
       const why = scrimPlanWhy(qi, st);
       return `<div class="sc-q"><div class="sc-qh"><b>${escapeHtml(p.quarters[qi].label)}</b> <span class="n-note">Attack: ${st.att.map((j, pos) => p.quarters[qi].attack.length > 3 ? chip(j, qi, 'a', pos) : nm(j)).join(' · ')}</span><span class="sc-v">${num(scrimMean(R.sim.q[qi]), 1)} goals expected</span></div>${lines}${why}${scrimWarn(qi, st)}${SC.edit && SC.edit.qi === qi ? scrimSwapHtml(qi) : ''}</div>`;
     }).join('');
@@ -14567,11 +14572,13 @@ function renderScrim() {
 // Why the plan uses this quarter's lines when they aren't the very top ones.
 function scrimPlanWhy(qi, st) {
   const q = SC.plan.quarters[qi], ranks = st.lines.map(l => scrimRowFor(qi, st.att.concat(l))).filter(Boolean); if (!ranks.length) return '';
-  if (ranks.every(r => r.rank <= 3)) return '';
+  if (ranks.every(r => r.rank && r.rank <= 3)) return '';
   const bits = []; if ((q.starters || []).length) bits.push(`${q.starters.map(scrimName).join(' and ')} must start`);
   if ((q.favor || []).length) bits.push(`${q.favor.map(scrimName).join(' and ')} play two lines`);
   bits.push('nobody plays more than 2 lines', 'every top-8 middie gets real minutes across the games');
   if ((SC.plan.mode || 'raw') === 'mix') bits.push('Mix mode spreads the pairs out');
+  const M = SC.res.M, pool = scrimQuarterPool(q), logged = pool.filter(j => M.P[j] && !M.P[j].none);
+  if (logged.length < pool.length && st.lines.some(l => l.some(j => M.P[j] && M.P[j].none))) bits.unshift(`only ${logged.length} of these ${pool.length} middies have anything logged, so the others fill the remaining spots`);
   return `<p class="sc-pwhy">Why not just the top lines: ${escapeHtml(bits.join('; '))}.</p>`;
 }
 // Hand edits can break a rule; say so (the coach can keep it).
@@ -14654,6 +14661,7 @@ function scrimInit() {
     if (a === 'card') { SC.detOpen = true; SC.open = Number(b.dataset.id); SC.filt = {}; SC.showAll = true; renderScrim(); setTimeout(() => { const r = document.querySelector(`tr[data-id="${b.dataset.id}"]`); if (r) r.scrollIntoView({ block: 'center' }); }, 60); return; }
     if (a === 'row') { const id = Number(b.dataset.id); SC.open = SC.open === id ? null : id; if (b.tagName === 'circle') { SC.showAll = true; setTimeout(() => { const r = document.querySelector(`tr[data-id="${id}"]`); if (r) r.scrollIntoView({ block: 'center' }); }, 60); } }
     if (a === 'showall') SC.showAll = !SC.showAll;
+    if (a === 'shownone') SC.showNone = !SC.showNone;
     if (a === 'adjj') SC.adjJ = SC.adjJ === b.dataset.j ? null : b.dataset.j;
     if (a === 'adjreset') { if (p.adj) delete p.adj[b.dataset.j]; scrimRecalc(); }
     if (a === 'iwreset') { p.iw = {}; scrimScore(); SC.stale = true; }
