@@ -14470,6 +14470,8 @@ function scrimMigrate(p) {
   const season = scrimSeason(), att = [...new Set((p.quarters || []).flatMap(q => q.attack || []))];
   const mid = [...new Set((p.top8 || []).concat(rosterPlayers(season).map(r => r.jersey).filter(j => j && posOfJ(season, j) === 'M')))];
   p.attPool = att; p.midPool = mid; p.pt = { mid: {}, att: {} };
+  // The old per-quarter rules carry over as Quarter rules (switched on), so nothing the staff set is lost.
+  p.qrules = { on: true, q: (p.quarters || []).map(q => ({ mid: q.mid === 'top8' || q.mid === 'other' ? q.mid : 'all', midList: (q.midList || []).slice(), att: (q.attack || []).slice(), starters: (q.starters || []).slice(), favor: (q.favor || []).slice() })) };
   p.quarters = (p.quarters || []).map(q => ({ label: q.label, nLines: q.nLines || 3 }));
   p.lines = {}; p.v = 4; return p;
 }
@@ -14487,8 +14489,20 @@ function scrimSearchCfg(M, pools) {
   const p = SC.plan, players = [...new Set(pools.att.concat(pools.mid))], ix = {}; players.forEach((j, i) => { ix[j] = i; });
   const Q = p.quarters.map((q, qi) => { const k = (p.lines || {})[qi], nL = Math.max(1, Math.min(4, q.nLines || 3));
     const lockOk = !!(k && k.locked && k.lines && k.lines.length === nL && k.att.concat(...k.lines).every(j => ix[j] !== undefined));
+    const r = scrimQRule(qi), top8 = p.top8 || [], inPool = (list, pool) => list.filter(j => pool.includes(j)).map(j => ix[j]);
+    let midAllow = pools.mid.map(j => ix[j]), attAllow = pools.att.map(j => ix[j]), starters = [], favor = [];
+    if (r) {
+      const m = r.mid === 'top8' ? inPool(top8, pools.mid) : r.mid === 'other' ? pools.mid.filter(j => !top8.includes(j)).map(j => ix[j]) : r.mid === 'custom' ? inPool(r.midList || [], pools.mid) : midAllow;
+      if (m.length >= 3) midAllow = m;
+      const a = inPool(r.att || [], pools.att); if (a.length >= 3) attAllow = a;
+      starters = inPool(r.starters || [], pools.mid).filter(i => midAllow.includes(i)).slice(0, 3); favor = inPool(r.favor || [], pools.mid).filter(i => midAllow.includes(i));
+      attAllow = attAllow.filter(i => !starters.includes(i) && !favor.includes(i));
+    }
+    // Lines in a quarter must differ only when there are enough middies to make different lines.
+    const combos = midAllow.length >= 3 ? midAllow.length * (midAllow.length - 1) * (midAllow.length - 2) / 6 : 0;
     return { gi: Math.floor(qi / 4), nL, mins: k && k.mins && k.mins.length === nL ? k.mins.slice() : Array(nL).fill(15 / nL), locked: lockOk,
-      lockAtt: lockOk ? k.att.map(j => ix[j]) : null, lockLines: lockOk ? k.lines.map(l => l.map(j => ix[j])) : null }; });
+      lockAtt: lockOk ? k.att.map(j => ix[j]) : null, lockLines: lockOk ? k.lines.map(l => l.map(j => ix[j])) : null,
+      midAllow, attAllow, starters, favor, distinct: combos >= nL, cap2: midAllow.length >= 6 }; });
   const lim = role => players.map(j => (pools[role].includes(j) ? scrimLimit(role, j) : { min: 0, max: 0 }));
   return { players, ix, att: pools.att.map(j => ix[j]), mid: pools.mid.map(j => ix[j]), Q, limMid: lim('mid'), limAtt: lim('att'), mode: p.mode || 'raw', X: Number(p.targetX) || 12, nGames: p.games.length };
 }
@@ -14511,14 +14525,23 @@ function scrimRowOf(U, gi, att, line) {
 function scrimPlanSearch(S, U, val, vv, start, iters, t0, t1, prior) {
   const nP = S.players.length, Q = S.Q, pairsOn = S.mode === 'mix';
   const shuffle = a => { const b = a.slice(); for (let i = b.length - 1; i > 0; i--) { const k = Math.floor(SCRIM_RNG() * (i + 1)); const t = b[i]; b[i] = b[k]; b[k] = t; } return b; };
-  const validQ = q => { const keys = q.lines.map(l => l.slice().sort((a, b) => a - b).join(',')); if (new Set(keys).size !== keys.length) return false;
-    const c = {}; for (const l of q.lines) { if (new Set(l).size !== 3) return false; for (const j of l) { if (q.att.includes(j)) return false; c[j] = (c[j] || 0) + 1; if (c[j] > 2 && S.mid.length >= 6) return false; } } return new Set(q.att).size === 3; };
+  // A quarter is legal when: 3 different attackmen from its attack group; each line 3 different middies from its
+  // middie group; nobody on attack and middie at once; lines differ (when there are enough middies); nobody on more than
+  // 2 lines (when 6+ middies); its must-start middies on line 1; its "plays 2 lines" middies on 2 lines (3+ lines).
+  const validQ = (q, qd) => { if (qd.distinct) { const keys = q.lines.map(l => l.slice().sort((a, b) => a - b).join(',')); if (new Set(keys).size !== keys.length) return false; }
+    if (new Set(q.att).size !== 3 || q.att.some(j => !qd.attAllow.includes(j))) return false;
+    const c = {}; for (const l of q.lines) { if (new Set(l).size !== 3) return false; for (const j of l) { if (q.att.includes(j) || !qd.midAllow.includes(j)) return false; c[j] = (c[j] || 0) + 1; if (c[j] > 2 && qd.cap2) return false; } }
+    if (qd.starters.some(j => !q.lines[0].includes(j))) return false;
+    if (q.lines.length >= 3 && qd.favor.some(j => (c[j] || 0) < 2)) return false;
+    return true; };
   const fresh = qi => { const qd = Q[qi]; if (qd.locked) return { att: qd.lockAtt.slice(), lines: qd.lockLines.map(l => l.slice()), mins: qd.mins.slice() };
-    for (let tries = 0; tries < 200; tries++) { const att = shuffle(S.att).slice(0, 3), avail = S.mid.filter(j => !att.includes(j)), lines = [];
-      for (let l = 0; l < qd.nL; l++) lines.push(shuffle(avail).slice(0, 3));
-      const q = { att, lines, mins: qd.mins.slice() }; if (validQ(q)) return q; }
+    for (let tries = 0; tries < 400; tries++) { const att = shuffle(qd.attAllow).slice(0, 3), avail = qd.midAllow.filter(j => !att.includes(j)), lines = Array.from({ length: qd.nL }, () => []);
+      qd.starters.forEach(j => lines[0].push(j));
+      if (qd.nL >= 3) qd.favor.forEach((j, i) => { if (!lines[0].includes(j) && lines[0].length < 3) lines[0].push(j); const li = 1 + (i % (qd.nL - 1)); if (!lines[li].includes(j) && lines[li].length < 3) lines[li].push(j); });
+      lines.forEach(l => { for (const j of shuffle(avail)) { if (l.length >= 3) break; if (!l.includes(j)) l.push(j); } });
+      const q = { att, lines, mins: qd.mins.slice() }; if (validQ(q, qd)) return q; }
     return null; };
-  let state = Q.map((qd, qi) => { const s0 = start && start[qi]; if (qd.locked) return fresh(qi); if (s0 && s0.lines.length === qd.nL) { const q = { att: s0.att.slice(), lines: s0.lines.map(l => l.slice()), mins: qd.mins.slice() }; if (validQ(q)) return q; } return fresh(qi); });
+  let state = Q.map((qd, qi) => { const s0 = start && start[qi]; if (qd.locked) return fresh(qi); if (s0 && s0.lines.length === qd.nL) { const q = { att: s0.att.slice(), lines: s0.lines.map(l => l.slice()), mins: qd.mins.slice() }; if (validQ(q, qd)) return q; } return fresh(qi); });
   if (state.some(q => !q)) return null;
   const midQ = new Float64Array(nP), attQ = new Float64Array(nP);
   const total = st => {
@@ -14539,9 +14562,10 @@ function scrimPlanSearch(S, U, val, vv, start, iters, t0, t1, prior) {
   for (let it = 0; it < iters; it++) {
     const temp = t0 * Math.pow(t1 / t0, it / iters), qi = free[Math.floor(SCRIM_RNG() * free.length)], q = state[qi];
     const back = { att: q.att.slice(), lines: q.lines.map(l => l.slice()) };
-    if (S.att.length > 3 && SCRIM_RNG() < 0.25) { const pos = Math.floor(SCRIM_RNG() * 3), inQ = new Set(q.att.concat(...q.lines)), cand = S.att.filter(j => !inQ.has(j)); if (!cand.length) continue; q.att[pos] = cand[Math.floor(SCRIM_RNG() * cand.length)]; }
-    else { const li = Math.floor(SCRIM_RNG() * q.lines.length), pos = Math.floor(SCRIM_RNG() * 3), cand = S.mid.filter(j => !q.lines[li].includes(j) && !q.att.includes(j)); if (!cand.length) continue; q.lines[li][pos] = cand[Math.floor(SCRIM_RNG() * cand.length)]; }
-    if (!validQ(q)) { q.att = back.att; q.lines = back.lines; continue; }
+    const qd = Q[qi];
+    if (qd.attAllow.length > 3 && SCRIM_RNG() < 0.25) { const pos = Math.floor(SCRIM_RNG() * 3), inQ = new Set(q.att.concat(...q.lines)), cand = qd.attAllow.filter(j => !inQ.has(j)); if (!cand.length) continue; q.att[pos] = cand[Math.floor(SCRIM_RNG() * cand.length)]; }
+    else { const li = Math.floor(SCRIM_RNG() * q.lines.length), pos = Math.floor(SCRIM_RNG() * 3), cand = qd.midAllow.filter(j => !q.lines[li].includes(j) && !q.att.includes(j)); if (!cand.length) continue; q.lines[li][pos] = cand[Math.floor(SCRIM_RNG() * cand.length)]; }
+    if (!validQ(q, qd)) { q.att = back.att; q.lines = back.lines; continue; }
     const nv = total(state);
     if (nv >= cur || SCRIM_RNG() < Math.exp((nv - cur) / temp)) { cur = nv; if (cur > best) { best = cur; bestState = state.map(x => ({ att: x.att.slice(), lines: x.lines.map(l => l.slice()), mins: x.mins.slice() })); } }
     else { q.att = back.att; q.lines = back.lines; }
@@ -14798,6 +14822,39 @@ function scrimPlayerWhy(j) {
   if (U.pools.att.includes(j)) bits.push(aq >= la.max - 0.05 ? `At attack he’s at his max (${num(la.max, 1)}).` : aq <= la.min + 0.05 ? `At attack he plays only his minimum (${num(la.min, 1)}).` : `At attack he plays ${num(aq, 0)} quarters.`);
   return escapeHtml(bits.join(' ').replace(/<[^>]+>/g, ''));
 }
+// ---- Quarter rules (optional): who can play middie / attack in each quarter, who starts, who plays 2 lines ----
+function scrimQRule(qi) { const r = SC.plan && SC.plan.qrules; return r && r.on && r.q && r.q[qi] ? r.q[qi] : null; }
+function scrimQRulesHtml() {
+  const p = SC.plan, U = SC.uni, on = !!(p.qrules && p.qrules.on), q = (p.qrules && p.qrules.q) || [], top8 = p.top8 || [], M = SC.res.M;
+  const S = U.S, sp = (j, a, qi, f, act) => `<button type="button" class="pill sm${act ? ' active' : ''}" data-sc="qr" data-qi="${qi}" data-f="${f}" data-j="${escapeHtml(j)}">${scrimNm(j)}</button>`;
+  const groups = [['top8', 'Top 8'], ['other', 'Other middies'], ['all', 'Everyone'], ['custom', 'Pick']];
+  const rows = p.quarters.map((qq, qi) => { const r = q[qi] || { mid: 'all', att: [], starters: [], favor: [], midList: [] }, qd = S.Q[qi];
+    const midNames = qd.midAllow.map(i => S.players[i]), warn = [];
+    if (r.mid === 'other' && U.pools.mid.filter(j => !top8.includes(j)).length < 3) warn.push('fewer than 3 middies with data outside the top 8, so everyone can play');
+    if (qd.midAllow.length >= 3 && !qd.distinct) warn.push(`only ${qd.midAllow.length} middies here, so the same line plays the whole quarter`);
+    if ((r.att || []).filter(j => U.pools.att.includes(j)).length && (r.att || []).filter(j => U.pools.att.includes(j)).length < 3) warn.push('fewer than 3 attackmen picked, so anyone can play attack');
+    return `<tr><td><b>${escapeHtml(qq.label)}</b></td>
+      <td>${groups.map(([k, l]) => `<button type="button" class="pill sm${(r.mid || 'all') === k ? ' active' : ''}" data-sc="qr" data-qi="${qi}" data-f="mid" data-v="${k}">${l}</button>`).join('')}
+        ${r.mid === 'custom' ? `<div>${U.pools.mid.map(j => sp(j, 0, qi, 'midList', (r.midList || []).includes(j))).join('')}</div>` : ''}</td>
+      <td>${U.pools.att.map(j => sp(j, 0, qi, 'att', (r.att || []).includes(j))).join('')}<br><span class="n-note">${(r.att || []).length ? ((r.att || []).length > 3 ? 'best 3 of these' : 'these 3') : 'anyone'}</span></td>
+      <td>${midNames.map(j => sp(j, 0, qi, 'starters', (r.starters || []).includes(j))).join('')}</td>
+      <td>${midNames.map(j => sp(j, 0, qi, 'favor', (r.favor || []).includes(j))).join('')}</td>
+      <td>${warn.length ? `<span class="sc-thin">⚠ ${escapeHtml(warn.join('; '))}</span>` : ''}</td></tr>`; }).join('');
+  return `<div class="panel"><p class="panel-title">Quarter rules</p>
+    <p class="panel-sub">Optional limits on who plays where. When they’re on, every plan (and the Optimal % behind it) follows them; the playing-time limits still apply on top. Turn them off to let the model use anyone anywhere.</p>
+    <div class="sc-row"><button type="button" class="pill${on ? ' active' : ''}" data-sc="qron">${on ? 'Quarter rules ON' : 'Quarter rules OFF'}</button>${on ? '' : '<span class="n-note">Off: the rules below are kept but not used.</span>'}</div>
+    <div class="table-wrap"><table class="shotlog sc-pool"><thead><tr><th>Quarter</th><th>Middies who can play</th><th>Attack (tap to pick)</th><th>Must start (line 1)</th><th>Plays 2 lines</th><th></th></tr></thead><tbody>${rows}</tbody></table></div></div>`;
+}
+// Hand edits can break a quarter rule; say so (the coach can keep it).
+function scrimWarnV4(qi, st) {
+  const r = scrimQRule(qi); if (!r || !SC.uni) return ''; const qd = SC.uni.S.Q[qi], S = SC.uni.S, w = [], c = {};
+  st.lines.forEach(l => l.forEach(j => { c[j] = (c[j] || 0) + 1; }));
+  qd.starters.map(i => S.players[i]).forEach(j => { if (!st.lines[0].includes(j)) w.push(`${scrimName(j)} isn’t on line 1`); });
+  if (st.lines.length >= 3) qd.favor.map(i => S.players[i]).forEach(j => { if ((c[j] || 0) < 2) w.push(`${scrimName(j)} is on ${c[j] || 0} line${c[j] === 1 ? '' : 's'}, not 2`); });
+  st.lines.flat().forEach(j => { if (S.ix[j] !== undefined && !qd.midAllow.includes(S.ix[j]) && !w.some(x => x.startsWith(scrimName(j) + ' isn’t allowed'))) w.push(`${scrimName(j)} isn’t allowed at middie this quarter`); });
+  st.att.forEach(j => { if (S.ix[j] !== undefined && !qd.attAllow.includes(S.ix[j])) w.push(`${scrimName(j)} isn’t in this quarter’s attack group`); });
+  return w.length ? `<div class="sc-warn">&#9888; Breaks your quarter rules: ${w.map(escapeHtml).join(' · ')}</div>` : '';
+}
 // ---- the plan, with reasoning ----
 function scrimBuiltHtml() {
   const R = SC.res, U = SC.uni, p = SC.plan, mid = R.midQ || {}, att = R.attQ || {};
@@ -14808,7 +14865,7 @@ function scrimBuiltHtml() {
   const why = r => { const cap = r.six.filter(j => (U.pools.mid.includes(j) && r.mids.includes(j) && (mid[j] || 0) >= scrimLimit('mid', j).max - 0.05) || (r.att.includes(j) && (att[j] || 0) >= scrimLimit('att', j).max - 0.05)); return cap.length ? `${cap.map(scrimNm).join(' and ')} ${cap.length > 1 ? 'are' : 'is'} already at the most you allow` : 'its players are used in other strong lines instead, which adds up to more across the 8 quarters'; };
   const free = U.freeMid ? U.pools.mid.map(j => [j, (U.freeMid[j] || 0) - (mid[j] || 0)]).filter(x => Math.abs(x[1]) >= 0.4).sort((a, b) => b[1] - a[1]) : [];
   return `<div class="panel"><p class="panel-title">How the plan was built</p><ul class="sc-ul">
-    <li>Searched for the 8 quarters with the most expected goals${(p.mode || 'raw') !== 'raw' ? ` (${escapeHtml((SCRIM_MODES.find(m => m[0] === p.mode) || [, p.mode])[1])})` : ''}, using any 3 attackmen and any 3 middies in each line, with everyone inside the playing-time limits.</li>
+    ${p.qrules && p.qrules.on ? '<li><b>Your quarter rules are on:</b> each quarter only uses the middies and attackmen you allow there, with your must-start and plays-2-lines picks. Lineups outside the rules can still rank high in the explorer but can’t go in the plan.</li>' : ''}<li>Searched for the 8 quarters with the most expected goals${(p.mode || 'raw') !== 'raw' ? ` (${escapeHtml((SCRIM_MODES.find(m => m[0] === p.mode) || [, p.mode])[1])})` : ''}, using any 3 attackmen and any 3 middies in each line, with everyone inside the playing-time limits.</li>
     ${atMax.length ? `<li><b>At their middie max:</b> ${atMax.join(', ')}. These are the guys the plan wants most; raise their max to play them more.</li>` : ''}
     ${atMin.length ? `<li><b>Only their middie minimum:</b> ${atMin.join(', ')}. The search found lines it rates as good or a little better for the rest of the time. The top middie lines are close (the 10 best for Game 1 are within ${num(spread10, 2)} goals per 15), so some of these are close calls; raise a player’s minimum if you want him more.</li>` : ''}
     ${atMaxA.length ? `<li><b>At their attack max:</b> ${atMaxA.join(', ')}.</li>` : ''}${atMinA.length ? `<li><b>Only their attack minimum:</b> ${atMinA.join(', ')}.</li>` : ''}
@@ -14824,14 +14881,15 @@ function scrimGamePlansHtml() {
         return `<div class="sc-line"><span class="sc-ln">Line ${li + 1}<input type="number" class="sc-min" min="0" max="15" step="0.5" value="${num((st.mins || [])[li] || 15 / st.lines.length, 1)}" data-sc-min="${qi}:${li}" title="Minutes of the 15"> min</span>${l.map((j, pos) => chip(j, qi, li, pos)).join('')}
           ${r ? `<span class="sc-rk${r.rank <= 10 ? ' top' : ''}">#${r.rank} of ${r.of.toLocaleString()}</span><span class="sc-v">${num(r.e15, 2)} xG/15</span><span class="n-note">optimal ${pct(r.opt)}</span>${r.confL === 'Low' ? '<span class="sc-thin">⚠ low data</span>' : ''}` : ''}</div>`; }).join('');
       const lk = (p.lines[qi] || {}).locked;
-      return `<div class="sc-q"><div class="sc-qh"><b>${escapeHtml(p.quarters[qi].label)}</b>${lk ? ` <span class="sc-tag">set by hand</span> <button type="button" class="pill" data-sc="unlock" data-qi="${qi}">Let the model pick</button>` : ''} <span class="n-note">Attack: ${st.att.map((j, pos) => chip(j, qi, 'a', pos)).join(' ')}</span><span class="sc-v">${num(scrimMean(R.sim.q[qi]), 1)} goals expected</span><label class="sc-g n-note">lines <input type="number" min="1" max="4" step="1" value="${p.quarters[qi].nLines || 3}" data-sc-nl="${qi}" style="width:44px"></label></div>${lines}${SC.edit && SC.edit.qi === qi ? scrimSwapHtml(qi) : ''}</div>`;
+      return `<div class="sc-q"><div class="sc-qh"><b>${escapeHtml(p.quarters[qi].label)}</b>${lk ? ` <span class="sc-tag">set by hand</span> <button type="button" class="pill" data-sc="unlock" data-qi="${qi}">Let the model pick</button>` : ''} <span class="n-note">Attack: ${st.att.map((j, pos) => chip(j, qi, 'a', pos)).join(' ')}</span><span class="sc-v">${num(scrimMean(R.sim.q[qi]), 1)} goals expected</span><label class="sc-g n-note">lines <input type="number" min="1" max="4" step="1" value="${p.quarters[qi].nLines || 3}" data-sc-nl="${qi}" style="width:44px"></label></div>${lines}${scrimWarnV4(qi, st)}${SC.edit && SC.edit.qi === qi ? scrimSwapHtml(qi) : ''}</div>`;
     }).join('');
     return `<div class="panel sc-game"><p class="panel-title">${escapeHtml(g.name)} plan vs ${escapeHtml(p.opps[g.opp].name)}</p><p class="n-note">Tap a player to swap him (that quarter then stays as you set it). #rank = among every lineup for this game; optimal = how often that six was in the best plan on a simulated day.</p>${qs}</div>`;
   }).join('');
 }
 function scrimSwapHtml(qi) {
   const e = SC.edit, st = SC.res.state[qi], U = SC.uni, inQ = new Set(st.att.concat(...st.lines));
-  const pool = e.li === 'a' ? U.pools.att.filter(j => !inQ.has(j)) : U.pools.mid.filter(j => !st.lines[e.li].includes(j) && !st.att.includes(j));
+  const qd = U.S.Q[qi], okA = j => !scrimQRule(qi) || qd.attAllow.includes(U.S.ix[j]), okM = j => !scrimQRule(qi) || qd.midAllow.includes(U.S.ix[j]);
+  const pool = e.li === 'a' ? U.pools.att.filter(j => !inQ.has(j) && okA(j)) : U.pools.mid.filter(j => !st.lines[e.li].includes(j) && !st.att.includes(j) && okM(j));
   return `<div class="sc-swap"><span class="n-note">Swap in:</span>${pool.map(j => `<button type="button" class="pill" data-sc="swap" data-j="${escapeHtml(j)}">#${escapeHtml(j)} ${scrimNm(j)}</button>`).join('')}<button type="button" class="pill" data-sc="cancel">Cancel</button></div>`;
 }
 function scrimScenHtml() {
@@ -14884,7 +14942,7 @@ function renderScrim() {
     <p class="panel-sub"><b>Whose numbers move the plan most:</b> ${R.sens.map(x => `${scrimNm(x.j)} ±${num(x.swing / 2, 2)} goals`).join(' · ')}.</p>
     <details class="sc-opts"><summary>Model options (${SCRIM_OPTS.filter(o => scrimOpt(o[0])).length} of ${SCRIM_OPTS.length} on)</summary>${SCRIM_OPTS.map(([k, l]) => `<label><input type="checkbox" data-sc-opt="${k}" ${scrimOpt(k) ? 'checked' : ''}> ${escapeHtml(l)}</label>`).join('')}</details>
     ${scrimScenHtml()}${scrimOppHtml()}${scrimMatchHtml()}${scrimLoggingHtml()}${scrimActualHtml()}</details>`;
-  wrap.innerHTML = top + scrimChangedHtml() + picture + scrimPlansHtml() + scrimBuiltHtml() + scrimGamePlansHtml() + scrimExplorerHtml() + scrimPoolHtml() + scrimScenariosHtml() + scrimAccuracyHtml() + det;
+  wrap.innerHTML = top + scrimChangedHtml() + picture + scrimPlansHtml() + scrimBuiltHtml() + scrimQRulesHtml() + scrimGamePlansHtml() + scrimExplorerHtml() + scrimPoolHtml() + scrimScenariosHtml() + scrimAccuracyHtml() + det;
 }
 // Predicted vs actual: lineups logged with the lineup bar in games.
 function scrimActualHtml() {
@@ -14918,6 +14976,10 @@ function scrimInit() {
     if (a === 'pick') { const qi = Number(b.dataset.qi), li = b.dataset.li === 'a' ? 'a' : Number(b.dataset.li); SC.edit = { qi, li, pos: Number(b.dataset.pos) }; }
     if (a === 'cancel') SC.edit = null;
     if (a === 'swap' && SC.edit) { const e = SC.edit, st = SC.res.state[e.qi]; if (e.li === 'a') st.att[e.pos] = b.dataset.j; else st.lines[e.li][e.pos] = b.dataset.j; p.lines[e.qi] = { att: st.att, lines: st.lines, mins: st.mins, locked: true }; SC.edit = null; scrimResim(); return; }
+    if (a === 'qron') { p.qrules = p.qrules || { on: false, q: p.quarters.map(() => ({ mid: 'all', midList: [], att: [], starters: [], favor: [] })) }; p.qrules.on = !p.qrules.on; scrimRecalc(p.qrules.on ? 'quarter rules on' : 'quarter rules off'); return; }
+    if (a === 'qr') { const qi = Number(b.dataset.qi), f = b.dataset.f; p.qrules = p.qrules || { on: true, q: [] }; p.qrules.q = p.qrules.q || []; const r = p.qrules.q[qi] = Object.assign({ mid: 'all', midList: [], att: [], starters: [], favor: [] }, p.qrules.q[qi]);
+      if (f === 'mid') r.mid = b.dataset.v; else { const L = (r[f] || []).slice(), j = b.dataset.j, i = L.indexOf(j); if (i >= 0) L.splice(i, 1); else { if (f === 'starters' && L.length >= 3) return; L.push(j); } r[f] = L; }
+      if (p.qrules.on) scrimRecalc(`${p.quarters[qi].label} rules`); else renderScrim(); return; }
     if (a === 'exgame') { X.gi = Number(b.dataset.v); X.open = null; X.show = 50; }
     if (a === 'exview') { X.view = b.dataset.v; X.open = null; X.show = 50; }
     if (a === 'exinc') { const j = b.dataset.j; if (X.inc.includes(j)) { X.inc = X.inc.filter(x => x !== j); X.exc.push(j); } else if (X.exc.includes(j)) X.exc = X.exc.filter(x => x !== j); else X.inc.push(j); X.show = 50; }
