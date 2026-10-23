@@ -263,6 +263,18 @@
   .sc-tag { font: 700 10.5px var(--text); color: var(--good); border: 1px solid var(--good); border-radius: 999px; padding: 0 6px; }
   .sc-swap { display: flex; flex-wrap: wrap; gap: 4px; margin: 6px 0 0 96px; }
   .sc-opp { border-top: 1px solid var(--line); padding: 6px 0; } .sc-fields { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px; } .sc-fields label { display: flex; flex-direction: column; font: 600 11.5px var(--text); color: var(--muted); } .sc-fields input { width: 96px; font: 13px var(--text); padding: 3px 6px; }
+  .sc-res { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 14px; }
+  .sc-rescard { border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; } .sc-final { font: 28px var(--text); margin: 2px 0; } .sc-win { font: 14px var(--text); margin: 4px 0 10px; }
+  .sc-qrow { display: flex; gap: 6px; } .sc-qcell { flex: 1; border: 1px solid var(--line); border-radius: 8px; padding: 6px; text-align: center; font-family: var(--text); display: flex; flex-direction: column; } .sc-qcell span { font-size: 11px; color: var(--muted); } .sc-qcell b { font-size: 18px; } .sc-qcell i { font-style: normal; color: var(--muted); font-size: 13px; }
+  .sc-gh { font: 700 13px var(--text); margin: 12px 0 6px; color: var(--navy-3); }
+  .sc-best { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 8px; }
+  .sc-card { position: relative; display: flex; align-items: center; gap: 10px; border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; cursor: pointer; background: var(--card); } .sc-card.sc-in { border-color: var(--good); }
+  .sc-rank { font: 700 20px var(--text); color: var(--navy-3); min-width: 34px; } .sc-cm { flex: 1; display: flex; flex-direction: column; font: 13px var(--text); gap: 1px; } .sc-cw { font-size: 12px; color: var(--ink); }
+  .sc-cs { display: flex; flex-direction: column; align-items: flex-end; font-family: var(--text); } .sc-cs b { font-size: 22px; } .sc-cs span { font-size: 10.5px; color: var(--muted); }
+  .sc-tick { position: absolute; top: 4px; right: 8px; color: var(--good); font-weight: 700; }
+  .sc-rk { font: 700 11.5px var(--text); padding: 1px 7px; border-radius: 999px; background: var(--line); } .sc-rk.top { background: color-mix(in srgb, var(--good) 22%, transparent); color: var(--good); }
+  .sc-pwhy { font: 12px var(--text); color: var(--muted); margin: 4px 0 0 10px; } .sc-stale { font: 600 13px var(--text); color: #B7791F; margin: 6px 0; }
+  .sc-det > summary { cursor: pointer; }
   .sc-vis { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; }
   .sc-vcard { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; } .sc-vt { font: 700 14px var(--text); margin: 0 0 4px; }
   .sc-vrow { display: flex; align-items: center; gap: 14px; } .sc-gauge { width: 130px; } .sc-gtxt { font: 700 16px var(--text); fill: var(--ink); } .sc-gsub { font: 9px var(--text); fill: var(--muted); }
@@ -13976,7 +13988,7 @@ function scrimSeason() { return currentAdvSeason(); }
 function scrimName(j) { return lastNameOf(nameFor(j, scrimSeason()) || '#' + j); }
 function scrimOpt(k) { const p = SC.plan; return p && p.opts && p.opts[k] !== undefined ? !!p.opts[k] : !!(SCRIM_OPTS.find(o => o[0] === k) || [])[2]; }
 // ---- player model ----
-function scrimModel() {
+function scrimModel(noAdj) {
   const season = scrimSeason(), d = soData(season), xgOf = d.xgOf, P = {};
   const tiers = ['1-Gold', '2-Silver', '3-Bronze'], ti = q => Math.max(0, tiers.indexOf(q));
   const all = Object.values(d.players).filter(p => p.jersey && !isOppJersey(p.jersey));
@@ -14023,7 +14035,7 @@ function scrimModel() {
   Object.keys(pr).forEach(k => { const r = pr[k]; roleMult[k] = Math.max(0.85, Math.min(1.15, ((r.g + 20 * base * (r.x / r.n)) / (r.x + 20 * (r.x / r.n))) / base)); });
   const meanUse = Object.values(P).reduce((a, x) => a + x.use, 0) / Math.max(1, Object.keys(P).length);
   const out = { P, tMix, tFin, tCat, daySd, teamDaySd, roleMult, meanUse, sessN, pairs: pr };
-  scrimApplyAdj(out);
+  if (!noAdj) scrimApplyAdj(out);
   return out;
 }
 // "If he plays well or poorly": per-player sliders (percent) on finishing, turnovers, look quality, dominoes and touches.
@@ -14141,7 +14153,7 @@ function scrimOptimize(M, calib) {
     const mins = keep && keep.mins && keep.mins.length === lines.length ? keep.mins.slice() : lines.map(() => 15 / lines.length);
     return { att, lines, pool, mins, locked: !!(keep && keep.locked) };
   });
-  const lineScore = (qi, l, att) => { const v = scrimLineValue(M, ctxs[gameOf(qi)], calib, att.concat(l), cache); return mode === 'floor' ? v.m - 1.0 * v.sd : mode === 'target' ? v.m + 0.5 * v.sd : v.m; };
+  const lineScore = (qi, l, att) => { const r = scrimRowFor(qi, att.concat(l)); if (r) return r.score / 100; const v = scrimLineValue(M, ctxs[gameOf(qi)], calib, att.concat(l), cache); return v.m * 2; };
   const valid = (qi, st) => { const q = Q[qi]; if (st.lines.some(l => new Set(l).size !== 3)) return false; if ((q.starters || []).some(j => !st.lines[0].includes(j))) return false;
     // No two lines the same, and nobody on more than 2 lines in a quarter (when there are enough guys).
     if (new Set(st.lines.map(l => l.slice().sort().join(','))).size !== st.lines.length) return false;
@@ -14163,7 +14175,7 @@ function scrimOptimize(M, calib) {
         mu += n * m; vr += n * m * (1 - m) + n * n * Math.max(0, v.sd * v.sd - m * (1 - m) / 25); }); });
         t += 1 - scrimPhi((X - 0.5 - mu) / Math.sqrt(Math.max(0.25, vr))); });
     }
-    if (mode === 'mix') { const top = scrimPools().top8; let need = 0; for (let a = 0; a < top.length; a++) for (let b = a + 1; b < top.length; b++) if (pairs.has([top[a], top[b]].sort().join('-'))) need++; t += 0.012 * need; }
+    if (mode === 'mix') { const top = scrimPools().top8; let need = 0; for (let a = 0; a < top.length; a++) for (let b = a + 1; b < top.length; b++) if (pairs.has([top[a], top[b]].sort().join('-'))) need++; t += 0.03 * need; }
     // Everyone in the top 8 gets real time: at least ~1.5 quarters' worth across the top-8 quarters.
     const top = scrimPools().top8; top.forEach(j => { const short = Math.max(0, 1.5 - (mins[j] || 0)); t -= 0.6 * short; });
     return t; };
@@ -14292,6 +14304,7 @@ function scrimImpact(six) {
   return six.reduce((a, j) => a + one(j), 0) / six.length;
 }
 const SCRIM_COLS = [
+  ['score', 'Score (0–100)', 1, v => String(Math.round(v))], ['rank', 'Rank in group', -1, v => '#' + v],
   ['e15', 'Expected goals / 15 min', 1, v => num(v, 2)], ['p10', 'Floor', 1, v => num(v, 0)], ['p90', 'Ceiling', 1, v => num(v, 0)], ['shift', 'Scores in a 5-min shift', 1, v => pct(v)],
   ['gpp', 'Goals / possession', 1, v => num(v, 3)], ['to', 'Turnovers / possession', -1, v => pct(v)], ['gs', 'Gold+Silver share of shots', 1, v => pct(v)], ['dom', 'Dominoes lift / possession', 1, v => pct(v)],
   ['fed', 'Shots off a feed', 1, v => pct(v)], ['chem', 'Role chemistry', 1, v => '×' + num(v, 2)], ['sd', 'Risk (swing)', -1, v => '±' + num(v, 2)], ['imp', 'Impact (your sliders)', 1, v => num(v, 1)], ['used', 'Times in your plan', 1, v => String(v)],
@@ -14367,8 +14380,8 @@ function scrimGoalShare() {
 function scrimTableHtml() {
   const U = SC.uni; if (!U) return `<p class="n-note" id="scMsg">${escapeHtml(SC.msg || 'Simulating every lineup…')}</p>`;
   const used = {}; SC.res.state.forEach(st => st.lines.forEach(l => { const k = st.att.concat(l).slice().sort().join(','); used[k] = (used[k] || 0) + 1; }));
-  U.rows.forEach(r => { r.imp = scrimImpact(r.six); r.used = used[r.six.slice().sort().join(',')] || 0; });
-  const f = SC.filt || {}, srt = SC.sort && SC.sort.length ? SC.sort : [{ k: 'e15', d: -1 }];
+  U.rows.forEach(r => { r.used = used[r.six.slice().sort().join(',')] || 0; });
+  const f = SC.filt || {}, srt = SC.sort && SC.sort.length ? SC.sort : [{ k: 'score', d: -1 }];
   let rows = U.rows.filter(r => (!f.grp || r.grp === f.grp) && (!f.must || !f.must.length || f.must.every(j => r.six.includes(j))) && (!f.used || r.used));
   rows.sort((a, b) => { for (const s of srt) { const d = (a[s.k] - b[s.k]) * s.d; if (Math.abs(d) > 1e-9) return d > 0 ? 1 : -1; } return 0; });
   const shown = SC.showAll ? rows : rows.slice(0, 40), col = Object.fromEntries(SCRIM_COLS.map(c => [c[0], c]));
@@ -14397,9 +14410,10 @@ function scrimSlidersHtml() {
 let SCRIM_T = null;
 function scrimRecalc() {
   clearTimeout(SCRIM_T); SCRIM_T = setTimeout(() => {
-    if (!SC.res) return; SC.busy = true; SC.msg = 'Re-simulating with the adjustments…'; renderScrim();
-    setTimeout(() => { try { const M = scrimModel(), calib = scrimCalib(M); SC.res.M = M; SC.res.calib = calib; SC.res.sim = scrimSimulate(M, calib, SC.res.state, 2000);
-      SC.uni = null; scrimUniverse(M, calib, (rows, groups) => { SC.uni = { rows, groups }; SC.busy = false; renderScrim(); }); } catch (e) { console.error(e); SC.busy = false; SC.msg = 'Simulation error: ' + e.message; renderScrim(); } }, 30);
+    if (!SC.res) return; SC.busy = true; SC.msg = 'Re-simulating with your sliders…'; renderScrim();
+    setTimeout(() => { try { const calib = scrimCalib(scrimModel(true)), M = scrimModel(); SC.res.M = M; SC.res.calib = calib;
+      SC.uni = scrimUniverseSync(M, calib); scrimScore(); SC.res.sim = scrimSimulate(M, calib, SC.res.state, 2000); SC.res.sens = scrimSensitivity(M, calib, SC.res.state); SC.stale = true; SC.msg = '';
+    } catch (e) { console.error(e); SC.msg = 'Simulation error: ' + e.message; } SC.busy = false; renderScrim(); }, 40);
   }, 350);
 }
 // ---- Scrimmage Planner page ----
@@ -14416,66 +14430,110 @@ function scrimReason(M, line, att) {
   return bits.join('; ') || 'balanced line';
 }
 function scrimRun() {
-  if (SC.busy) return; SC.busy = true; SC.msg = 'Building and simulating…'; renderScrim();
+  if (SC.busy) return; SC.busy = true; SC.msg = 'Simulating every lineup and building the plan…'; renderScrim();
   setTimeout(() => {
     try {
-      const M = scrimModel(), calib = scrimCalib(M), state = scrimOptimize(M, calib);
-      const sim = scrimSimulate(M, calib, state, 2000);
+      const calib = scrimCalib(scrimModel(true)), M = scrimModel();   // calibration from the unadjusted roster, so sliders count in full
+      SC.impBase = null; SC.uni = scrimUniverseSync(M, calib); scrimScore();
+      const state = scrimOptimize(M, calib), sim = scrimSimulate(M, calib, state, 2000);
       const p = SC.plan; p.lines = {}; state.forEach((st, qi) => { p.lines[qi] = { att: st.att, lines: st.lines, mins: st.mins, locked: !!(SC.plan.lockedQ || {})[qi] }; });
-      const ctxs = p.games.map(g => scrimCtx(g)), cache = {};
-      const situ = scrimOpt('situ') ? state.map((st, qi) => { const ctx = ctxs[Math.floor(qi / 4)]; const v = st.lines.map(l => { const six = st.att.concat(l); let h = 0, t = 0; for (let r = 0; r < 15; r++) { const w = scrimWorld(M, six); h += scrimPossessions(M, six, 20, w, ctx, calib, 'half').g; t += scrimPossessions(M, six, 20, w, ctx, calib, 'trans').g; } return { h, t }; }); return { half: v.reduce((b, x, i) => (x.h > v[b].h ? i : b), 0), trans: v.reduce((b, x, i) => (x.t > v[b].t ? i : b), 0) }; }) : null;
-      SC.res = { M, calib, state, sim, situ, back: scrimBacktest(M), sens: scrimSensitivity(M, calib, state), at: new Date() };
-      SC.msg = ''; SC.uni = null; SC.impBase = null;
-      setTimeout(() => scrimUniverse(M, calib, (rows, groups) => { SC.uni = { rows, groups }; renderScrim(); }), 50);
+      SC.res = { M, calib, state, sim, back: scrimBacktest(M), sens: scrimSensitivity(M, calib, state), at: new Date() };
+      SC.msg = ''; SC.stale = false;
     } catch (e) { console.error('scrimmage sim', e); SC.msg = 'Simulation error: ' + e.message; }
     SC.busy = false; renderScrim();
-  }, 30);
+  }, 40);
 }
 function scrimFmt(a) { return `<b>${num(scrimMean(a), 1)}</b> <span class="n-note">(${scrimQ(a, 0.1)}–${scrimQ(a, 0.9)})</span>`; }
 function scrimWin(us, them) { let w = 0; for (let i = 0; i < us.length; i++) w += us[i] > them[i] ? 1 : us[i] === them[i] ? 0.5 : 0; return us.length ? w / us.length : null; }
+// ---- One source of truth: every lineup simulated once; the plan is picked from the same numbers ----
+function scrimUniverseSync(M, calib) {
+  const groups = scrimGroups(), ctxs = SC.plan.games.map(g => scrimCtx(g)), rows = []; let id = 0;
+  const keep = SCRIM_SEED; scrimSeed(13579);
+  groups.forEach(g => g.attackOpts.forEach(att => scrimCombos(g.pool, 3).forEach(mids => { const six = att.concat(mids); rows.push(Object.assign({ id: id++, grp: g.key, grpName: g.name, att, mids, six }, scrimLineStats(M, calib, ctxs[g.gi], six, 30))); })));
+  SCRIM_SEED = keep;
+  return { rows, groups };
+}
+// Lineup Score (0-100, 50 = average line in its group): the simulation, blended with your Impact weights.
+function scrimScore() {
+  const U = SC.uni; if (!U) return;
+  const b = Math.max(0, Math.min(100, Number(SC.plan.blend !== undefined ? SC.plan.blend : 30))) / 100, floor = (SC.plan.mode || 'raw') === 'floor';
+  U.rows.forEach(r => { r.imp = scrimImpact(r.six); r.bad = Math.max(0, r.e15 - 1.28 * r.sd); });
+  U.groups.forEach(g => {
+    const R = U.rows.filter(r => r.grp === g.key), z = k => { const v = R.map(r => r[k]), m = scrimMean(v), sd = Math.sqrt(scrimMean(v.map(x => (x - m) ** 2))) || 1; return r => (r[k] - m) / sd; };
+    const zs = z(floor ? 'bad' : 'e15'), zi = z('imp');
+    R.forEach(r => { r.score = Math.max(0, Math.min(100, 50 + 15 * ((1 - b) * zs(r) + b * zi(r)))); });
+    R.slice().sort((a, c) => c.score - a.score).forEach((r, i) => { r.rank = i + 1; r.of = R.length; });
+  });
+  SC.rowIdx = {}; U.rows.forEach(r => { SC.rowIdx[r.grp + '|' + r.six.slice().sort().join(',')] = r; });
+}
+function scrimRowFor(qi, six) { const q = SC.plan.quarters[qi]; return SC.rowIdx && SC.rowIdx[q.mid + '|' + q.attack.join(',') + '|' + six.slice().sort().join(',')]; }
+// Plain-words strength of a lineup (one line), from scrimWhy's comparison.
+function scrimStrength(r, rows) {
+  const peers = rows.filter(x => x.grp === r.grp), avg = k => scrimMean(peers.map(x => x[k])), sd = k => { const m = avg(k); return Math.sqrt(scrimMean(peers.map(x => (x[k] - m) ** 2))) || 1; };
+  const z = { gs: (r.gs - avg('gs')) / sd('gs'), to: -(r.to - avg('to')) / sd('to'), dom: (r.dom - avg('dom')) / sd('dom'), fed: (r.fed - avg('fed')) / sd('fed'), sd: -(r.sd - avg('sd')) / sd('sd') };
+  const say = { gs: `gets better looks (${pct(r.gs)} Gold/Silver)`, to: `takes care of the ball (turnovers on ${pct(r.to)} of trips vs ${pct(avg('to'))})`, dom: `starts dominoes on ${pct(r.dom)} of trips`, fed: `scores off the catch (${pct(r.fed)} of shots off a feed)`, sd: 'steadiest from day to day' };
+  const k = Object.keys(z).sort((a, b) => z[b] - z[a])[0];
+  return say[k];
+}
+// ---- the page ----
 function renderScrim() {
   const wrap = document.getElementById('scrimWrap'); if (!wrap) return;
   const p = SC.plan;
   if (!p || !p.quarters || !p.quarters.length) { wrap.innerHTML = `<div class="panel"><p class="panel-title">Scrimmage Planner</p><p class="panel-sub">No scrimmage plan is set up yet.</p></div>`; return; }
-  const R = SC.res, season = scrimSeason(), nm = j => `${escapeHtml(scrimName(j))}`, chip = (j, qi, li, pos) => `<button type="button" class="pill sc-p${SC.edit && SC.edit.qi === qi && SC.edit.li === li && SC.edit.pos === pos ? ' active' : ''}" data-sc="pick" data-qi="${qi}" data-li="${li}" data-pos="${pos}" title="Tap to swap">#${escapeHtml(j)} ${nm(j)}</button>`;
-  const opts = `<details class="sc-opts"><summary>Model options (${SCRIM_OPTS.filter(o => scrimOpt(o[0])).length} of ${SCRIM_OPTS.length} on)</summary>${SCRIM_OPTS.map(([k, l]) => `<label><input type="checkbox" data-sc-opt="${k}" ${scrimOpt(k) ? 'checked' : ''}> ${escapeHtml(l)}</label>`).join('')}</details>`;
-  const modes = `<div class="sc-row"><span class="n-note">Best means:</span>${SCRIM_MODES.map(([k, l]) => `<button type="button" class="pill${(p.mode || 'raw') === k ? ' active' : ''}" data-sc="mode" data-v="${k}">${escapeHtml(l)}</button>`).join('')}<label class="sc-g">X = <input type="number" min="1" max="30" step="1" value="${Number(p.targetX) || 12}" data-sc-x="1" style="width:56px"> goals a game</label></div>`;
-  const views = `<div class="sc-row"><span class="n-note">View:</span>${[['coach', 'Coach card'], ['analyst', 'Analyst']].map(([k, l]) => `<button type="button" class="pill${SC.view === k ? ' active' : ''}" data-sc="view" data-v="${k}">${l}</button>`).join('')}</div>`;
+  const R = SC.res, nm = j => escapeHtml(scrimName(j)), chip = (j, qi, li, pos) => `<button type="button" class="pill sc-p${SC.edit && SC.edit.qi === qi && SC.edit.li === li && SC.edit.pos === pos ? ' active' : ''}" data-sc="pick" data-qi="${qi}" data-li="${li}" data-pos="${pos}" title="Tap to swap">${nm(j)}</button>`;
+  const blend = p.blend !== undefined ? p.blend : 30;
   const oppSel = gi => `<select data-sc-opp="${gi}">${Object.keys(p.opps).map(k => `<option value="${k}" ${p.games[gi].opp === k ? 'selected' : ''}>${escapeHtml(p.opps[k].name)}</option>`).join('')}</select>`;
   const top = `<div class="panel"><p class="panel-title">Scrimmage Planner</p>
-    <p class="panel-sub">Builds each quarter’s offensive lines under your rules, then plays every possession out ${R ? R.sim.N.toLocaleString() : '2,000'} times. Each number is expected goals with the floor–ceiling range (10th–90th percentile). Tap any player in a line to swap him.</p>
+    <p class="panel-sub">Every possible line is played out over and over against each opponent. The best lines get the highest <b>Score</b> (50 = an average line). The plan below uses the best lines your rules allow.</p>
     <div class="sc-row">${p.games.map((g, gi) => `<label class="sc-g">${escapeHtml(g.name)} vs ${oppSel(gi)}</label>`).join('')}</div>
-    ${modes}${views}${opts}
-    <div class="sc-row"><button type="button" class="btn" data-sc="run">${R ? 'Rebuild &amp; re-simulate' : 'Build lineups &amp; simulate'}</button>${R ? `<button type="button" class="btn secondary" data-sc="resim">Re-simulate my edits</button>` : ''}<button type="button" class="btn secondary" data-sc="save">Save plan for staff</button><button type="button" class="btn secondary" data-sc="print">Print coach card</button></div>
-    <p class="bf-msg" id="scMsg">${escapeHtml(SC.msg || '')}</p>${SC.busy ? '<p class="n-note">Working… this takes a few seconds.</p>' : ''}</div>`;
-  if (!R) { wrap.innerHTML = top + scrimRulesHtml() + scrimLoggingHtml(); return; }
+    <div class="sc-row"><span class="n-note">Best means:</span>${SCRIM_MODES.map(([k, l]) => `<button type="button" class="pill${(p.mode || 'raw') === k ? ' active' : ''}" data-sc="mode" data-v="${k}">${escapeHtml(l)}</button>`).join('')}<label class="sc-g">X = <input type="number" min="1" max="30" step="1" value="${Number(p.targetX) || 12}" data-sc-x="1" style="width:56px"></label></div>
+    <div class="sc-row"><button type="button" class="btn" data-sc="run">${R ? 'Rebuild with my sliders' : 'Build lineups &amp; simulate'}</button><button type="button" class="btn secondary" data-sc="save">Save plan for staff</button><button type="button" class="btn secondary" data-sc="print">Print coach card</button></div>
+    ${SC.stale ? `<p class="sc-stale">Your sliders changed. The numbers below already include them; click <b>Rebuild with my sliders</b> to re-pick the lines with them.</p>` : ''}
+    <p class="bf-msg" id="scMsg">${escapeHtml(SC.msg || '')}</p>${SC.busy ? '<p class="n-note">Working… a few seconds.</p>' : ''}</div>`;
+  if (!R || !SC.uni) { wrap.innerHTML = top + scrimRulesHtml() + scrimLoggingHtml(); return; }
+  const U = SC.uni;
+  // 1. Likely result, in words
+  const picture = `<div class="panel"><p class="panel-title">Likely result</p><div class="sc-res">${p.games.map((g, gi) => { const us = R.sim.games[gi].us, them = R.sim.games[gi].them, win = scrimWin(us, them), qs = R.state.map((s, qi) => qi).filter(qi => Math.floor(qi / 4) === gi);
+      return `<div class="sc-rescard"><p class="sc-vt">${escapeHtml(g.name)} vs ${escapeHtml(p.opps[g.opp].name)}</p><p class="sc-final">W&amp;L <b>${Math.round(scrimMean(us))}</b> &ndash; <b>${Math.round(scrimMean(them))}</b> ${escapeHtml(p.opps[g.opp].name)}</p>
+        <p class="sc-win">We win about <b>${Math.round(win * 10)} out of 10</b> times. On a bad day we score ${scrimQ(us, 0.1)}; on a good day ${scrimQ(us, 0.9)}.</p>
+        <div class="sc-qrow">${qs.map(qi => { const u = scrimMean(R.sim.q[qi]), t = scrimMean(R.sim.qOpp[qi] || [0]); return `<div class="sc-qcell"><span>${escapeHtml(p.quarters[qi].label.replace(/^G\d /, ''))}</span><b>${num(u, 1)}</b><i>${num(t, 1)}</i></div>`; }).join('')}</div><p class="n-note">Each quarter: our expected goals (bold), theirs (gray).</p></div>`; }).join('')}</div></div>`;
+  // 2. Best lineups, as simple ranked cards
+  const used = {}; R.state.forEach((st, qi) => st.lines.forEach(l => { const r = scrimRowFor(qi, st.att.concat(l)); if (r) used[r.id] = (used[r.id] || 0) + 1; }));
+  const bestCards = `<div class="panel"><p class="panel-title">Best lineups</p><p class="panel-sub">Top 5 in each group. Score blends the simulation (${100 - blend}%) with your Impact weights (${blend}%). ✓ = in the plan.</p>
+    ${U.groups.map(g => { const rows = U.rows.filter(r => r.grp === g.key).sort((a, b) => b.score - a.score).slice(0, 5);
+      return `<p class="sc-gh">${escapeHtml(g.name)}</p><div class="sc-best">${rows.map(r => `<div class="sc-card${used[r.id] ? ' sc-in' : ''}" data-sc="card" data-id="${r.id}"><span class="sc-rank">#${r.rank}</span><div class="sc-cm"><b>${r.mids.map(nm).join(' · ')}</b><span class="n-note">with ${r.att.map(nm).join(' · ')}</span><span class="sc-cw">${escapeHtml(scrimStrength(r, U.rows))}</span></div><div class="sc-cs"><b>${Math.round(r.score)}</b><span>score</span><span class="n-note">${num(r.e15, 1)} goals / 15 min</span></div>${used[r.id] ? '<span class="sc-tick">✓</span>' : ''}</div>`).join('')}</div>`; }).join('')}</div>`;
+  // 3. The plan: each line with its rank
   const games = p.games.map((g, gi) => {
-    const us = R.sim.games[gi].us, them = R.sim.games[gi].them, win = scrimOpt('winprob') ? scrimWin(us, them) : null;
     const rows = R.state.map((st, qi) => ({ st, qi })).filter(x => Math.floor(x.qi / 4) === gi).map(({ st, qi }) => {
-      const qWin = scrimOpt('winprob') ? scrimWin(R.sim.q[qi], R.sim.qOpp[qi]) : null, situ = R.situ && R.situ[qi];
-      const lines = st.lines.map((l, li) => `<div class="sc-line"><span class="sc-ln">Line ${li + 1}${li === 0 ? ' (starts)' : ''}<input type="number" class="sc-min" min="0" max="15" step="0.5" value="${num((st.mins || [])[li] || 15 / st.lines.length, 1)}" data-sc-min="${qi}:${li}" title="Minutes of the 15" aria-label="Line ${li + 1} minutes"> min</span>${l.map((j, pos) => chip(j, qi, li, pos)).join('')}<span class="sc-v">${scrimFmt(R.sim.lines[qi][li])}</span>${SC.view === 'analyst' ? `<span class="n-note sc-why">${escapeHtml(scrimReason(R.M, l, st.att))}</span>` : ''}${situ && SC.view === 'analyst' ? `${situ.half === li ? '<span class="sc-tag">best settled</span>' : ''}${situ.trans === li ? '<span class="sc-tag">best after FO / transition</span>' : ''}` : ''}</div>`).join('');
-      return `<div class="sc-q"><div class="sc-qh"><b>${escapeHtml(p.quarters[qi].label)}</b> <span class="n-note">Attack: ${st.att.map((j, pos) => p.quarters[qi].attack.length > 3 ? chip(j, qi, 'a', pos) : `#${escapeHtml(j)} ${nm(j)}`).join(' · ')}</span><span class="sc-v">Quarter: ${scrimFmt(R.sim.q[qi])}${qWin !== null ? ` &middot; win the quarter ${pct(qWin)}` : ''}</span></div>${lines}${scrimWarn(qi, st)}${SC.edit && SC.edit.qi === qi ? scrimSwapHtml(qi) : ''}</div>`;
+      const lines = st.lines.map((l, li) => { const r = scrimRowFor(qi, st.att.concat(l)); return `<div class="sc-line"><span class="sc-ln">Line ${li + 1}${li === 0 ? ' (starts)' : ''}<input type="number" class="sc-min" min="0" max="15" step="0.5" value="${num((st.mins || [])[li] || 15 / st.lines.length, 1)}" data-sc-min="${qi}:${li}" title="Minutes of the 15"> min</span>${l.map((j, pos) => chip(j, qi, li, pos)).join('')}${r ? `<span class="sc-rk${r.rank <= 5 ? ' top' : ''}">#${r.rank} of ${r.of}</span><span class="sc-v">score ${Math.round(r.score)}</span>` : ''}</div>`; }).join('');
+      const why = scrimPlanWhy(qi, st);
+      return `<div class="sc-q"><div class="sc-qh"><b>${escapeHtml(p.quarters[qi].label)}</b> <span class="n-note">Attack: ${st.att.map((j, pos) => p.quarters[qi].attack.length > 3 ? chip(j, qi, 'a', pos) : nm(j)).join(' · ')}</span><span class="sc-v">${num(scrimMean(R.sim.q[qi]), 1)} goals expected</span></div>${lines}${why}${scrimWarn(qi, st)}${SC.edit && SC.edit.qi === qi ? scrimSwapHtml(qi) : ''}</div>`;
     }).join('');
-    return `<div class="panel sc-game"><p class="panel-title">${escapeHtml(g.name)} vs ${escapeHtml(p.opps[g.opp].name)}</p>
-      <p class="sc-sum">${(() => { const s0 = scrimStart(gi); return s0.q > 1 || s0.us || s0.them ? `<span class="n-note">From the start of Q${s0.q} at ${s0.us}–${s0.them}:</span> ` : ''; })()}We finish with ${scrimFmt(us)}${scrimOpt('winprob') ? ` &middot; they finish with ${scrimFmt(them)} &middot; <b>win chance ${pct(win)}</b>` : ''} &middot; chance we score ${Number(p.targetX) || 12}+: <b>${pct(us.filter(x => x >= (Number(p.targetX) || 12)).length / Math.max(1, us.length))}</b></p>${rows}</div>`;
+    return `<div class="panel sc-game"><p class="panel-title">${escapeHtml(g.name)} plan vs ${escapeHtml(p.opps[g.opp].name)}</p><p class="n-note">Tap a player to swap him. #rank = where that line ranks among every line its group could use.</p>${rows}</div>`;
   }).join('');
-  const analyst = SC.view !== 'analyst' ? '' : `<div class="panel"><p class="panel-title">How far to trust it</p>
-      <p class="panel-sub"><b>Backtest:</b> predicting each player’s goals in each practice from his other practices, ${R.back.n} player-days: typical miss ${num(R.back.mae, 2)} goals, correlation ${num(R.back.corr, 2)}, and ${pct(R.back.cover)} of actual results landed inside the predicted 80% range (should be near 80%).</p>
-      <p class="panel-sub"><b>Calibration:</b> an average line is scaled ×${num(R.calib, 2)} so it scores like last season’s games (${num((p.wl.gpp || 0.248), 3)} goals per possession). Good/bad-day spread: individual ${num(R.M.daySd, 2)}, team ${num(R.M.teamDaySd, 2)} (logit).</p>
-      <p class="panel-sub"><b>Whose numbers move the plan most</b> (finishing ±1 standard error): ${R.sens.map(x => `#${escapeHtml(x.j)} ${nm(x.j)} ±${num(x.swing / 2, 2)} goals (${x.shots} shots)`).join(' · ')}.</p>
-      <p class="panel-sub"><b>Roles</b> (from logged data): ${Object.values(R.M.P).filter(x => R.state.some(st => st.att.concat(...st.lines).includes(x.j))).map(x => `#${escapeHtml(x.j)} ${nm(x.j)} ${x.role}`).join(' · ')}.</p></div>
-    ${scrimOppHtml()}${scrimOpt('match') ? scrimMatchHtml() : ''}${scrimOpt('scen') ? scrimScenHtml() : ''}${scrimRulesHtml()}${scrimLoggingHtml()}${scrimActualHtml()}`;
-  // Visual summary: win gauge, the score spread over every simulated game, quarter by quarter.
-  const best = SC.uni ? SC.uni.groups.map(g => { const r = SC.uni.rows.filter(x => x.grp === g.key).sort((a, b) => b.e15 - a.e15)[0], avg = scrimMean(SC.uni.rows.filter(x => x.grp === g.key).map(x => x.e15)); return r ? `<li><b>${escapeHtml(g.name)}:</b> ${r.mids.map(j => escapeHtml(scrimName(j))).join('-')} with ${r.att.map(j => escapeHtml(scrimName(j))).join('-')} &mdash; ${num(r.e15, 2)} goals per 15 (+${num(r.e15 - avg, 2)} over the average line).</li>` : ''; }).join('') : '';
-  const visual = `<div class="panel"><p class="panel-title">The picture</p><div class="sc-vis">${p.games.map((g, gi) => { const us = R.sim.games[gi].us, them = R.sim.games[gi].them, win = scrimOpt('winprob') ? scrimWin(us, them) : null;
-      return `<div class="sc-vcard"><p class="sc-vt">${escapeHtml(g.name)} vs ${escapeHtml(p.opps[g.opp].name)}</p><div class="sc-vrow">${win !== null ? scrimGauge(win) : ''}<div class="sc-vnum"><span class="sc-big"><b>${num(scrimMean(us), 1)}</b> to <b>${num(scrimMean(them), 1)}</b></span><span class="n-note">expected final</span><span class="n-note">we score ${scrimQ(us, 0.1)}–${scrimQ(us, 0.9)} on 8 of 10 days</span></div></div>
-        <p class="n-note" style="margin:6px 0 2px;">How many goals we score across ${R.sim.N.toLocaleString()} simulated games</p>${scrimHist(us, them)}<p class="n-note" style="margin:8px 0 2px;">Quarter by quarter (bar = expected, green line = floor to ceiling)</p>${scrimQChart(gi)}</div>`; }).join('')}</div>
-    ${best ? `<p class="dp-wh" style="margin-top:10px;">Best lines by group</p><ul class="sc-ul">${best}</ul>` : ''}</div>`;
-  const lineups = `<div class="panel"><p class="panel-title">Every lineup, simulated</p><p class="panel-sub">Every middie trio (and attack trio where there’s a choice) the rules allow, each played out 30 times over a full quarter against that game’s opponent. Sort by any rating; click a row to see why it rates where it does.</p>
-    <div class="dp-layout"><div class="dp-main">${SC.uni ? scrimScatter(SC.uni.rows.filter(r => !(SC.filt || {}).grp || r.grp === SC.filt.grp), SC.uni.groups) : ''}<div id="scTable">${scrimTableHtml()}</div></div><aside class="dp-side">${scrimSlidersHtml()}</aside></div></div>`;
-  const extras = SC.uni ? `<div class="panel"><p class="panel-title">Who works together</p><p class="panel-sub">Each cell: how many more (green) or fewer (red) goals per 15 minutes a top-8 line scores when both of those middies are on it, against the average top-8 line.</p>${scrimPairGrid(SC.uni.rows)}
-    <p class="dp-wh" style="margin-top:12px;">Who scores our goals in the plan</p>${scrimGoalShare()}</div>` : '';
-  wrap.innerHTML = top + visual + games + lineups + extras + analyst;
+  // 4. Sliders
+  const sliders = `<div class="panel"><p class="panel-title">Sliders</p><div class="sc-row"><label class="dp-w" style="min-width:280px;"><span>Score = simulation <b>${100 - blend}%</b> + your Impact weights <b>${blend}%</b></span><input type="range" min="0" max="100" step="5" value="${blend}" data-sc-blend="1"></label></div>${scrimSlidersHtml()}</div>`;
+  // 5. Details (collapsed)
+  const det = `<details class="panel sc-det"${SC.detOpen ? ' open' : ''} data-sc-det="1"><summary class="panel-title">Details: all ${U.rows.length} lineups, charts, chemistry, how far to trust it</summary>
+    ${scrimScatter(U.rows.filter(r => !(SC.filt || {}).grp || r.grp === SC.filt.grp), U.groups)}<div id="scTable">${scrimTableHtml()}</div>
+    <p class="dp-wh" style="margin-top:12px;">Score spread over every simulated game</p><div class="sc-vis">${p.games.map((g, gi) => `<div><p class="n-note">${escapeHtml(g.name)}</p>${scrimHist(R.sim.games[gi].us, R.sim.games[gi].them)}</div>`).join('')}</div>
+    <p class="dp-wh" style="margin-top:12px;">Who works together (top 8 pairs, goals per 15 vs average)</p>${scrimPairGrid(U.rows)}
+    <p class="dp-wh" style="margin-top:12px;">Who scores our goals in the plan</p>${scrimGoalShare()}
+    <p class="panel-sub" style="margin-top:12px;"><b>Backtest:</b> ${R.back.n} player-practices predicted from each player’s other practices: typical miss ${num(R.back.mae, 2)} goals, correlation ${num(R.back.corr, 2)}, ${pct(R.back.cover)} landed inside the 80% range. <b>Calibration</b> ×${num(R.calib, 2)} (set from the unadjusted roster, so your player sliders count in full).</p>
+    <p class="panel-sub"><b>Whose numbers move the plan most:</b> ${R.sens.map(x => `${nm(x.j)} ±${num(x.swing / 2, 2)} goals`).join(' · ')}.</p>
+    <details class="sc-opts"><summary>Model options (${SCRIM_OPTS.filter(o => scrimOpt(o[0])).length} of ${SCRIM_OPTS.length} on)</summary>${SCRIM_OPTS.map(([k, l]) => `<label><input type="checkbox" data-sc-opt="${k}" ${scrimOpt(k) ? 'checked' : ''}> ${escapeHtml(l)}</label>`).join('')}</details>
+    ${scrimOppHtml()}${scrimMatchHtml()}${scrimScenHtml()}${scrimRulesHtml()}${scrimLoggingHtml()}${scrimActualHtml()}</details>`;
+  wrap.innerHTML = top + picture + bestCards + games + sliders + det;
+}
+// Why the plan uses this quarter's lines when they aren't the very top ones.
+function scrimPlanWhy(qi, st) {
+  const q = SC.plan.quarters[qi], ranks = st.lines.map(l => scrimRowFor(qi, st.att.concat(l))).filter(Boolean); if (!ranks.length) return '';
+  if (ranks.every(r => r.rank <= 3)) return '';
+  const bits = []; if ((q.starters || []).length) bits.push(`${q.starters.map(scrimName).join(' and ')} must start`);
+  if ((q.favor || []).length) bits.push(`${q.favor.map(scrimName).join(' and ')} play two lines`);
+  bits.push('nobody plays more than 2 lines', 'every top-8 middie gets real minutes across the games');
+  if ((SC.plan.mode || 'raw') === 'mix') bits.push('Mix mode spreads the pairs out');
+  return `<p class="sc-pwhy">Why not just the top lines: ${escapeHtml(bits.join('; '))}.</p>`;
 }
 // Hand edits can break a rule; say so (the coach can keep it).
 function scrimWarn(qi, st) {
@@ -14543,7 +14601,7 @@ function scrimInit() {
     if (a === 'resim') { scrimResim(); return; }
     if (a === 'save') { scrimSave(); return; }
     if (a === 'print') { SC.view = 'coach'; renderScrim(); document.body.classList.add('printing-scrim'); const done = () => { document.body.classList.remove('printing-scrim'); window.removeEventListener('afterprint', done); }; window.addEventListener('afterprint', done); setTimeout(() => { window.print(); setTimeout(done, 1500); }, 60); return; }
-    if (a === 'mode') { p.mode = b.dataset.v; }
+    if (a === 'mode') { p.mode = b.dataset.v; scrimScore(); SC.stale = true; }
     if (a === 'view') SC.view = b.dataset.v;
     if (a === 'pick') { const qi = Number(b.dataset.qi), li = b.dataset.li === 'a' ? 'a' : Number(b.dataset.li); SC.edit = { qi, li, pos: Number(b.dataset.pos) }; }
     if (a === 'cancel') SC.edit = null;
@@ -14554,26 +14612,30 @@ function scrimInit() {
     if (a === 'sort') { const k = b.dataset.k, col = SCRIM_COLS.find(c => c[0] === k), cur = (SC.sort || []).slice(), i = cur.findIndex(x => x.k === k);
       if (ev.shiftKey || SC.addSort) { if (i >= 0) cur[i].d *= -1; else cur.push({ k, d: col[2] > 0 ? -1 : 1 }); SC.sort = cur; } else SC.sort = [{ k, d: i === 0 && cur.length === 1 ? cur[0].d * -1 : (col[2] > 0 ? -1 : 1) }]; }
     if (a === 'unsort') SC.sort = (SC.sort || []).filter(x => x.k !== b.dataset.k);
+    if (a === 'card') { SC.detOpen = true; SC.open = Number(b.dataset.id); SC.filt = {}; SC.showAll = true; renderScrim(); setTimeout(() => { const r = document.querySelector(`tr[data-id="${b.dataset.id}"]`); if (r) r.scrollIntoView({ block: 'center' }); }, 60); return; }
     if (a === 'row') { const id = Number(b.dataset.id); SC.open = SC.open === id ? null : id; if (b.tagName === 'circle') { SC.showAll = true; setTimeout(() => { const r = document.querySelector(`tr[data-id="${id}"]`); if (r) r.scrollIntoView({ block: 'center' }); }, 60); } }
     if (a === 'showall') SC.showAll = !SC.showAll;
     if (a === 'adjj') SC.adjJ = SC.adjJ === b.dataset.j ? null : b.dataset.j;
     if (a === 'adjreset') { if (p.adj) delete p.adj[b.dataset.j]; scrimRecalc(); }
-    if (a === 'iwreset') p.iw = {};
+    if (a === 'iwreset') { p.iw = {}; scrimScore(); SC.stale = true; }
     if (a === 'out') { const j = b.dataset.j; p.out = (p.out || []).includes(j) ? p.out.filter(x => x !== j) : (p.out || []).concat(j); }
     if (a === 'goalie') p.goalie = p.goalie === b.dataset.j ? null : b.dataset.j;
     if (a === 'hot') p.hotGoalie = !p.hotGoalie;
     renderScrim();
   });
+  wrap.addEventListener('toggle', ev => { if (ev.target.dataset && ev.target.dataset.scDet) SC.detOpen = ev.target.open; }, true);
   wrap.addEventListener('input', ev => {
-    const t = ev.target; if (!t.dataset.scIw) return;
-    SC.plan.iw = SC.plan.iw || {}; SC.plan.iw[t.dataset.scIw] = Number(t.value);
+    const t = ev.target;
+    if (t.dataset.scBlend) { SC.plan.blend = Number(t.value); t.closest('.dp-w').querySelector('span').innerHTML = `Score = simulation <b>${100 - SC.plan.blend}%</b> + your Impact weights <b>${SC.plan.blend}%</b>`; return; }
+    if (!t.dataset.scIw) return;
+    SC.plan.iw = SC.plan.iw || {}; SC.plan.iw[t.dataset.scIw] = Number(t.value); scrimScore();
     const tb = document.getElementById('scTable'); if (tb) tb.innerHTML = scrimTableHtml();
     const tot = SO_W.reduce((a, [k, , d]) => a + (isFinite(SC.plan.iw[k]) ? SC.plan.iw[k] : d), 0); t.closest('.dp-w').querySelector('b').textContent = dpPct(Number(t.value), tot) + '%';
   });
   wrap.addEventListener('change', ev => {
     const t = ev.target, p = SC.plan;
     if (t.dataset.scAdj) { const [j, k] = t.dataset.scAdj.split(':'); p.adj = p.adj || {}; p.adj[j] = Object.assign({}, p.adj[j], { [k]: Number(t.value) }); scrimRecalc(); return; }
-    if (t.dataset.scIw) { renderScrim(); return; }
+    if (t.dataset.scIw || t.dataset.scBlend) { scrimScore(); SC.stale = true; renderScrim(); return; }
     if (t.dataset.scOpt) { p.opts = p.opts || {}; p.opts[t.dataset.scOpt] = t.checked; }
     if (t.dataset.scOpp !== undefined) p.games[Number(t.dataset.scOpp)].opp = t.value;
     if (t.dataset.scOppf) { const o = p.opps[t.dataset.scOppf], k = t.dataset.key, v = Number(t.value); if (k.startsWith('div.')) { o.div = o.div || {}; o.div[k.slice(4)] = v; } else o[k] = v; }
@@ -14591,7 +14653,7 @@ function scrimInit() {
 // Re-simulate the current lines (after an edit) without searching again.
 function scrimResim() {
   if (!SC.res || SC.busy) return; SC.busy = true; renderScrim();
-  setTimeout(() => { try { const M = SC.res.M, calib = scrimCalib(M); SC.res.sim = scrimSimulate(M, calib, SC.res.state, 2000); SC.res.calib = calib; SC.res.sens = scrimSensitivity(M, calib, SC.res.state); } catch (e) { console.error(e); SC.msg = 'Simulation error: ' + e.message; } SC.busy = false; renderScrim(); }, 30);
+  setTimeout(() => { try { const M = SC.res.M, calib = scrimCalib(scrimModel(true)); SC.res.sim = scrimSimulate(M, calib, SC.res.state, 2000); SC.res.calib = calib; SC.res.sens = scrimSensitivity(M, calib, SC.res.state); } catch (e) { console.error(e); SC.msg = 'Simulation error: ' + e.message; } SC.busy = false; renderScrim(); }, 30);
 }
 // ---------------- Backfill (Bobby, Oct 20) ----------------
 // Go back through a practice on film, shot by shot in the order they were logged, and add
