@@ -3931,6 +3931,7 @@ function pmRerenderAll() {
   populatePlayerSelectForSeason(heatSeason);
   populateGoalieSelectForSeason(goalieHeatSeason);
   rerenderAfterShotsChange();
+  renderProfile();   // the profile isn't redrawn by anything else, so it never shows the other mode's page
   renderFaceoffs();
   renderCompare();
 }
