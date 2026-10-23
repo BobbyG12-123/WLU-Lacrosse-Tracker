@@ -14366,7 +14366,11 @@ function scrimInit() {
     if (t.dataset.scOppf) { const o = p.opps[t.dataset.scOppf], k = t.dataset.key, v = Number(t.value); if (k.startsWith('div.')) { o.div = o.div || {}; o.div[k.slice(4)] = v; } else o[k] = v; }
     if (t.dataset.scSt) { const [gi, k] = t.dataset.scSt.split(':'); p.startAt = p.startAt || p.games.map((g, i) => scrimStart(i)); p.startAt[Number(gi)][k] = Math.max(0, Number(t.value) || 0); }
     if (t.dataset.scX) p.targetX = Math.max(1, Number(t.value) || 12);
-    if (t.dataset.scMin && SC.res) { const [qi, li] = t.dataset.scMin.split(':').map(Number), st = SC.res.state[qi]; st.mins = st.mins || st.lines.map(() => 15 / st.lines.length); st.mins[li] = Math.max(0, Math.min(15, Number(t.value) || 0)); p.lines[qi] = Object.assign({}, p.lines[qi] || {}, { att: st.att, lines: st.lines, mins: st.mins }); scrimResim(); return; }
+    if (t.dataset.scMin && SC.res) { const [qi, li] = t.dataset.scMin.split(':').map(Number), st = SC.res.state[qi]; st.mins = st.mins || st.lines.map(() => 15 / st.lines.length); st.mins[li] = Math.max(0, Math.min(15, Number(t.value) || 0));
+      // Keep the quarter at 15 minutes: the other lines share what's left in the same proportions.
+      const rest = 15 - st.mins[li], others = st.mins.map((m, k) => (k === li ? 0 : m)), ot = others.reduce((x, y) => x + y, 0);
+      st.mins = st.mins.map((m, k) => (k === li ? m : ot ? Math.round(rest * m / ot * 2) / 2 : Math.round(rest / (st.mins.length - 1) * 2) / 2));
+      p.lines[qi] = Object.assign({}, p.lines[qi] || {}, { att: st.att, lines: st.lines, mins: st.mins }); scrimResim(); return; }
     if (t.dataset.scNl !== undefined) p.quarters[Number(t.dataset.scNl)].nLines = Math.max(2, Math.min(4, Number(t.value) || 3));
     renderScrim();
   });
