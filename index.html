@@ -14221,15 +14221,19 @@ function scrimOptimize(M, calib, prior) {
     if (alt) state.forEach((st, qi) => st.lines.forEach(l => { t -= 0.02 * (used[qi][l.slice().sort().join(',')] || 0); }));
     return t; };
   let cur = total(), temp = 0.05;
-  for (let it = 0; it < 12000; it++) {
-    const qi = Math.floor(SCRIM_RNG() * state.length), st = state[qi]; if (st.locked || !st.pool.length) continue;
+  // Each quarter searches with its own random stream, so a change that only matters in one quarter
+  // (or one game's lines) doesn't reshuffle quarters it has nothing to do with.
+  const seeds = state.map((_, qi) => ((SCRIM_SEED ^ Math.imul(0x9E3779B9, qi + 1)) >>> 0) || 1), keepSeed = SCRIM_SEED;
+  const step = qi => {
+    const st = state[qi]; if (st.locked || !st.pool.length) return;
     const back = { att: st.att.slice(), lines: st.lines.map(l => l.slice()) };
     if (Q[qi].attack.length > 3 && SCRIM_RNG() < 0.25) { const out = Math.floor(SCRIM_RNG() * 3), cand = Q[qi].attack.filter(j => !st.att.includes(j)); if (cand.length) st.att[out] = cand[Math.floor(SCRIM_RNG() * cand.length)]; }
-    else { const li = Math.floor(SCRIM_RNG() * st.lines.length), pos = Math.floor(SCRIM_RNG() * 3), cand = st.pool.filter(j => !st.lines[li].includes(j)); if (!cand.length) continue; st.lines[li][pos] = cand[Math.floor(SCRIM_RNG() * cand.length)]; }
-    if (!valid(qi, st)) { st.att = back.att; st.lines = back.lines; continue; }
+    else { const li = Math.floor(SCRIM_RNG() * st.lines.length), pos = Math.floor(SCRIM_RNG() * 3), cand = st.pool.filter(j => !st.lines[li].includes(j)); if (!cand.length) return; st.lines[li][pos] = cand[Math.floor(SCRIM_RNG() * cand.length)]; }
+    if (!valid(qi, st)) { st.att = back.att; st.lines = back.lines; return; }
     const nv = total(); if (nv >= cur || SCRIM_RNG() < Math.exp((nv - cur) / temp)) cur = nv; else { st.att = back.att; st.lines = back.lines; }
-    temp *= 0.9993;
-  }
+  };
+  for (let it = 0; it < 12000; it++) { const qi = it % state.length; SCRIM_SEED = seeds[qi]; step(qi); seeds[qi] = SCRIM_SEED; temp *= 0.9995; }
+  SCRIM_SEED = keepSeed;
   return state;
 }
 // ---- the full simulation of both games ----
