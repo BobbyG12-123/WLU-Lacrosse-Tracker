@@ -13996,6 +13996,7 @@ const SCRIM_OPTS = [
   ['scen', 'Scenario tools (player out, hot goalie, starting score)', true],
   ['flow', 'Correlated game flow (pace, their goalie’s day, faceoff runs, score effects)', true],
   ['learn', 'Learn from results (nudge scoring by how far off locked predictions were)', false],
+  ['pass', 'Passer effect (each feeder’s shots finish better or worse than expected, from every logged assist)', true],
 ];
 const SCRIM_MODES = [['raw', 'Raw best'], ['mix', 'Mix: learn every pair'], ['floor', 'Safest floor'], ['target', 'Best chance to score X goals']];
 const SC = { plan: null, res: null, busy: false, view: 'coach', edit: null, msg: '' };
@@ -14071,6 +14072,13 @@ function scrimModel(noAdj) {
   d.shots.forEach(s => { const a = P[s.assistJersey], b = P[s.shooterJersey]; if (!a || !b || s.assistJersey === s.shooterJersey) return; const key = a.role + '>' + b.role, x = xgOf(s), r = (pr[key] = pr[key] || { g: 0, x: 0, n: 0 }); r.g += s.goal === 1 ? 1 : 0; r.x += x; r.n++; pg += s.goal === 1 ? 1 : 0; px += x; });
   const base = px ? pg / px : 1, roleMult = {};
   Object.keys(pr).forEach(k => { const r = pr[k]; roleMult[k] = Math.max(0.85, Math.min(1.15, ((r.g + 20 * base * (r.x / r.n)) / (r.x + 20 * (r.x / r.n))) / base)); });
+  // Passer effect: goals on the shots he set up vs what those shooters usually finish on that tier,
+  // relative to the average feeder, with 30 shots of "average" mixed in (small samples stay near 1), capped 0.8-1.25.
+  const fedSh = d.shots.filter(s => s.assistJersey && P[s.assistJersey] && P[s.shooterJersey] && s.assistJersey !== s.shooterJersey);
+  const expOf = s => { const f = P[s.shooterJersey].fin[ti(s.shotQuality)]; return f.a / (f.a + f.b); };
+  const fg = fedSh.filter(s => s.goal === 1).length, fx = fedSh.reduce((a, s) => a + expOf(s), 0), lift = fx ? fg / fx : 1, pgP = {};
+  fedSh.forEach(s => { const r = (pgP[s.assistJersey] = pgP[s.assistJersey] || { g: 0, x: 0, n: 0 }); r.g += s.goal === 1 ? 1 : 0; r.x += expOf(s) * lift; r.n++; });
+  Object.values(P).forEach(x => { const r = pgP[x.j]; x.passN = r ? r.n : 0; x.pass = r ? Math.max(0.8, Math.min(1.25, (r.g + 30 * (r.x / r.n)) / (r.x + 30 * (r.x / r.n)))) : 1; });
   const meanUse = Object.values(P).reduce((a, x) => a + x.use, 0) / Math.max(1, Object.keys(P).length);
   const out = { P, tMix, tFin, tCat, daySd, teamDaySd, roleMult, meanUse, sessN, pairs: pr, domYes, domNo };
   if (!noAdj) scrimApplyAdj(out);
@@ -14134,6 +14142,7 @@ function scrimPossessions(M, line, n, world, ctx, calib, typeOverride, st) {
         let pr = (world.fin[p.j] || [0.4, 0.3, 0.15])[t] * crowd[i];
         if (steps) pr *= lifted ? (M.domYes || 1.12) : (M.domNo || 0.86);   // measured: finishing after dominoes vs without
         if (fedBy >= 0 && scrimOpt('roles')) pr *= M.roleMult[ps[fedBy].role + '>' + p.role] || 1;
+        if (fedBy >= 0 && scrimOpt('pass')) pr *= ps[fedBy].pass || 1;
         if (scrimOpt('types')) pr *= typeMult(type);
         pr *= calib * ctx.oppDef;
         pr = scrimInv(scrimLogit(Math.min(0.95, Math.max(0.01, pr))) + world.team);
@@ -14306,7 +14315,7 @@ function scrimEV(M, six, world, ctx, calib, out, cache) {   // out (optional): t
   const ps = six.map(j => M.P[j]).filter(Boolean); if (!ps.length) return 0;
   const useSum = ps.reduce((a, p) => a + p.use, 0), normal = M.meanUse * 6, share = ps.map(p => p.use / useSum);
   const crowd = scrimOpt('usage') ? ps.map((p, i) => Math.max(0.88, Math.min(1.12, Math.pow(share[i] / (p.use / normal), -0.15)))) : ps.map(() => 1);
-  const steps = scrimOpt('steps'), roles = scrimOpt('roles');
+  const steps = scrimOpt('steps'), roles = scrimOpt('roles'), passOn = scrimOpt('pass');
   const T = scrimOpt('types') ? SCRIM_TYPES.filter(x => !(scrimOpt('special') && x[0] === 'manup')) : [['half', 1, 0.248]], tw = T.reduce((a, x) => a + x[1], 0);
   const tmul = T.map(x => [x[1] / tw, scrimOpt('types') ? x[2] / 0.248 : 1]);
   const base = calib * (ctx.oppDef || 1), team = world.team || 0;
@@ -14315,8 +14324,8 @@ function scrimEV(M, six, world, ctx, calib, out, cache) {   // out (optional): t
   const n = ps.length, A1 = new Float64Array(n * (n + 1)), A0 = new Float64Array(n * (n + 1)), GS = out ? new Float64Array(n * (n + 1)) : null;
   for (let i = 0; i < n; i++) for (let f = -1; f < n; f++) { if (f === i) continue;
     const ix0 = i * (n + 1) + f + 1; let cr = crowd[i], key = null;
-    if (cache) { const qc = Math.round(cr * 400); cr = qc / 400; key = ps[i].j + '|' + (f < 0 ? '-' : roles ? ps[f].role : 'x') + '|' + qc; const hit = cache.get(key); if (hit) { A1[ix0] = hit[0]; A0[ix0] = hit[1]; if (GS) GS[ix0] = hit[2]; continue; } }
-    const p = ps[i], mix = f >= 0 ? p.mix.map((m, k) => 0.5 * m + 0.5 * M.tCat[k]) : p.mix, fin = world.fin[p.j] || [0.4, 0.3, 0.15], rm = f >= 0 && roles ? (M.roleMult[ps[f].role + '>' + p.role] || 1) : 1;
+    if (cache) { const qc = Math.round(cr * 400); cr = qc / 400; key = ps[i].j + '|' + (f < 0 ? '-' : (roles ? ps[f].role : 'x') + (passOn ? ':' + Math.round((ps[f].pass || 1) * 1000) : '')) + '|' + qc; const hit = cache.get(key); if (hit) { A1[ix0] = hit[0]; A0[ix0] = hit[1]; if (GS) GS[ix0] = hit[2]; continue; } }
+    const p = ps[i], mix = f >= 0 ? p.mix.map((m, k) => 0.5 * m + 0.5 * M.tCat[k]) : p.mix, fin = world.fin[p.j] || [0.4, 0.3, 0.15], rm = (f >= 0 && roles ? (M.roleMult[ps[f].role + '>' + p.role] || 1) : 1) * (f >= 0 && passOn ? ps[f].pass || 1 : 1);
     let e1 = 0, e0 = 0;
     for (let k = 0; k < 3; k++) { if (!mix[k]) continue; const b0 = fin[k] * cr * rm * base;
       for (const [w, mul] of tmul) { if (steps) { e1 += mix[k] * w * g(b0 * (M.domYes || 1.12) * mul); e0 += mix[k] * w * g(b0 * (M.domNo || 0.86) * mul); } else { const v = mix[k] * w * g(b0 * mul); e1 += v; e0 += v; } } }
@@ -14765,11 +14774,11 @@ function scrimPoolHtml() {
     const arrow = (x, y, up) => (Math.abs(x - y) > 0.004 ? ` <span class="${(x > y) === up ? 'sc-up' : 'sc-dn'}">${x > y ? '▲' : '▼'}</span>` : '');
     return `<tr class="${out ? 'sc-outrow' : ''}"><td><b>#${escapeHtml(j)} ${scrimNm(j)}</b><br><button type="button" class="pill sm${inM ? ' active' : ''}" data-sc="poolrole" data-r="midPool" data-j="${escapeHtml(j)}">Middie</button><button type="button" class="pill sm${inA ? ' active' : ''}" data-sc="poolrole" data-r="attPool" data-j="${escapeHtml(j)}">Attack</button><button type="button" class="pill sm${out ? ' sc-exc' : ''}" data-sc="poolout" data-j="${escapeHtml(j)}">${out ? 'Out' : 'In'}</button></td>
       <td><span class="sc-conf ${pr.touch >= 60 ? 'High' : pr.touch >= 30 ? 'Medium' : 'Low'}">${pr.touch}</span><br><span class="n-note">${pr.shots} shots</span></td>
-      <td><b>${pct(pr.fin)}</b>${arrow(pr.fin, b.fin, true)}<br><span class="n-note">${pct(pr.lo)}–${pct(pr.hi)}</span></td><td>${pct(pr.to)}${arrow(pr.to, b.to, false)}</td><td>${pct(pr.gs)}</td><td>${num(pr.dom * 100, 1)}</td><td>${num(pr.use, 1)}</td>
+      <td><b>${pct(pr.fin)}</b>${arrow(pr.fin, b.fin, true)}<br><span class="n-note">${pct(pr.lo)}–${pct(pr.hi)}</span></td><td>${pct(pr.to)}${arrow(pr.to, b.to, false)}</td><td>${pct(pr.gs)}</td><td>${num(pr.dom * 100, 1)}</td><td>${num(pr.use, 1)}</td><td>${scrimOpt('pass') ? `×${num(M.P[j].pass || 1, 2)}` : '<span class="n-note">off</span>'}<br><span class="n-note">${M.P[j].passN || 0} set up</span></td>
       <td class="sc-boost"><label class="dp-w"><span><b>${boost > 0 ? '+' : ''}${boost}%</b></span><input type="range" min="-30" max="30" step="5" value="${boost}" data-sc-boost="${escapeHtml(j)}"></label><button type="button" class="pill sm" data-sc="pooldet" data-j="${escapeHtml(j)}">${SC.poolOpen === j ? 'Less' : 'More'}</button></td>
       <td>${inM ? `${num((R.midQ || {})[j] || 0, 1)} <span class="n-note">opt ${num(U.expMid[j] || 0, 1)}</span>` : '—'}</td><td>${inM ? lim('mid', j) : ''}</td>
       <td>${inA ? `${num((R.attQ || {})[j] || 0, 1)} <span class="n-note">opt ${num(U.expAtt[j] || 0, 1)}</span>` : '—'}</td><td>${inA ? lim('att', j) : ''}</td></tr>
-      ${SC.poolOpen === j ? `<tr class="sc-whyrow"><td colspan="13"><div class="sc-det2">${SCRIM_ADJ.map(([k, l]) => { const v = a[k] || 0; return `<label class="dp-w"><span>${escapeHtml(l)} <b>${v > 0 ? '+' : ''}${v}%</b>${k === 'to' ? ' <span class="n-note">(+ = more turnovers)</span>' : ''}</span><input type="range" min="-50" max="50" step="5" value="${v}" data-sc-adj="${escapeHtml(j)}:${k}"></label>`; }).join('')}
+      ${SC.poolOpen === j ? `<tr class="sc-whyrow"><td colspan="14"><div class="sc-det2">${SCRIM_ADJ.map(([k, l]) => { const v = a[k] || 0; return `<label class="dp-w"><span>${escapeHtml(l)} <b>${v > 0 ? '+' : ''}${v}%</b>${k === 'to' ? ' <span class="n-note">(+ = more turnovers)</span>' : ''}</span><input type="range" min="-50" max="50" step="5" value="${v}" data-sc-adj="${escapeHtml(j)}:${k}"></label>`; }).join('')}
         <label class="sc-g">Or set his finishing to <input type="number" min="1" max="90" step="1" value="${Math.round(pr.fin * 100)}" data-sc-fin="${escapeHtml(j)}" style="width:56px">%</label><label class="sc-g">turnovers to <input type="number" min="1" max="80" step="1" value="${Math.round(pr.to * 100)}" data-sc-tov="${escapeHtml(j)}" style="width:56px">% of touches</label>
         <button type="button" class="pill" data-sc="adjreset" data-j="${escapeHtml(j)}">Back to his data</button></div><p class="n-note">${scrimPlayerWhy(j)}</p></td></tr>` : ''}`; };
   return `<div class="panel"><p class="panel-title">Player pool</p>
@@ -14777,7 +14786,7 @@ function scrimPoolHtml() {
     <div class="sc-row"><span class="n-note">Everyone at middie:</span><label class="sc-g">at least <input type="number" class="sc-lim" min="0" max="8" step="0.5" value="${(ptA.midAll || {}).min !== undefined ? ptA.midAll.min : all('mid').min}" data-sc-ptall="mid:min"></label><label class="sc-g">at most <input type="number" class="sc-lim" min="0" max="8" step="0.5" value="${(ptA.midAll || {}).max !== undefined ? ptA.midAll.max : all('mid').max}" data-sc-ptall="mid:max"></label>
       <span class="n-note">Everyone at attack:</span><label class="sc-g">at least <input type="number" class="sc-lim" min="0" max="8" step="0.5" value="${(ptA.attAll || {}).min !== undefined ? ptA.attAll.min : all('att').min}" data-sc-ptall="att:min"></label><label class="sc-g">at most <input type="number" class="sc-lim" min="0" max="8" step="0.5" value="${(ptA.attAll || {}).max !== undefined ? ptA.attAll.max : all('att').max}" data-sc-ptall="att:max"></label><button type="button" class="pill" data-sc="ptreset">Clear player-by-player limits</button></div>
     ${warn.length ? `<div class="sc-warn">&#9888; ${warn.map(escapeHtml).join(' ')} The plan gets as close as it can.</div>` : ''}
-    <div class="table-wrap"><table class="shotlog sc-pool"><thead><tr><th>Player</th><th title="Logged touches">Data</th><th>Finishing</th><th>TO / touch</th><th>Gold+Silver</th><th title="Dominoes per 100 touches">Dominoes</th><th title="Touches per practice">Touches</th><th>Boost</th><th>Middie: plan</th><th>Middie limits</th><th>Attack: plan</th><th>Attack limits</th></tr></thead><tbody>${ppl.map(row).join('')}</tbody></table></div>
+    <div class="table-wrap"><table class="shotlog sc-pool"><thead><tr><th>Player</th><th title="Logged touches">Data</th><th>Finishing</th><th>TO / touch</th><th>Gold+Silver</th><th title="Dominoes per 100 touches">Dominoes</th><th title="Touches per practice">Touches</th><th title="How the shots he sets up finish vs what those shooters usually do (1.00 = average feeder)">Passing</th><th>Boost</th><th>Middie: plan</th><th>Middie limits</th><th>Attack: plan</th><th>Attack limits</th></tr></thead><tbody>${ppl.map(row).join('')}</tbody></table></div>
     ${add.length ? `<div class="sc-row"><span class="n-note">Add to a pool:</span>${add.map(j => `<button type="button" class="pill sm" data-sc="pooladd" data-j="${escapeHtml(j)}">+ #${escapeHtml(j)} ${scrimNm(j)}</button>`).join('')}</div>` : ''}
     ${U.pools.dropped.length ? `<p class="n-note">Left out of every simulation (nothing logged): ${U.pools.dropped.map(j => `#${escapeHtml(j)} ${scrimNm(j)}`).join(', ')}.</p>` : ''}</div>`;
 }
@@ -14962,6 +14971,7 @@ function scrimMethodHtml() {
     ['Shared simulated days', 'Each simulated day draws every player’s true finishing (from how much we really know about him) and that day’s form once, and every lineup lives that same day. The 15-minute numbers (median, floor, ceiling, boom, bust) are the goals a lineup would score over a whole quarter across those days, counting shot luck.'],
     ['Optimal %', 'On every simulated day the plan search runs again with that day’s values, starting from the best average plan. A lineup’s Optimal % is the share of days it made that day’s best plan; a player’s “opt” playing time is what the best plan gave him on the average day. This is how DFS simulators rate lineups: not just “good on average” but “how often it’s the right call.”'],
     ['The plan search', 'Searches lines for all 8 quarters at once (simulated annealing, about 30,000 changes tried), any 3 attackmen and any 3 middies in each line, nobody on more than 2 lines in a quarter, and each player inside his playing-time limits (a steep penalty for going outside them). “What the limits cost” reruns the search with no limits to show the price of spreading the time.'],
+    ['Passer effect', 'Each player who sets up shots gets a passing number: goals on the shots he set up vs what those shooters usually finish on that kind of look, compared with the average feeder. 30 average shots are mixed in so small samples stay near 1.00, and it’s capped between 0.80 and 1.25. It multiplies the finishing on every shot he feeds in the simulation. Turn it off under Model options.'],
     ['Boosts', 'A boost raises a player’s finishing by that percent and cuts his turnovers by the same percent; “More” lets you move each part on its own or type the number you believe. Everything is rebuilt with the new numbers; the practice-to-game calibration is set from the unboosted roster so a boost counts in full.'],
     ['Top 5 plans and 20,000 games', 'The search runs again 4 times while charging a little for lines already used, to find real alternatives. Plan A is played out 20,000 times in background workers, the others 4,000, with pace, their goalie’s day, faceoff runs and late-game score effects moving together the way they do in real games.'],
     ['Accuracy', 'Lock the prediction before a game; after it’s logged as a Game, the page shows predicted vs actual, whether it landed in the range, and the typical miss. With “Learn from results” on, the scoring level is nudged by the actual-to-predicted ratio (shrunk so one game can’t swing it).'],
