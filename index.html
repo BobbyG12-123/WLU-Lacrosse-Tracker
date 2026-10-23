@@ -14340,14 +14340,16 @@ function scrimQChart(gi) {
 }
 function scrimScatter(rows, groups) {
   if (!rows.length) return '';
-  const W = 520, H = 230, xs = rows.map(r => r.e15), ys = rows.map(r => r.p10), x0 = Math.min(...xs), x1 = Math.max(...xs), y0 = Math.min(...ys), y1 = Math.max(...ys) + 0.5;
+  const bad = r => Math.max(0, r.e15 - 1.28 * r.sd);   // a bad day, on a continuous scale
+  const W = 520, H = 230, xs = rows.map(r => r.e15), ys = rows.map(bad), x0 = Math.min(...xs), x1 = Math.max(...xs), y0 = Math.min(...ys), y1 = Math.max(...ys);
   const X = v => (40 + (v - x0) / ((x1 - x0) || 1) * (W - 60)).toFixed(1), Y = v => (H - 30 - (v - y0) / ((y1 - y0) || 1) * (H - 50)).toFixed(1);
   const colors = ['var(--navy-3)', '#E8A317', 'var(--good)', 'var(--critical)'], gi = Object.fromEntries(groups.map((g, i) => [g.key, i]));
   const best = rows.slice().sort((a, b) => b.e15 - a.e15).slice(0, 3).map(r => r.id);
   return `<svg viewBox="0 0 ${W} ${H}" class="sc-scat"><line x1="40" x2="${W - 20}" y1="${H - 30}" y2="${H - 30}" stroke="var(--line)"/><line x1="40" x2="40" y1="10" y2="${H - 30}" stroke="var(--line)"/>
-    <text x="${W / 2}" y="${H - 8}" text-anchor="middle" class="sc-ax">expected goals per 15 min →</text><text x="12" y="${H / 2}" class="sc-ax" transform="rotate(-90 12 ${H / 2})" text-anchor="middle">floor (bad day) →</text>
-    ${rows.map(r => `<circle cx="${X(r.e15)}" cy="${Y(r.p10 + (r.id % 7) * 0.06)}" r="${best.includes(r.id) ? 5 : 3}" fill="${colors[gi[r.grp] % colors.length]}" opacity="${best.includes(r.id) ? 1 : 0.55}" data-sc="row" data-id="${r.id}" style="cursor:pointer"><title>${r.mids.map(scrimName).join('-')} + ${r.att.map(scrimName).join('-')}: ${num(r.e15, 2)} (${r.p10}–${r.p90})</title></circle>`).join('')}
-    ${best.map(id => { const r = rows.find(x => x.id === id); return `<text x="${(Number(X(r.e15)) + 7).toFixed(1)}" y="${(Number(Y(r.p10)) - 6).toFixed(1)}" class="sc-ax">${escapeHtml(r.mids.map(scrimName).join('-'))}</text>`; }).join('')}</svg>
+    <text x="${W / 2}" y="${H - 8}" text-anchor="middle" class="sc-ax">expected goals per 15 min →</text><text x="12" y="${H / 2}" class="sc-ax" transform="rotate(-90 12 ${H / 2})" text-anchor="middle">bad-day goals →</text>
+    ${rows.map(r => `<circle cx="${X(r.e15)}" cy="${Y(bad(r))}" r="${best.includes(r.id) ? 5 : 3}" fill="${colors[gi[r.grp] % colors.length]}" opacity="${best.includes(r.id) ? 1 : 0.55}" data-sc="row" data-id="${r.id}" style="cursor:pointer"><title>${r.mids.map(scrimName).join('-')} + ${r.att.map(scrimName).join('-')}: ${num(r.e15, 2)} (${r.p10}–${r.p90})</title></circle>`).join('')}
+    ${best.map((id, k) => { const r = rows.find(x => x.id === id); return `<text x="${(Number(X(r.e15)) - 4).toFixed(1)}" y="${(Number(Y(bad(r))) + 3).toFixed(1)}" text-anchor="end" class="sc-ax" style="font-weight:700">${k + 1}</text>`; }).join('')}</svg>
+    <p class="n-note" style="margin:2px 0;">Top right = scores the most and holds up on a bad day. Best: ${best.map((id, k) => { const r = rows.find(x => x.id === id); return `<b>${k + 1}</b> ${escapeHtml(r.mids.map(scrimName).join('-'))} + ${escapeHtml(r.att.map(scrimName).join('-'))} (${num(r.e15, 2)})`; }).join(' · ')}</p>
     <div class="sc-leg">${groups.map((g, i) => `<span><i style="background:${colors[i % colors.length]}"></i>${escapeHtml(g.name)}</span>`).join('')}</div>`;
 }
 function scrimPairGrid(rows) {
