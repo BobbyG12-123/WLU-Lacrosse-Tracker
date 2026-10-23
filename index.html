@@ -14713,13 +14713,13 @@ function scrimLoggingHtml() {
   return `<div class="panel"><p class="panel-title">Logging plan for the scrimmages</p><ol class="sc-ul">
     <li>One staffer runs the <b>lineup bar</b> on the Log page: set the 6 on offense every shift change (offense row) — that is what lets us compare each line’s real result to its prediction.</li>
     <li>A second person logs shots as usual (shooter, assist, quality, result) and every no-shot possession (turnover, failed clear).</li>
-    <li>Set the session to <b>Scrimmage</b> with the opponent’s name, so the comparison below picks it up.</li>
+    <li>Set the session to <b>Game</b> (not Scrimmage, which is our intra-squad setting) with the opponent’s name, and log their shots too, so the comparisons pick it up.</li>
     <li>If you can’t keep up live, log from film afterwards with Backfill — but the lineup bar has to be set while it happens.</li></ol></div>`;
 }
 // Predicted vs actual: scrimmage sessions with the lineup bar logged.
 function scrimActualHtml() {
   const R = SC.res; if (!R) return '';
-  const sess = Object.values(LIVE_SESSIONS).filter(s => s.context === 'Scrimmage' && s.date >= localDateStr(new Date(Date.now() - 3 * 864e5)));
+  const sess = Object.values(LIVE_SESSIONS).filter(s => (s.context === 'Scrimmage' || s.context === 'Game') && s.date >= localDateStr(new Date(Date.now() - 3 * 864e5)));
   const rows = [];
   sess.forEach(s => { const by = {}; (s.shots || []).filter(x => x.team !== 'OPP').forEach(x => { const t = x.stintId && s.stints.find(y => y.id === x.stintId); if (!t) return; const k = t.offense.slice().sort().join(','); (by[k] = by[k] || { g: 0, sh: 0, six: t.offense }).sh++; if (x.goal === 1) by[k].g++; }); Object.values(by).forEach(v => rows.push(Object.assign({ date: s.date }, v))); });
   if (!rows.length) return `<div class="panel"><p class="panel-title">Predicted vs actual</p><p class="panel-sub">Fills in once a scrimmage is logged with the lineup bar set.</p></div>`;
@@ -14888,7 +14888,7 @@ function scrimHistRows() {
   const out = [];
   SCRIM_HIST.forEach(h => h.games.forEach(g => {
     const s = Object.values(LIVE_SESSIONS).filter(x => (x.context === 'Scrimmage' || x.context === 'Game') && x.date >= h.at.slice(0, 10) && (x.opponent || '').toLowerCase().includes(g.opp.toLowerCase().split(/[\s-]/)[0])).sort((a, b) => a.date.localeCompare(b.date))[0];
-    let actual = null; if (s) { const us = (s.shots || []).filter(x => x.team !== 'OPP' && x.goal === 1).length, them = (s.shots || []).filter(x => x.team === 'OPP' && x.goal === 1).length; actual = { us, them, date: s.date, q: [1, 2, 3, 4].map(qn => (s.shots || []).filter(x => x.team !== 'OPP' && x.goal === 1 && String(x.quarter) === String(qn)).length) }; }
+    let actual = null; if (s) { const sh = s.shots || [], opp = sh.filter(x => x.team === 'OPP'); actual = { us: sh.filter(x => x.team !== 'OPP' && x.goal === 1).length, them: opp.length ? opp.filter(x => x.goal === 1).length : null, date: s.date }; }
     out.push({ h, pred: g, actual });
   }));
   return out;
@@ -14902,9 +14902,9 @@ async function scrimLock() {
 function scrimAccuracyHtml() {
   const rows = scrimHistRows(), done = rows.filter(r => r.actual);
   const inRange = done.filter(r => r.actual.us >= r.pred.lo && r.actual.us <= r.pred.hi).length, mae = done.length ? done.reduce((s, r) => s + Math.abs(r.actual.us - r.pred.us), 0) / done.length : null;
-  return `<div class="panel"><p class="panel-title">How we did (accuracy)</p><p class="panel-sub">Lock the prediction before each game; once the game is logged (shots, as Scrimmage or Game with the opponent’s name) it’s compared here. Turn on “Learn from results” in Model options to nudge the model by how far off it has been.</p>
+  return `<div class="panel"><p class="panel-title">How we did (accuracy)</p><p class="panel-sub">Lock the prediction before each game; once the game is logged (as a <b>Game</b> with the opponent’s name, their shots included) it’s compared here. Our goals are what’s checked; their score shows “?” if their shots weren’t logged. Turn on “Learn from results” in Model options to nudge the model by how far off it has been.</p>
     <div class="sc-row"><button type="button" class="btn secondary" data-sc="lock">Lock this prediction</button>${done.length ? `<span class="n-note">${done.length} game${done.length === 1 ? '' : 's'} checked · typical miss ${num(mae, 1)} goals · ${inRange} of ${done.length} landed inside the floor–ceiling range (should be about 8 in 10) · learned correction ×${num(scrimLearned(), 2)}${scrimOpt('learn') ? ' (on)' : ' (off)'}</span>` : ''}</div>
-    ${rows.length ? `<div class="table-wrap"><table class="shotlog"><thead><tr><th>Locked</th><th>Game</th><th>Predicted (range)</th><th>Actual</th><th>Win chance</th><th>Result</th></tr></thead><tbody>${rows.map(r => `<tr><td>${escapeHtml(dpWhen(r.h.at))}</td><td>${escapeHtml(r.pred.name)} vs ${escapeHtml(r.pred.opp)}</td><td>${num(r.pred.us, 1)}–${num(r.pred.them, 1)} <span class="n-note">(${r.pred.lo}–${r.pred.hi})</span></td><td>${r.actual ? `<b>${r.actual.us}–${r.actual.them}</b> <span class="n-note">${escapeHtml(r.actual.date)}</span>` : '<span class="n-note">not logged yet</span>'}</td><td>${pct(r.pred.win)}</td><td>${r.actual ? (r.actual.us >= r.pred.lo && r.actual.us <= r.pred.hi ? '<span class="sc-up">inside range</span>' : '<span class="sc-dn">outside range</span>') : ''}</td></tr>`).join('')}</tbody></table></div>` : '<p class="n-note">No predictions locked yet.</p>'}</div>`;
+    ${rows.length ? `<div class="table-wrap"><table class="shotlog"><thead><tr><th>Locked</th><th>Game</th><th>Predicted (range)</th><th>Actual</th><th>Win chance</th><th>Result</th></tr></thead><tbody>${rows.map(r => `<tr><td>${escapeHtml(dpWhen(r.h.at))}</td><td>${escapeHtml(r.pred.name)} vs ${escapeHtml(r.pred.opp)}</td><td>${num(r.pred.us, 1)}–${num(r.pred.them, 1)} <span class="n-note">(${r.pred.lo}–${r.pred.hi})</span></td><td>${r.actual ? `<b>${r.actual.us}–${r.actual.them === null ? '?' : r.actual.them}</b> <span class="n-note">${escapeHtml(r.actual.date)}</span>` : '<span class="n-note">not logged yet</span>'}</td><td>${pct(r.pred.win)}</td><td>${r.actual ? (r.actual.us >= r.pred.lo && r.actual.us <= r.pred.hi ? '<span class="sc-up">inside range</span>' : '<span class="sc-dn">outside range</span>') : ''}</td></tr>`).join('')}</tbody></table></div>` : '<p class="n-note">No predictions locked yet.</p>'}</div>`;
 }
 // ---- Top 5 plans ----
 function scrimPlansHtml() {
