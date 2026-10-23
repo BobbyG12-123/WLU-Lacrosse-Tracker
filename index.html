@@ -3715,7 +3715,7 @@ function nameFor(jersey, season) {
   const name = rosterNameFor(jersey, season);
   // Player View: every WLU player other than the one being viewed is just
   // "Teammate", so no label anywhere can name him.
-  if (PLAYER_MODE && name !== jersey && name.trim().toLowerCase() !== PLAYER_MODE.key) return PM_OTHER;
+  if (PLAYER_MODE && name !== jersey && !pmKeys().includes(name.trim().toLowerCase())) return PM_OTHER;
   return name;
 }
 function rosterNameFor(jersey, season) {
@@ -3837,6 +3837,11 @@ initSubtabs();
 //    every render, except in lists already narrowed to his own shots;
 //  - a last sweep replaces any other roster name still on screen.
 // Team totals and averages stay, since they don't name anyone.
+// One player can be listed under different names in different seasons (Nick / Nicholas De Cain).
+// Player View knows all of his names: pmHas(text) = text names him.
+const pmNames = () => (PLAYER_MODE ? (PLAYER_MODE.names || [PLAYER_MODE.name]) : []);
+const pmKeys = () => pmNames().map(n => n.trim().toLowerCase());
+function pmHas(t) { t = String(t || ''); return pmNames().some(n => t.includes(n)); }
 function pmJersey(season) { return PLAYER_MODE ? (PLAYER_MODE.seasons[season] || null) : null; }
 function pmIsFogo(name) { return FOGO_LAST_NAMES.some(ln => name.trim().toLowerCase().endsWith(ln.toLowerCase())); }
 // Keeps only the options naming him; returns the selected value. A player
@@ -3844,7 +3849,7 @@ function pmIsFogo(name) { return FOGO_LAST_NAMES.some(ln => name.trim().toLowerC
 function pmLockSelect(sel) {
   if (!sel) return '';
   if (!PLAYER_MODE) return sel.value;
-  const mine = [...sel.options].filter(o => o.textContent.includes(PLAYER_MODE.name));
+  const mine = [...sel.options].filter(o => pmHas(o.textContent));
   sel.innerHTML = '';
   if (mine.length) mine.forEach(o => sel.appendChild(o));
   else { const o = document.createElement('option'); o.value = '__NONE__'; o.textContent = PLAYER_MODE.name + ' — no data here'; sel.appendChild(o); }
@@ -3852,7 +3857,7 @@ function pmLockSelect(sel) {
   return sel.value;
 }
 // Trend tiles / chart lines: just his.
-function pmOnly(entries) { return PLAYER_MODE ? entries.filter(e => String(e.name || '').includes(PLAYER_MODE.name)) : entries; }
+function pmOnly(entries) { return PLAYER_MODE ? entries.filter(e => pmHas(e.name)) : entries; }
 function pmPickerOpen() {
   const people = new Map();
   SEASONS.forEach(season => (ROSTERS[season] || []).forEach(r => {
@@ -3863,6 +3868,17 @@ function pmPickerOpen() {
     r.roles.forEach(x => e.roles.add(x));
     people.set(key, e);
   }));
+  // Same player, different name in another season (Nick / Nicholas De Cain): same last name, first names that
+  // start the same, the same jersey, and never on the roster in the same season. Keep the latest season's name; know all.
+  const split = n => ({ first: (n.trim().split(/\s+/)[0] || '').toLowerCase(), last: lastNameOf(n).toLowerCase() });
+  const sameGuy = (a, b) => { const x = split(a.name), y = split(b.name);
+    return !!x.last && x.last === y.last && (x.first.startsWith(y.first.slice(0, 3)) || y.first.startsWith(x.first.slice(0, 3)))
+      && !Object.keys(a.seasons).some(s => b.seasons[s] !== undefined) && Object.values(a.seasons).some(j => Object.values(b.seasons).includes(j)); };
+  const lastSeason = o => Object.keys(o.seasons).sort().pop(), merged = [];
+  [...people.values()].forEach(e => { e.names = [e.name]; const m = merged.find(x => sameGuy(x, e)); if (!m) { merged.push(e); return; }
+    const newer = lastSeason(e) > lastSeason(m) ? e : m; m.name = newer.name; m.key = newer.key;
+    Object.assign(m.seasons, e.seasons); m.names = [...new Set(m.names.concat(e.names))]; e.roles.forEach(r => m.roles.add(r)); });
+  people.clear(); merged.forEach(e => people.set(e.key, e));
   const all = [...people.values()].sort((a, b) => a.name.localeCompare(b.name));
   const latest = e => { const ss = Object.keys(e.seasons).sort(); return e.seasons[ss[ss.length - 1]]; };
   const pills = list => `<div class="pill-row">${list.map(e => `<button type="button" class="pill pm-pick" data-key="${escapeHtml(e.key)}">#${escapeHtml(latest(e))} ${escapeHtml(e.name)}</button>`).join('')}</div>`;
@@ -3873,7 +3889,7 @@ function pmPickerOpen() {
   list.querySelectorAll('.pm-pick').forEach(b => b.addEventListener('click', () => {
     const e = people.get(b.dataset.key);
     document.getElementById('pmPicker').classList.remove('open');
-    pmEnter({ name: e.name, key: e.key, seasons: e.seasons, roles: [...e.roles] });
+    pmEnter({ name: e.name, key: e.key, names: e.names || [e.name], seasons: e.seasons, roles: [...e.roles] });
   }));
   document.getElementById('pmPicker').classList.add('open');
 }
@@ -3952,7 +3968,7 @@ function pmSweep() {
   // 1. Any other roster name still on the page (or in the hover tooltip)
   // becomes "Teammate"; a jersey number beside it goes too.
   const others = [];
-  SEASONS.forEach(s => (ROSTERS[s] || []).forEach(r => { const n = r.name.trim(); if (n && n.toLowerCase() !== PLAYER_MODE.key && !me.includes(n)) others.push(n); }));
+  SEASONS.forEach(s => (ROSTERS[s] || []).forEach(r => { const n = r.name.trim(); if (n && !pmKeys().includes(n.toLowerCase()) && !pmNames().some(x => x.includes(n))) others.push(n); }));
   const names = [...new Set(others)].sort((a, b) => b.length - a.length).map(n => n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
   const re = new RegExp('(#\\d{1,3}\\s+)?(' + (names.length ? names.join('|') + '|' : '') + PM_OTHER + ')\\b', 'g');
   const fix = (node) => {
@@ -7933,7 +7949,7 @@ function renderGoalieScore() {
   note.style.display = '';
   chartPanel.style.display = '';
   const all = computeGoalieScores(season);
-  const shown = PLAYER_MODE ? all.filter(g => g.name.includes(PLAYER_MODE.name)) : all;
+  const shown = PLAYER_MODE ? all.filter(g => pmHas(g.name)) : all;
   sub.textContent = `${season}, practice + game shots on cage. 0–100: 50 is a team-average goalie, higher is better.${PLAYER_MODE ? '' : ' Ranked best first.'}`;
   note.innerHTML = 'Weights: Saved vs. Expected 40%, Shooter-Adjusted (SAE) 40%, rebound control 6%, consistency 6%, tough situations (screened, not set) 4%, outlets 4%. Each part compares him to the team and is pulled toward 50 when his sample is small, so a hot week can&rsquo;t top the list. A part with no data yet drops out and its weight goes to the rest. The two main numbers stay as they are on the Summary, Advanced and Shooter-Adjusted tabs.';
   if (!shown.length) { cards.innerHTML = `<p class="sans" style="color:var(--muted); font-size:13px;">No ${escapeHtml(season)} shots on cage with ${PLAYER_MODE ? escapeHtml(PLAYER_MODE.name) : 'a WLU goalie'} in net yet.</p>`; document.getElementById('gsChart').innerHTML = ''; return; }
@@ -8133,7 +8149,7 @@ function renderShooterScore() {
   note.style.display = '';
   chartPanel.style.display = '';
   const { list: all, tFin, tGa } = computeShooterScores(season, ssTab);
-  const shown = PLAYER_MODE ? all.filter(g => g.name.includes(PLAYER_MODE.name)) : all;
+  const shown = PLAYER_MODE ? all.filter(g => pmHas(g.name)) : all;
   const parts = SS_PARTS[ssTab];
   sub.textContent = `${season}, practice + game shots. 0–100: 50 is a team-average ${ssTab === 'shooting' ? 'shooter' : 'offensive player'}, higher is better. Players with ${SS_MIN_SHOTS}+ shots.${PLAYER_MODE ? '' : ' Ranked best first.'}`;
   note.innerHTML = (ssTab === 'shooting'
@@ -13098,7 +13114,7 @@ function computeRollingTrendSeries(shots, metric, model) {
   return Object.keys(byJersey)
     .filter(j => byJersey[j].length >= TREND_ROLLING_MIN)
     .map(j => ({ jersey: j, name: `#${j} ${nameFor(j)}`, count: byJersey[j].length, series: rollingSeries(byJersey[j], TREND_ROLLING_K, metric, model) }))
-    .filter(p => !PLAYER_MODE || p.name.includes(PLAYER_MODE.name))
+    .filter(p => !PLAYER_MODE || pmHas(p.name))
     .sort((a, b) => b.count - a.count)
     .slice(0, 6);
 }
