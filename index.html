@@ -273,6 +273,7 @@
   .sc-cs { display: flex; flex-direction: column; align-items: flex-end; font-family: var(--text); } .sc-cs b { font-size: 22px; } .sc-cs span { font-size: 10.5px; color: var(--muted); }
   .sc-tick { position: absolute; top: 4px; right: 8px; color: var(--good); font-weight: 700; }
   .sc-rk { font: 700 11.5px var(--text); padding: 1px 7px; border-radius: 999px; background: var(--line); } .sc-rk.top { background: color-mix(in srgb, var(--good) 22%, transparent); color: var(--good); }
+  .sc-thin { font: 600 11.5px var(--text); color: #B7791F; } .sc-line .sc-thin { margin-left: 8px; }
   .sc-pwhy { font: 12px var(--text); color: var(--muted); margin: 4px 0 0 10px; } .sc-stale { font: 600 13px var(--text); color: #B7791F; margin: 6px 0; }
   .sc-det > summary { cursor: pointer; }
   .sc-vis { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; }
@@ -14015,15 +14016,27 @@ function scrimModel(noAdj) {
   // Screens set / advantages, for roles.
   const scr = {}, adv = {}; d.possList.filter(pp => pp.team === 'WLU').forEach(pp => (pp.screens || []).forEach(x => { if (x.s && !isOppJersey(x.s)) { scr[x.s] = (scr[x.s] || 0) + 1; if (x.adv === 'Yes') adv[x.s] = (adv[x.s] || 0) + 1; } }));
   const sessN = Math.max(1, new Set(d.shots.map(sessKey)).size);
+  // Little data is pulled toward a replacement-level player (below the team average: a guy who hasn't been on the field
+  // much usually has a reason), not toward the team average. No data at all = replacement level.
+  const uses = all.map(p => (p.shots + p.potAst + p.to) / Math.max(1, p.sessions.size)).filter(x => x > 0).sort((a, b) => a - b);
+  const rUse = uses.length ? uses[Math.floor(uses.length * 0.25)] : 3, rTo = Math.min(0.6, tTo * 1.2), rSF = 1 - rTo, rShot = rSF * tShot / (tShot + tFeed), rFeed = rSF - rShot;
+  const rFin = tFin.map(x => x * 0.85), rMix0 = [tMix[0] * 0.8, tMix[1], tMix[2] * 1.2], rMt = rMix0.reduce((a, b) => a + b, 0), rMix = rMix0.map(x => x / rMt), rDom = tDom * 0.7;
   all.forEach(p => {
     const j = p.jersey, t = p.shots + p.potAst + p.to; if (!t) return;
-    const k = 30, pS = (p.shots + k * tShot) / (t + k), pF = (p.potAst + k * tFeed) / (t + k), pT = (p.to + k * tTo) / (t + k), z = pS + pF + pT;
+    const k = 30, pS = (p.shots + k * rShot) / (t + k), pF = (p.potAst + k * rFeed) / (t + k), pT = (p.to + k * rTo) / (t + k), z = pS + pF + pT;
     const n = [0, 0, 0], g = [0, 0, 0]; p.ownShots.forEach(s => { const i = ti(s.shotQuality); n[i]++; if (s.goal === 1) g[i]++; });
-    const mix = n.map((x, i) => (x + 10 * tMix[i]) / (p.shots + 10));
-    const fin = n.map((x, i) => ({ a: g[i] + 12 * tFin[i], b: x - g[i] + 12 * (1 - tFin[i]) }));   // Beta posterior per tier
-    P[j] = { j, touch: t, use: t / Math.max(1, p.sessions.size), pShot: pS / z, pFeed: pF / z, pTo: pT / z, mix, fin, dom: (p.dominoes + 15 * tDom) / (t + 15),
-      shots: p.shots, scr: (scr[j] || 0) / Math.max(1, p.sessions.size), advRate: ((adv[j] || 0) + 4 * 0.7) / ((scr[j] || 0) + 4) };
+    const mix = n.map((x, i) => (x + 10 * rMix[i]) / (p.shots + 10));
+    const fin = n.map((x, i) => ({ a: g[i] + 12 * rFin[i], b: x - g[i] + 12 * (1 - rFin[i]) }));   // Beta posterior per tier
+    const ses = Math.max(1, p.sessions.size), use = (t + 2 * rUse) / (ses + 2);   // touches per practice, pulled toward replacement for few practices
+    P[j] = { j, touch: t, use, pShot: pS / z, pFeed: pF / z, pTo: pT / z, mix, fin, dom: (p.dominoes + 15 * rDom) / (t + 15),
+      shots: p.shots, scr: (scr[j] || 0) / ses, advRate: ((adv[j] || 0) + 4 * 0.7) / ((scr[j] || 0) + 4), thin: t < 20 };
   });
+  // Rostered players with nothing logged still take their touches, at replacement level.
+  rosterPlayers(season).forEach(r => { const j = r.jersey; if (!j || P[j]) return;
+    P[j] = { j, touch: 0, use: rUse, pShot: rShot, pFeed: rFeed, pTo: rTo, mix: rMix.slice(), fin: rFin.map(x => ({ a: 12 * x, b: 12 * (1 - x) })), dom: rDom, shots: 0, scr: 0, advRate: 0.7, thin: true, none: true }; });
+  // What dominoes are worth, from every logged shot: finishing after dominoes vs without, against all shots.
+  const sh = d.shots.filter(s => !isOppJersey(s.shooterJersey)), gr = a => (a.length ? a.filter(s => s.goal === 1).length / a.length : 0);
+  const gAll = gr(sh) || 0.35, domYes = gr(sh.filter(s => s.dominoes === 'Yes')) / gAll || 1.12, domNo = gr(sh.filter(s => s.dominoes !== 'Yes')) / gAll || 0.86;
   // Roles: creator (dominoes + feeds), finisher (finishing + catch shots), screener (screens set).
   const vals = k => Object.values(P).map(x => x[k]), zf = (k, v) => { const a = vals(k), m = a.reduce((x, y) => x + y, 0) / a.length, sd = Math.sqrt(a.reduce((x, y) => x + (y - m) ** 2, 0) / Math.max(1, a.length - 1)) || 1; return (v - m) / sd; };
   Object.values(P).forEach(x => { x.finRate = x.fin.reduce((a, f, i) => a + x.mix[i] * f.a / (f.a + f.b), 0); x.creat = x.dom + x.pFeed; });
@@ -14034,7 +14047,7 @@ function scrimModel(noAdj) {
   const base = px ? pg / px : 1, roleMult = {};
   Object.keys(pr).forEach(k => { const r = pr[k]; roleMult[k] = Math.max(0.85, Math.min(1.15, ((r.g + 20 * base * (r.x / r.n)) / (r.x + 20 * (r.x / r.n))) / base)); });
   const meanUse = Object.values(P).reduce((a, x) => a + x.use, 0) / Math.max(1, Object.keys(P).length);
-  const out = { P, tMix, tFin, tCat, daySd, teamDaySd, roleMult, meanUse, sessN, pairs: pr };
+  const out = { P, tMix, tFin, tCat, daySd, teamDaySd, roleMult, meanUse, sessN, pairs: pr, domYes, domNo };
   if (!noAdj) scrimApplyAdj(out);
   return out;
 }
@@ -14093,8 +14106,8 @@ function scrimPossessions(M, line, n, world, ctx, calib, typeOverride, st) {
       if (r < p.pTo / crowd[i] + p.pShot || !steps || step === 2) {
         // shot: tier from his mix (catch shots lean on the team catch mix), lifted a tier by dominoes
         let mix = fedBy >= 0 ? p.mix.map((m, t) => 0.5 * m + 0.5 * M.tCat[t]) : p.mix, t = scrimPick([0, 1, 2], mix);
-        if (lifted && t > 0 && SCRIM_RNG() < 0.5) t--;
         let pr = (world.fin[p.j] || [0.4, 0.3, 0.15])[t] * crowd[i];
+        if (steps) pr *= lifted ? (M.domYes || 1.12) : (M.domNo || 0.86);   // measured: finishing after dominoes vs without
         if (fedBy >= 0 && scrimOpt('roles')) pr *= M.roleMult[ps[fedBy].role + '>' + p.role] || 1;
         if (scrimOpt('types')) pr *= typeMult(type);
         pr *= calib * ctx.oppDef;
@@ -14326,7 +14339,7 @@ function scrimWhy(r, rows) {
     `The ball goes most to ${ball.join(' and ')}. Goals come mostly from ${sc.join(', ')}.`,
     `${pct(r.fed)} of its shots come off a feed; dominoes lift the look on ${pct(r.dom)} of possessions; ${pct(r.gs)} of shots are Gold or Silver (average ${pct(avg('gs'))}); it turns it over on ${pct(r.to)} of possessions (average ${pct(avg('to'))}).`,
     `Roles: ${roles}. Chemistry ×${num(r.chem, 2)} (from how those roles have connected on every logged feed).`,
-    `<b>Biggest strength:</b> ${words[best]}. <b>Weak spot:</b> ${words[worst]}.`].map(x => `<p>${x}</p>`).join('');
+    `<b>Biggest strength:</b> ${words[best]}. <b>Weak spot:</b> ${words[worst]}.`].concat(scrimThin(r.six).length ? [`⚠ <b>Little data</b> on ${scrimThin(r.six).join(', ')}: they’re treated as replacement level (below the team average) until more is logged, so this line could be better or worse than shown.`] : []).map(x => `<p>${x}</p>`).join('');
 }
 // ---- small SVG charts ----
 function scrimGauge(p) {
@@ -14476,6 +14489,7 @@ function scrimRankWith(qi, row, must) {
 }
 function scrimRowFor(qi, six) { const q = SC.plan.quarters[qi]; return SC.rowIdx && SC.rowIdx[q.mid + '|' + q.attack.join(',') + '|' + six.slice().sort().join(',')]; }
 // Plain-words strength of a lineup (one line), from scrimWhy's comparison.
+function scrimThin(six) { const M = SC.res && SC.res.M; if (!M) return []; return six.filter(j => M.P[j] && M.P[j].thin).map(j => `${scrimName(j)} (${M.P[j].touch} touches)`); }
 function scrimStrength(r, rows) {
   const peers = rows.filter(x => x.grp === r.grp), avg = k => scrimMean(peers.map(x => x[k])), sd = k => { const m = avg(k); return Math.sqrt(scrimMean(peers.map(x => (x[k] - m) ** 2))) || 1; };
   const z = { gs: (r.gs - avg('gs')) / sd('gs'), to: -(r.to - avg('to')) / sd('to'), dom: (r.dom - avg('dom')) / sd('dom'), fed: (r.fed - avg('fed')) / sd('fed'), sd: -(r.sd - avg('sd')) / sd('sd') };
@@ -14509,12 +14523,12 @@ function renderScrim() {
   const used = {}; R.state.forEach((st, qi) => st.lines.forEach(l => { const r = scrimRowFor(qi, st.att.concat(l)); if (r) used[r.id] = (used[r.id] || 0) + 1; }));
   const bestCards = `<div class="panel"><p class="panel-title">Best lineups</p><p class="panel-sub">Top 5 in each group. Score blends the simulation (${100 - blend}%) with your Impact weights (${blend}%). ✓ = in the plan.</p>
     ${U.groups.map(g => { const rows = U.rows.filter(r => r.grp === g.key).sort((a, b) => b.score - a.score).slice(0, 5);
-      return `<p class="sc-gh">${escapeHtml(g.name)}</p><div class="sc-best">${rows.map(r => `<div class="sc-card${used[r.id] ? ' sc-in' : ''}" data-sc="card" data-id="${r.id}"><span class="sc-rank">#${r.rank}</span><div class="sc-cm"><b>${r.mids.map(nm).join(' · ')}</b><span class="n-note">with ${r.att.map(nm).join(' · ')}</span><span class="sc-cw">${escapeHtml(scrimStrength(r, U.rows))}</span></div><div class="sc-cs"><b>${Math.round(r.score)}</b><span>score</span><span class="n-note">${num(r.e15, 1)} goals / 15 min</span></div>${used[r.id] ? '<span class="sc-tick">✓</span>' : ''}</div>`).join('')}</div>`; }).join('')}</div>`;
+      return `<p class="sc-gh">${escapeHtml(g.name)}</p><div class="sc-best">${rows.map(r => `<div class="sc-card${used[r.id] ? ' sc-in' : ''}" data-sc="card" data-id="${r.id}"><span class="sc-rank">#${r.rank}</span><div class="sc-cm"><b>${r.mids.map(nm).join(' · ')}</b><span class="n-note">with ${r.att.map(nm).join(' · ')}</span><span class="sc-cw">${escapeHtml(scrimStrength(r, U.rows))}</span>${scrimThin(r.six).length ? `<span class="sc-thin">⚠ little data: ${escapeHtml(scrimThin(r.six).join(', '))}</span>` : ''}</div><div class="sc-cs"><b>${Math.round(r.score)}</b><span>score</span><span class="n-note">${num(r.e15, 1)} goals / 15 min</span></div>${used[r.id] ? '<span class="sc-tick">✓</span>' : ''}</div>`).join('')}</div>`; }).join('')}</div>`;
   // 3. The plan: each line with its rank
   const games = p.games.map((g, gi) => {
     const rows = R.state.map((st, qi) => ({ st, qi })).filter(x => Math.floor(x.qi / 4) === gi).map(({ st, qi }) => {
       const q = p.quarters[qi];
-      const lines = st.lines.map((l, li) => { const r = scrimRowFor(qi, st.att.concat(l)); const must = li === 0 ? (q.starters || []).filter(j => l.includes(j)) : (q.favor || []).filter(j => l.includes(j)); const rw = scrimRankWith(qi, r, must); return `<div class="sc-line"><span class="sc-ln">Line ${li + 1}${li === 0 ? ' (starts)' : ''}<input type="number" class="sc-min" min="0" max="15" step="0.5" value="${num((st.mins || [])[li] || 15 / st.lines.length, 1)}" data-sc-min="${qi}:${li}" title="Minutes of the 15"> min</span>${l.map((j, pos) => chip(j, qi, li, pos)).join('')}${r ? `<span class="sc-rk${r.rank <= 5 || (rw && rw.rank <= 2) ? ' top' : ''}">#${r.rank} of ${r.of}</span>${rw && rw.of > 1 ? `<span class="n-note">#${rw.rank} of ${rw.of} lines with ${escapeHtml(must.map(scrimName).join(' + '))}</span>` : ''}<span class="sc-v">score ${Math.round(r.score)}</span>` : ''}</div>`; }).join('');
+      const lines = st.lines.map((l, li) => { const r = scrimRowFor(qi, st.att.concat(l)); const must = li === 0 ? (q.starters || []).filter(j => l.includes(j)) : (q.favor || []).filter(j => l.includes(j)); const rw = scrimRankWith(qi, r, must); return `<div class="sc-line"><span class="sc-ln">Line ${li + 1}${li === 0 ? ' (starts)' : ''}<input type="number" class="sc-min" min="0" max="15" step="0.5" value="${num((st.mins || [])[li] || 15 / st.lines.length, 1)}" data-sc-min="${qi}:${li}" title="Minutes of the 15"> min</span>${l.map((j, pos) => chip(j, qi, li, pos)).join('')}${r ? `<span class="sc-rk${r.rank <= 5 || (rw && rw.rank <= 2) ? ' top' : ''}">#${r.rank} of ${r.of}</span>${rw && rw.of > 1 ? `<span class="n-note">#${rw.rank} of ${rw.of} lines with ${escapeHtml(must.map(scrimName).join(' + '))}</span>` : ''}<span class="sc-v">score ${Math.round(r.score)}</span>` : ''}${scrimThin(l).length ? `<span class="sc-thin">⚠ little data: ${escapeHtml(scrimThin(l).join(', '))}</span>` : ''}</div>`; }).join('');
       const why = scrimPlanWhy(qi, st);
       return `<div class="sc-q"><div class="sc-qh"><b>${escapeHtml(p.quarters[qi].label)}</b> <span class="n-note">Attack: ${st.att.map((j, pos) => p.quarters[qi].attack.length > 3 ? chip(j, qi, 'a', pos) : nm(j)).join(' · ')}</span><span class="sc-v">${num(scrimMean(R.sim.q[qi]), 1)} goals expected</span></div>${lines}${why}${scrimWarn(qi, st)}${SC.edit && SC.edit.qi === qi ? scrimSwapHtml(qi) : ''}</div>`;
     }).join('');
