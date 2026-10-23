@@ -13749,7 +13749,7 @@ function navItems() {
     const season = currentLogSeason ? currentLogSeason() : SEASONS[SEASONS.length - 1];
     const info = navPlayerInfo(season), squash = x => String(x || '').toLowerCase().replace(/[^a-z]/g, '');
     (ROSTERS[season] || []).filter(r => r.name && r.jersey).forEach(r => { const g = info.g[r.jersey], p = info.p[r.jersey], goalie = r.roles.includes('goalie') && g;
-      items.push({ k: goalie ? 'Goalie' : 'Player', t: `#${r.jersey} ${r.name}`, s: goalie ? `Goalie profile · ${g}` : `Player profile${p ? ' · ' + p : ''}`, kw: `${goalie ? 'goalie keeper' : 'player'} profile ${squash(r.name)} ${squash(lastNameOf(r.name))}`, go: () => profileOpen(r.jersey) }); });
+      items.push({ k: goalie ? 'Goalie' : 'Player', t: `#${r.jersey} ${r.name}`, s: goalie ? `Goalie profile · ${g}` : `Player profile${p ? ' · ' + p : ''}`, kw: `${goalie ? 'goalie keeper' : 'player'} profile ${r.name.trim().split(/\s+/).map((w, i, a) => squash(a.slice(i).join(''))).join(' ')}`, go: () => profileOpen(r.jersey) }); });
   }
   return items;
 }
@@ -16242,8 +16242,8 @@ function pfGoalieHtml(season, j) {
   const sit = [['Screened', s => s.screened === 'Yes'], ['Not screened', s => s.screened === 'No'], ['Not set', s => s.goalieSet === 'No'], ['Set', s => s.goalieSet === 'Yes']].map(([l, f]) => { const m = mine.filter(f); return m.length ? `<span class="pill sm">${l}: <b>${pct(sv(m))}</b> <span class="n-note">(${m.length})</span></span>` : ''; }).join('');
   const tr = computeGoalieTrends(allShotEntries().filter(s => seasonForDate(s.date) === season)).find(t => t.name.startsWith('#' + j + ' '));
   const link = (label, act) => `<button type="button" class="pill" data-pfg="${act}" data-j="${escapeHtml(j)}">${label} &rsaquo;</button>`;
-  return `<div class="panel"><p class="panel-title">#${escapeHtml(j)} ${escapeHtml(nameFor(j, season) || '')} <span class="n-note">Goalie · ${escapeHtml(season)}</span></p>
-    <div class="pf-ks">${kpi('Goalie Score', g && g.score !== null ? Math.round(g.score) : '—', g ? `#${rows.indexOf(g) + 1} of ${rows.length} goalies · 50 = team average` : 'not enough shots yet')}
+  return `<div class="pf-hero"><div class="pf-j">${escapeHtml(j)}</div><div><h2>${escapeHtml(nameFor(j, season) || '')}</h2><div class="pf-meta">Goalie · ${mine.length} shots faced, ${mine.filter(s => s.goal !== 1).length} saves (${escapeHtml(season)})</div></div></div>
+    <div class="panel"><div class="pf-ks">${kpi('Goalie Score', g && g.score !== null ? Math.round(g.score) : '—', g ? `#${rows.indexOf(g) + 1} of ${rows.length} goalies · 50 = team average` : 'not enough shots yet')}
       ${kpi('Save %', mine.length ? pct(sv(mine)) : '—', `${mine.length} faced · team ${pct(sv(all))}`)}
       ${kpi('Saves above expected', g && isFinite(g.gsax100) ? sgn(g.gsax100) : '—', 'per 100 shots, from shot quality')}
       ${kpi('Shooter-adjusted', g && isFinite(g.sae100) ? sgn(g.sae100) : '—', 'per 100 shots, vs who shot it')}</div>
