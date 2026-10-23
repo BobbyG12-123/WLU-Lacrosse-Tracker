@@ -14322,7 +14322,9 @@ function scrimUniverse(M, calib, done) {
 // Impact score of a six with the weight sliders (same parts as the Depth Chart).
 function scrimImpact(six) {
   const B = SC.impBase || (SC.impBase = soBase(scrimSeason())), w = (SC.plan && SC.plan.iw) || {}, W = SO_W.map(([k, , d]) => [k, isFinite(w[k]) ? w[k] : d]), tw = W.reduce((a, x) => a + x[1], 0) || 1;
-  const one = j => { const p = B.ready && B.players[j]; return p ? W.reduce((a, [k, v]) => a + v * p.parts[k], 0) / tw : 50; };
+  // Players without an Impact Rating (too little data) count at replacement level: the 25th percentile of rated players.
+  if (SC.impRep === undefined) { const v = B.ready ? Object.values(B.players).map(p => W.reduce((a, [k, x]) => a + x * p.parts[k], 0) / tw).sort((a, b) => a - b) : []; SC.impRep = v.length ? v[Math.floor(v.length * 0.25)] : 40; }
+  const one = j => { const p = B.ready && B.players[j]; return p ? W.reduce((a, [k, v]) => a + v * p.parts[k], 0) / tw : SC.impRep; };
   return six.reduce((a, j) => a + one(j), 0) / six.length;
 }
 const SCRIM_COLS = [
@@ -14456,7 +14458,7 @@ function scrimRun() {
   setTimeout(() => {
     try {
       const calib = scrimCalib(scrimModel(true)), M = scrimModel();   // calibration from the unadjusted roster, so sliders count in full
-      SC.impBase = null; SC.uni = scrimUniverseSync(M, calib); scrimScore();
+      SC.impBase = null; SC.impRep = undefined; SC.res = Object.assign(SC.res || {}, { M }); SC.uni = scrimUniverseSync(M, calib); scrimScore();
       const state = scrimOptimize(M, calib), sim = scrimSimulate(M, calib, state, 2000);
       const p = SC.plan; p.lines = {}; state.forEach((st, qi) => { p.lines[qi] = { att: st.att, lines: st.lines, mins: st.mins, locked: !!(SC.plan.lockedQ || {})[qi] }; });
       SC.res = { M, calib, state, sim, back: scrimBacktest(M), sens: scrimSensitivity(M, calib, state), at: new Date() };
@@ -14483,7 +14485,8 @@ function scrimScore() {
   U.groups.forEach(g => {
     const R = U.rows.filter(r => r.grp === g.key), z = k => { const v = R.map(r => r[k]), m = scrimMean(v), sd = Math.sqrt(scrimMean(v.map(x => (x - m) ** 2))) || 1; return r => (r[k] - m) / sd; };
     const zs = z(floor ? 'bad' : 'e15'), zi = z('imp');
-    R.forEach(r => { r.score = Math.max(0, Math.min(100, 50 + 15 * ((1 - b) * zs(r) + b * zi(r)))); });
+    // Each little-data player costs 4 points: an unknown is a risk the coach can't plan around.
+    const M = SC.res && SC.res.M; R.forEach(r => { const thin = M ? r.six.filter(j => M.P[j] && M.P[j].thin).length : 0; r.thinN = thin; r.score = Math.max(0, Math.min(100, 50 + 15 * ((1 - b) * zs(r) + b * zi(r)) - 4 * thin)); });
     R.slice().sort((a, c) => c.score - a.score).forEach((r, i) => { r.rank = i + 1; r.of = R.length; });
   });
   SC.rowIdx = {}; U.rows.forEach(r => { SC.rowIdx[r.grp + '|' + r.six.slice().sort().join(',')] = r; });
@@ -14658,7 +14661,7 @@ function scrimInit() {
     const t = ev.target;
     if (t.dataset.scBlend) { SC.plan.blend = Number(t.value); t.closest('.dp-w').querySelector('span').innerHTML = `Score = simulation <b>${100 - SC.plan.blend}%</b> + your Impact weights <b>${SC.plan.blend}%</b>`; return; }
     if (!t.dataset.scIw) return;
-    SC.plan.iw = SC.plan.iw || {}; SC.plan.iw[t.dataset.scIw] = Number(t.value); scrimScore();
+    SC.plan.iw = SC.plan.iw || {}; SC.plan.iw[t.dataset.scIw] = Number(t.value); SC.impRep = undefined; scrimScore();
     const tb = document.getElementById('scTable'); if (tb) tb.innerHTML = scrimTableHtml();
     const tot = SO_W.reduce((a, [k, , d]) => a + (isFinite(SC.plan.iw[k]) ? SC.plan.iw[k] : d), 0); t.closest('.dp-w').querySelector('b').textContent = dpPct(Number(t.value), tot) + '%';
   });
