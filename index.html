@@ -8826,7 +8826,7 @@ function renderDepthChart() {
   };
   const groups = POS_CODES.filter(c => c !== 'X').map(c => [c, DEPTH_POS_LABEL[c]]).concat([[null, 'Unassigned']]);
   const unassigned = everyone.filter(j => !posOf(j));
-  wrap.innerHTML = `<details${depthEditJ || unassigned.length ? ' open' : ''}><summary class="panel-title" style="cursor:pointer;">Positions${unassigned.length ? ` &middot; ${unassigned.length} unassigned` : ''}</summary>
+  wrap.innerHTML = `<details${depthEditJ || unassigned.length ? ' open' : ''}><summary style="cursor:pointer; list-style-position:inside;"><span class="panel-title" style="display:inline;">Positions</span>${unassigned.length ? ` <span class="n-note">&middot; ${unassigned.length} unassigned</span>` : ''}</summary>
     <p class="panel-sub">Tap a player&rsquo;s position to change it, and set anything else he plays. Saved for every coach. The lineups above use these.</p>
     ${groups.map(([c, label]) => { const g = everyone.filter(j => (c ? posOf(j) === c : !posOf(j))).sort((a, b) => Number(a) - Number(b)); return g.length ? `<p class="panel-sub" style="margin:10px 0 4px;"><b>${escapeHtml(label)}</b> (${g.length})</p><div class="depth-rest">${g.map(chip).join('')}</div>` : ''; }).join('')}</details>`;
   document.querySelectorAll('#depthView [data-edit]').forEach(b => b.addEventListener('click', () => { depthEditJ = depthEditJ === b.dataset.edit ? null : b.dataset.edit; renderDepthChart(); }));
