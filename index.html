@@ -14178,7 +14178,8 @@ function scrimOptimize(M, calib, prior) {
   const used = Q.map((q, qi) => { const c = {}; (prior || []).forEach(P => (P[qi] ? P[qi].lines : []).forEach(l => { const k = l.slice().sort().join(','); c[k] = (c[k] || 0) + 1; })); return c; });
   const ctxs = p.games.map(g => scrimCtx(g)), gameOf = qi => Math.floor(qi / 4);
   const state = Q.map((q, qi) => {
-    const pool = scrimQuarterPool(q), keep0 = (p.lines || {})[qi], keep = alt && !(keep0 && keep0.locked) ? null : keep0;
+    // Only quarters you set by hand are kept; the rest start fresh, so the same settings always give the same plan.
+    const pool = scrimQuarterPool(q), keep0 = (p.lines || {})[qi], keep = keep0 && (keep0.locked || (p.lockedQ || {})[qi]) ? keep0 : null;
     const att = q.attack.length > 3 ? (keep && keep.att) || q.attack.slice(0, 3) : q.attack.slice(0, 3);
     let lines = keep && keep.lines && keep.lines.length ? keep.lines.map(l => l.slice()) : null;
     if (!lines || lines.length !== (q.nLines || 3) || lines.some(l => l.some(j => !pool.includes(j)))) {
@@ -14808,7 +14809,7 @@ const scrimRowKey = r => r.grp + '|' + r.six.slice().sort().join(',');
 function scrimSnap() {
   if (!SC.uni || !SC.res || !SC.res.sim) return null;
   const rk = {}; SC.uni.rows.forEach(r => { if (r.rank) rk[scrimRowKey(r)] = r.rank; });
-  return { rk, games: SC.res.sim.games.map(g => ({ us: scrimMean(g.us), win: scrimWin(g.us, g.them) })), lines: SC.res.state.map(st => st.lines.map(l => l.slice().sort().join(','))) };
+  return { rk, games: SC.res.sim.games.map(g => ({ us: scrimMean(g.us), win: scrimWin(g.us, g.them) })), lines: SC.res.state.map(st => st.lines.map(l => l.slice().sort().join(',')).sort()) };
 }
 function scrimDiff(a, b, label) {
   if (!a || !b) return null;
@@ -14824,6 +14825,7 @@ function scrimDiff(a, b, label) {
 function scrimMsg(t) { SC.msg = t; const m = document.getElementById('scMsg'); if (m) m.textContent = t; }
 async function scrimRunAll(label) {
   if (SC.busy) { SC.queued = label || true; return; }
+  const p0 = SC.plan; p0.lockedQ = {}; Object.keys(p0.lines || {}).forEach(k => { if (p0.lines[k].locked) p0.lockedQ[k] = true; });   // quarters set by hand stay put
   SC.busy = true; SC.msg = 'Rating every lineup on 400 shared simulated days…'; const before = scrimSnap(); renderScrim();
   await new Promise(r => setTimeout(r, 40));
   try {
