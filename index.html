@@ -14476,13 +14476,71 @@ function scrimRun() {
 }
 function scrimFmt(a) { return `<b>${num(scrimMean(a), 1)}</b> <span class="n-note">(${scrimQ(a, 0.1)}–${scrimQ(a, 0.9)})</span>`; }
 function scrimWin(us, them) { let w = 0; for (let i = 0; i < us.length; i++) w += us[i] > them[i] ? 1 : us[i] === them[i] ? 0.5 : 0; return us.length ? w / us.length : null; }
-// ---- One source of truth: every lineup simulated once; the plan is picked from the same numbers ----
+// ---- Exact expected goals for a lineup on a given day (no coin flips) ----
+// Walks every path a possession can take (who touches it, turnover / shot / feed, up to 3 touches,
+// dominoes along the way, possession type) and adds up the chance of a goal. Same rules as the
+// possession simulation, so the two agree; this one has no random noise and is ~50x faster.
+function scrimEV(M, six, world, ctx, calib) {
+  const ps = six.map(j => M.P[j]).filter(Boolean); if (!ps.length) return 0;
+  const useSum = ps.reduce((a, p) => a + p.use, 0), normal = M.meanUse * 6, share = ps.map(p => p.use / useSum);
+  const crowd = scrimOpt('usage') ? ps.map((p, i) => Math.max(0.88, Math.min(1.12, Math.pow(share[i] / (p.use / normal), -0.15)))) : ps.map(() => 1);
+  const steps = scrimOpt('steps'), roles = scrimOpt('roles');
+  const T = scrimOpt('types') ? SCRIM_TYPES.filter(x => !(scrimOpt('special') && x[0] === 'manup')) : [['half', 1, 0.248]], tw = T.reduce((a, x) => a + x[1], 0);
+  const tmul = T.map(x => [x[1] / tw, scrimOpt('types') ? x[2] / 0.248 : 1]);
+  const base = calib * (ctx.oppDef || 1), team = world.team || 0;
+  const g = x => scrimInv(scrimLogit(Math.min(0.95, Math.max(0.01, x))) + team);
+  // Shot value for shooter i fed by f (f = -1: unassisted), after dominoes (A1) or without (A0): computed once.
+  const n = ps.length, A1 = new Float64Array(n * (n + 1)), A0 = new Float64Array(n * (n + 1));
+  for (let i = 0; i < n; i++) for (let f = -1; f < n; f++) { if (f === i) continue;
+    const p = ps[i], mix = f >= 0 ? p.mix.map((m, k) => 0.5 * m + 0.5 * M.tCat[k]) : p.mix, fin = world.fin[p.j] || [0.4, 0.3, 0.15], rm = f >= 0 && roles ? (M.roleMult[ps[f].role + '>' + p.role] || 1) : 1;
+    let e1 = 0, e0 = 0;
+    for (let k = 0; k < 3; k++) { if (!mix[k]) continue; const b0 = fin[k] * crowd[i] * rm * base;
+      for (const [w, mul] of tmul) { if (steps) { e1 += mix[k] * w * g(b0 * (M.domYes || 1.12) * mul); e0 += mix[k] * w * g(b0 * (M.domNo || 0.86) * mul); } else { const v = mix[k] * w * g(b0 * mul); e1 += v; e0 += v; } } }
+    A1[i * (n + 1) + f + 1] = e1; A0[i * (n + 1) + f + 1] = e0; }
+  let ev = 0;
+  const visit = (i, fed, L, step, pr) => {
+    const p = ps[i], Ln = steps ? 1 - (1 - L) * (1 - p.dom) : 0, t = Math.min(1, p.pTo / crowd[i]);
+    const shotP = !steps || step === 2 ? Math.max(0, 1 - t) : Math.max(0, Math.min(p.pShot, 1 - t)), feedP = !steps || step === 2 ? 0 : Math.max(0, 1 - t - shotP);
+    if (shotP > 0) { const ix = i * (n + 1) + fed + 1; ev += pr * shotP * (Ln * A1[ix] + (1 - Ln) * A0[ix]); }
+    if (feedP > 0) { let os = 0; for (let k = 0; k < n; k++) if (k !== i) os += share[k]; for (let k = 0; k < n; k++) if (k !== i) visit(k, i, Ln, step + 1, pr * feedP * share[k] / os); }
+  };
+  ps.forEach((_, i) => visit(i, -1, 0, 0, share[i]));
+  return ev;
+}
+// ---- Every lineup on the same simulated days: expected goals, floor/ceiling, Optimal % ----
+// Each "day" draws every player's true finishing and that day's form once, shared by all lineups,
+// so lines are compared on identical days. Optimal % = share of days a lineup scores the most in its
+// group (counting shot luck over a full quarter); Top-3 % likewise.
 function scrimUniverseSync(M, calib) {
   const groups = scrimGroups(), ctxs = SC.plan.games.map(g => scrimCtx(g)), rows = []; let id = 0;
   const keep = SCRIM_SEED; scrimSeed(13579);
-  groups.forEach(g => g.attackOpts.forEach(att => scrimCombos(g.pool, 3).forEach(mids => { const six = att.concat(mids); rows.push(Object.assign({ id: id++, grp: g.key, grpName: g.name, att, mids, six }, scrimLineStats(M, calib, ctxs[g.gi], six, 30))); })));
+  groups.forEach(g => g.attackOpts.forEach(att => scrimCombos(g.pool, 3).forEach(mids => { rows.push({ id: id++, grp: g.key, grpName: g.name, gi: g.gi, att, mids, six: att.concat(mids), s1: 0, s2: 0, opt: 0, top3: 0 }); })));
+  // descriptive stats (who gets the ball, turnovers, looks...) from a short possession sim
+  rows.forEach(r => Object.assign(r, scrimLineDesc(M, calib, ctxs[r.gi], r.six)));
+  const everyone = [...new Set(rows.flatMap(r => r.six))], D = 400;
+  const byG = {}; rows.forEach(r => { (byG[r.grp] = byG[r.grp] || []).push(r); });
+  for (let d = 0; d < D; d++) {
+    const w = scrimWorld(M, everyone);
+    Object.values(byG).forEach(R => {
+      let best = null, bestV = -1; const vals = [];
+      R.forEach(r => { const ev = scrimEV(M, r.six, w, ctxs[r.gi], calib); r.s1 += ev; r.s2 += ev * ev; const P = ctxs[r.gi].poss, real = P * ev + Math.sqrt(Math.max(0, P * ev * (1 - ev))) * scrimNorm(); vals.push([real, r]); if (!r.noneHint && real > bestV) { bestV = real; best = r; } });
+      if (best) best.opt++;
+      vals.filter(v => !v[1].noneHint).sort((a, b) => b[0] - a[0]).slice(0, 3).forEach(v => { v[1].top3++; });
+    });
+  }
   SCRIM_SEED = keep;
-  return { rows, groups };
+  rows.forEach(r => { const P = ctxs[r.gi].poss, m = r.s1 / D, vb = Math.max(0, r.s2 / D - m * m);
+    r.gpp = m; r.e15 = P * m; r.sd = Math.sqrt(P * m * (1 - m) + P * P * vb + m * m * P); r.p10 = Math.max(0, Math.round(r.e15 - 1.28 * r.sd)); r.p90 = Math.round(r.e15 + 1.28 * r.sd);
+    r.shift = 1 - Math.pow(1 - m, P / 3); r.opt /= D; r.top3 /= D; });
+  return { rows, groups, days: D };
+}
+// Who gets the ball, where the looks come from (descriptive; not used for ranking).
+function scrimLineDesc(M, calib, ctx, six) {
+  const st = scrimStat(); for (let r = 0; r < 12; r++) scrimPossessions(M, six, 25, scrimWorld(M, six), ctx, calib, undefined, st);
+  const ps = six.map(j => M.P[j]).filter(Boolean), us = ps.reduce((a, p) => a + p.use, 0); let cw = 0, cs = 0;
+  ps.forEach(a => ps.forEach(b => { if (a === b) return; const w2 = (a.use / us) * (b.use / us); cw += w2 * (M.roleMult[a.role + '>' + b.role] || 1); cs += w2; }));
+  const noneHint = ps.some(p => p.none);
+  return { to: st.to / Math.max(1, st.poss), gs: st.gs / Math.max(1, st.shots), dom: st.dom / Math.max(1, st.poss), fed: st.fed / Math.max(1, st.shots), chem: cs ? cw / cs : 1, touch: st.touch, goalsBy: st.goalsBy, noneHint };
 }
 // Lineup Score (0-100, 50 = average line in its group): the simulation, blended with your Impact weights.
 function scrimScore() {
