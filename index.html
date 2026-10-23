@@ -270,6 +270,7 @@
   .sc-best { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 8px; }
   .sc-inc { background: rgba(12,163,12,.16) !important; border-color: var(--good) !important; } .sc-exc { background: rgba(208,59,59,.14) !important; border-color: var(--critical) !important; text-decoration: line-through; }
   .sc-conf { font-size: 11px; font-weight: 700; padding: 1px 6px; border-radius: 8px; } .sc-conf.High { background: rgba(12,163,12,.16); } .sc-conf.Medium { background: rgba(240,180,0,.2); } .sc-conf.Low { background: rgba(208,59,59,.16); }
+  .sc-tab td:nth-child(-n+2) { white-space: nowrap; } .sc-tab th { white-space: normal; }
   .pill.sm { padding: 2px 8px; font-size: 12px; margin: 2px 2px 0 0; } .sc-lim { width: 48px; } .sc-outrow td { opacity: .5; } .sc-pool td { vertical-align: top; } .sc-boost .dp-w { min-width: 120px; } .sc-det2 { display: flex; flex-wrap: wrap; gap: 10px 18px; align-items: flex-end; } .sc-det2 .dp-w { min-width: 180px; }
   .sc-changed { border-left: 4px solid var(--accent, #2b6cb0); } .sc-plans { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 8px; } .sc-plan { display: flex; flex-direction: column; gap: 3px; border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; background: var(--card); } .sc-plan.on { border-color: var(--good); } .sc-tag { color: var(--good); font-weight: 600; font-size: 12px; }
   .sc-up { color: var(--good); } .sc-dn { color: var(--bad, #c0392b); } .sc-diff { background: rgba(240, 180, 0, .22); border-radius: 4px; padding: 0 2px; } .sc-wrapcell { white-space: normal; min-width: 150px; } .sc-method details { border-bottom: 1px solid var(--line); padding: 6px 0; } .sc-method summary { cursor: pointer; } .sc-method p { margin: 6px 0 2px; }
@@ -14603,7 +14604,7 @@ async function scrimRunAll(label) {
     const rows = new Array(n), Dn = agg.D || D, byKey = {};
     for (let r = 0; r < n; r++) {
       const [gi, ai, mi] = U.rows[r], att = U.AT[ai].map(i => S.players[i]), mids = U.MT[mi].map(i => S.players[i]), P = ctxs[gi].poss, m = agg.s1[r] / Dn, vb = Math.max(0, agg.s2[r] / Dn - m * m);
-      const pmf = Array.from({ length: 16 }, (_, k) => agg.pm[r * 16 + k] / Dn), qt = f => { let c = 0; for (let k = 0; k < 16; k++) { c += pmf[k]; if (c >= f) return k; } return 15; };
+      const pmf = Array.from({ length: 16 }, (_, k) => agg.pm[r * 16 + k] / Dn), qt = f => { let c = 0; for (let k = 0; k < 16; k++) { if (c + pmf[k] >= f) return Math.max(0, k - 0.5 + (f - c) / Math.max(1e-9, pmf[k])); c += pmf[k]; } return 15; };   // smoothed, so lineups can be told apart
       const e15 = P * m, sd = Math.sqrt(e15 + P * P * vb), d = desc[r], ts = d.t.reduce((a, b) => a + b, 0) || 1, gs = d.g.reduce((a, b) => a + b, 0) || 1, six = att.concat(mids);
       const row = { id: r, gi, ai, mi, att, mids, six, gpp: m, e15, sd, p10: qt(0.1), p50: qt(0.5), p90: qt(0.9), boom: pmf.slice(SCRIM_BOOM).reduce((a, b) => a + b, 0), bust: pmf[0] + (SCRIM_BUST >= 1 ? pmf[1] : 0),
         opt: agg.opt[r] / Dn, to: d.to, gsr: d.shot ? d.gs / d.shot : 0, dom: d.shot ? d.dom / d.shot : 0, fed: d.shot ? d.fed / d.shot : 0,
@@ -14672,13 +14673,13 @@ const SCRIM_X = () => (SC.ex = SC.ex || { gi: 0, view: 'six', inc: [], exc: [], 
 const SCRIM_COLS4 = {
   six: [['sub', '#', -1, v => '#' + v, 'Rank among the lineups shown (all of them, or the ones that match your search)'], ['rank', 'Overall', -1, (v, r) => `#${v} <span class="n-note">of ${r.of.toLocaleString()}</span>`, 'Rank by expected goals among every lineup for this game'],
     ['e15', 'xG / 15 min', 1, v => num(v, 2), 'Expected goals if this six played a full 15-minute quarter'], ['gpp', 'xG / poss.', 1, v => num(v, 3), 'Expected goals per possession'],
-    ['p50', 'Median', 1, v => String(v), 'The middle outcome for 15 minutes'], ['p10', 'Floor', 1, v => String(v), 'A bad day (10th percentile) for 15 minutes'], ['p90', 'Ceiling', 1, v => String(v), 'A good day (90th percentile) for 15 minutes'],
+    ['p50', 'Median', 1, v => num(v, 1), 'The middle outcome for 15 minutes'], ['p10', 'Floor', 1, v => num(v, 1), 'A bad day (10th percentile) for 15 minutes'], ['p90', 'Ceiling', 1, v => num(v, 1), 'A good day (90th percentile) for 15 minutes'],
     ['boom', `Boom % (${SCRIM_BOOM}+)`, 1, v => pct(v), `Chance of ${SCRIM_BOOM}+ goals in 15 minutes`], ['bust', 'Bust % (0–1)', -1, v => pct(v), '0 or 1 goals in 15 minutes'],
     ['opt', 'Optimal %', 1, v => pct(v), 'Share of simulated days this six was in that day’s best plan'], ['to', 'TO / poss.', -1, v => pct(v), 'Turnovers per possession'],
     ['gsr', 'Gold+Silver', 1, v => pct(v), 'Share of its shots that are Gold or Silver looks'], ['dom', 'After dominoes', 1, v => pct(v), 'Share of its shots that come after dominoes'], ['fed', 'Off a feed', 1, v => pct(v), 'Share of its shots that come off a feed'],
     ['imp', 'Impact', 1, v => num(v, 1), 'Average Impact Rating of the six (Depth Chart weights)'], ['conf', 'Data', 1, (v, r) => `<span class="sc-conf ${r.confL}">${r.confL}</span> <span class="n-note">${v}</span>`, 'Fewest logged touches of anyone in the six'], ['used', 'In plan', 1, v => (v ? String(v) : ''), 'How many lines in the plan use this six']],
   grp: [['sub', '#', -1, v => '#' + v, 'Rank among the groups shown'], ['e15', 'Best xG / 15', 1, v => num(v, 2), 'Expected goals with its best partners'], ['avg', 'Avg xG / 15', 1, v => num(v, 2), 'Average over every partner group'],
-    ['opt', 'Optimal %', 1, v => pct(v), 'Share of simulated days this group was in that day’s best plan'], ['p10', 'Floor', 1, v => String(v), 'Bad day with its best partners'], ['p90', 'Ceiling', 1, v => String(v), 'Good day with its best partners'],
+    ['opt', 'Optimal %', 1, v => pct(v), 'Share of simulated days this group was in that day’s best plan'], ['p10', 'Floor', 1, v => num(v, 1), 'Bad day with its best partners'], ['p90', 'Ceiling', 1, v => num(v, 1), 'Good day with its best partners'],
     ['to', 'TO / poss.', -1, v => pct(v), 'Turnovers per possession with its best partners'], ['conf', 'Data', 1, (v, r) => `<span class="sc-conf ${r.confL}">${r.confL}</span> <span class="n-note">${v}</span>`, 'Fewest logged touches in the group'], ['used', 'In plan', 1, v => (v ? String(v) : ''), 'Lines in the plan with this group']],
 };
 const scrimNm = j => escapeHtml(scrimName(j));
@@ -14697,14 +14698,14 @@ function scrimExRows() {
       p10: best.p10, p90: best.p90, to: best.to, conf, confL: conf >= 60 ? 'High' : conf >= 30 ? 'Medium' : 'Low', used: R.reduce((a, r) => a + r.used, 0), all: R }; });
 }
 function scrimExplorerHtml() {
-  const X = SCRIM_X(), U = SC.uni, p = SC.plan, view = X.view, cols = view === 'six' ? SCRIM_COLS4.six : SCRIM_COLS4.grp;
+  const X = SCRIM_X(), U = SC.uni, p = SC.plan, view = X.view, cols = (view === 'six' ? SCRIM_COLS4.six : SCRIM_COLS4.grp).filter(c => c[0] !== 'sub' || X.inc.length || X.exc.length || view !== 'six');
   let rows = scrimExRows();
   const sixOf = r => (view === 'six' ? r.six : r.grp);
   rows = rows.filter(r => X.inc.every(j => sixOf(r).includes(j)) && !X.exc.some(j => sixOf(r).includes(j)) && (!X.hideLow || r.confL !== 'Low') && (!X.used || r.used));
   rows.slice().sort((a, b) => b.e15 - a.e15).forEach((r, i) => { r.sub = i + 1; });
   const srt = X.sort.filter(s => cols.some(c => c[0] === s.k)); if (!srt.length) srt.push({ k: 'e15', d: -1 });
   rows.sort((a, b) => { for (const s of srt) { const d = (a[s.k] - b[s.k]) * s.d; if (Math.abs(d) > 1e-12) return d > 0 ? 1 : -1; } return 0; });
-  const shown = rows.slice(0, X.show), people = [...new Set(U.pools.att.concat(U.pools.mid))].sort((a, b) => Number(a) - Number(b));
+  const shown = rows.slice(0, X.show), people = [...new Set(U.pools.att.concat(U.pools.mid))].sort((a, b) => scrimName(a).localeCompare(scrimName(b)));
   const col = Object.fromEntries(cols.map(c => [c[0], c]));
   const label = view === 'six' ? 'Lineups (attack + middies)' : view === 'mid' ? 'Middie lines' : 'Attack groups';
   return `<div class="panel"><p class="panel-title">Lineup explorer</p>
@@ -14729,7 +14730,7 @@ function scrimWhyV4(r) {
   const z = { to: better('to', false), gsr: better('gsr', true), dom: better('dom', true), fed: better('fed', true) }, words = { to: 'ball security', gsr: 'look quality', dom: 'dominoes', fed: 'scoring off the catch' };
   const best = Object.keys(z).sort((a, b) => z[b] - z[a])[0], worst = Object.keys(z).sort((a, b) => z[a] - z[b])[0];
   const roles = r.six.map(j => `${scrimNm(j)} ${M.P[j].role}`).join(', '), thin = r.six.filter(j => M.P[j].touch < 30).map(j => `${scrimNm(j)} (${M.P[j].touch} touches)`);
-  return [`<b>${num(r.e15, 2)} expected goals in 15 minutes</b>: #${r.rank} of ${r.of.toLocaleString()} lineups for this game (average ${num(avg, 2)}, best ${num(top.e15, 2)}). Bad day ${r.p10}, middle ${r.p50}, good day ${r.p90}; ${pct(r.boom)} chance of ${SCRIM_BOOM}+, ${pct(r.bust)} chance of 0–1.`,
+  return [`<b>${num(r.e15, 2)} expected goals in 15 minutes</b>: #${r.rank} of ${r.of.toLocaleString()} lineups for this game (average ${num(avg, 2)}, best ${num(top.e15, 2)}). Bad day ${num(r.p10, 1)}, middle ${num(r.p50, 1)}, good day ${num(r.p90, 1)}; ${pct(r.boom)} chance of ${SCRIM_BOOM}+, ${pct(r.bust)} chance of 0–1.`,
     `<b>Optimal ${pct(r.opt)}:</b> on ${Math.round(r.opt * SC.uni.D)} of ${SC.uni.D} simulated days (each with its own form for every player) this six was part of that day’s best plan. ${r.opt >= 0.3 ? 'It holds up whoever is hot.' : r.opt >= 0.08 ? 'It wins the spot when a couple of its guys are on.' : 'It rarely makes the best plan; other groups use these players better.'}`,
     `The ball goes most to ${by(r.touch).slice(0, 2).map(j => `${nm(j)} (${pct(r.touch[j])})`).join(' and ')}; goals come mostly from ${by(r.goalsBy).slice(0, 3).map(j => `${nm(j)} ${pct(r.goalsBy[j])}`).join(', ')}.`,
     `Turnovers on ${pct(r.to)} of possessions (better than ${z.to}% of lineups); ${pct(r.gsr)} of shots are Gold/Silver (better than ${z.gsr}%); ${pct(r.dom)} come after dominoes; ${pct(r.fed)} off a feed.`,
