@@ -13965,7 +13965,8 @@ function saPlan(q) {
 //   good/bad days, crowding, role chemistry, possession type, practice-to-game calibration and the
 //   opponent's defense. Their possessions are simulated against our defense and goalie the same way.
 let SCRIM_SEED = 0x2545F491;
-const SCRIM_RNG = () => { let s = SCRIM_SEED; s ^= s << 13; s ^= s >>> 17; s ^= s << 5; SCRIM_SEED = s; return ((s >>> 0) % 1e9) / 1e9; };
+// Uniform in [0,1): the full 32-bit state over 2^32 (the old '% 1e9' favored low numbers ~30% of the range).
+const SCRIM_RNG = () => { let s = SCRIM_SEED; s ^= s << 13; s ^= s >>> 17; s ^= s << 5; SCRIM_SEED = s; return (s >>> 0) / 4294967296; };
 const scrimSeed = n => { SCRIM_SEED = (n >>> 0) || 1; };
 const SCRIM_OPTS = [
   ['steps', 'Step-by-step possessions (dominoes lift the look, feeds lead to catch shots)', true],
