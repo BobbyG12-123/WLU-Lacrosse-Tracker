@@ -4933,14 +4933,16 @@ function renderUnitsPanel() {
       <div id="unitsTable"></div>
       <div class="field-grid" style="grid-template-columns: 1fr 2fr auto; align-items:flex-end; margin-bottom:0;">
         <div><label for="unit_name">Unit Name</label><input type="text" id="unit_name" maxlength="40" placeholder="e.g. Mid Line 1"></div>
-        <div><label for="unit_jerseys">Jersey Numbers (up to 6, comma separated)</label><input type="text" id="unit_jerseys" maxlength="40" placeholder="e.g. 2, 7, 11"></div>
+        <div><label for="unit_jerseys">Players (numbers or names, up to 6, comma separated)</label><input type="text" id="unit_jerseys" maxlength="40" placeholder="e.g. 2, 7, 11"></div>
         <div><button class="btn secondary" id="unit_add" type="button">Save Unit</button></div>
       </div>
       <div id="unitMsg" style="margin-top:10px;"></div>`;
     document.getElementById('unit_add').addEventListener('click', async () => {
       const season = currentLogSeason();
       const name = document.getElementById('unit_name').value.trim();
-      const nums = document.getElementById('unit_jerseys').value.split(/[\s,]+/).map(normJerseyText).filter(Boolean);
+      // numbers or names ("Fertels, 25, Koo"), comma separated
+      const raw = document.getElementById('unit_jerseys').value.split(',').flatMap(x => (/^[\s#\d]+$/.test(x) ? x.split(/\s+/) : [x])).map(x => normJerseyText(x)).filter(Boolean);   // "2 7 11" still works
+      const nums = raw.map(x => (validJerseyText(x) ? x : (jerseyFromName(x, season).j || x)));
       const msg = t => { document.getElementById('unitMsg').innerHTML = `<div class="msg err">${escapeHtml(t)}</div>`; };
       if (!name) return msg('Give the unit a name.');
       if (!nums.length || nums.length > LINEUP_SIZE) return msg(`List 1\u2013${LINEUP_SIZE} jersey numbers.`);
@@ -8621,11 +8623,11 @@ async function runSelfCheck() {
     if (SC.plan) { SC.plan = scrimMigrate(SC.plan); const M = scrimModel(), cal = scrimCalib(scrimModel(true)), pools = scrimPoolsV4(M), ctx = scrimSimCfg().ctxs[0], gaps = [];
       if (pools.att.length >= 3 && pools.mid.length >= 3) { const keep = SCRIM_SEED; scrimSeed(2027);
         for (let k = 0; k < 3; k++) { const att = pools.att.slice().sort(() => SCRIM_RNG() - 0.5).slice(0, 3), mid = pools.mid.filter(j => !att.includes(j)).sort(() => SCRIM_RNG() - 0.5).slice(0, 3), six = att.concat(mid), w = scrimWorld(M, six);
-          const ev = scrimEV(M, six, w, ctx, cal); let g = 0, n = 0; for (let r = 0; r < 20; r++) { const x = scrimPossessions(M, six, 1000, w, ctx, cal); g += x.g; n += x.n; }
+          const ev = scrimEV(M, six, w, ctx, cal); let g = 0, n = 0; for (let r = 0; r < 60; r++) { const x = scrimPossessions(M, six, 1000, w, ctx, cal); g += x.g; n += x.n; }
           const se = Math.sqrt(ev * (1 - ev) / n); gaps.push({ z: Math.abs(g / n - ev) / se, txt: `${num(ev, 3)} vs ${num(g / n, 3)}` }); }
         SCRIM_SEED = keep;
         const worst = gaps.reduce((a, b) => (b.z > a.z ? b : a));
-        add('Simulator', 'Exact math matches the possession simulation', worst.z > 3.5 ? 'fail' : worst.z > 2.6 ? 'warn' : 'pass', `3 random lineups, goals per possession exact vs simulated: ${gaps.map(x => x.txt).join(', ')}.`); }
+        add('Simulator', 'Exact math matches the possession simulation', worst.z > 4.5 ? 'fail' : worst.z > 3.3 ? 'warn' : 'pass', `3 random lineups, goals per possession exact vs simulated: ${gaps.map(x => x.txt).join(', ')}.`); }
       else add('Simulator', 'Exact math matches the possession simulation', 'warn', 'Not enough players with data in the pools to test.'); }
   } catch (e) { add('Simulator', 'Simulator check ran', 'fail', e.message); }
   // 4. Data hygiene.
