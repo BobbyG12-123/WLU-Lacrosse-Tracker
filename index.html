@@ -14230,7 +14230,7 @@ function scrimSimCore(M, calib, state, N, cfg) {
       let possUs = ctx.poss * f.pace, possThem = ctx.poss * f.pace;
       if (scrimOpt('fo')) { if (flow) f.fo = 0.5 * f.fo + scrimNorm() * 0.04; const edge = ((wl.fo || 0.5) - (ctx.fo || 0.5)) * 0.6 + f.fo; possUs *= 1 + edge; possThem *= 1 - edge; }
       if (flow && qi % 4 === 3) { const d = tot[gi].us - tot[gi].them; if (d <= -3) { possUs *= 1.08; possThem *= 0.95; } else if (d >= 3) { possUs *= 0.95; possThem *= 1.08; } }
-      const draw = m => { if (!scrimOpt('varposs')) return Math.round(m); const lam = m * Math.exp(scrimNorm() * 0.15 - 0.01125);   // -σ²/2 keeps the average at m let k = 0, L = Math.exp(-lam), pr = 1; do { k++; pr *= SCRIM_RNG(); } while (pr > L); return k - 1; };
+      const draw = m => { if (!scrimOpt('varposs')) return Math.round(m); const lam = m * Math.exp(scrimNorm() * 0.15 - 0.01125); /* -σ²/2 keeps the average at m */ let k = 0, L = Math.exp(-lam), pr = 1; do { k++; pr *= SCRIM_RNG(); } while (pr > L); return k - 1; };
       const nUs = draw(possUs), nThem = draw(possThem);
       let qg = 0;
       const tm = (st.mins || []).reduce((a, b) => a + b, 0), shares = st.lines.map((_, li) => (tm ? st.mins[li] / tm : 1 / st.lines.length));
