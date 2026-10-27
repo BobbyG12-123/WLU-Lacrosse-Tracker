@@ -13913,7 +13913,7 @@ const SA_CATALOG = [
   { id: 'gb', label: 'Ground balls', words: 'ground balls, ground ball, gbs, gb, scrappy', page: 'eff', fmt: SA_NUM(0), f: d => saMap(d, p => p.gb ? { v: p.gb, n: p.gb } : null) },
   { id: 'ct', label: 'Caused turnovers', words: 'caused turnovers, takeaways, takeaway, steals, forced turnovers, causes turnovers, causes the most turnovers, cause turnovers, causing turnovers, forces turnovers, forcing turnovers, causes, forces', page: 'eff', fmt: SA_NUM(0), f: d => saMap(d, p => p.ct ? { v: p.ct, n: p.ct } : null) },
   { off: true, id: 'dom', label: 'Dominoes started', words: 'dominoes, starts the dominoes, initiator, initiates, breaks down, dodger, dodgers, dodging, draws slides', page: 'dominoes', fmt: SA_NUM(0), f: d => saMap(d, p => p.dominoes ? { v: p.dominoes, n: p.dominoes } : null) },
-  { off: true, id: 'advCreated', label: 'Screen advantages created', words: 'screen advantages, advantages created, screens, screen, screener, screeners, picks, pick setter', page: 'picks', fmt: SA_NUM(0), f: d => { const s = saScreens(d); const m = {}; Object.keys(s.set).forEach(j => { m[j] = { v: s.adv[j] || 0, n: s.set[j], extra: `${s.adv[j] || 0} of ${s.set[j]} screens` }; }); return m; } },
+  { off: true, id: 'advCreated', label: 'Screen advantages created', not: 'defender, defense, defensive, breakdown, breakdowns', words: 'screen advantages, advantages created, screens, screen, screener, screeners, picks, pick setter', page: 'picks', fmt: SA_NUM(0), f: d => { const s = saScreens(d); const m = {}; Object.keys(s.set).forEach(j => { m[j] = { v: s.adv[j] || 0, n: s.set[j], extra: `${s.adv[j] || 0} of ${s.set[j]} screens` }; }); return m; } },
   { off: true, id: 'gold', label: 'Shooting % on Gold shots', words: 'gold', min: 8, page: 'quality', fmt: SA_PCT, f: d => saTier(d, '1-Gold', true) },
   { off: true, id: 'silver', label: 'Shooting % on Silver shots', words: 'silver', min: 8, page: 'quality', fmt: SA_PCT, f: d => saTier(d, '2-Silver', true) },
   { off: true, id: 'bronze', label: 'Shooting % on Bronze shots', words: 'bronze', min: 8, page: 'quality', fmt: SA_PCT, f: d => saTier(d, '3-Bronze', true) },
@@ -13996,7 +13996,7 @@ function saPlan(q) {
   // A concept steps aside when the question has one of its 'not' words ("off-ball breakdowns" is defense, not off-ball offense).
   const concept = SA_CONCEPTS.map(c => ({ c, s: c.not && score(c.not) ? 0 : score(c.words) })).sort((a, b) => b.s - a.s)[0];
   const tier = (t.match(/\b(gold|silver|bronze)\b/) || [])[1];
-  const metric = SA_CATALOG.map(c => ({ c, s: score(c.words) + (tier && c.id === tier ? 5 : 0) })).sort((a, b) => b.s - a.s)[0];
+  const metric = SA_CATALOG.map(c => ({ c, s: c.not && score(c.not) ? 0 : score(c.words) + (tier && c.id === tier ? 5 : 0) })).sort((a, b) => b.s - a.s)[0];
   const wantCount = /\bmost\b|\bhow many\b/.test(t);
   let pick = null;
   if (concept.s && concept.s >= metric.s) pick = { kind: 'concept', c: concept.c };
