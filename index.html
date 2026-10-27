@@ -4563,8 +4563,9 @@ function jerseyFromName(text, season) {
   const t = String(text || '').trim().toLowerCase().replace(/\s+/g, ' ');
   if (t.length < 2) return { why: 'Type a number or at least 2 letters of a name.' };
   const R = (ROSTERS[season] || []).filter(r => r.jersey && r.name), low = r => r.name.trim().toLowerCase(), last = r => lastNameOf(r.name).toLowerCase();
-  const words = t.split(' '), hit = R.filter(r => low(r).startsWith(t) || last(r).startsWith(t) || (words.length > 1 && low(r).split(' ')[0].startsWith(words[0]) && last(r).startsWith(words.slice(1).join(' '))));
-  const exact = hit.filter(r => last(r) === t || low(r) === t), use = exact.length === 1 ? exact : hit;
+  // matches from the start of any word ("de cain", "cain", "nicholas d"), or first-name start + last-name start ("luke c")
+  const words = t.split(' '), hit = R.filter(r => (' ' + low(r)).includes(' ' + t) || (words.length > 1 && low(r).split(' ')[0].startsWith(words[0]) && last(r).startsWith(words.slice(1).join(' '))));
+  const exact = hit.filter(r => last(r) === t || low(r) === t || low(r).endsWith(' ' + t)), use = exact.length === 1 ? exact : hit;
   if (use.length === 1) return { j: use[0].jersey };
   if (!use.length) return { why: `No ${season} player matches “${String(text).trim()}”.` };
   return { why: `${use.length} players match (${use.slice(0, 3).map(r => '#' + r.jersey + ' ' + lastNameOf(r.name)).join(', ')}): type more of the name or the number.` };
