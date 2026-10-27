@@ -2181,7 +2181,7 @@
           <div class="grade-pills" id="cpSeasonPills"></div>
         </div>
       </div>
-      <div class="field-grid" style="grid-template-columns: repeat(3, minmax(160px,1fr));">
+      <div class="field-grid" style="grid-template-columns: repeat(auto-fit, minmax(160px,1fr));">
         <div><label for="cp_player1">Player 1</label><select id="cp_player1"></select></div>
         <div><label for="cp_player2">Player 2</label><select id="cp_player2"></select></div>
         <div><label for="cp_player3">Player 3 (optional)</label><select id="cp_player3"></select></div>
@@ -5741,7 +5741,7 @@ function renderPlayerDeepDive() {
   const hover = heatSeason !== 'All Seasons';
   const tip = (g, n) => hover && n > 0 ? ` title="${g}/${n}"` : '';
   rows.forEach(r => {
-    html += `<tr><td>${r.jersey}</td><td>${r.name}</td><td${tip(r.goals, r.shots)}>${r.shots}</td>` +
+    html += `<tr><td>${escapeHtml(r.jersey)}</td><td>${escapeHtml(r.name)}</td><td${tip(r.goals, r.shots)}>${r.shots}</td>` +
       r.cols.map((c, i) => {
         const small = c.n > 0 && c.n < 5;
         const scale = colScales[i];
@@ -5837,7 +5837,7 @@ function renderShotQualityShare() {
     + shareCols.map((c,i) => `<th${i===0 ? ' style="border-left:2px solid var(--line);"' : ''}>${c.label}</th>`).join('') + '</tr>';
   html += '</thead><tbody>';
   rows.forEach(r => {
-    html += `<tr><td>${r.jersey}</td><td>${r.name}</td><td>${r.shots}</td>` +
+    html += `<tr><td>${escapeHtml(r.jersey)}</td><td>${escapeHtml(r.name)}</td><td>${r.shots}</td>` +
       cols.map((c, i) => {
         const v = r[c.key];
         const scale = colScales[i];
@@ -6290,7 +6290,7 @@ function renderGoalieSummary() {
     let html = '<table class="shotlog"><thead><tr><th>Jersey</th><th>Name</th><th>Faced</th><th>Saves</th><th>Goals Allowed</th><th>Save %</th><th title="Shots with him in net that missed the cage (pipes included). Reference only.">Missed Cage</th><th title="Shots a defender blocked. Reference only.">Blocked</th></tr></thead><tbody>';
     rows.forEach(r => {
       const m = mb[r.jersey] || {};
-      html += `<tr><td>${r.jersey}</td><td>${r.name}</td><td>${r.faced}</td><td>${r.saves}</td><td>${r.goalsAllowed}</td><td>${pct(r.savePct)}</td><td>${m.missed || 0}</td><td>${m.blocked || 0}</td></tr>`;
+      html += `<tr><td>${escapeHtml(r.jersey)}</td><td>${escapeHtml(r.name)}</td><td>${r.faced}</td><td>${r.saves}</td><td>${r.goalsAllowed}</td><td>${pct(r.savePct)}</td><td>${m.missed || 0}</td><td>${m.blocked || 0}</td></tr>`;
     });
     html += '</tbody></table>';
     wrap.innerHTML = html;
@@ -6521,7 +6521,7 @@ function renderDevelopmentFlags(shots, model) {
   if (!result.cards.length) { wrap.innerHTML = '<p class="sans" style="color:var(--muted); font-size:13px;">No player has 20+ ' + EFF_SEASON + ' shots yet.</p>'; return; }
   wrap.innerHTML = result.cards.map(c => `
     <div class="flag-card ${c.severity}">
-      <div class="name" style="font-weight:700; color:var(--navy-3);">#${c.jersey} ${c.name} &mdash; ${c.headline}</div>
+      <div class="name" style="font-weight:700; color:var(--navy-3);">#${escapeHtml(c.jersey)} ${escapeHtml(c.name)} &mdash; ${escapeHtml(c.headline)}</div>
       <div class="why">${c.why}</div>
     </div>`).join('');
 }
@@ -8721,12 +8721,16 @@ function renderReports() {
   }
   // Counts compare against the per-period average.
   const perPeriod = v => prior.length ? v / prior.length : null;
+  // Counts (shots, goals) are flagged when they're outside the range of every one of the previous periods.
+  const priorCounts = {}; if (bm) prior.forEach(p => { const m = rptTeamMetrics(rptSlice(rptMode, [p.key]), season); Object.keys(m).forEach(k => { if (m[k] && m[k].kind === 'count') (priorCounts[k] = priorCounts[k] || []).push(m[k].v); }); });
   const summaryRows = RPT_SUMMARY.map(([k, label]) => {
     const c = cm[k], b = bm ? bm[k] : null;
     const bv = !b ? null : (b.kind === 'count' ? perPeriod(b.v) : b.v);
-    const flag = b ? rptFlag(c, b) : null;
+    const pc = priorCounts[k] || [];
+    const flag = !b ? null : c.kind === 'count' ? (pc.length >= 3 && c.v !== null ? (c.v > Math.max(...pc) ? 'up' : c.v < Math.min(...pc) ? 'down' : null) : null) : rptFlag(c, b);
+    const few = !flag && ((c.kind === 'rate' && c.den < RPT_MIN_N) || (c.kind === 'mean' && c.n < RPT_MIN_N));
     const good = flag && ((flag === 'up') !== !!RPT_LOWER_BETTER[k]);
-    return `<tr><td>${label}</td><td><b>${rptFmt(k, c.v)}</b>${c.kind === 'rate' && c.den ? ` <span class="n-note">(${c.num}/${c.den})</span>` : ''}</td><td>${b && b.kind === 'count' ? (bv === null ? '—' : num(bv, 1)) : rptFmt(k, bv)}</td><td>${flag ? `<b style="color:${good ? 'var(--good)' : 'var(--critical)'};">${flag === 'up' ? '▲ up' : '▼ down'}</b>` : '<span class="n-note">normal range</span>'}</td></tr>`;
+    return `<tr><td>${label}</td><td><b>${rptFmt(k, c.v)}</b>${c.kind === 'rate' && c.den ? ` <span class="n-note">(${c.num}/${c.den})</span>` : ''}</td><td>${b && b.kind === 'count' ? (bv === null ? '—' : num(bv, 1)) : rptFmt(k, bv)}</td><td>${flag ? `<b style="color:${good ? 'var(--good)' : 'var(--critical)'};">${flag === 'up' ? '▲ up' : '▼ down'}</b>` : `<span class="n-note">${few ? 'too few to tell' : 'normal range'}</span>`}</td></tr>`;
   }).join('');
   // Standouts.
   const { fin, gk, cr } = rptStandouts(cur, season);
@@ -12331,7 +12335,7 @@ function renderFaceoffSummary() {
   const rows = computeFaceoffSummary(faceoffsForSeason(faceoffSeason));
   if (!rows.length) { wrap.innerHTML = '<p class="sans" style="color:var(--muted); font-size:13px;">No faceoffs logged yet.</p>'; return; }
   let html = '<table class="shotlog"><thead><tr><th>Jersey</th><th>Name</th><th>Taken</th><th>Won</th><th>Win %</th></tr></thead><tbody>';
-  rows.forEach(r => { html += `<tr><td>${r.jersey}</td><td>${r.name}</td><td>${r.taken}</td><td>${r.won}</td><td>${pct(r.winPct)}</td></tr>`; });
+  rows.forEach(r => { html += `<tr><td>${escapeHtml(r.jersey)}</td><td>${escapeHtml(r.name)}</td><td>${r.taken}</td><td>${r.won}</td><td>${pct(r.winPct)}</td></tr>`; });
   html += '</tbody></table>';
   wrap.innerHTML = html;
 }
@@ -12364,7 +12368,7 @@ function renderFaceoffTable() {
   else if (pf) rows = rows.filter(r=>r.playerJersey===pf);
   if (cf) rows = rows.filter(r=>r.context===cf);
   rows = rows.slice(0,300);
-  bodyEl.innerHTML = '';
+  bodyEl.innerHTML = rows.length ? '' : `<tr><td colspan="8" class="n-note">${list.length ? 'No faceoffs match these filters.' : 'No faceoffs logged yet. Log them on Log Shot → Faceoff.'}</td></tr>`;
   rows.forEach(r => {
     const tr = document.createElement('tr');
     const season = seasonForDate(r.date);
@@ -12417,7 +12421,7 @@ function renderFaceoffHeadToHead() {
   });
   let html = '<table class="shotlog"><thead><tr><th>Matchup</th><th>Record</th></tr></thead><tbody>';
   Object.values(pairs).sort((x,y)=>(y.aWins+y.bWins)-(x.aWins+x.bWins)).forEach(r => {
-    html += `<tr><td>#${r.a} ${nameFor(r.a)} vs #${r.b} ${nameFor(r.b)}</td><td>${r.aWins}-${r.bWins}</td></tr>`;
+    html += `<tr><td>#${escapeHtml(r.a)} ${escapeHtml(nameFor(r.a))} vs #${escapeHtml(r.b)} ${escapeHtml(nameFor(r.b))}</td><td>${r.aWins}-${r.bWins}</td></tr>`;
   });
   html += '</tbody></table>';
   wrap.innerHTML = html;
@@ -12720,7 +12724,7 @@ function renderOpponentReport() {
   <div class="panel">
     <p class="panel-title">By Player</p>
     <div class="table-wrap"><table class="shotlog"><thead><tr><th>Jersey</th><th>Name</th><th>Shots</th><th>Goals</th><th>Shot %</th><th>Gold %</th><th>Silver %</th><th>Bronze %</th></tr></thead><tbody>
-      ${playerRows.map(r => `<tr><td>${r.jersey}</td><td>${r.name}</td><td>${r.shots}</td><td>${r.goals}</td><td>${pct(r.shotPct)}</td><td>${pct(r.goldPct)}</td><td>${pct(r.silverPct)}</td><td>${pct(r.bronzePct)}</td></tr>`).join('')}
+      ${playerRows.map(r => `<tr><td>${escapeHtml(r.jersey)}</td><td>${escapeHtml(r.name)}</td><td>${r.shots}</td><td>${r.goals}</td><td>${pct(r.shotPct)}</td><td>${pct(r.goldPct)}</td><td>${pct(r.silverPct)}</td><td>${pct(r.bronzePct)}</td></tr>`).join('')}
     </tbody></table></div>
   </div>`;
   html += `<div class="panel">
@@ -12982,7 +12986,7 @@ function renderTrendGroup(containerId, entries, direction, noun) {
     const current = e.points[e.points.length - 1].value;
     return `
       <div class="stat-tile">
-        <div class="name">${e.name}</div>
+        <div class="name">${escapeHtml(e.name)}</div>
         <div class="meta">${e.meta}</div>
         <div class="row">
           <span class="value">${fmtTrendValue(current, e.format)}</span>
@@ -14234,14 +14238,14 @@ function scrimSimCore(M, calib, state, N, cfg) {
   for (let n = 0; n < N; n++) {
     const tot = cfg.starts.map(s => ({ us: s.us, them: s.them }));
     const worlds = tot.map(() => scrimWorld(M, everyone));
-    const gf = tot.map(() => ({ pace: flow ? Math.exp(scrimNorm() * 0.08) : 1, goalie: flow ? scrimNorm() * 0.18 : 0, fo: 0 }));
+    const gf = tot.map(() => ({ pace: flow ? Math.exp(scrimNorm() * 0.08 - 0.0032) : 1, goalie: flow ? scrimNorm() * 0.18 : 0, fo: 0 }));
     state.forEach((st, qi) => {
       const gi = Math.floor(qi / 4), ctx = cfg.ctxs[gi], w0 = worlds[gi], f = gf[gi], counts = (qi % 4) + 1 >= cfg.starts[gi].q;
       const w = flow ? Object.assign({}, w0, { team: w0.team - f.goalie }) : w0;   // their goalie hot (+) costs every one of our lines
       let possUs = ctx.poss * f.pace, possThem = ctx.poss * f.pace;
       if (scrimOpt('fo')) { if (flow) f.fo = 0.5 * f.fo + scrimNorm() * 0.04; const edge = ((wl.fo || 0.5) - (ctx.fo || 0.5)) * 0.6 + f.fo; possUs *= 1 + edge; possThem *= 1 - edge; }
       if (flow && qi % 4 === 3) { const d = tot[gi].us - tot[gi].them; if (d <= -3) { possUs *= 1.08; possThem *= 0.95; } else if (d >= 3) { possUs *= 0.95; possThem *= 1.08; } }
-      const draw = m => { if (!scrimOpt('varposs')) return Math.round(m); const lam = m * Math.exp(scrimNorm() * 0.15); let k = 0, L = Math.exp(-lam), pr = 1; do { k++; pr *= SCRIM_RNG(); } while (pr > L); return k - 1; };
+      const draw = m => { if (!scrimOpt('varposs')) return Math.round(m); const lam = m * Math.exp(scrimNorm() * 0.15 - 0.01125); /* -σ²/2 keeps the average at m */ let k = 0, L = Math.exp(-lam), pr = 1; do { k++; pr *= SCRIM_RNG(); } while (pr > L); return k - 1; };
       const nUs = draw(possUs), nThem = draw(possThem);
       let qg = 0;
       const tm = (st.mins || []).reduce((a, b) => a + b, 0), shares = st.lines.map((_, li) => (tm ? st.mins[li] / tm : 1 / st.lines.length));
@@ -14635,11 +14639,13 @@ function scrimDaysCore(M, calib, J, D, seed) {
   const U = J.U, S = J.S, R = U.rows, n = R.length, nG = S.nGames, nP = S.players.length;
   const s1 = new Float64Array(n), s2 = new Float64Array(n), pm = new Float64Array(n * 16), opt = new Float64Array(n), optMid = new Float64Array(nG * U.nMT), optAtt = new Float64Array(nG * U.nAT), expMid = new Float64Array(nP), expAtt = new Float64Array(nP), val = new Float64Array(n);
   const sixes = R.map(r => U.AT[r[1]].concat(U.MT[r[2]]).map(i => S.players[i]));
+  let lastTeam = 0;
   for (let d = 0; d < D; d++) {
     const w = scrimWorld(M, S.players), caches = J.ctxs.map(() => new Map());
+    if (d % 2 === 1) w.team = -lastTeam; lastTeam = w.team;   // mirrored team form on paired days
     for (let r = 0; r < n; r++) { const gi = R[r][0], ctx = J.ctxs[gi], ev = scrimEV(M, sixes[r], w, ctx, calib, null, caches[gi]), lam = ctx.poss * ev; s1[r] += ev; s2[r] += ev * ev; val[r] = lam;
       let pk = Math.exp(-lam), cum = 0; const o = r * 16; for (let k = 0; k < 15; k++) { pm[o + k] += pk; cum += pk; pk *= lam / (k + 1); } pm[o + 15] += Math.max(0, 1 - cum); }
-    const res = scrimPlanSearch(S, U, val, null, J.base, J.iters, 0.05, 0.001, null); if (!res) continue;
+    const res = scrimPlanSearch(S, U, val, null, J.base, J.iters, J.t0 || 0.05, 0.001, null); if (!res) continue;
     const seenR = new Set(), seenM = new Set(), seenA = new Set();
     res.state.forEach((q, qi) => { const gi = S.Q[qi].gi; q.lines.forEach(l => { const r = scrimRowOf(U, gi, q.att, l); if (r >= 0) { seenR.add(r); seenM.add(gi * U.nMT + R[r][2]); seenA.add(gi * U.nAT + R[r][1]); } }); });
     seenR.forEach(r => { opt[r]++; }); seenM.forEach(k => { optMid[k]++; }); seenA.forEach(k => { optAtt[k]++; });
@@ -14690,9 +14696,9 @@ async function scrimRunAll(label) {
     scrimSeed(4242); const base = scrimPlanSearch(S, U, v0, null, null, 20000, 0.3, 0.002, null);
     if (!base) throw new Error('no plan fits the pools (check the attack and middie pools)');
     // 2. Every lineup on the same simulated days, and the best plan on each day (Optimal %).
-    const D = Math.max(24, Math.min(96, Math.round(7e5 / n)));   // ~48 days at the current pools: Optimal % to about ±2 points, a build in ~5 s
+    const D = Math.max(24, Math.min(400, Math.round(7e5 / n)));   // few lineups (quarter rules on): up to 400 days; thousands: ~48   // ~48 days at the current pools: Optimal % to about ±2 points, a build in ~5 s
     scrimMsg(`Rating all ${n.toLocaleString()} lineups on ${D} simulated days and finding each day’s best plan…`);
-    const agg = await scrimDays(M, calib, { S, U, ctxs, base: base.state, iters: 4000 }, D);
+    const agg = await scrimDays(M, calib, { S, U, ctxs, base: base.state, iters: n > 2000 ? 50000 : 4000, t0: n > 2000 ? 0.3 : 0.05 }, D);   // thousands of lineups: a much wider daily search
     const rows = new Array(n), Dn = agg.D || D, byKey = {};
     for (let r = 0; r < n; r++) {
       const [gi, ai, mi] = U.rows[r], att = U.AT[ai].map(i => S.players[i]), mids = U.MT[mi].map(i => S.players[i]), P = ctxs[gi].poss, m = agg.s1[r] / Dn, vb = Math.max(0, agg.s2[r] / Dn - m * m);
