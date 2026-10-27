@@ -2838,6 +2838,31 @@ function persistSessionEntry(kind, entry, cols, lineup) {
 }
 function persistShot(shot, lineup) { return persistSessionEntry('shot', shot, COLS, lineup); }
 function persistPossession(p, lineup) { return persistSessionEntry('poss', p, POSS_COLS, lineup); }
+// A NEW shot / possession: its number is claimed and the entry written in one transaction, so two people saving
+// at the same moment can't both take the same number (the second save would overwrite the first). Offline or
+// slow: the normal save, which queues until the connection is back.
+async function persistNewSessionEntry(kind, entry, cols, lineup) {
+  if (!DB) return 'error';
+  const sid = sessionIdFor(entry), ref = DB.collection('sessions').doc(sid), prefix = SESSION_ENTRY_PREFIX[kind];
+  const usedElsewhere = id => (kind === 'shot' ? allShotEntries() : POSSESSIONS).some(x => Number(x.id) === id && (x._sid || sessionIdFor(x)) !== sid);
+  const st = lineup !== undefined ? stintFor(sid, lineup) : null;
+  try {
+    await Promise.race([DB.runTransaction(async t => {
+      const snap = await t.get(ref), d = snap.exists ? snap.data() : {};
+      while (d[prefix + entry.id] !== undefined || usedElsewhere(Number(entry.id))) entry.id = Number(entry.id) + 1;
+      const clean = Object.assign({}, entry); delete clean._sid; delete clean.seed;
+      const fields = sessionMeta(entry);
+      if (st) { clean.stintId = st.id; if (st.isNew) fields[SESSION_ENTRY_PREFIX.stint + st.id] = JSON.stringify(st.stint); }
+      fields[prefix + entry.id] = JSON.stringify(objToTuple(clean, cols));
+      t.set(ref, fields, { merge: true });
+    }), new Promise((_, rej) => setTimeout(() => rej(new Error('slow')), 6000))]);
+    if (st && st.isNew && LIVE_SESSIONS[sid] && !LIVE_SESSIONS[sid].stints.some(x => x.id === st.id)) LIVE_SESSIONS[sid].stints.push(st.stint);
+    entry.stintId = st ? st.id : null; entry._sid = sid;
+    return 'ok';
+  } catch (e) { return persistSessionEntry(kind, entry, cols, lineup); }
+}
+const persistNewShot = (shot, lineup) => persistNewSessionEntry('shot', shot, COLS, lineup);
+const persistNewPossession = (p, lineup) => persistNewSessionEntry('poss', p, POSS_COLS, lineup);
 function deleteSessionEntry(kind, entry) {
   if (!DB || !entry || entry.seed) return Promise.resolve('error');
   const sid = entry._sid || sessionIdFor(entry);
@@ -2915,7 +2940,7 @@ async function migrateShotsInbox(tuples) {
   }
 }
 function rebuildFaceoffs() {
-  FACEOFFS = LIVE_FACEOFFS_TUPLES.map(t => tupleToObj(t, FACEOFF_COLS));
+  FACEOFFS = LIVE_FACEOFFS_TUPLES.map(t => Object.assign(tupleToObj(t, FACEOFF_COLS), t.__key ? { _key: t.__key } : {}));
 }
 
 // Reads the database refused (Firestore rules) during load. A coach who
@@ -3034,12 +3059,11 @@ async function loadAll() {
   const faceoffsRef = DB.doc('app/faceoffs_live');
   try {
     const fsnap = await faceoffsRef.get();
-    if (fsnap.exists && typeof fsnap.data().json === 'string') LIVE_FACEOFFS_TUPLES = JSON.parse(fsnap.data().json);
+    if (fsnap.exists) LIVE_FACEOFFS_TUPLES = faceoffTuplesFrom(fsnap.data());
   } catch (e) { console.error('faceoffs load failed', e); }
   rebuildFaceoffs();
   faceoffsRef.onSnapshot(snap => {
-    if (!snap.exists || typeof snap.data().json !== 'string') return;
-    LIVE_FACEOFFS_TUPLES = JSON.parse(snap.data().json);
+    LIVE_FACEOFFS_TUPLES = snap.exists ? faceoffTuplesFrom(snap.data()) : [];
     rebuildFaceoffs();
     renderFaceoffs();
   }, e => console.error('faceoffs sync error', e));
@@ -3131,6 +3155,21 @@ function loadEvalListeners() {
   }, e => console.error('ratings sync error', e));
 }
 
+// Save one change to a shared record without wiping anyone else's: re-read the latest version, apply just
+// this change, write it back. Firestore retries automatically if someone saved in between.
+async function dbChange(path, apply) {
+  if (!DB) return false;
+  const ref = DB.doc(path);
+  try { await DB.runTransaction(async t => { const snap = await t.get(ref); const next = apply(snap.exists ? snap.data() : {}); if (next) t.set(ref, next); }); return true; }
+  catch (e) { console.error('save failed', path, e); return false; }
+}
+// Roster: the change is applied to the latest list on the server (mutate gets that list).
+async function persistRosterChange(season, mutate) {
+  let fresh = null;
+  const ok = await dbChange('app/roster_' + season, cur => { const list = cleanRoster(Array.isArray(cur.list) ? cur.list : (ROSTERS[season] || [])).map(r => Object.assign({}, r, { roles: r.roles.slice() })); mutate(list); fresh = list; return { list }; });
+  if (ok && fresh) ROSTERS[season] = fresh;
+  return ok;
+}
 async function persistRoster(season) {
   if (!DB) return false;
   try { await DB.doc('app/roster_' + season).set({ list: ROSTERS[season] || [] }); } catch (e) { console.error(e); return false; }
@@ -3139,12 +3178,25 @@ async function persistRoster(season) {
 // Faceoffs (and rosters) are small, so they stay as one doc each. Stored as
 // a JSON string, not a native Firestore array-of-arrays: Firestore rejects
 // "nested arrays" outright, and each faceoff tuple is itself an array.
-async function persistFaceoffs() {
+// Each faceoff is its own field (fo_<unique key>), so two people logging at once can't overwrite each other;
+// faceoffs saved before this (the old "json" list) are still read, and deleted from that list.
+const foKeyNew = () => 'fo_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+async function persistFaceoff(f) {
   if (!DB) return false;
-  const live = FACEOFFS.map(f => objToTuple(f, FACEOFF_COLS));
-  try { await DB.doc('app/faceoffs_live').set({ json: JSON.stringify(live) }); } catch (e) { console.error(e); return false; }
-  LIVE_FACEOFFS_TUPLES = live;
-  return true;
+  f._key = f._key || foKeyNew();
+  const tuple = objToTuple(f, FACEOFF_COLS);
+  return settleWrite(DB.doc('app/faceoffs_live').set({ [f._key]: JSON.stringify(tuple) }, { merge: true })).then(r => r !== 'error');
+}
+async function deleteFaceoff(f) {
+  if (!DB) return false;
+  if (f._key) return settleWrite(DB.doc('app/faceoffs_live').update({ [f._key]: firebase.firestore.FieldValue.delete() })).then(r => r !== 'error');
+  return dbChange('app/faceoffs_live', cur => { let old = []; try { old = JSON.parse(cur.json || '[]'); } catch (e) { old = []; } return Object.assign({}, cur, { json: JSON.stringify(old.filter(t => tupleToObj(t, FACEOFF_COLS).id !== f.id)) }); });
+}
+// Old list + one-per-field entries -> tuples (each remembers its field key).
+function faceoffTuplesFrom(data) {
+  let out = []; try { out = JSON.parse((data && data.json) || '[]'); } catch (e) { out = []; }
+  Object.keys(data || {}).filter(k => /^fo_/.test(k)).sort().forEach(k => { try { const t = JSON.parse(data[k]); t.__key = k; out.push(t); } catch (e) { /* skip a bad entry */ } });
+  return out;
 }
 
 // ---------------- Color / zone helpers ----------------
@@ -3733,19 +3785,19 @@ async function addPlayerToRoster(season, name, jersey, role) {
   name = cleanText(String(name || '')).trim().slice(0, 60);
   jersey = String(jersey || '').trim().replace(/^#/, '');
   if (!name || !/^\d{1,3}$/.test(jersey) || (role !== 'player' && role !== 'goalie')) return false;
-  const list = ROSTERS[season] || (ROSTERS[season] = []);
-  const existing = list.find(r => r.jersey === jersey);
-  if (existing) { if (!existing.roles.includes(role)) existing.roles.push(role); }
-  else list.push({ jersey, name, roles: [role] });
-  return persistRoster(season);
+  return persistRosterChange(season, list => {
+    const existing = list.find(r => r.jersey === jersey);
+    if (existing) { if (!existing.roles.includes(role)) existing.roles.push(role); }
+    else list.push({ jersey, name, roles: [role] });
+  });
 }
 async function removePlayerFromRoster(season, jersey, role) {
-  const list = ROSTERS[season] || [];
-  const idx = list.findIndex(r => r.jersey === jersey);
-  if (idx === -1) return true;
-  list[idx].roles = list[idx].roles.filter(r => r !== role);
-  if (list[idx].roles.length === 0) list.splice(idx, 1);
-  return persistRoster(season);
+  return persistRosterChange(season, list => {
+    const idx = list.findIndex(r => r.jersey === jersey);
+    if (idx === -1) return;
+    list[idx].roles = list[idx].roles.filter(r => r !== role);
+    if (list[idx].roles.length === 0) list.splice(idx, 1);
+  });
 }
 
 function populateSelect(sel, items, placeholderText, includeEmptyNet) {
@@ -4266,7 +4318,7 @@ document.getElementById('submitFaceoffBtn').addEventListener('click', async () =
     vsPlayerJersey: document.getElementById('fo_vsplayer').value || null,
   };
   FACEOFFS.push(faceoff);
-  const okSave = await persistFaceoffs();
+  const okSave = await persistFaceoff(faceoff);
   if (!okSave) { FACEOFFS.pop(); showFoMsg('Save failed — please try again.', false); return; }
 
   showFoMsg(`Saved faceoff #${faceoff.id} for #${escapeHtml(player)} ${escapeHtml(nameFor(player, currentFoSeason()))}.`, true);
@@ -4859,10 +4911,12 @@ document.getElementById('lb_clear').addEventListener('click', () => {
 }));
 
 // ---------------- Units (saved lineup groups) ----------------
-async function persistUnits() {
-  if (!DB) return false;
-  try { await DB.doc('app/units').set({ json: JSON.stringify(UNITS) }); } catch (e) { console.error(e); return false; }
-  return true;
+// mutate gets the latest list on the server, so two coaches editing units can't erase each other's.
+async function persistUnitsChange(mutate) {
+  let fresh = null;
+  const ok = await dbChange('app/units', cur => { const list = parseUnits(cur.json); mutate(list); fresh = list; return { json: JSON.stringify(list) }; });
+  if (ok && fresh) UNITS = fresh;
+  return ok;
 }
 function renderUnitsPanel() {
   const wrap = document.getElementById('unitsWrap');
@@ -4886,9 +4940,8 @@ function renderUnitsPanel() {
       const bad = nums.filter(n => !validJerseyText(n) || !(ROSTERS[season] || []).some(r => r.jersey === n));
       if (bad.length) return msg(`Not on the ${season} roster: ${bad.join(', ')}`);
       if (new Set(nums).size !== nums.length) return msg('A jersey is listed twice.');
-      const prev = UNITS;
-      UNITS = UNITS.filter(u => u.name.toLowerCase() !== name.toLowerCase()).concat([{ name, jerseys: nums }]);
-      if (!(await persistUnits())) { UNITS = prev; return msg('Save failed \u2014 try again.'); }
+      const keep = l => { const i = l.findIndex(u => u.name.toLowerCase() === name.toLowerCase()); if (i >= 0) l.splice(i, 1); l.push({ name, jerseys: nums }); };
+      if (!(await persistUnitsChange(keep))) return msg('Save failed \u2014 try again.');
       document.getElementById('unit_name').value = '';
       document.getElementById('unit_jerseys').value = '';
       document.getElementById('unitMsg').innerHTML = '';
@@ -4902,9 +4955,8 @@ function renderUnitsPanel() {
     ? `<div class="table-wrap" style="margin-bottom:12px;"><table class="shotlog"><thead><tr><th>Unit</th><th>Players</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>`
     : '<p class="sans" style="color:var(--muted); font-size:12.5px;">No units yet.</p>';
   table.querySelectorAll('[data-unit-del]').forEach(b => b.addEventListener('click', async () => {
-    const prev = UNITS;
-    UNITS = UNITS.filter((_, i) => i !== +b.dataset.unitDel);
-    if (!(await persistUnits())) UNITS = prev;
+    const gone = (UNITS[+b.dataset.unitDel] || {}).name;
+    if (gone) await persistUnitsChange(l => { const i = l.findIndex(u => u.name === gone); if (i >= 0) l.splice(i, 1); });
     refreshUnitsUi();
   }));
 }
@@ -5230,9 +5282,9 @@ document.getElementById('submitShotBtn').addEventListener('click', async () => {
     saveResult = await persistShot(updated);
     if (saveResult === 'error') { showMsg('Save failed — please try again.', false); return; }
   } else {
-    savedId = nextShotId();
-    const shot = Object.assign({ id: savedId }, shotData);
-    saveResult = await persistShot(shot, currentLineup());
+    const shot = Object.assign({ id: nextShotId() }, shotData);
+    saveResult = await persistNewShot(shot, currentLineup());
+    savedId = shot.id;   // may have moved up one if someone else just saved that number
     if (saveResult === 'error') { showMsg('Save failed — please try again.', false); return; }
   }
 
@@ -5349,8 +5401,9 @@ document.getElementById('submitPossBtn').addEventListener('click', async () => {
     id = editingPossId;
     res = await persistPossession(Object.assign({ id, _sid: original._sid, stintId: original.stintId === undefined ? null : original.stintId }, data));
   } else {
-    id = nextPossId();
-    res = await persistPossession(Object.assign({ id }, data), currentLineup());
+    const p = Object.assign({ id: nextPossId() }, data);
+    res = await persistNewPossession(p, currentLineup());
+    id = p.id;
   }
   if (res === 'error') { showMsg('Save failed — please try again.', false); return; }
   showMsg(`${isEdit ? 'Updated' : 'Saved'} possession #${id} (${escapeHtml(end)}).` + (res === 'queued' ? ' (Offline — it will sync when you reconnect.)' : ''), true);
@@ -8880,10 +8933,13 @@ const posIs = (season, j, codes) => [].concat(codes).some(c => posOfJ(season, j)
 const isOffensePos = (season, j) => posIs(season, j, ['A', 'M']);
 const DEPTH_POS_LABEL = { A: 'Attack', M: 'Midfield', S: 'SSDM', L: 'LSM', D: 'Defense', F: 'FOGO', G: 'Goalie', X: 'Other' };
 let depthEditJ = null;   // the chip whose position editor is open
-async function persistPositions(season) {
-  if (!DB) return false;
-  try { await DB.doc('app/positions_' + season).set({ json: JSON.stringify(POSITIONS[season] || {}), alt: JSON.stringify(POSITIONS_ALT[season] || {}) }); } catch (e) { console.error(e); return false; }
-  return true;
+async function persistPositions(season, j) {
+  return dbChange('app/positions_' + season, cur => {
+    let main = {}, alt = {}; try { main = JSON.parse(cur.json || '{}'); alt = JSON.parse(cur.alt || '{}'); } catch (e) { /* start clean */ }
+    if (j === undefined) { main = POSITIONS[season] || {}; alt = POSITIONS_ALT[season] || {}; }
+    else { [[main, POSITIONS], [alt, POSITIONS_ALT]].forEach(([m, store]) => { const v = (store[season] || {})[j]; if (v) m[j] = v; else delete m[j]; }); }
+    return Object.assign({}, cur, { json: JSON.stringify(main), alt: JSON.stringify(alt) });
+  });
 }
 function depthLatestDate(season) { return advShots(season).reduce((m, s) => (s.date && s.date > m ? s.date : m), ''); }
 function renderDepthChart() {
@@ -8920,7 +8976,7 @@ function renderDepthChart() {
     store[season] = map;
     if (!isAlt) depthEditJ = null;
     renderDepthChart();
-    if (!(await persistPositions(season))) { store[season] = prev; renderDepthChart(); }
+    if (!(await persistPositions(season, j))) { store[season] = prev; renderDepthChart(); }
   }));
 }
 // ---------------- Model Starting Offense: Impact Rating (Bobby, Oct 20) ----------------
@@ -10072,10 +10128,14 @@ function pjMatch(j, season, off) {
   if (link === '__NEW__') return null;
   return off.byKey[pjNameKey(link || nameFor(j, season))] || null;
 }
-async function persistPjSet(season) {
-  if (!DB) return false;
-  try { await DB.doc('app/projRoles_' + season).set({ json: JSON.stringify(PJ_SET[season] || {}) }); } catch (e) { console.error(e); return false; }
-  return true;
+async function persistPjSet(season, j) {
+  return dbChange('app/projRoles_' + season, cur => {
+    let o = {}; try { o = JSON.parse(cur.json || '{}'); } catch (e) { o = {}; }
+    const mine = PJ_SET[season] || {};
+    if (j === undefined) o = mine;
+    else ['role', 'bump', 'link'].forEach(k => { o[k] = o[k] || {}; const v = (mine[k] || {})[j]; if (v !== undefined && v !== null && v !== '') o[k][j] = v; else delete o[k][j]; });
+    return { json: JSON.stringify(o) };
+  });
 }
 const PJ_GAMES = 17, PJ_Z80 = 1.2816, PJ_MIN_GAMES = 3;
 const PJ_FALLBACK_K = { sh: 25, oncage: 30, ongoal: 35, fin: 40, save: 60, sve: 60, to: 15, pa: 25 };
@@ -10297,7 +10357,7 @@ document.getElementById('pjSeasonWrap').addEventListener('click', async e => {
   if (t.classList.contains('pj-bump')) { const v = Math.round(((Number(set.bump[j]) || 0) + Number(t.dataset.d)) * 2) / 2; if (v) set.bump[j] = v; else delete set.bump[j]; }
   if (t.classList.contains('pj-link')) set.link[j] = t.dataset.v;
   renderSkaterProjections();
-  if (!(await persistPjSet(season))) showMsg('Couldn’t save that change — check the connection.', false);
+  if (!(await persistPjSet(season, j))) showMsg('Couldn’t save that change — check the connection.', false);
 });
 function renderGoalieProjections() {
   const wrap = document.getElementById('pjGoalieWrap');
@@ -12385,24 +12445,24 @@ function renderFaceoffTable() {
       <td>#${who||''} ${nameFor(who, season)||''}${flip ? ' <span class="n-note">vs ' + escapeHtml(nameFor(r.playerJersey, season)) + '</span>' : ''}</td>
       <td>${won ? 'Won':'Lost'}</td>
       <td>${r.notes||''}</td>
-      <td>${deleteFaceoffArmed === r.id
-        ? `<button class="btn danger" data-fo-confirm-id="${r.id}">Confirm delete</button> <button class="btn secondary" data-fo-cancel-id="${r.id}">Cancel</button>`
-        : `<button class="btn danger" data-fo-id="${r.id}">Delete</button>`}</td>
+      <td>${deleteFaceoffArmed === (r._key || String(r.id))
+        ? `<button class="btn danger" data-fo-confirm-id="${escapeHtml(r._key || String(r.id))}">Confirm delete</button> <button class="btn secondary" data-fo-cancel-id="1">Cancel</button>`
+        : `<button class="btn danger" data-fo-id="${escapeHtml(r._key || String(r.id))}">Delete</button>`}</td>
     `;
     bodyEl.appendChild(tr);
   });
   bodyEl.querySelectorAll('button[data-fo-id]').forEach(b => {
-    b.addEventListener('click', () => { deleteFaceoffArmed = parseInt(b.dataset.foId,10); renderFaceoffTable(); });
+    b.addEventListener('click', () => { deleteFaceoffArmed = b.dataset.foId; renderFaceoffTable(); });
   });
   bodyEl.querySelectorAll('button[data-fo-cancel-id]').forEach(b => {
     b.addEventListener('click', () => { deleteFaceoffArmed = null; renderFaceoffTable(); });
   });
   bodyEl.querySelectorAll('button[data-fo-confirm-id]').forEach(b => {
     b.addEventListener('click', async () => {
-      const id = parseInt(b.dataset.foConfirmId, 10);
-      FACEOFFS = FACEOFFS.filter(f => f.id !== id);
+      const key = b.dataset.foConfirmId, same = f => (f._key || String(f.id)) === key, gone = FACEOFFS.find(same);
+      FACEOFFS = FACEOFFS.filter(f => !same(f));
       deleteFaceoffArmed = null;
-      await persistFaceoffs();
+      if (gone) await deleteFaceoff(gone);
       renderFaceoffs();
     });
   });
@@ -15355,9 +15415,8 @@ async function bfSave() {
   let res, kind = item.kind, id;
   if (d.kind === 'shot') { const out = bfApply(item.e, d); id = out.id; res = await persistShot(out); }
   else if (d.isNew) {
-    id = nextPossId();
-    const base = { id, date: sess.date, context: 'Practice', opponent: null, team: 'WLU', possStart: null, possStartJersey: null, dominoes: null, advCreator: null, advType: null, manSituation: 'Even', afterShot: d.after };
-    res = await persistPossession(bfApply(base, d));
+    const base = { id: nextPossId(), date: sess.date, context: 'Practice', opponent: null, team: 'WLU', possStart: null, possStartJersey: null, dominoes: null, advCreator: null, advType: null, manSituation: 'Even', afterShot: d.after };
+    const np = bfApply(base, d); res = await persistNewPossession(np); id = np.id;
     BF.newItem = null;
   } else { const out = bfApply(item.e, d); id = out.id; res = await persistPossession(out); }
   if (res === 'error') { BF.msg = 'Save failed — please try again.'; renderBackfill(); return; }
