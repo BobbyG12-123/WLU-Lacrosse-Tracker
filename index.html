@@ -14630,7 +14630,7 @@ function scrimDaysCore(M, calib, J, D, seed) {
     if (d % 2 === 1) w.team = -lastTeam; lastTeam = w.team;   // mirrored team form on paired days
     for (let r = 0; r < n; r++) { const gi = R[r][0], ctx = J.ctxs[gi], ev = scrimEV(M, sixes[r], w, ctx, calib, null, caches[gi]), lam = ctx.poss * ev; s1[r] += ev; s2[r] += ev * ev; val[r] = lam;
       let pk = Math.exp(-lam), cum = 0; const o = r * 16; for (let k = 0; k < 15; k++) { pm[o + k] += pk; cum += pk; pk *= lam / (k + 1); } pm[o + 15] += Math.max(0, 1 - cum); }
-    const res = scrimPlanSearch(S, U, val, null, J.base, J.iters, 0.05, 0.001, null); if (!res) continue;
+    const res = scrimPlanSearch(S, U, val, null, J.base, J.iters, J.t0 || 0.05, 0.001, null); if (!res) continue;
     const seenR = new Set(), seenM = new Set(), seenA = new Set();
     res.state.forEach((q, qi) => { const gi = S.Q[qi].gi; q.lines.forEach(l => { const r = scrimRowOf(U, gi, q.att, l); if (r >= 0) { seenR.add(r); seenM.add(gi * U.nMT + R[r][2]); seenA.add(gi * U.nAT + R[r][1]); } }); });
     seenR.forEach(r => { opt[r]++; }); seenM.forEach(k => { optMid[k]++; }); seenA.forEach(k => { optAtt[k]++; });
@@ -14683,7 +14683,7 @@ async function scrimRunAll(label) {
     // 2. Every lineup on the same simulated days, and the best plan on each day (Optimal %).
     const D = Math.max(24, Math.min(400, Math.round(7e5 / n)));   // few lineups (quarter rules on): up to 400 days; thousands: ~48   // ~48 days at the current pools: Optimal % to about ±2 points, a build in ~5 s
     scrimMsg(`Rating all ${n.toLocaleString()} lineups on ${D} simulated days and finding each day’s best plan…`);
-    const agg = await scrimDays(M, calib, { S, U, ctxs, base: base.state, iters: n > 2000 ? 15000 : 4000 }, D);
+    const agg = await scrimDays(M, calib, { S, U, ctxs, base: base.state, iters: n > 2000 ? 50000 : 4000, t0: n > 2000 ? 0.3 : 0.05 }, D);   // thousands of lineups: a much wider daily search
     const rows = new Array(n), Dn = agg.D || D, byKey = {};
     for (let r = 0; r < n; r++) {
       const [gi, ai, mi] = U.rows[r], att = U.AT[ai].map(i => S.players[i]), mids = U.MT[mi].map(i => S.players[i]), P = ctxs[gi].poss, m = agg.s1[r] / Dn, vb = Math.max(0, agg.s2[r] / Dn - m * m);
