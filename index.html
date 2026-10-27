@@ -2294,6 +2294,12 @@
     </div>
     <p class="view-intro">How completely each field is being logged, and how many reps each key stat needs before it mostly reflects skill instead of luck. Use it to see which numbers to trust and what to log more of. 2027 and later.</p>
     <div class="panel">
+      <p class="panel-title">Self-check</p>
+      <p class="panel-sub">Runs the same checks as the full audit: opens every page and looks for errors or broken numbers, recomputes key stats from the raw shot log, checks the simulator’s math, and looks for data problems. Reads only &mdash; it never saves anything. Takes about a minute (the pages flip by while it runs).</p>
+      <div class="controls-row"><div class="control-group"><button class="btn" id="selfCheckBtn" type="button">Run self-check</button></div></div>
+      <div id="selfCheckOut"></div>
+    </div>
+    <div class="panel">
       <p class="panel-title">AI Search</p>
       <p class="panel-sub">The search bar’s “Ask AI” line sends only the question to Google’s free Gemini AI, with every player name and #jersey replaced by P1, P2&hellip;, plus a fixed list of stat names. No stats, roster or logged entries are sent; the tracker computes every answer itself. Turn this on to see the exact text sent with each AI answer. Only you see this.</p>
       <label class="sans" style="display:flex; gap:8px; align-items:center; font-size:13px;"><input type="checkbox" id="aiShowSent"> Show what’s sent to the AI</label>
@@ -8570,6 +8576,77 @@ async function exportAllData() {
 document.getElementById('fsExportBtn').addEventListener('click', exportAllData);
 (() => { const cb = document.getElementById('aiShowSent'); try { cb.checked = localStorage.getItem('wluAiShowSent') === '1'; } catch (e) { /* storage unavailable */ } cb.addEventListener('change', () => { try { localStorage.setItem('wluAiShowSent', cb.checked ? '1' : '0'); } catch (e) { /* storage unavailable */ } }); })();
 
+// ---------------- Self-check (owner, Data Health; Oct 27) ----------------
+// Reads only. Every page, key formulas recomputed from the raw shots, the simulator's exact math vs its
+// possession simulation, and data hygiene. Results: pass / warn / fail with the detail.
+async function runSelfCheck() {
+  const out = document.getElementById('selfCheckOut'), btn = document.getElementById('selfCheckBtn'); if (!out || !btn) return;
+  btn.disabled = true; const R = [], add = (area, name, status, detail) => R.push({ area, name, status, detail });
+  const say = t => { out.innerHTML = `<p class="n-note">${escapeHtml(t)}</p>`; };
+  const season = currentAdvSeason();
+  // 1. Every page: errors and broken numbers.
+  const errs = [], oe = console.error; console.error = (...a) => { errs.push(a.map(x => (x && x.message) || String(x)).join(' ').slice(0, 160)); oe.apply(console, a); };
+  const onErr = e => errs.push(String(e.message || e.reason || e).slice(0, 160)); window.addEventListener('error', onErr); window.addEventListener('unhandledrejection', onErr);
+  const pageIssues = [];
+  try {
+    const ids = Object.keys(NAV_PAGES).filter(id => id !== 'health');
+    for (let i = 0; i < ids.length; i++) { const id = ids[i], n0 = errs.length; say(`Checking pages… ${i + 1} of ${ids.length}: ${NAV_PAGES[id].name}`);
+      try { goNav(id); } catch (e) { errs.push(e.message); }
+      await new Promise(r => setTimeout(r, 450));
+      const v = document.querySelector('.view.active'), sub = v && (v.querySelector(':scope > .subpage.active') || v), t = sub ? sub.innerText : '';
+      const bad = (t.match(/[^\n]{0,24}(\bNaN\b|\bundefined\b|\bInfinity\b|\[object Object\])[^\n]{0,16}/g) || []).slice(0, 2);
+      if (bad.length || errs.length > n0) pageIssues.push(`${NAV_PAGES[id].name}: ${bad.concat(errs.slice(n0)).join(' | ')}`); }
+  } finally { console.error = oe; window.removeEventListener('error', onErr); window.removeEventListener('unhandledrejection', onErr); goNav('health'); }
+  add('Pages', `All ${Object.keys(NAV_PAGES).length - 1} pages open cleanly`, pageIssues.length ? 'fail' : 'pass', pageIssues.length ? pageIssues.slice(0, 6).join(' · ') : 'No errors, no NaN / undefined on screen.');
+  say('Checking formulas…'); await new Promise(r => setTimeout(r, 30));
+  // 2. Formulas, recomputed from the raw shots.
+  const S = SHOTS.filter(x => seasonForDate(x.date) === season && !x.seed && x.team !== 'OPP'), P = POSSESSIONS.filter(p => seasonForDate(p.date) === season);
+  try {
+    const s0 = EFF_SEASON, c0 = EFF_CONTEXT, f0 = EFF_FROM, t0 = EFF_TO, o0 = EFF_OPP; EFF_SEASON = season; EFF_CONTEXT = 'All'; EFF_FROM = null; EFF_TO = null; EFF_OPP = null;
+    let d, ga; try { d = buildEffData(); ga = computeGoalsAdded(); } finally { EFF_SEASON = s0; EFF_CONTEXT = c0; EFF_FROM = f0; EFF_TO = t0; EFF_OPP = o0; }
+    const mism = [];
+    Object.values(d.players).filter(p => p.jersey && !isOppJersey(p.jersey)).forEach(p => { const m = S.filter(x => x.shooterJersey === p.jersey), g = m.filter(x => x.goal === 1).length, a = S.filter(x => x.assistJersey === p.jersey && x.goal === 1).length;
+      if (m.length !== p.shots || g !== p.goals || a !== p.assists) mism.push(`#${p.jersey}: page ${p.shots}/${p.goals}/${p.assists} vs raw ${m.length}/${g}/${a}`); });
+    add('Formulas', 'Shots, goals, assists match the raw log', mism.length ? 'fail' : 'pass', mism.length ? mism.slice(0, 5).join(' · ') : `${Object.keys(d.players).length} players checked.`);
+    const xg = d.shots.reduce((a, x) => a + d.xgOf(x), 0), gl = d.shots.filter(x => x.goal === 1).length, off = gl ? Math.abs(xg - gl) / gl : 0;
+    add('Formulas', 'xG model is calibrated', off > 0.1 ? 'warn' : 'pass', `${num(xg, 1)} expected vs ${gl} actual goals (${pct(off)} apart).`);
+    const keys = GA_PARTS.map(x => x[0]), gaBad = ga.rows.filter(r => Math.abs(keys.reduce((a, k) => a + (r[k] || 0), 0) - r.total) > 0.011);
+    add('Formulas', 'Goals Added parts add up to each total', gaBad.length ? 'fail' : 'pass', gaBad.length ? gaBad.slice(0, 4).map(r => '#' + r.jersey).join(', ') : `${ga.rows.length} players.`);
+    const all = allShotEntries().filter(x => x.onKeeper === 1 && x.goalieJersey && seasonForDate(x.date) === season), gsr = computeGoalieScores(season), gBad = gsr.filter(r => all.filter(x => x.goalieJersey === r.jersey).length !== r.faced);
+    add('Formulas', 'Goalie shots faced agree across pages', gBad.length ? 'fail' : 'pass', gBad.length ? gBad.map(r => '#' + r.jersey).join(', ') : `${gsr.length} goalies.`);
+  } catch (e) { add('Formulas', 'Formula checks ran', 'fail', e.message); }
+  // 3. Simulator: exact expected goals vs the possession simulation.
+  try {
+    if (SC.plan) { SC.plan = scrimMigrate(SC.plan); const M = scrimModel(), cal = scrimCalib(scrimModel(true)), pools = scrimPoolsV4(M), ctx = scrimSimCfg().ctxs[0], gaps = [];
+      if (pools.att.length >= 3 && pools.mid.length >= 3) { const keep = SCRIM_SEED; scrimSeed(2027);
+        for (let k = 0; k < 3; k++) { const att = pools.att.slice().sort(() => SCRIM_RNG() - 0.5).slice(0, 3), mid = pools.mid.filter(j => !att.includes(j)).sort(() => SCRIM_RNG() - 0.5).slice(0, 3), six = att.concat(mid), w = scrimWorld(M, six);
+          const ev = scrimEV(M, six, w, ctx, cal); let g = 0, n = 0; for (let r = 0; r < 20; r++) { const x = scrimPossessions(M, six, 1000, w, ctx, cal); g += x.g; n += x.n; }
+          const se = Math.sqrt(ev * (1 - ev) / n); gaps.push({ z: Math.abs(g / n - ev) / se, txt: `${num(ev, 3)} vs ${num(g / n, 3)}` }); }
+        SCRIM_SEED = keep;
+        const worst = gaps.reduce((a, b) => (b.z > a.z ? b : a));
+        add('Simulator', 'Exact math matches the possession simulation', worst.z > 3.5 ? 'fail' : worst.z > 2.6 ? 'warn' : 'pass', `3 random lineups, goals per possession exact vs simulated: ${gaps.map(x => x.txt).join(', ')}.`); }
+      else add('Simulator', 'Exact math matches the possession simulation', 'warn', 'Not enough players with data in the pools to test.'); }
+  } catch (e) { add('Simulator', 'Simulator check ran', 'fail', e.message); }
+  // 4. Data hygiene.
+  const dup = (list, label) => { const seen = {}, d = []; list.forEach(x => { const k = String(x.id); if (seen[k] && seen[k] !== (x._sid || '')) d.push(k); seen[k] = x._sid || '?'; }); add('Data', `No duplicate ${label} numbers`, d.length ? 'warn' : 'pass', d.length ? `${d.length} numbers used twice: ${d.slice(0, 6).join(', ')}` : 'All unique.'); };
+  dup(allShotEntries().filter(x => !x.seed), 'shot'); dup(POSSESSIONS, 'possession');
+  const roster = j => (ROSTERS[season] || []).some(r => r.jersey === j), unk = new Set();
+  S.forEach(x => ['shooterJersey', 'assistJersey', 'goalieJersey', 'defender', 'slideDefender'].forEach(k => { if (x[k] && !isOppJersey(x[k]) && !roster(x[k])) unk.add('#' + x[k]); }));
+  add('Data', `Every jersey is on the ${season} roster`, unk.size ? 'warn' : 'pass', unk.size ? `Not on the roster: ${[...unk].slice(0, 10).join(', ')}` : 'All found.');
+  const noPlace = S.filter(x => x.goal === 1 && x.goalX == null).length;
+  add('Data', 'Goals have a goal location', noPlace ? 'warn' : 'pass', noPlace ? `${noPlace} goals without where they went in the cage.` : 'All goals placed.');
+  const bySes = {}; S.concat(P).filter(x => x.context === 'Practice').forEach(x => { bySes[x.date] = (bySes[x.date] || 0) + 1; });
+  const thin = Object.keys(bySes).filter(dt => bySes[dt] < 10).sort();
+  add('Data', 'Practices look fully logged', thin.length ? 'warn' : 'pass', thin.length ? `Fewer than 10 entries (still being logged?): ${thin.map(dt => `${dt} (${bySes[dt]})`).join(', ')}` : 'Every practice has 10+ entries.');
+  const gameDates = [...new Set(S.filter(x => x.context === 'Game').map(x => x.date))], oppBy = new Set(OPP_SHOTS.filter(x => seasonForDate(x.date) === season).map(x => x.date)), noOpp = gameDates.filter(dt => !oppBy.has(dt));
+  add('Data', 'Games have the other team’s shots', noOpp.length ? 'warn' : 'pass', noOpp.length ? `No opponent shots logged for ${noOpp.length} game${noOpp.length === 1 ? '' : 's'} (${noOpp.slice(0, 4).join(', ')}): goalie game stats only come from practice.` : gameDates.length ? 'Every game has them.' : `No ${season} games yet.`);
+  // Report.
+  const icon = { pass: '✓', warn: '!', fail: '✕' }, cnt = k => R.filter(r => r.status === k).length;
+  out.innerHTML = `<p class="panel-sub"><b>${cnt('pass')} passed</b> · ${cnt('warn')} to look at · ${cnt('fail')} failed · ${escapeHtml(season)} · ${new Date().toLocaleString()}</p>
+    <div class="table-wrap"><table class="shotlog"><thead><tr><th></th><th>Area</th><th>Check</th><th>Detail</th></tr></thead><tbody>${R.map(r => `<tr><td><b class="${r.status === 'pass' ? 'sc-up' : 'sc-dn'}">${icon[r.status]}</b></td><td>${escapeHtml(r.area)}</td><td>${escapeHtml(r.name)}</td><td style="white-space:normal;">${escapeHtml(r.detail)}</td></tr>`).join('')}</tbody></table></div>`;
+  btn.disabled = false;   // stays on Data Health so the report is visible
+}
+document.getElementById('selfCheckBtn').addEventListener('click', runSelfCheck);
 function renderDataHealth() {
   const wrap = document.getElementById('healthFieldWrap');
   if (!wrap) return;
