@@ -4947,7 +4947,7 @@ function renderUnitsPanel() {
       if (!name) return msg('Give the unit a name.');
       if (!nums.length || nums.length > LINEUP_SIZE) return msg(`List 1\u2013${LINEUP_SIZE} jersey numbers.`);
       const bad = nums.filter(n => !validJerseyText(n) || !(ROSTERS[season] || []).some(r => r.jersey === n));
-      if (bad.length) return msg(`Not on the ${season} roster: ${bad.join(', ')}`);
+      if (bad.length) return msg(bad.map(x => (validJerseyText(x) ? `#${x} isn’t on the ${season} roster.` : jerseyFromName(x, season).why || `“${x}” isn’t a player.`)).join(' '));
       if (new Set(nums).size !== nums.length) return msg('A jersey is listed twice.');
       const keep = l => { const i = l.findIndex(u => u.name.toLowerCase() === name.toLowerCase()); if (i >= 0) l.splice(i, 1); l.push({ name, jerseys: nums }); };
       if (!(await persistUnitsChange(keep))) return msg('Save failed \u2014 try again.');
