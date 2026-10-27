@@ -13905,10 +13905,10 @@ const SA_CATALOG = [
   { off: true, id: 'usage', label: 'Usage', words: 'usage, involvement, involved, runs through', page: 'eff', fmt: SA_PCT, f: d => { const all = saPlayers(d), T = d.shots.length + all.reduce((a, p) => a + p.potAst, 0); return saMap(d, p => (p.shots + p.potAst) ? { v: (p.shots + p.potAst) / T, n: p.shots + p.potAst } : null); } },
   { off: true, id: 'possUsed', label: 'Possessions used', words: 'possessions used, ends possessions', page: 'eff', fmt: SA_PCT, f: d => { const all = saPlayers(d), T = d.shots.length + all.reduce((a, p) => a + p.to, 0); return saMap(d, p => (p.shots + p.to) ? { v: (p.shots + p.to) / T, n: p.shots + p.to } : null); } },
   // Defense (practice: both sides are WLU, so these are WLU defenders).
-  { id: 'beaten', label: 'Times beaten on-ball', words: 'beaten, gets beat, get beat, gets beaten, beat the most, beaten the most, loses his man, gets dodged, gets taken', page: 'defense', fmt: SA_NUM(0), f: d => saDefBy(d, 'defender', l => { const b = l.filter(s => s.defBeaten === 'Yes' || s.defBeaten === 'No'); return b.length ? { v: b.filter(s => s.defBeaten === 'Yes').length, n: b.length, extra: `${b.filter(s => s.defBeaten === 'Yes').length} of ${b.length}` } : null; }) },
+  { id: 'beaten', label: 'Times beaten on-ball', dir: 'low', words: 'beaten, gets beat, get beat, gets beaten, beat the most, beaten the most, loses his man, gets dodged, gets taken', page: 'defense', fmt: SA_NUM(0), f: d => saDefBy(d, 'defender', l => { const b = l.filter(s => s.defBeaten === 'Yes' || s.defBeaten === 'No'); return b.length ? { v: b.filter(s => s.defBeaten === 'Yes').length, n: b.length, extra: `${b.filter(s => s.defBeaten === 'Yes').length} of ${b.length}` } : null; }) },
   { id: 'onballG', label: 'Goal % allowed on-ball', words: 'on-ball defender, on ball defender, on-ball defense, on ball defense, best defender, lockdown, shutdown, cover defender, covers, guards the ball', dir: 'low', min: 8, page: 'defense', fmt: SA_PCT, f: d => saDefBy(d, 'defender', l => ({ v: l.filter(s => s.goal === 1).length / l.length, n: l.length, extra: `${l.filter(s => s.goal === 1).length} goals on ${l.length} shots` })) },
   { id: 'slides', label: 'Slides', words: 'slides, slide, sliding, slider, slides the most, help defense', page: 'defense', fmt: SA_NUM(0), f: d => saDefBy(d, 'slideDefender', l => ({ v: l.length, n: l.length })) },
-  { id: 'offFault', label: 'Off-ball breakdowns', words: 'off-ball breakdowns, off ball breakdowns, breakdowns, breakdown, off-ball defender, off ball defender, off-ball mistakes, loses his man off ball, off ball defense, off-ball defense', page: 'defense', fmt: SA_NUM(0), f: d => saDefBy(d, 'offBallFault', l => ({ v: l.length, n: l.length })) },
+  { id: 'offFault', label: 'Off-ball breakdowns', dir: 'low', words: 'off-ball breakdowns, off ball breakdowns, breakdowns, breakdown, off-ball defender, off ball defender, off-ball mistakes, loses his man off ball, off ball defense, off-ball defense', page: 'defense', fmt: SA_NUM(0), f: d => saDefBy(d, 'offBallFault', l => ({ v: l.length, n: l.length })) },
   { id: 'pickFreed', label: 'Pick defense: ball carrier freed', words: 'pick defense, defending picks, defends picks, pick defender, guarding picks, switches', dir: 'low', min: 5, page: 'pickdef', fmt: SA_PCT, f: d => { const m = {}; try { pickDefenderRows(d.possList.filter(pp => pp.pick), d.xgOf, EFF_SEASON).forEach(r => { if (r.n) m[r.jersey] = { v: r.freed, n: r.n, extra: `${r.n} picks` }; }); } catch (e) { /* not ready */ } return m; } },
   { id: 'gb', label: 'Ground balls', words: 'ground balls, ground ball, gbs, gb, scrappy', page: 'eff', fmt: SA_NUM(0), f: d => saMap(d, p => p.gb ? { v: p.gb, n: p.gb } : null) },
   { id: 'ct', label: 'Caused turnovers', words: 'caused turnovers, takeaways, takeaway, steals, forced turnovers, causes turnovers, causes the most turnovers, cause turnovers, causing turnovers, forces turnovers, forcing turnovers, causes, forces', page: 'eff', fmt: SA_NUM(0), f: d => saMap(d, p => p.ct ? { v: p.ct, n: p.ct } : null) },
@@ -14004,7 +14004,7 @@ function saPlan(q) {
   if (!pick) return null;
   if (players.length) return { type: 'player', pick, players, filters };
   if (!/\b(who|top|best|worst|most|least|fewest|leader|leaders|rank|highest|lowest|better|struggl)/.test(t) && !n) return null;
-  return { type: 'rank', pick, n: n || 3, dir, filters };
+  return { type: 'rank', pick, n: n || 3, dir, filters, most: wantCount && !/\b(best|worst|fewest|least)\b/.test(t) };
 }
 // ---- running a plan ----
 // ---------------- Scrimmage Planner (Bobby, Oct 22) ----------------
@@ -15801,7 +15801,7 @@ function saRun(plan) {
     const posSet = Object.keys(POSITIONS[season] || {}).length > 0;
     if (f.pos) { if (posSet) rows = rows.filter(r => posIs(season, r.jersey, f.pos)); else out0.note = 'Positions aren’t set yet (Personnel › Depth Chart), so this shows everyone.'; }
     else if (meta.off && posSet) rows = rows.filter(r => isOffensePos(season, r.jersey));   // offense questions: attack and middies only
-    const asc = (better === 'low') !== (plan.dir === 'worst');
+    const asc = plan.most ? false : (better === 'low') !== (plan.dir === 'worst');   // "who … the most": highest first
     rows.sort((a, b) => asc ? a.v - b.v : b.v - a.v);
     rows.forEach((r, i) => { r.rank = i + 1; });
     const fmt = isC ? (v => (v >= 0 ? '+' : '') + v.toFixed(2) + ' vs team') : meta.fmt;
