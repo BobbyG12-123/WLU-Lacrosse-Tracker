@@ -1,0 +1,959 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Opponent Scouting</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@700;800;900&family=Instrument+Sans:wght@400;500;600;700&family=Barlow+Semi+Condensed:wght@400;500;600;700&family=Saira+Condensed:wght@600;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --chrome:#081A33; --chrome-2:#0D2547; --chrome-ink:#F2F5FA; --chrome-mute:#8FA3C2; --chrome-line:rgba(255,255,255,.1);
+  --accent:#2F7BFF; --paper:#F4F6F9; --card:#FFFFFF; --card-2:#F8F9FB; --ink:#0A1424; --muted:#66748A; --line:#D8DEE7; --line-2:#E8ECF2;
+  --good:#1E9E55; --critical:#D9381A; --gold:#E3A92B;
+  --d0:#F1F3F7; --d1:#FFE3DA; --d2:#FFB8A3; --d3:#FF8461; --d4:#E5512C;
+  --display:'Big Shoulders Display','Arial Narrow',sans-serif; --text:'Instrument Sans','Helvetica Neue',Arial,sans-serif;
+  --num:'Saira Condensed','Barlow Semi Condensed','Arial Narrow',sans-serif; --mono:'Barlow Semi Condensed','Arial Narrow',sans-serif;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  color-scheme: dark; --chrome:#040C18; --chrome-2:#0A1830; --accent:#4D90FF; --paper:#070E19; --card:#0E1625; --card-2:#121C2E;
+  --ink:#E8EEF7; --muted:#8B98AE; --line:#22304A; --line-2:#1A2539; --good:#34C759; --critical:#FF5C55;
+  --d0:#162034; --d1:#3A2119; --d2:#6B2E1E; --d3:#A63E22; --d4:#E5512C; } }
+:root[data-theme="dark"] { color-scheme: dark; --chrome:#040C18; --chrome-2:#0A1830; --accent:#4D90FF; --paper:#070E19; --card:#0E1625; --card-2:#121C2E;
+  --ink:#E8EEF7; --muted:#8B98AE; --line:#22304A; --line-2:#1A2539; --good:#34C759; --critical:#FF5C55;
+  --d0:#162034; --d1:#3A2119; --d2:#6B2E1E; --d3:#A63E22; --d4:#E5512C; }
+* { box-sizing: border-box; }
+body { margin:0; background:var(--paper); color:var(--ink); font:13.5px/1.45 var(--text); -webkit-font-smoothing:antialiased; }
+button, input { font-family:inherit; color:inherit; }
+.top { position:sticky; top:env(safe-area-inset-top,0px); z-index:40; height:52px; display:flex; align-items:center; gap:14px; padding:0 20px; background:var(--chrome); color:var(--chrome-ink); border-bottom:3px solid var(--accent); }
+.top .w { font-family:var(--display); font-weight:900; font-size:26px; letter-spacing:.02em; } .top .w span { color:var(--accent); }
+.top .sub { font-size:9.5px; letter-spacing:.22em; text-transform:uppercase; color:var(--chrome-mute); line-height:1.25; }
+.top .fill { flex:1; } .top .note { font-size:11px; color:var(--chrome-mute); }
+.top button { height:32px; border:1px solid var(--chrome-line); background:none; color:var(--chrome-ink); padding:0 12px; font-size:12px; font-weight:600; cursor:pointer; }
+main { max-width:1320px; margin:0 auto; padding:14px 16px 60px; }
+.vbar { display:flex; flex-wrap:wrap; align-items:flex-end; gap:12px 20px; border-bottom:2px solid var(--ink); padding-bottom:10px; margin-bottom:16px; }
+.vtitle { font-family:var(--display); font-weight:900; font-size:34px; line-height:.95; text-transform:uppercase; margin:0; }
+.picker { position:relative; flex:1; min-width:240px; max-width:420px; }
+.picker input { width:100%; height:36px; border:1px solid var(--line); background:var(--card); padding:0 12px; font-size:14px; }
+.picker .dd { position:absolute; top:37px; left:0; right:0; background:var(--card); border:1px solid var(--line); max-height:280px; overflow:auto; z-index:30; }
+.picker .dd button { display:flex; justify-content:space-between; width:100%; border:0; background:none; padding:7px 12px; text-align:left; cursor:pointer; font-size:13px; }
+.picker .dd button:hover { background:var(--card-2); } .picker .dd small { color:var(--muted); font-family:var(--mono); }
+.pins { display:flex; flex-wrap:wrap; gap:6px; width:100%; }
+.pins button { border:1px solid var(--line); background:var(--card); padding:4px 9px; font-size:12px; cursor:pointer; }
+.pins button.on { background:var(--ink); color:var(--card); border-color:var(--ink); }
+.pins .lab { font-size:10.5px; letter-spacing:.14em; text-transform:uppercase; color:var(--muted); font-weight:700; align-self:center; margin-right:4px; }
+.hero { display:grid; grid-template-columns:auto 1fr; gap:18px; background:var(--chrome); color:#F2F5FA; padding:16px 20px; margin-bottom:14px; align-items:center; }
+.hero h2 { margin:0; font-family:var(--display); font-weight:900; font-size:38px; line-height:1; text-transform:uppercase; }
+.hero .meta { color:#8FA3C2; font-size:13px; margin-top:4px; }
+.ret { display:flex; flex-wrap:wrap; gap:6px 18px; justify-content:flex-end; }
+.ret div { min-width:92px; } .ret .k { font-size:9.5px; letter-spacing:.16em; text-transform:uppercase; color:#8FA3C2; font-weight:700; }
+.ret .v { font-family:var(--num); font-weight:700; font-size:26px; line-height:1; } .ret .v.warn { color:#FF8A6B; }
+.ret .bar { height:4px; background:rgba(255,255,255,.12); margin-top:4px; } .ret .bar i { display:block; height:100%; background:var(--gold); }
+.tiles { display:grid; grid-template-columns:repeat(8,minmax(0,1fr)); border:1px solid var(--line); background:var(--card); margin-bottom:22px; }
+.tile { padding:10px 12px; border-right:1px solid var(--line-2); min-width:0; } .tile:last-child { border-right:0; }
+.tile .k { font-size:10px; letter-spacing:.13em; text-transform:uppercase; font-weight:700; color:var(--muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.tile .v { font-family:var(--num); font-weight:700; font-size:28px; line-height:1.05; }
+.tile .r { font-family:var(--mono); font-size:12px; color:var(--muted); } .tile .r b { color:var(--ink); }
+.tile .r.hi { color:var(--critical); }
+.sec { display:flex; align-items:baseline; gap:12px; margin:26px 0 10px; border-bottom:1px solid var(--line); padding-bottom:6px; }
+.sec h3 { margin:0; font-family:var(--display); font-weight:900; font-size:24px; text-transform:uppercase; letter-spacing:.02em; }
+.sec .n { font-family:var(--display); font-weight:900; font-size:24px; color:var(--accent); }
+.sec p { margin:0; color:var(--muted); font-size:12.5px; }
+.panel { background:var(--card); border:1px solid var(--line); padding:0 16px 14px; margin-bottom:14px; min-width:0; }
+.ph { display:flex; justify-content:space-between; align-items:center; gap:10px; background:var(--chrome); color:#F2F5FA; margin:0 -16px 12px; padding:8px 16px; }
+.ph b { font-family:var(--display); font-weight:800; font-size:16px; letter-spacing:.08em; text-transform:uppercase; }
+.ph small { color:#8FA3C2; font-size:11.5px; }
+.g2 { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:14px; } .g3 { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:14px; }
+.tw { overflow-x:auto; }
+table { width:100%; border-collapse:collapse; }
+th { font-size:10px; letter-spacing:.11em; text-transform:uppercase; color:var(--muted); font-weight:700; text-align:right; padding:6px 7px; border-bottom:1px solid var(--ink); white-space:nowrap; cursor:pointer; user-select:none; }
+th:first-child, th.l { text-align:left; } th.on { color:var(--ink); } th.on::after { content:' ▾'; }
+td { font-family:var(--mono); font-size:13px; text-align:right; padding:6px 7px; border-bottom:1px solid var(--line-2); white-space:nowrap; font-variant-numeric:tabular-nums; }
+td.l { text-align:left; font-family:var(--text); }
+tr.click { cursor:pointer; } tr.click:hover td:not(.h) { background:var(--card-2); } tr.click:hover td.l b { color:var(--accent); }
+.nm b { font-weight:700; } .nm small { color:var(--muted); font-family:var(--mono); margin-left:6px; }
+td.h { font-weight:600; } .h0{background:var(--d0)} .h1{background:var(--d1)} .h2{background:var(--d2)} .h3{background:var(--d3);color:#fff} .h4{background:var(--d4);color:#fff}
+.score { display:flex; align-items:center; gap:8px; justify-content:flex-end; } .score b { font-family:var(--num); font-size:20px; min-width:28px; text-align:right; }
+.score i { width:70px; height:6px; background:var(--line-2); position:relative; display:block; } .score i u { position:absolute; left:0; top:0; bottom:0; background:var(--critical); }
+.tag { display:inline-block; font:600 10.5px var(--text); letter-spacing:.04em; padding:1px 6px; margin-right:3px; border:1px solid var(--line); color:var(--ink); background:var(--card-2); }
+.tag.Shooter, .tag.Feeder { border-color:var(--ink); color:var(--ink); }
+.tag.Early { border-color:var(--ink); color:var(--ink); } .tag.Settled { border-color:var(--muted); color:var(--muted); }
+.tag.Dodger { border-color:var(--ink); color:var(--ink); } .tag.Steady, .tag.Boom\/bust { border-color:var(--muted); color:var(--muted); }
+.tag.Runninghot { border-color:var(--critical); color:var(--critical); background:var(--card); } .tag.Runningcold { border-color:var(--good); color:var(--good); }
+.tag.Pressure { background:var(--good); border-color:var(--good); color:#fff; } .tag.Secure { background:var(--critical); border-color:var(--critical); color:#fff; }
+.wts { display:flex; flex-wrap:wrap; gap:8px 18px; align-items:center; padding:8px 0 10px; border-bottom:1px solid var(--line-2); margin-bottom:6px; font-size:12px; }
+.wts label { display:flex; align-items:center; gap:6px; } .wts input { width:90px; accent-color:var(--accent); } .wts b { font-family:var(--mono); min-width:22px; }
+.wts .acc { margin-left:auto; color:var(--muted); } .wts button { border:1px solid var(--line); background:var(--card); padding:3px 8px; font-size:11.5px; cursor:pointer; }
+.note { font-size:12px; color:var(--muted); margin:8px 0 0; } .warnbox { border-left:3px solid var(--critical); background:var(--card-2); padding:8px 10px; font-size:12.5px; margin:8px 0; }
+.mini { display:grid; grid-template-columns:1fr auto; gap:2px 10px; align-items:baseline; padding:8px 0; border-bottom:1px solid var(--line-2); cursor:pointer; }
+.mini:hover .nm b { color:var(--accent); } .mini .st { font-family:var(--mono); color:var(--muted); font-size:12px; grid-column:1 / -1; }
+.bars { display:grid; grid-template-columns:110px 1fr 54px 48px; gap:6px 10px; align-items:center; font-size:12.5px; }
+.bars .t { position:relative; height:14px; background:var(--line-2); } .bars .t i { position:absolute; left:0; top:0; bottom:0; background:var(--muted); }
+.bars .t u { position:absolute; top:-3px; bottom:-3px; width:2px; background:var(--ink); }
+.bars .v { font-family:var(--mono); text-align:right; font-weight:600; } .bars .s { font-family:var(--mono); text-align:right; color:var(--muted); font-size:11.5px; }
+.bars .hd { font-size:10px; letter-spacing:.11em; text-transform:uppercase; color:var(--muted); font-weight:700; }
+.up { color:var(--critical); } .dn { color:var(--good); }
+.strip { display:flex; gap:4px; overflow-x:auto; padding-bottom:6px; }
+.gm { flex:0 0 64px; border:1px solid var(--line); background:var(--card-2); padding:5px 6px; font-family:var(--mono); font-size:11.5px; }
+.gm .r { font-weight:700; } .gm.W .r { color:var(--critical); } .gm.L .r { color:var(--good); }
+.gm .o { color:var(--muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; } .gm .e { height:26px; display:flex; align-items:flex-end; gap:2px; margin-top:4px; }
+.gm .e i { flex:1; display:block; } .gm .e i.o { background:var(--critical); } .gm .e i.d { background:var(--muted); }
+.legend { display:flex; gap:14px; font-size:11.5px; color:var(--muted); margin:6px 0 2px; } .legend i { display:inline-block; width:10px; height:10px; margin-right:5px; vertical-align:-1px; }
+.film td.l { white-space:normal; }
+.drawer { position:fixed; top:0; right:0; bottom:0; width:min(480px,100%); background:var(--card); border-left:1px solid var(--line); z-index:60; overflow:auto; box-shadow:-12px 0 30px rgba(0,0,0,.18); transform:translateX(105%); transition:transform .2s; }
+.drawer.open { transform:none; }
+.dh { background:var(--chrome); color:#F2F5FA; padding:14px 16px; position:sticky; top:0; display:grid; grid-template-columns:auto 1fr auto; gap:12px; align-items:center; }
+.dh .j { width:52px; height:52px; background:var(--gold); color:#081A33; display:grid; place-items:center; font-family:var(--num); font-weight:700; font-size:26px; }
+.dh h4 { margin:0; font-family:var(--display); font-weight:900; font-size:26px; line-height:1; text-transform:uppercase; } .dh .m { color:#8FA3C2; font-size:12px; margin-top:3px; }
+.dh button { border:1px solid rgba(255,255,255,.2); background:none; color:#fff; width:32px; height:32px; cursor:pointer; font-size:16px; }
+.db { padding:4px 16px 24px; } .db h5 { margin:18px 0 8px; font-family:var(--display); font-weight:800; font-size:16px; letter-spacing:.08em; text-transform:uppercase; border-bottom:1px solid var(--line); padding-bottom:4px; }
+.kv { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); border:1px solid var(--line-2); }
+.kv div { padding:7px 9px; border-right:1px solid var(--line-2); } .kv div:last-child { border-right:0; }
+.kv .k { font-size:9.5px; letter-spacing:.12em; text-transform:uppercase; color:var(--muted); font-weight:700; } .kv .v { font-family:var(--num); font-size:22px; font-weight:700; line-height:1.05; }
+.kv .p { font-family:var(--mono); font-size:11px; color:var(--muted); }
+.form { display:flex; align-items:center; gap:10px; } .form svg { flex:1; height:56px; }
+.vs { display:grid; grid-template-columns:1fr 90px 1fr; gap:4px 8px; align-items:center; font-size:12.5px; }
+.vs .c { text-align:center; font-size:10.5px; letter-spacing:.1em; text-transform:uppercase; color:var(--muted); font-weight:700; }
+.vs .a, .vs .b { position:relative; height:16px; background:var(--line-2); } .vs .a i { position:absolute; right:0; top:0; bottom:0; background:var(--critical); } .vs .b i { position:absolute; left:0; top:0; bottom:0; background:var(--good); }
+.vs .a span, .vs .b span { position:absolute; top:0; font-family:var(--mono); font-size:11px; line-height:16px; font-weight:600; } .vs .a span { left:4px; } .vs .b span { right:4px; }
+.vs .hd { font-weight:700; } .vs .hd.r { text-align:right; }
+.grads { margin-top:8px; font-size:12.5px; } .grads summary { cursor:pointer; color:var(--muted); }
+.grads button { border:1px solid var(--line); background:var(--card); padding:2px 8px; font-size:11.5px; cursor:pointer; margin-left:8px; }
+.ours { border-style:dashed; }
+.clipchip { display:inline-flex; margin:2px 4px 2px 0; border:1px solid var(--line); background:var(--card); }
+.clipbtn { border:0; background:none; color:var(--accent); font:600 11.5px var(--text); padding:3px 7px; cursor:pointer; } .clipbtn:hover { background:var(--card-2); }
+.clipadd { border:0; border-left:1px solid var(--line); background:none; color:var(--muted); padding:3px 6px; cursor:pointer; font-size:12px; } .clipadd:hover { color:var(--accent); }
+.playall { border:1px solid var(--accent); background:var(--accent); color:#fff; font:700 11.5px var(--text); padding:3px 9px; cursor:pointer; margin:2px 6px 2px 0; }
+.player[hidden], .sess[hidden] { display:none !important; }
+.player { position:fixed; inset:0; background:rgba(4,10,20,.92); z-index:90; display:flex; flex-direction:column; align-items:center; justify-content:center; padding:16px; }
+.player video { width:min(1100px,100%); max-height:72vh; background:#000; }
+.player .pbar { width:min(1100px,100%); display:flex; flex-wrap:wrap; gap:8px; align-items:center; color:#E8EEF7; margin-top:10px; font-size:13px; }
+.player .pbar b { font-family:var(--display); font-size:18px; letter-spacing:.04em; text-transform:uppercase; } .player .pbar .sp { flex:1; }
+.player .pbar button { border:1px solid rgba(255,255,255,.25); background:none; color:#fff; padding:5px 10px; cursor:pointer; font-size:12.5px; }
+.player .note2 { width:min(1100px,100%); margin-top:6px; } .player .note2 input { width:100%; background:#0E1625; color:#E8EEF7; border:1px solid #22304A; padding:6px 8px; }
+.sessbtn { position:fixed; right:16px; bottom:calc(16px + env(safe-area-inset-bottom,0px)); z-index:70; background:var(--chrome); color:#fff; border:2px solid var(--gold); padding:9px 14px; font:700 13px var(--text); cursor:pointer; }
+.sess { position:fixed; right:16px; bottom:calc(64px + env(safe-area-inset-bottom,0px)); z-index:71; width:min(420px,calc(100% - 32px)); max-height:70vh; overflow:auto; background:var(--card); border:1px solid var(--line); box-shadow:0 10px 30px rgba(0,0,0,.25); }
+.sess .sh { background:var(--chrome); color:#fff; padding:10px 12px; display:flex; gap:8px; align-items:center; } .sess .sh input { flex:1; background:#0D2547; border:1px solid #22304A; color:#fff; padding:5px 7px; }
+.sess .row { display:grid; grid-template-columns:22px 1fr auto; gap:6px; padding:8px 12px; border-bottom:1px solid var(--line-2); align-items:start; font-size:12.5px; }
+.sess .row input { width:100%; margin-top:4px; border:1px solid var(--line); background:var(--card-2); padding:3px 6px; font-size:12px; color:var(--ink); }
+.sess .row button { border:1px solid var(--line); background:var(--card); padding:1px 6px; cursor:pointer; font-size:12px; color:var(--ink); }
+.sess .sf { padding:10px 12px; display:flex; gap:8px; } .sess .sf button { flex:1; padding:7px; border:0; background:var(--accent); color:#fff; font-weight:700; cursor:pointer; }
+.ann { position:relative; border-left:3px solid var(--gold); padding:6px 10px; margin:0 0 14px; background:var(--card); font-size:12.5px; }
+.ann b { color:var(--gold); }
+@media (max-width:1100px) { .tiles { grid-template-columns:repeat(4,minmax(0,1fr)); } .tile:nth-child(4) { border-right:0; } .tile:nth-child(-n+4) { border-bottom:1px solid var(--line-2); } .g3 { grid-template-columns:1fr 1fr; } }
+@media (max-width:760px) { .tiles[style*="repeat(3"] { grid-template-columns:1fr !important; } .tiles[style*="repeat(3"] .tile { border-right:0; }
+  main { padding:14px 16px 60px; } .g2, .g3 { grid-template-columns:1fr; } .hero { grid-template-columns:1fr; } .ret { justify-content:flex-start; }
+  .tiles { grid-template-columns:repeat(2,minmax(0,1fr)); } .tile { border-bottom:1px solid var(--line-2); } .tile:nth-child(even) { border-right:0; } .tile:nth-child(odd) { border-right:1px solid var(--line-2); }
+  .top .sub, .top .note { display:none; } .bars { grid-template-columns:90px 1fr 48px 40px; } .kv { grid-template-columns:repeat(2,minmax(0,1fr)); } .kv div:nth-child(2) { border-right:0; } }
+</style></head>
+<body>
+<main>
+  <div class="ann" id="ann">Colors: <b style="color:var(--critical)">red = bad for W&amp;L</b>, <b style="color:var(--good)">green = good for W&amp;L</b>. Showing <b>2027 returners</b> (seniors &amp; grad students hidden). <span id="upd"></span></div>
+  <div class="vbar">
+    <h1 class="vtitle">Opponent</h1>
+    <div class="picker"><input id="q" placeholder="Search any D3 or D1 team…" autocomplete="off"><div class="dd" id="dd" hidden></div></div>
+    <div class="pins" id="pins"></div>
+  </div>
+  <div id="app"><p class="note">Loading scouting data…</p></div>
+</main>
+<aside class="drawer" id="drawer" aria-label="Player card"></aside>
+<script>
+// ---------- data: read from Firestore through the tracker that hosts this page (staff sign-in) ----------
+// the tracker's DB variable is script-scoped, so connect through its firebase app (same signed-in user)
+const HOST = (() => { try { const P = window.parent; return P !== window && P.firebase && P.firebase.apps.length && P.firebase.auth().currentUser ? P : null; } catch (e) { return null; } })();
+const DBX = window.__STUB_DB || (HOST && HOST.firebase.firestore());
+const ME = (HOST && HOST.firebase && HOST.firebase.auth().currentUser && HOST.firebase.auth().currentUser.email) || window.__STUB_ME || 'staff';
+let D = { opp: null, wl: null, cards: {}, meta: null, pinned: [] };
+let T = null, LEAGUE_N = 0, TEAMNAME = {}, FILMS = {};
+const WL_ID = 410;
+// records are stored as one JSON string field 'j' (Firestore can't hold the nested arrays in game logs and clip lists)
+const unpack = x => (x && typeof x.j === 'string' ? JSON.parse(x.j) : x);
+async function getDoc(col, id) { const d = await DBX.collection(col).doc(String(id)).get(); return d.exists ? unpack(d.data()) : null; }
+async function getCards(teamId) {
+  const qs = await DBX.collection('lrPlayers').where('team', '==', teamId).get();
+  const out = {}; qs.forEach(d => { const c = unpack(d.data()); out[c.id] = c; }); return out;
+}
+// theme follows the tracker
+function syncTheme() { try { const t = HOST && HOST.document.documentElement.dataset.theme; if (t) document.documentElement.dataset.theme = t; else delete document.documentElement.dataset.theme; } catch (e) {} }
+
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
+const pc = v => v == null ? '—' : (100 * v).toFixed(v >= .995 ? 0 : 1).replace(/\.0$/, '') + '%';
+const f1 = v => v == null ? '—' : (+v).toFixed(1);
+const f2 = v => v == null ? '—' : (+v).toFixed(2);
+const hc = p => p == null ? '' : p >= 85 ? 'h4' : p >= 70 ? 'h3' : p >= 50 ? 'h2' : p >= 30 ? 'h1' : 'h0';
+const ord = n => n + (['th', 'st', 'nd', 'rd'][(n % 100 - 20) % 10] || ['th', 'st', 'nd', 'rd'][n % 100] || 'th');
+let W0 = {}, W = {}, sortKey = 'score', marked = new Set();
+const ROLE = { offensive: 'Offense', defensive: 'Defense', faceoff: 'Faceoff', goalkeeper: 'Goalie' };
+
+
+// ---------- picker ----------
+const pinsEl = $('#pins');
+function drawPins() { pinsEl.innerHTML = '<span class="lab">Our 2026 opponents</span>' + D.pinned.map(([id, n]) => `<button data-id="${id}" class="${T && id === T.id ? 'on' : ''}">${esc(n)}</button>`).join(''); }
+pinsEl.onclick = e => { const b = e.target.closest('button'); if (b && (!T || +b.dataset.id !== T.id)) openTeam(+b.dataset.id); };
+$('#q').oninput = () => {
+  const q = $('#q').value.trim().toLowerCase(), dd = $('#dd');
+  if (!q) { dd.hidden = true; return; }
+  const hits = D.meta.teams.filter(t => t.name.toLowerCase().includes(q)).slice(0, 12);
+  dd.innerHTML = hits.map(t => `<button data-id="${t.id}">${esc(t.name)}<small>${t.lg === 'd1m' ? 'D1' : 'D3'}</small></button>`).join('') || '<div class="note" style="padding:8px 12px">No team</div>';
+  dd.hidden = false;
+};
+$('#dd').onclick = e => { const b = e.target.closest('button'); if (b) { $('#dd').hidden = true; $('#q').value = ''; if (!T || +b.dataset.id !== T.id) openTeam(+b.dataset.id); } };
+async function openTeam(id) {
+  $('#app').innerHTML = '<p class="note">Loading…</p>'; $('#drawer').classList.remove('open');
+  try {
+    const [t, cards] = await Promise.all([getDoc('lrTeams', id), getCards(id)]);
+    if (!t) { $('#app').innerHTML = '<p class="note">No scouting record for that team yet.</p>'; return; }
+    D.opp = t; T = t; LEAGUE_N = t.n_league; Object.assign(D.cards, cards);
+    try { marked = new Set(JSON.parse(localStorage.getItem('wluMarked:' + id) || '[]')); } catch (e) { marked = new Set(); }
+    try { localStorage.setItem('wluScoutTeam', String(id)); } catch (e) {}
+    buildTaggers(); drawPins(); render(); window.scrollTo(0, 0);
+  } catch (e) { console.error(e); $('#app').innerHTML = `<p class="warnbox">Could not load ${esc(TEAMNAME[id] || 'that team')}: ${esc(e.message || e)}</p>`; }
+}
+
+// ---------- helpers ----------
+const roster = () => T.roster.filter(r => !r.grad || marked.has(r.player_ID));
+const grads = () => T.roster.filter(r => r.grad && !marked.has(r.player_ID) && (r.games_appeared_in || 0) > 0);
+const scoreOf = r => {
+  const t = r.threat; if (!t || !t.qual) return null;
+  if (r.role !== 'offensive') return t.score;
+  const tot = Object.values(W).reduce((a, b) => a + b, 0) || 1;
+  return Math.round(Object.keys(W).reduce((a, k) => a + t.ing[k] * W[k], 0) / tot);
+};
+const rankTxt = k => { const r = T.ranks[k]; return r ? `<span class="r ${r <= 25 ? 'hi' : ''}"><b>${ord(r)}</b> of ${LEAGUE_N}</span>` : '<span class="r">—</span>'; };
+const tagsHtml = r => (r.threat?.tags || []).filter(t => t !== 'Steady' && t !== 'Boom/bust').map(t => `<span class="tag ${t.replace(/[^A-Za-z]/g, '')}">${t === 'Pressure' ? 'Pressure him' : t === 'Early' ? 'Early-clock' : t}</span>`).join('');
+const strip = h => String(h || '').replace(/<[^>]+>/g, '');
+
+function render() {
+  CLIPREG = [];
+  const ret = T.returning, s = T.stats;
+  const goalieGone = (ret.saves ?? 1) < .5;
+  let h = `<section class="hero"><div><h2>${esc(T.name)}</h2><div class="meta">${esc(s.record)} · LaxElo ${Math.round(s.elo_rating)} · ${T.lg === 'd1m' ? 'NCAA D1' : 'NCAA D3'} · ${LEAGUE_N} teams ranked</div></div>
+    <div class="ret">${[['Plays back', ret.team_play_shares], ['Goals back', ret.goals], ['Assists back', ret.assists], ['Value (EGA) back', ret.EGA], ['Faceoff wins back', ret.faceoff_wins], ['Saves back', ret.saves]]
+      .map(([k, v]) => `<div><div class="k">${k}</div><div class="v ${v != null && v < .5 ? 'warn' : ''}">${pc(v)}</div><div class="bar"><i style="width:${(v || 0) * 100}%"></i></div></div>`).join('')}</div></section>`;
+  const tiles = [['Adj. offense', pc(s.adjusted_off_efficiency), 'adjusted_off_efficiency'], ['Adj. defense', pc(s.adjusted_def_efficiency), 'adjusted_def_efficiency'],
+    ['Pace (sec/poss)', f1(s.off_pace), 'off_pace'], ['True FO%', pc(s.adjusted_true_faceoff_win_rate), 'adjusted_true_faceoff_win_rate'], ['Save %', pc(s.def_save_pct), 'def_save_pct'],
+    ['Clear %', pc(s.clear_rate), 'clear_rate'], ['Man-up', pc(s.off_emo_efficiency), 'off_emo_efficiency'], ['Man-down', pc(s.def_emo_efficiency), 'def_emo_efficiency']];
+  const ev0 = T.ev || {}, py = ev0.pyth, fm = T.form;
+  h += `<div class="tiles" style="grid-template-columns:repeat(3,minmax(0,1fr));margin-bottom:10px">
+    <div class="tile"><div class="k">Rating trend (LaxElo)</div>${T.elo_series?.length ? spark(T.elo_series.map(e => e[1]), 'var(--critical)', 300, 40) : ''}<div class="r">${T.elo_series?.length ? `${T.elo_series[0][1]} → <b>${T.elo_series[T.elo_series.length - 1][1]}</b>` : ''}</div></div>
+    <div class="tile"><div class="k">Last 5 vs season</div><div class="v" style="font-size:20px">${fm ? `Off ${pc(fm.last5_off)} <small style="font-size:12px;color:var(--muted)">vs ${pc(fm.season_off)}</small>` : '—'}</div><div class="r">${fm ? `Def allowed ${pc(fm.last5_def)} vs ${pc(fm.season_def)} · <b class="${fm.last5_off - fm.season_off - (fm.last5_def - fm.season_def) > .02 ? 'up' : fm.last5_off - fm.season_off - (fm.last5_def - fm.season_def) < -.02 ? 'dn' : ''}">${fm.last5_off - fm.season_off - (fm.last5_def - fm.season_def) > .02 ? 'heating up' : fm.last5_off - fm.season_off - (fm.last5_def - fm.season_def) < -.02 ? 'cooling off' : 'steady'}</b>` : ''}</div></div>
+    <div class="tile"><div class="k">Luck check</div><div class="v" style="font-size:20px">${py ? `${py.actual_wins} wins <small style="font-size:12px;color:var(--muted)">vs ${py.expected_wins} expected</small>` : '—'}</div><div class="r">${py ? (py.actual_wins - py.expected_wins >= 1.5 ? '<b class="up">over-performing</b>: due to come back' : py.actual_wins - py.expected_wins <= -1.5 ? '<b class="dn">under-performing</b>: better than their record' : 'record matches their goal differential') + ` · close games ${ev0.close_record?.[0] ?? 0}-${ev0.close_record?.[1] ?? 0}` : ''}</div></div></div>`;
+  h += `<div class="tiles">${tiles.map(([k, v, key]) => `<div class="tile"><div class="k">${k}</div><div class="v">${v}</div>${rankTxt(key)}</div>`).join('')}</div>`;
+
+  // ===== WHO BEATS US =====
+  const R = roster();
+  const off = R.filter(r => r.role === 'offensive' && r.threat?.qual).map(r => Object.assign(r, { _s: scoreOf(r) }));
+  const key = { score: r => r._s, vol: r => r.threat.ing.Volume, fin: r => r.threat.ing.Finishing, cre: r => r.threat.ing.Creating, ega: r => r.threat.ing.EGA,
+    g: r => r.goals, a: r => r.assists, sh: r => r.shots, shp: r => r.shooting_pct, eff: r => r.shooting_efficiency, ogp: r => r.on_goal_shooting_pct, xg: r => r.excess_goals_scored, to: r => -r.turnover_rate }[sortKey];
+  off.sort((a, b) => (key(b) ?? -1e9) - (key(a) ?? -1e9));
+  const th = (k, lab, cls = '') => `<th data-k="${k}" class="${cls} ${sortKey === k ? 'on' : ''}">${lab}</th>`;
+  const m = D.meta.models;
+  h += `<div class="sec"><span class="n">1</span><h3>Who beats us</h3><p>2027 returners · ranked by threat score (D3 percentiles · darker = more dangerous)</p></div>
+  <div class="panel"><div class="ph"><b>Offensive threats</b><small>3%+ of team plays · click a player for his card</small></div>
+   <div class="wts">${Object.keys(W).map(k => `<label>${k} <input type="range" min="0" max="60" step="5" data-w="${k}" value="${W[k]}"><b>${W[k]}</b></label>`).join('')}
+     <button id="wReset">Reset to data weights</button><span class="acc">Data weights predict a player's points in other games at r = ${m.offense.alt_pts?.r_fitted ?? '0.70'} (equal weights ${m.offense.alt_pts?.r_equal ?? '0.64'})</span></div>
+   <div class="tw"><table><thead><tr>${th('name', 'Player', 'l')}<th class="l">Type</th>${th('score', 'Threat')}${th('vol', 'Volume')}${th('fin', 'Finishing')}${th('cre', 'Creating')}${th('ega', 'EGA')}${th('g', 'G')}${th('a', 'A')}${th('sh', 'Sh')}${th('shp', 'Sh%')}${th('eff', 'Sh. eff')}${th('ogp', 'On-goal%')}${th('xg', 'G vs exp')}${th('to', 'TO rate')}</tr></thead><tbody>
+   ${off.map(r => { const i = r.threat.ing; return `<tr class="click" data-p="${r.player_ID}"><td class="l nm"><b>${esc(r.player)}</b><small>#${esc(r.jersey_number)} · ${esc(r.team_listed_class)}</small></td><td class="l">${tagsHtml(r)}</td>
+     <td><span class="score"><b>${r._s}</b><i><u style="width:${r._s}%"></u></i></span></td>${['Volume', 'Finishing', 'Creating', 'EGA'].map(k => `<td class="h ${hc(i[k])}">${i[k]}</td>`).join('')}
+     <td>${r.goals}</td><td>${r.assists}</td><td>${r.shots}</td><td>${pc(r.shooting_pct)}</td><td>${f2(r.shooting_efficiency)}</td><td>${pc(r.on_goal_shooting_pct)}</td><td>${(r.excess_goals_scored >= 0 ? '+' : '') + f1(r.excess_goals_scored)}</td><td>${f2(r.turnover_rate)}</td></tr>`; }).join('')}
+   </tbody></table></div>
+   ${others(R.filter(r => r.role === 'offensive' && !r.threat?.qual))}
+   ${gradList()}
+  </div>`;
+
+  const fos = R.filter(r => r.role === 'faceoff' && (r.faceoffs_taken || 0) >= 40).sort((a, b) => (b.threat?.score ?? 0) - (a.threat?.score ?? 0));
+  const gks = R.filter(r => r.role === 'goalkeeper' && (r.sog_faced || 0) > 0).sort((a, b) => (b.sog_faced || 0) - (a.sog_faced || 0));
+  const ds = R.filter(r => r.role === 'defensive').sort((a, b) => (b.threat?.score ?? -1) - (a.threat?.score ?? -1)).slice(0, 6);
+  const gradGk = T.roster.filter(r => r.role === 'goalkeeper' && r.grad && (r.sog_faced || 0) > 0).sort((a, b) => b.sog_faced - a.sog_faced)[0];
+  h += `<div class="g3">
+   <div class="panel"><div class="ph"><b>Faceoff</b><small>Elo 70 · win rate 30 · r = ${m.faceoff.r_fitted}</small></div>
+    ${fos.map(r => { const f = T.fogos.find(x => x.player_ID === r.player_ID) || {}; return `<div class="mini" data-p="${r.player_ID}"><span class="nm"><b>${esc(r.player)}</b><small>#${esc(r.jersey_number)} · ${esc(r.team_listed_class)}</small></span><span class="score"><b>${r.threat?.score ?? '—'}</b></span>
+      <span class="st">${pc(r.faceoff_win_rate)} on ${r.faceoffs_taken} · Elo ${Math.round(r.faceoff_ELO || 0)} · ${f.last ?? '—'} draws last game</span>${f.elo?.length ? spark(f.elo.map(e => e[1]), 'var(--critical)', 240, 34) : ''}</div>`; }).join('') || '<p class="note">No returning faceoff man with 40+ draws.</p>'}
+   </div>
+   <div class="panel"><div class="ph"><b>Goalie</b><small>weaker read · r = ${m.goalie.r_fitted}</small></div>
+    ${goalieGone && gradGk ? `<div class="warnbox"><b>${esc(gradGk.player)}</b> (${esc(gradGk.team_listed_class)}) made ${pc(1 - (ret.saves || 0))} of their saves and is gone. Expect a new starter.</div>` : ''}
+    ${gks.map(r => `<div class="mini" data-p="${r.player_ID}"><span class="nm"><b>${esc(r.player)}</b><small>#${esc(r.jersey_number)} · ${esc(r.team_listed_class)}</small></span><span class="score"><b>${r.threat?.qual ? r.threat.score : '—'}</b></span>
+      <span class="st">${pc(r.save_pct)} on ${r.sog_faced} SOG · ${(r.excess_saves >= 0 ? '+' : '') + f1(r.excess_saves)} saves vs expected</span></div>`).join('') || '<p class="note">No returning goalie with game minutes.</p>'}
+    <p class="note">Save % only modestly predicts the next game. Treat as a lean, not a lock.</p>
+   </div>
+   <div class="panel"><div class="ph"><b>Defense</b><small>D-EGA 50 · CTs 45 · GBs 5</small></div>
+    ${ds.map(r => `<div class="mini" data-p="${r.player_ID}"><span class="nm"><b>${esc(r.player)}</b><small>#${esc(r.jersey_number)} · ${esc(r.team_listed_class)}</small></span><span class="score"><b>${r.threat?.qual ? r.threat.score : '—'}</b></span>
+      <span class="st">${r.caused_turnovers ?? 0} CT · ${r.gbs ?? 0} GB · ${f1(r.defensive_EGA)} D-EGA${r.threat?.qual ? '' : ' · low usage'}</span></div>`).join('')}
+   </div></div>`;
+
+  h += edgesSection();
+  // ===== HOW THEY PLAY =====
+  const prof = (T.off_shot_profile?.this_year || []).reduce((a, p) => (a[p.tag] = p.buckets, a), {});
+  const dprof = (T.def_shot_profile?.this_year || []).reduce((a, p) => (a[p.tag] = p.buckets, a), {});
+  const lab = { possession_started_with_bucket: b => b, leading_status: b => ({ winning: 'Leading', losing: 'Trailing', tied: 'Tied' })[b] || b,
+    quarter_bucket: b => 'Q' + (b / 900 + 1), shot_clock_remaining_bucket: b => ({ 0: '0–19s left', 20: '20–39s', 40: '40–59s', 60: '60s+' })[b] ?? b, man_up: b => b ? 'Man-up' : 'Even' };
+  const barsBlock = (buckets, fn, title, inv) => !buckets ? '' : `<div class="bars" style="margin:6px 0 14px"><span class="hd">${title}</span><span class="hd">Shooting % vs D3 avg ┃</span><span class="hd" style="text-align:right">Sh%</span><span class="hd" style="text-align:right">Share</span>
+    ${buckets.filter(b => (b.shots || 0) >= 10).map(b => `<span>${esc(fn(b.bucket))}</span><span class="t"><i style="width:${Math.min(100, b.pct / .6 * 100)}%; background:${(inv ? b.pct < b.league_avg : b.pct > b.league_avg) ? 'var(--critical)' : 'var(--good)'}"></i><u style="left:${Math.min(100, b.league_avg / .6 * 100)}%"></u></span><span class="v">${pc(b.pct)}</span><span class="s">${pc(b.share)}</span>`).join('')}</div>`;
+  const pace = (rows, inv) => !rows ? '' : `<div class="bars" style="margin:6px 0 4px"><span class="hd">Possession length</span><span class="hd">Goals per possession vs D3 ┃</span><span class="hd" style="text-align:right">Eff.</span><span class="hd" style="text-align:right">Share</span>
+    ${rows.map(b => { const lg = b.league_cnt ? b.league_goals / b.league_cnt : 0; return `<span>${esc(b.label)}</span><span class="t"><i style="width:${Math.min(100, b.efficiency / .6 * 100)}%; background:${(inv ? b.efficiency < lg : b.efficiency > lg) ? 'var(--critical)' : 'var(--good)'}"></i><u style="left:${Math.min(100, lg / .6 * 100)}%"></u></span><span class="v">${pc(b.efficiency)}</span><span class="s">${pc(b.share)}</span>`; }).join('')}</div>`;
+  h += `<div class="sec"><span class="n">3</span><h3>How they play</h3><p>Red = bad for W&amp;L (better than the D3 average) · green = good for W&amp;L · black tick = D3 average</p></div>
+  <div class="g2"><div class="panel"><div class="ph"><b>Their offense — how they score</b><small>2026 · all players</small></div>
+    ${barsBlock(prof.possession_started_with_bucket, lab.possession_started_with_bucket, 'Possession started by')}
+    ${barsBlock(prof.leading_status, lab.leading_status, 'Score state')}
+    ${barsBlock(prof.quarter_bucket, lab.quarter_bucket, 'Quarter')}
+    ${pace(T.off_pace)}
+    <p class="note">${T.off_pace ? `${pc(T.off_pace[0].share)} of their possessions end inside 20 seconds.` : ''} Pace ${f1(s.off_pace)} seconds a possession (${ord(T.ranks.off_pace || 0)} fastest of ${LEAGUE_N}).</p></div>
+   <div class="panel"><div class="ph"><b>Their defense — what they allow</b><small>red = they defend it better than D3 (bad for us) · green = easier for us</small></div>
+    ${barsBlock(dprof.possession_started_with_bucket, lab.possession_started_with_bucket, 'Our possession started by', true)}
+    ${barsBlock(dprof.shot_clock_remaining_bucket, lab.shot_clock_remaining_bucket, 'Shot clock', true)}
+    ${pace(T.def_pace, true)}
+    <p class="note">Ride ${pc(s.ride_rate)} (${ord(T.ranks.ride_rate || 0)}) · forced turnover rate ${pc(s.def_turnover_rate)} · man-down ${pc(s.def_emo_efficiency)}.</p></div></div>`;
+  const E = T.ev || {};
+  if (E.poss) h += possPanel(E);
+  h += situationsPanel(E);
+  h += sbSection();
+  h += feedingMap(E);
+  h += ballPanels(E) + h2hPanel(E);
+
+  // ===== FORM + FILM =====
+  const games = [...T.games].sort((a, b) => (a.game_epoch || 0) - (b.game_epoch || 0));
+  h += `<div class="sec"><span class="n">4</span><h3>Form + film</h3><p>Every 2026 game · bars = opponent-adjusted offense (red) and defense allowed (blue)</p></div>
+  <div class="panel"><div class="ph"><b>Season, game by game</b><small>${esc(s.record)}</small></div>
+   <div class="legend"><span><i style="background:var(--critical)"></i>Adj. offense</span><span><i style="background:var(--muted)"></i>Adj. defense allowed</span></div>
+   <div class="strip">${games.map(g => { const sc = strip(g.score_str_html); return `<div class="gm ${g.win ? 'W' : 'L'}" title="${esc(g.date_mmmdd)} vs ${esc(g.opponent_display)}"><div class="r">${esc(sc)}</div><div class="o">${esc(g.opponent_display)}</div><div class="e"><i class="o" style="height:${Math.min(100, (g.adjusted_off_efficiency || 0) / .6 * 100)}%"></i><i class="d" style="height:${Math.min(100, (g.adjusted_def_efficiency || 0) / .6 * 100)}%"></i></div></div>`; }).join('')}</div></div>
+  <div class="g2">${['offense_good', 'defense_bad'].map(k => `<div class="panel film"><div class="ph"><b>${k === 'offense_good' ? 'Film: their best offense' : 'Film: where their defense broke'}</b><small>LR film guide · go to these clips</small></div>
+    <div class="tw"><table><thead><tr><th class="l">Game</th><th class="l">Window</th><th>Poss</th><th>Goals</th><th>Shots</th><th>TO</th></tr></thead><tbody>
+    ${(T.film?.[k] || []).map(f => `<tr><td class="l">${esc(f.short_date_str)} vs ${esc(f.opponent)}</td><td class="l">${esc(f.start_timestamp)} → ${esc(f.end_timestamp)}</td><td>${f.possessions}</td><td>${f.goals}</td><td>${f.shots}</td><td>${f.turnovers}</td></tr>`).join('') || '<tr><td class="l" colspan="6">No stretches flagged.</td></tr>'}
+    </tbody></table></div></div>`).join('')}</div>`;
+  if (E.games) h += lateGame(E);
+  h += lineupWatch() + commonOpps();
+
+  h += wlLogged();
+  $('#app').innerHTML = h;
+
+  document.querySelectorAll('th[data-k]').forEach(t => t.onclick = () => { sortKey = t.dataset.k === 'name' ? 'score' : t.dataset.k; render(); });
+  document.querySelectorAll('[data-w]').forEach(i => i.oninput = () => { W[i.dataset.w] = +i.value; render(); const n = document.querySelector(`[data-w="${i.dataset.w}"]`); n && n.focus(); });
+  $('#wReset').onclick = () => { W = Object.assign({}, W0); render(); };
+  document.querySelectorAll('[data-p]').forEach(el => el.onclick = () => openCard(+el.dataset.p));
+  document.querySelectorAll('[data-mark]').forEach(b => b.onclick = e => { e.stopPropagation(); marked.add(+b.dataset.mark); try { localStorage.setItem('wluMarked:' + T.id, JSON.stringify([...marked])); } catch (e) {} render(); });
+}
+function others(list) {
+  if (!list.length) return '';
+  return `<details class="grads"><summary>Lower-usage returners (${list.length}) — under 3% of team plays, no threat score</summary><div class="tw"><table><tbody>
+    ${list.sort((a, b) => (b.team_play_shares || 0) - (a.team_play_shares || 0)).map(r => `<tr class="click" data-p="${r.player_ID}"><td class="l nm"><b>${esc(r.player)}</b><small>#${esc(r.jersey_number)} · ${esc(r.team_listed_class)}</small></td><td>${r.goals ?? 0} G</td><td>${r.assists ?? 0} A</td><td>${r.shots ?? 0} Sh</td><td>${pc(r.team_play_shares)} of plays</td></tr>`).join('')}
+  </tbody></table></div></details>`;
+}
+function gradList() {
+  const g = grads().sort((a, b) => (b.team_play_shares || 0) - (a.team_play_shares || 0));
+  if (!g.length) return '';
+  return `<details class="grads"><summary>Hidden as graduated (${g.length}) — mark anyone coming back as a 5th-year</summary><div class="tw"><table><tbody>
+    ${g.map(r => `<tr><td class="l nm"><b>${esc(r.player)}</b><small>${esc(r.team_listed_class)} · ${esc(ROLE[r.role] || r.role || '')}</small></td><td>${r.goals ?? 0} G</td><td>${r.assists ?? 0} A</td><td>${pc(r.team_play_shares)} of plays</td><td><button data-mark="${r.player_ID}">Mark returning</button></td></tr>`).join('')}
+  </tbody></table></div></details>`;
+}
+function spark(vals, color, w = 300, h = 56) {
+  if (!vals.length) return '';
+  const mn = Math.min(...vals), mx = Math.max(...vals), sp = mx - mn || 1;
+  const pts = vals.map((v, i) => `${(i / Math.max(1, vals.length - 1) * (w - 4) + 2).toFixed(1)},${(h - 3 - (v - mn) / sp * (h - 8)).toFixed(1)}`).join(' ');
+  return `<svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" style="width:100%;height:${h}px;grid-column:1 / -1"><polyline points="${pts}" fill="none" stroke="${color}" stroke-width="2"/></svg>`;
+}
+
+
+const pName = pid => (T.roster.find(r => r.player_ID === pid) || {}).player || ('#' + pid);
+const END_LAB = { 'assisted goal': 'Assisted goal', 'unassisted goal': 'Unassisted goal', save: 'Shot saved', 'missed shot': 'Missed / blocked / pipe, lost it', 'blocked shot': 'Missed / blocked / pipe, lost it', pipe: 'Missed / blocked / pipe, lost it',
+  'forced TO': 'Forced turnover', 'unforced TO': 'Unforced turnover', 'failed clear': 'Failed clear', 'shot clock violation': 'Shot-clock violation', penalty: 'Penalty', 'lost ground ball': 'Lost ground ball', 'period end': 'Quarter ended', 'game end': 'Game ended' };
+// their possessions: their goals = red (bad for us), stops = green. The defense view flips it (our goals vs them = green).
+const END_COL_OFF = { 'Assisted goal': '#C62E1A', 'Unassisted goal': '#F0795E', 'Shot saved': '#1E9E55', 'Missed / blocked / pipe, lost it': '#7CCB9B', 'Forced turnover': '#2E7D4F', 'Unforced turnover': '#B5E3C6', 'Failed clear': '#4FB37A' };
+const END_COL_DEF = { 'Assisted goal': '#1E9E55', 'Unassisted goal': '#7CCB9B', 'Shot saved': '#C62E1A', 'Missed / blocked / pipe, lost it': '#F0795E', 'Forced turnover': '#A3261A', 'Unforced turnover': '#F7B3A2', 'Failed clear': '#E5512C' };
+let END_COL = END_COL_OFF;
+const START_LAB = { faceoff: 'Faceoff win', save: 'After a save', 'their turnover': 'Opponent turnover', takeaway: 'Takeaway (forced)', 'missed shot': 'After opponent miss', 'ground ball': 'Loose ground ball', ride: 'Ride (failed clear)', penalty: 'Opponent penalty' };
+function endsBar(ends, defView) {
+  END_COL = defView ? END_COL_DEF : END_COL_OFF;
+  const agg = {}; Object.entries(ends || {}).forEach(([k, v]) => { const l = END_LAB[k] || k; agg[l] = (agg[l] || 0) + v; });
+  const tot = Object.values(agg).reduce((a, b) => a + b, 0) || 1;
+  let order = Object.entries(agg).sort((a, b) => b[1] - a[1]);
+  const small = order.filter(([k, v]) => !END_COL[k]);
+  order = order.filter(([k]) => END_COL[k]).concat(small.length ? [['Other', small.reduce((a, [, v]) => a + v, 0)]] : []);
+  return `<div style="display:flex;height:22px;margin:6px 0 6px">${order.map(([k, v]) => `<i title="${esc(k)} ${pc(v / tot)}" style="flex:${v};background:${END_COL[k] || 'var(--line)'}"></i>`).join('')}</div>
+    <div class="legend" style="flex-wrap:wrap">${order.map(([k, v]) => `<span><i style="background:${END_COL[k] || 'var(--line)'}"></i>${esc(k)} ${pc(v / tot)}</span>`).join('')}</div>`;
+}
+function startsTable(starts, goals) {
+  const tot = Object.values(starts || {}).reduce((a, b) => a + b, 0) || 1;
+  return `<table><thead><tr><th class="l">Possession started by</th><th>Share</th><th>Scored on</th></tr></thead><tbody>${Object.entries(starts || {}).sort((a, b) => b[1] - a[1]).map(([k, v]) =>
+    `<tr><td class="l">${esc(START_LAB[k] || k)}</td><td>${pc(v / tot)}</td><td>${pc((goals?.[k] || 0) / v)}</td></tr>`).join('')}</tbody></table>`;
+}
+function possPanel(E) {
+  const P = E.poss;
+  return `<div class="g2"><div class="panel"><div class="ph"><b>Their possessions — start to finish</b><small>rebuilt from LR's event log · ±1 possession a game</small></div>
+    <div class="kv" style="margin-bottom:10px"><div><div class="k">Possessions / g</div><div class="v">${P.per_game}</div></div><div><div class="k">Avg length</div><div class="v">${P.off_len}s</div></div>
+      <div><div class="k">Goals assisted</div><div class="v">${pc(E.assisted_pct)}</div><div class="p">${E.assisted_pct >= .6 ? 'passing team' : E.assisted_pct <= .45 ? 'dodging team' : 'balanced'}</div></div>
+      <div><div class="k">FO → goal in 20s</div><div class="v">${pc(E.fast_break_pct)}</div><div class="p">fast break off draws</div></div></div>
+    <b style="font-size:12px">How their possessions end</b>${endsBar(P.off_end)}
+    <div class="tw" style="margin-top:8px">${startsTable(P.off_start, P.off_start_goals)}</div>
+    <p class="note">Turnovers per 100 possessions: ${E.fto_per100} forced by defenses, ${E.uto_per100} unforced. Clears ${pc(E.clear_pct)} · ${E.failed_clears_pg} failed a game · ${E.gave_ride_goals} goals allowed within 20s of a failed clear.</p></div>
+   <div class="panel"><div class="ph"><b>Their defense — how our possessions end</b><small>what they force</small></div>
+    <div class="kv" style="margin-bottom:10px"><div><div class="k">Opp. poss / g</div><div class="v">${(P.def_start ? Object.values(P.def_start).reduce((a, b) => a + b, 0) / Math.max(1, E.n_games) : 0).toFixed(1)}</div></div><div><div class="k">Avg length</div><div class="v">${P.def_len}s</div></div>
+      <div><div class="k">Goals allowed assisted</div><div class="v">${pc(E.assisted_pct_allowed)}</div><div class="p">${E.assisted_pct_allowed <= .45 ? 'beaten off the dodge' : 'beaten by ball movement'}</div></div>
+      <div><div class="k">Takeaways / 100</div><div class="v">${E.fto_forced_per100}</div><div class="p">${E.uto_opp_per100} unforced by opponents</div></div></div>
+    <b style="font-size:12px">How opponents' possessions end</b>${endsBar(P.def_end, true)}
+    <div class="tw" style="margin-top:8px">${startsTable(P.def_start, P.def_start_goals)}</div>
+    <p class="note">${E.ride_goals} goals within 20s of an opponent's failed clear (their ride).</p></div></div>`;
+}
+function lateGame(E) {
+  const sp = E.splits || {}, row = (k, l) => sp[k] && sp[k].n ? `<tr><td class="l">${l}</td><td>${sp[k].n}</td><td>${sp[k].w}-${sp[k].l}</td><td>${sp[k].gf}</td><td>${sp[k].ga}</td></tr>` : '';
+  const g = E.games || [];
+  return `<div class="g2"><div class="panel"><div class="ph"><b>Momentum + late game</b><small>${E.n_games} games with a full event log</small></div>
+    <div class="kv"><div><div class="k">3-goal runs / g</div><div class="v">${E.runs_for_pg}</div><div class="p">${E.runs_ag_pg} allowed</div></div><div><div class="k">Answer rate</div><div class="v">${pc(E.answer_rate)}</div><div class="p">score next after allowing</div></div>
+      <div><div class="k">Q4 margin</div><div class="v">${E.q4_margin > 0 ? '+' : ''}${E.q4_margin}</div><div class="p">goals a game</div></div><div><div class="k">Comebacks / fades</div><div class="v">${E.comebacks} / ${E.fades}</div><div class="p">won down 2+ / lost up 2+</div></div></div>
+    <div class="kv" style="margin-top:8px"><div><div class="k">Penalties / g</div><div class="v">${E.pens_pg}</div></div><div><div class="k">Man-up</div><div class="v">${pc(E.emo.goals / Math.max(1, E.emo.chances))}</div><div class="p">${E.emo.goals} on ${E.emo.chances}</div></div>
+      <div><div class="k">Man-down</div><div class="v">${pc(1 - E.mdd.goals_allowed / Math.max(1, E.mdd.chances))}</div><div class="p">kill rate · ${E.mdd.goals_allowed} on ${E.mdd.chances}</div></div><div><div class="k">Biggest lead blown</div><div class="v">${Math.max(0, ...g.filter(x => x.gf < x.ga).map(x => x.lead))}</div></div></div></div>
+   <div class="panel"><div class="ph"><b>Splits</b><small>record + goals for/against a game</small></div><div class="tw"><table><thead><tr><th class="l">Split</th><th>G</th><th>W-L</th><th>GF</th><th>GA</th></tr></thead><tbody>
+    ${row('home', 'Home')}${row('away', 'Away')}${row('top25', 'vs D3 top 25')}${row('others', 'vs everyone else')}${row('close', 'Close (≤3)')}${row('blowout', 'Blowouts (6+)')}</tbody></table></div></div></div>`;
+}
+function lineupWatch() {
+  const live = pid => T.roster.some(r => r.player_ID === pid && (!r.grad || marked.has(pid)));
+  const miss = (T.missing_recent || []).filter(live), up = (T.usage_changes || []).filter(u => live(u.pid));
+  if (!miss.length && !up.length) return '';
+  return `<div class="panel"><div class="ph"><b>Lineup watch</b><small>last 3 games vs their season</small></div>
+    ${miss.length ? `<p class="note" style="margin-top:0"><b style="color:var(--critical)">Missing from the last 3 games:</b> ${miss.map(p => esc(pName(p))).join(', ')} — check for injury.</p>` : ''}
+    ${up.length ? `<div class="tw"><table><thead><tr><th class="l">Player</th><th>Share of plays now</th><th>Change vs season</th><th>Shot share change</th></tr></thead><tbody>${up.sort((a, b) => b.play_diff - a.play_diff).map(u => `<tr><td class="l">${esc(pName(u.pid))}</td><td>${pc(u.play)}</td><td class="${u.play_diff > 0 ? 'up' : 'dn'}">${u.play_diff > 0 ? '▲ +' : '▼ '}${(u.play_diff * 100).toFixed(1)} pts</td><td>${u.shot_share_diff == null ? '—' : (u.shot_share_diff > 0 ? '+' : '') + (u.shot_share_diff * 100).toFixed(1) + ' pts'}</td></tr>`).join('')}</tbody></table></div>` : ''}</div>`;
+}
+function commonOpps() {
+  const ours = (D.wl.ev?.games || []), theirs = (T.ev?.games || []);
+  const opps = [...new Set(theirs.map(g => g.opp))].filter(o => ours.some(g => g.opp === o) && o !== D.wl.id);
+  if (!opps.length) return '';
+  const res = (L, o) => L.filter(g => g.opp === o).map(g => `<span style="color:${g.gf > g.ga ? 'var(--good)' : 'var(--critical)'}">${g.gf > g.ga ? 'W' : 'L'} ${g.gf}-${g.ga}</span> <small style="color:var(--muted)">(${g.poss}-${g.opp_poss} poss)</small>`).join('<br>');
+  return `<div class="panel"><div class="ph"><b>Common opponents</b><small>teams both ${esc(T.name)} and W&amp;L played</small></div><div class="tw"><table><thead><tr><th class="l">Opponent</th><th class="l">${esc(T.name)}</th><th class="l">W&amp;L</th></tr></thead><tbody>
+    ${opps.map(o => `<tr><td class="l">${esc(TEAMNAME[o] || o)}</td><td class="l">${res(theirs, o)}</td><td class="l">${res(ours, o)}</td></tr>`).join('')}</tbody></table></div></div>`;
+}
+
+
+const EDGE_PAIRS = [
+  // [label, their key, their higher-is-better?, our key, our higher-is-better?, side]
+  ['Scoring off faceoff wins', 'off_fo', true, 'def_fo', false, 'their O vs our D'],
+  ['Transition after saves', 'off_save', true, 'def_save', false, 'their O vs our D'],
+  ['Scoring off turnovers', 'off_to', true, 'def_to', false, 'their O vs our D'],
+  ['Man-up vs our man-down', 'emo', true, 'kill', true, 'their O vs our D'],
+  ['Second chances (backing up shots)', 'second', true, 'second_allowed', false, 'their O vs our D'],
+  ['Their shooting vs our goalie', 'shoot', true, 'save', true, 'their O vs our D'],
+  ['Their ride vs our clear', 'ride', true, 'clear', true, 'their D vs our O'],
+  ['Their pressure vs our ball security', 'take', true, 'to', false, 'their D vs our O'],
+  ['Their D off faceoffs vs our scoring', 'def_fo', false, 'off_fo', true, 'their D vs our O'],
+  ['Their D after saves vs our transition', 'def_save', false, 'off_save', true, 'their D vs our O'],
+  ['Their goalie vs our shooting', 'save', true, 'shoot', true, 'their D vs our O'],
+  ['Faceoffs', 'fo', true, 'fo', true, 'faceoff X'],
+];
+function dpct(key, v) { const a = D.meta.team_dists?.[key]; if (!a || v == null) return null; let lo = 0; while (lo < a.length && a[lo] < v) lo++; let hi = lo; while (hi < a.length && a[hi] === v) hi++; return 100 * (lo + hi) / 2 / a.length; }
+function edgesSection() {
+  const them = T.edge || {}, us = D.wl.edge || {};
+  const rows = EDGE_PAIRS.map(([lab, tk, th, uk, uh, side]) => {
+    let tp = dpct(tk, them[tk]), up = dpct(uk, us[uk]);
+    if (tp == null || up == null) return null;
+    if (!th) tp = 100 - tp; if (!uh) up = 100 - up;
+    return { lab, side, tp: Math.round(tp), up: Math.round(up), edge: Math.round(tp - up) };
+  }).filter(Boolean).sort((a, b) => b.edge - a.edge);
+  const row = r => `<tr><td class="l"><b>${esc(r.lab)}</b><br><small style="color:var(--muted)">${esc(r.side)}</small></td><td class="h ${hc(r.tp)}">${r.tp}</td><td class="h" style="background:${r.up >= 70 ? 'var(--good)' : r.up >= 50 ? 'rgba(30,158,85,.45)' : r.up >= 30 ? 'rgba(30,158,85,.2)' : 'var(--d0)'};color:${r.up >= 70 ? '#fff' : 'inherit'}">${r.up}</td><td style="font-weight:700;color:${r.edge > 0 ? 'var(--critical)' : 'var(--good)'}">${r.edge > 0 ? '+' : ''}${r.edge}</td></tr>`;
+  const head = `<thead><tr><th class="l">Matchup</th><th>${esc(T.short || 'Them')}</th><th>W&amp;L</th><th>Edge</th></tr></thead>`;
+  return `<div class="sec"><span class="n">2</span><h3>Matchup edges</h3><p>Their strength vs ours on the same D3 percentile scale (100 = best in D3). Edge = their percentile − ours.</p></div>
+  <div class="g2"><div class="panel"><div class="ph"><b>Where they can hurt us</b><small>biggest edges for ${esc(T.name)}</small></div><div class="tw"><table>${head}<tbody>${rows.filter(r => r.edge > 0).slice(0, 5).map(row).join('') || '<tr><td class="l" colspan="4">No clear edges for them.</td></tr>'}</tbody></table></div></div>
+   <div class="panel"><div class="ph"><b>Where we can hurt them</b><small>biggest edges for W&amp;L</small></div><div class="tw"><table>${head}<tbody>${rows.filter(r => r.edge < 0).reverse().slice(0, 5).map(row).join('') || '<tr><td class="l" colspan="4">No clear edges for us.</td></tr>'}</tbody></table></div></div></div>
+  <p class="note" style="margin-top:-6px">Both sides use 2026 full-season numbers. W&amp;L's numbers come from the same LR data so the scale is identical.</p>`;
+}
+function situationsPanel(E) {
+  const wg = E.who_gets || {}, order = ['man-up', 'late & close', 'transition', 'late shot clock'];
+  const st = E.by_state || {}, bh = E.by_half || {};
+  const stRow = (k, l) => st[k] ? `<tr><td class="l">${l}</td><td>${st[k].n}</td><td>${st[k].len}s</td><td>${st[k].shots_pp}</td><td>${pc(st[k].goals_pp)}</td></tr>` : '';
+  const pt = E.pen_types || {}, ptT = Object.values(pt).reduce((a, b) => a + b, 0) || 1;
+  const pens = T.roster.filter(r => (r.penalties || 0) > 0 && (!r.grad || marked.has(r.player_ID))).sort((a, b) => b.penalties - a.penalties).slice(0, 4);
+  return `<div class="g2"><div class="panel"><div class="ph"><b>Who gets the ball when it matters</b><small>share of team shots · 2027 returners in bold</small></div>
+    ${Object.keys(wg).length ? `<div class="tw"><table><thead><tr><th class="l">Situation</th><th class="l">Top shooters (share of team shots)</th></tr></thead><tbody>${order.filter(k => wg[k]).map(k => `<tr><td class="l">${esc(k)}<br><small style="color:var(--muted)">${wg[k].n} shots</small></td><td class="l" style="white-space:normal">${wg[k].top.map(([p, sh]) => { const r = T.roster.find(x => x.player_ID === p); const back = r && (!r.grad || marked.has(p)); return `<span style="${back ? 'font-weight:700' : 'color:var(--muted)'}">${esc(r ? r.player : '#' + p)} ${pc(sh)}</span>`; }).join(' · ')}</td></tr>`).join('')}</tbody></table></div>` : '<p class="note">No shot list for this team.</p>'}
+    <p class="note">Late shot clock = under 10 seconds left. Transition = shot within 10 seconds of gaining the ball.</p></div>
+   <div class="panel"><div class="ph"><b>Habits by game state</b><small>their offense</small></div>
+    <div class="tw"><table><thead><tr><th class="l">Score state</th><th>Poss</th><th>Avg length</th><th>Shots / poss</th><th>Scored on</th></tr></thead><tbody>${stRow('leading', 'Leading')}${stRow('tied', 'Tied')}${stRow('trailing', 'Trailing')}</tbody></table></div>
+    <div class="kv" style="margin-top:10px"><div><div class="k">1st half scoring</div><div class="v">${pc(bh.off?.['1'])}</div><div class="p">goals / possession</div></div><div><div class="k">2nd half</div><div class="v">${pc(bh.off?.['2'])}</div><div class="p">${bh.off && bh.off['2'] > bh.off['1'] + .02 ? 'better after halftime' : bh.off && bh.off['2'] < bh.off['1'] - .02 ? 'fade after halftime' : 'about the same'}</div></div>
+      <div><div class="k">Second chances</div><div class="v">${pc(E.second_chance)}</div><div class="p">of possessions · ${pc(E.second_chance_allowed)} allowed</div></div><div><div class="k">Save → clear</div><div class="v">${pc(E.save_clear)}</div><div class="p">goalie outlet success</div></div></div>
+    <p class="note"><b>Penalties:</b> ${Object.entries(pt).map(([k, v]) => `${pc(v / ptT)} ${esc(k)}`).join(' · ')}${pens.length ? ` · most: ${pens.map(r => `${esc(r.player)} (${r.penalties})`).join(', ')}` : ''}</p></div></div>`;
+}
+
+
+function feedingMap(E) {
+  const pairs = E.assist_pairs || []; if (!pairs.length) return '';
+  const nm = p => { const r = T.roster.find(x => x.player_ID === p); return r ? `<span style="${r.grad && !marked.has(p) ? 'color:var(--muted)' : 'font-weight:700'}">${esc(r.player)}${r.grad && !marked.has(p) ? ' (grad)' : ''}</span>` : '#' + p; };
+  const max = pairs[0][2];
+  return `<div class="panel"><div class="ph"><b>Feeding map — who sets up whom</b><small>assisted goals · 2026 · from LR player-level play-by-play</small></div>
+    <div class="bars" style="grid-template-columns:minmax(0,1.6fr) 1fr 40px 0px">${pairs.map(([a, s_, n]) => `<span>${nm(a)} → ${nm(s_)}</span><span class="t"><i style="width:${n / max * 100}%;background:var(--critical)"></i></span><span class="v">${n}</span><span></span>`).join('')}</div>
+    <p class="note">Deny the feeder or front the finisher on the top connections. Graduated players greyed out.</p></div>`;
+}
+
+
+function ballPanels(E) {
+  const tk = E.takeaway_leaders || [], tv = E.turnover_leaders || [];
+  if (!tk.length && !tv.length) return '';
+  const live = p => { const r = T.roster.find(x => x.player_ID === p); return !r || !r.grad || marked.has(p); };
+  const nmS = (p, n) => live(p) ? `<b>${esc(n)}</b>` : `<span style="color:var(--muted)">${esc(n)} (grad)</span>`;
+  return `<div class="g2"><div class="panel"><div class="ph"><b>Takeaway leaders</b><small>caused turnovers · and whose ball they took</small></div>
+    <div class="tw"><table><thead><tr><th class="l">Defender</th><th>CTs</th><th class="l">Took it from</th></tr></thead><tbody>${tk.map(([p, n, name, off]) => `<tr><td class="l">${nmS(p, name)}</td><td>${n}</td><td class="l" style="white-space:normal">${off.map(([q, k, qn, qt]) => `${esc(qn)} <small style="color:var(--muted)">${esc(qt)}</small> (${k})`).join(', ')}</td></tr>`).join('')}</tbody></table></div></div>
+   <div class="panel"><div class="ph"><b>Who gives it away</b><small>turnovers · forced vs unforced · in transition</small></div>
+    <div class="tw"><table><thead><tr><th class="l">Player</th><th>TO</th><th>Forced</th><th>Unforced</th><th>In transition</th></tr></thead><tbody>${tv.map(([p, n, f, tr, name]) => `<tr><td class="l">${nmS(p, name)}</td><td>${n}</td><td>${f}</td><td>${n - f}</td><td>${tr}</td></tr>`).join('')}</tbody></table></div>
+    <p class="note">High unforced = sloppy under no pressure; high forced = pressure him on the ball.</p></div></div>`;
+}
+function h2hPanel(E) {
+  const v = E.vs_wl; if (!v || !v.games?.length) return '';
+  const att = L => L.map(([p, sh, g, og, name]) => `<tr><td class="l">${esc(name)}</td><td>${g}</td><td>${sh}</td><td>${og}</td></tr>`).join('');
+  const gk = x => x && x[0] ? `${pc(x[1] / x[0])} (${x[1]}/${x[0]})` : '—';
+  return `<div class="panel"><div class="ph"><b>Head-to-head vs W&amp;L</b><small>${v.games.length} game${v.games.length > 1 ? 's' : ''} in 2026 · player level</small></div>
+    <div class="g2" style="gap:18px"><div><b style="font-size:12px">Their shooters vs us</b><div class="tw"><table><thead><tr><th class="l">Player</th><th>G</th><th>Shots</th><th>On goal</th></tr></thead><tbody>${att(v.their_att)}</tbody></table></div>
+      <p class="note">Our goalie saved ${gk(v.our_gk)} · their takeaways off us: ${(v.their_takeaways || []).map(([p, n, name]) => `${esc(name)} ${n}`).join(', ') || '—'}</p></div>
+    <div><b style="font-size:12px">Our shooters vs them</b><div class="tw"><table><thead><tr><th class="l">Player</th><th>G</th><th>Shots</th><th>On goal</th></tr></thead><tbody>${att(v.our_att)}</tbody></table></div>
+      <p class="note">Their goalie saved ${gk(v.their_gk)} · our takeaways: ${(v.our_takeaways || []).map(([p, n, name]) => `${esc(name)} ${n}`).join(', ') || '—'}</p></div></div></div>`;
+}
+
+
+const SBURL = id => `https://app.scorebreak.io/organizations/20309/games/${id}`;
+const mmss = v => v == null ? '' : `${Math.floor(v / 60)}:${String(Math.floor(v % 60)).padStart(2, '0')}`;
+// a clip = film file + start/end seconds; kind decides the window around the tagged moment
+// windows relative to ScoreBreak's own tag start (goal tags are 15 s clips that end just after the goal)
+const WIN = { goal: [0, 16], poss: [0, 3], fo: [0, 9], save: [0, 15], pick: [0, 14], dodge: [0, 14], clear: [0, 15] };
+function clipObj(id, v, label, film, vEnd, kind) {
+  kind = kind || 'goal'; const w = WIN[kind] || WIN.goal; const mp4 = FILMS[film];
+  if (v == null || v < 0 || !mp4) return null;
+  const start = Math.max(0, v + w[0]), end = kind === 'poss' && vEnd != null && vEnd > v ? Math.min(vEnd + w[1], v + 90) : v + w[1];
+  return { sb: id, mp4, start, end, label: label || 'clip', team: T.name };
+}
+let CLIPREG = [];
+const clipLink = (id, v, label, film, vEnd, kind) => {
+  const c = clipObj(id, v, label, film, vEnd, kind);
+  if (!c) return `<a href="${SBURL(id)}" target="_blank" rel="noopener" style="color:var(--muted)">${esc(label || 'clip')}${v != null && v >= 0 ? ' @ ' + mmss(v) : ''} ↗</a>`;
+  CLIPREG.push(c); const i = CLIPREG.length - 1;
+  return `<span class="clipchip"><button class="clipbtn" data-clip="${i}">▶ ${esc(c.label)}</button><button class="clipadd" data-add="${i}" title="Add to film session">＋</button></span>`;
+};
+const playAll = (list) => { const ids = list.filter(Boolean); return ids.length ? `<button class="playall" data-reel="${ids.join(',')}">▶ Play all (${ids.length})</button>` : ''; };
+// ---------- Our logged data: W&L staff-tagged ScoreBreak games ----------
+function wlLogged() {
+  const W = T.wl_logged;
+  const head = `<div class="sec"><span class="n">5</span><h3>Our logged data vs ${esc(T.name)}</h3><p>From games our staff tagged in ScoreBreak · 2026 · <span style="color:var(--good)">green = good for W&amp;L</span>, <span style="color:var(--critical)">red = bad</span></p></div>`;
+  if (!W) return head + `<div class="panel"><p class="note">No games tagged by our staff involve ${esc(T.name)} yet.</p></div>`;
+  const NM = id => id === D.wl.id ? 'W&amp;L' : esc((D.meta.teams.find(t => t.id === id) || {}).name || '?');
+  const BK = { half: 'Half-field', trans: 'Transition / unsettled', zone: 'Zone', manup: 'Man-up / man-down' };
+  const reel = (L, lab) => { const st = CLIPREG.length; const html = (L || []).map(c => c ? clipLink(c[0], c[1], lab ? lab(c) : c[3], c[2], c[4], 'poss') : '').join(' '); const idx = []; for (let i = st; i < CLIPREG.length; i++) idx.push(i); return html ? playAll(idx) + ' ' + html : ''; };
+  const reelC = (L) => { const st = CLIPREG.length; const html = (L || []).map(c => c ? clipLink(c[0], c[1], c[3], c[2], c[4], 'poss') : '').join(' '); const idx = []; for (let i = st; i < CLIPREG.length; i++) idx.push(i); return html ? `${playAll(idx)} <details style="display:inline-block;vertical-align:top"><summary style="cursor:pointer;font-size:11px;color:var(--muted)">pick a clip</summary><div style="margin-top:4px">${html}</div></details>` : ''; };
+  const dlt = (v, base, goodHigh) => { if (v == null || base == null) return ''; const d = v - base; const good = goodHigh ? d > 0 : d < 0; return `<small style="color:${Math.abs(d) < .01 ? 'var(--muted)' : good ? 'var(--good)' : 'var(--critical)'}">${d >= 0 ? '+' : ''}${(100 * d).toFixed(0)} pts vs our avg</small>`; };
+  let h = head;
+  // coverage
+  const gl = W.games.map(g => `<tr><td class="l">${esc(g.date.slice(5))}</td><td class="l">${esc(T.name)} vs ${NM(g.vs)}</td><td class="l">${g.wl ? '<b>our game</b>' : 'scouting'}</td><td>${g.n}</td><td>${g.goals_tagged ? g.goals_tagged[0] + '-' + g.goals_tagged[1] : '—'}</td><td class="l">${g.partial ? '<span style="color:var(--gold)">partly tagged</span>' : ''}</td></tr>`).join('');
+  h += `<div class="panel"><div class="ph"><b>What our staff has tagged</b><small>${W.games.length} game${W.games.length > 1 ? 's' : ''} involving ${esc(T.name)}</small></div><div class="tw"><table><thead><tr><th class="l">Date</th><th class="l">Game</th><th class="l">Type</th><th>Clips</th><th>Goals tagged (${esc(T.short || T.name)}-opp)</th><th class="l"></th></tr></thead><tbody>${gl}</tbody></table></div>
+   <p class="note">"Scouting" = a game between two other teams that our staff broke down. Tagged goals are checked against the final score; partly tagged games feed the clips but say so here.</p></div>`;
+  // 1 + 2: head-to-head scorecard
+  const X = W.h2h;
+  if (X) {
+    const S = X.season;
+    const cell = (c, base, goodHigh) => c ? `<td>${c.n}</td><td><b>${pc(c.gpp)}</b><br>${dlt(c.gpp, base, goodHigh)}</td><td>${c.spp}</td><td>${pc(c.topp)}</td>` : '<td>—</td><td>—</td><td>—</td><td>—</td>';
+    const rows = card => ['half', 'trans', 'zone', 'manup', 'all'].map(k => `<tr><td class="l">${k === 'all' ? '<b>All possessions</b>' : BK[k]}</td>${cell(card[k].off, S[k].off?.gpp, true)}${cell(card[k].deff, S[k].deff?.gpp, false)}</tr>`).join('');
+    const thead = `<thead><tr><th class="l"></th><th colspan="4" style="text-align:center">Our offense vs their defense</th><th colspan="4" style="text-align:center">Their offense vs our defense</th></tr><tr><th class="l">Possession type</th><th>Poss</th><th>Scored</th><th>Shots / poss</th><th>TO</th><th>Poss</th><th>Scored</th><th>Shots / poss</th><th>TO</th></tr></thead>`;
+    h += `<div class="panel"><div class="ph"><b>Possession scorecard vs ${esc(T.name)}</b><small>${X.per_game.length > 1 ? 'both games combined' : X.per_game[0].date.slice(5)} · "vs our avg" = our 2026 staff-tagged season</small></div>
+      <div class="tw"><table>${thead}<tbody>${rows(X.all)}</tbody></table></div>
+      <p class="note">Each possession is one possession clip our staff tagged (half-field, transition, zone, man-up and their defensive mirrors). Scored = share of those possessions with a goal tagged inside them. Green = better for us than our season average, red = worse.</p></div>`;
+    if (X.per_game.length > 1) {
+      const sm = (pg) => { const a = pg.card.all; return `<td><b>${pc(a.off?.gpp)}</b> <small>(${a.off?.goals ?? 0}/${a.off?.n ?? 0})</small><br>${dlt(a.off?.gpp, S.all.off?.gpp, true)}</td><td><b>${pc(a.deff?.gpp)}</b> <small>(${a.deff?.goals ?? 0}/${a.deff?.n ?? 0})</small><br>${dlt(a.deff?.gpp, S.all.deff?.gpp, false)}</td>`; };
+      const byk = (pg, k, side) => { const c = pg.card[k][side]; return c ? `${pc(c.gpp)} <small>(${c.n})</small>` : '—'; };
+      h += `<div class="panel"><div class="ph"><b>Game 1 vs game 2 — what changed</b><small>${X.per_game.map(g => g.date.slice(5)).join(' → ')}</small></div><div class="tw"><table><thead><tr><th class="l"></th>${X.per_game.map(g => `<th colspan="2" style="text-align:center">${esc(g.date.slice(5))}</th>`).join('')}</tr><tr><th class="l"></th>${X.per_game.map(() => '<th>Our O scored</th><th>Their O scored</th>').join('')}</tr></thead><tbody>
+        <tr><td class="l"><b>All possessions</b></td>${X.per_game.map(sm).join('')}</tr>
+        ${['half', 'trans', 'zone', 'manup'].map(k => `<tr><td class="l">${BK[k]}</td>${X.per_game.map(pg => `<td>${byk(pg, k, 'off')}</td><td>${byk(pg, k, 'deff')}</td>`).join('')}</tr>`).join('')}
+        <tr><td class="l">Their sets seen</td>${X.per_game.map(pg => `<td colspan="2" class="l" style="white-space:normal">${pg.sets.map(([k, n]) => `${esc(k)} ${n}`).join(' · ') || '—'}</td>`).join('')}</tr></tbody></table></div></div>`;
+    }
+  }
+  // 3: their sets
+  const nG = W.games.length;
+  const sets = (W.sets || []).map(([k, n, g, sh, to, cl]) => `<tr><td class="l"><b>${esc(k)}</b></td><td>${n}</td><td>${g}</td><td style="color:${n >= 3 && g / n >= .3 ? 'var(--critical)' : n >= 3 && g / n <= .15 ? 'var(--good)' : 'inherit'}"><b>${pc(g / n)}</b></td><td>${(sh / n).toFixed(1)}</td><td>${to}</td><td class="l" style="min-width:150px">${reelC(cl)}</td></tr>`).join('');
+  // 4: goals vs us
+  const G = W.goals_vs_us || [];
+  const gv = G.map(x => `<tr><td class="l">${esc(x.date.slice(5))}</td><td class="l">${BK[x.bucket] || '—'}</td><td class="l">${esc((x.sets || []).join(', ')) || '—'}</td><td class="l" style="white-space:normal">${esc(x.note) || '<span style="color:var(--muted)">no note</span>'}</td><td class="l">${x.clip ? reel([x.clip], () => 'play').replace(/<button class="playall"[^>]*>[^<]*<\/button>\s*/, '') : ''}</td></tr>`).join('');
+  const gb = {}; G.forEach(x => gb[x.bucket || 'other'] = (gb[x.bucket || 'other'] || 0) + 1);
+  h += `<div class="g2"><div class="panel"><div class="ph"><b>Their sets</b><small>from ${nG} staff-tagged game${nG > 1 ? 's' : ''} of theirs</small></div>
+     ${sets ? `<div class="tw"><table><thead><tr><th class="l">Set / look</th><th>Uses</th><th>Goals</th><th>Scored</th><th>Shots / use</th><th>TO</th><th class="l">Clips</th></tr></thead><tbody>${sets}</tbody></table></div>` : '<p class="note">No set names tagged on their possessions yet. Name a set in the clip title (red Half-Field Defense in our games) and it shows up here.</p>'}
+     <p class="note">A set counts when its name is in the clip title of their possession (Half-Field Defense clips in our games; their offense clips in scouting games). Scored red at 30%+ and green at 15% or under, with 3+ uses.</p></div>
+   <div class="panel"><div class="ph"><b>Goals they scored on us</b><small>${G.length} goals · ${Object.entries(gb).map(([k, n]) => `${BK[k] || k} ${n}`).join(' · ')}</small></div>
+     ${G.length ? `<p style="margin:6px 0">${reelC(G.map(x => x.clip))}</p><div class="tw"><table><thead><tr><th class="l">Date</th><th class="l">Type</th><th class="l">Set</th><th class="l">Staff note</th><th class="l">Clip</th></tr></thead><tbody>${gv}</tbody></table></div>` : '<p class="note">We have no staff-tagged game against them.</p>'}</div></div>`;
+  // 5: ride / clear + 6: faceoffs
+  const R = W.rideclear || {};
+  const rr = (lab, x, badHigh) => x && x.n ? `<tr><td class="l">${lab}</td><td>${x.n}</td><td>${x.failed}</td><td style="color:${badHigh ? 'var(--critical)' : 'var(--good)'}"><b>${pc(x.failed / x.n)}</b></td><td>${x.ten}</td><td>${x.goal_after}</td><td class="l" style="min-width:150px">${reelC(x.clips)}</td></tr>` : '';
+  const F = W.faceoffs || {};
+  h += `<div class="g2"><div class="panel"><div class="ph"><b>Ride + clear</b><small>staff clear / ride clips</small></div><div class="tw"><table><thead><tr><th class="l"></th><th>Clears</th><th>Failed</th><th>Fail %</th><th>10-man</th><th>Goal after fail</th><th class="l">Clips</th></tr></thead><tbody>
+     ${rr('Our clear vs their ride', R.our_clear_vs, true)}${rr('Their clear vs our ride', R.our_ride_vs, false)}${rr('Their clear — all tagged games', R.their_clear, false)}${rr('Their ride — all tagged games', R.their_ride, true)}</tbody></table></div>
+     <p class="note">Failed = the clip title says failed, or a turnover was tagged during it. Goal after fail = a goal within 25 s. Fail % in red when it's our clears failing, green when it's theirs.</p></div>
+   <div class="panel"><div class="ph"><b>Faceoffs vs them</b><small>${F.tagged || 0} faceoff clips in our games</small></div>
+     ${Object.keys(F.counts || {}).length ? `<p class="note">${Object.entries(F.counts).map(([k, n]) => `<b>${esc(k)}</b> ${n}`).join(' · ')}</p><p>${reelC(F.clips)}</p>` : '<p class="note">Our faceoff clips vs them have no labels (back / forward / win / loss). Faceoffs by man are in Film tendencies above.</p>'}
+     <p class="note">Counts come from words in the clip titles (back, forward, wing, win, loss, violation).</p></div></div>`;
+  // coaching notes + 7 common opponents
+  const N = W.notes || [];
+  const CO = W.common || [];
+  const coR = CO.map(c => `<tr><td class="l"><b>${esc(c.x_name)}</b></td><td class="l">${esc(c.date.slice(5))}</td><td>${pc(c.them.off?.gpp)}</td><td>${pc(c.them.deff?.gpp)}</td><td class="l">${esc(c.our_dates.map(d => d.slice(5)).join(', '))}</td><td>${pc(c.us.off?.gpp)}</td><td>${pc(c.us.deff?.gpp)}</td><td style="font-weight:700;color:${(c.them.off?.gpp - c.them.deff?.gpp) > (c.us.off?.gpp - c.us.deff?.gpp) ? 'var(--critical)' : 'var(--good)'}">${(((c.us.off?.gpp - c.us.deff?.gpp) - (c.them.off?.gpp - c.them.deff?.gpp)) * 100).toFixed(0)}</td></tr>`).join('');
+  h += `<div class="g2"><div class="panel"><div class="ph"><b>Staff notes from our games vs them</b><small>${N.length} notes written into clip titles</small></div>
+     ${N.length ? `<div class="tw"><table><tbody>${N.map(x => `<tr><td class="l">${esc(x.date.slice(5))}</td><td class="l">${esc(x.typ)}</td><td class="l" style="white-space:normal">${esc(x.note)}</td><td class="l">${x.clip ? reel([x.clip], () => 'play').replace(/<button class="playall"[^>]*>[^<]*<\/button>\s*/, '') : ''}</td></tr>`).join('')}</tbody></table></div>` : '<p class="note">No written notes on our clips vs them.</p>'}</div>
+   <div class="panel"><div class="ph"><b>Common opponents — on film</b><small>their staff-tagged game vs a team we also played</small></div>
+     ${coR ? `<div class="tw"><table><thead><tr><th class="l">Opponent</th><th class="l">Them</th><th>Their O</th><th>Their D</th><th class="l">Us</th><th>Our O</th><th>Our D</th><th>Edge</th></tr></thead><tbody>${coR}</tbody></table></div>
+     <p class="note">Their O / Our O = goals per tagged possession; Their D / Our D = goals allowed per possession. Edge = (our scored − our allowed) − (their scored − their allowed), in points: green when we did better against that team than they did.</p>` : '<p class="note">No staff-tagged games of theirs against a team we also played.</p>'}</div></div>`;
+  return h;
+}
+function sbSection() {
+  const S = T.sb; if (!S || !S.off) return '';
+  const L = D.meta.sb_league || {};
+  const cmp = (v, lv, inv) => v == null || lv == null ? '' : `<small style="color:${(inv ? v < lv : v > lv) ? 'var(--critical)' : 'var(--good)'}">${inv ? (v < lv ? 'better than' : 'worse than') : (v > lv ? 'above' : 'below')} D3 ${pc(lv)}</small>`;
+  const rowT = (lab, x, lv, inv) => x && x.n ? `<tr><td class="l">${lab}</td><td>${x.n}</td><td><b>${pc(x.goal_pct)}</b></td><td class="l">${cmp(x.goal_pct, lv, inv)}</td></tr>` : '';
+  const tbl = (side, inv) => { const o = S[side] || {}, bt = o.by_type || {}, lb = L.by_type || {};
+    return `<div class="tw"><table><thead><tr><th class="l">${side === 'off' ? 'Their possessions' : 'Opponents’ possessions vs them'}</th><th>n</th><th>Scored</th><th class="l">vs D3</th></tr></thead><tbody>
+      ${rowT('Ended in transition (clear)', bt.transition, lb.transition?.goal_pct, inv)}${rowT('Ended in early offense', bt.early, lb.early?.goal_pct, inv)}${rowT('Reached settled offense', bt.settled, lb.settled?.goal_pct, inv)}
+      ${rowT('With a pick', o.pick, L.pick?.goal_pct, inv)}${rowT('Settled, no pick', o.no_pick_settled, L.no_pick?.goal_pct, inv)}${rowT('With a dodge', o.dodge, L.dodge?.goal_pct, inv)}${rowT('Pick + dodge', o.pick_dodge, L.pick_dodge?.goal_pct, inv)}</tbody></table></div>`; };
+  const nmJ = j => { const r = T.roster.find(x => String(x.jersey_number) === String(j)); return r ? `${esc(r.player)} #${j}` : '#' + j; };
+  const clipsList = (L2, f) => { const start = CLIPREG.length; const html = (L2 || []).slice(0, 12).map(f).join(' '); const idx = []; for (let i = start; i < CLIPREG.length; i++) idx.push(i); return (html ? playAll(idx) + ' ' + html : '—'); };
+  const seqs = (S.goal_sequences || []).map(([q, n]) => `<tr><td class="l">${esc(q.replace(/>/g, ' → '))}</td><td>${n}</td></tr>`).join('');
+  const fo = (S.fo_by_man || []).map(([j, name, w, l, vs]) => `<tr><td class="l"><b>${esc(name || '#' + j)}</b></td><td>${w}-${l}</td><td>${pc(w / Math.max(1, w + l))}</td><td class="l" style="white-space:normal">${vs.map(([n2, o, w2, l2]) => `${o === D.wl.id ? '<b style="text-decoration:underline">' : ''}${esc(n2)} ${w2}-${l2}${o === D.wl.id ? ' (W&amp;L)</b>' : ''}`).join(', ')}</td></tr>`).join('');
+  const gk = (S.saves_by_goalie || []).sort((a, b) => Object.values(b[2]).reduce((x, y) => x + y, 0) - Object.values(a[2]).reduce((x, y) => x + y, 0)).slice(0, 2).map(([j, pid, c]) => `${nmJ(j)}: ${Object.entries(c).map(([k, v]) => `${v} ${k}`).join(', ')}`).join('<br>');
+  const wd = S.win_deciders;
+  const WD_LAB = { off_settled: 'settled-offense scoring', off_transition_share: 'share of possessions in transition', off_pick_rate: 'possessions with a pick', off_turnover: 'turnover rate', def_allowed: 'goals allowed per possession', def_forced_to: 'turnovers forced', clear_fail: 'failed clears' };
+  const schemes = `<div class="panel"><div class="ph"><b>Schemes — staff film tags</b><small>one tap per clip · fills the standing report items</small></div>
+     <div class="g2" style="gap:12px">${['ride', 'clear', 'manup', 'mandown', 'fomove'].map(k => `<div>${tagSummary(k, S)}</div>`).join('')}</div></div>`;
+  const shots = `<div class="panel"><div class="ph"><b>Shot location — staff click-tags</b><small>where their goals come from · where their goalie gets beaten</small></div>
+     <div class="g2" style="gap:12px"><div>${shotSummary('shot_off', S)}</div><div>${shotSummary('shot_def', S)}</div></div></div>`;
+  return `<div class="sec"><span class="n">★</span><h3>Film tendencies (ScoreBreak)</h3><p>${S.n_games} tagged ${S.n_games === 1 ? 'game' : 'games'} whose tags match the final score · clips play here</p><span style="flex:1"></span><button class="playall" id="gwBuild" style="align-self:center">🎬 Build game-week film session</button></div>
+  <div class="g2"><div class="panel"><div class="ph"><b>How their possessions play out</b><small>scoring rate by phase and action</small></div>${tbl('off', false)}
+     ${S.shot_quality?.off ? `<p class="note" style="margin-bottom:0"><b>Shot quality:</b> their shots are worth ${S.shot_quality.off.xg_per_shot} goals each on average; they scored ${S.shot_quality.off.goals} vs ${S.shot_quality.off.xg} expected (${S.shot_quality.off.goals - S.shot_quality.off.xg >= 0 ? '+' : ''}${(S.shot_quality.off.goals - S.shot_quality.off.xg).toFixed(1)}).</p>` : ''}
+     <p class="note">${S.off.picks_per_poss} picks and ${S.off.dodges_per_poss} dodges per possession · ${S.off.run_outs_per_poss} run-outs (backing up shots) per possession · clears fail ${pc(S.off.clear_fail)}.</p></div>
+   <div class="panel"><div class="ph"><b>How they defend picks + dodges</b><small>what opponents score against them</small></div>${tbl('def', true)}
+     ${S.shot_quality?.deff ? `<p class="note" style="margin-bottom:0"><b>Shots they allow</b> are worth ${S.shot_quality.deff.xg_per_shot} each; they allowed ${S.shot_quality.deff.goals} vs ${S.shot_quality.deff.xg} expected (${S.shot_quality.deff.goals - S.shot_quality.deff.xg <= 0 ? 'goalie/defense beating expectation' : 'giving up more than expected'}).</p>` : ''}
+     ${pickDefBlock(S)}
+     <p class="note"><b>Goals they allowed off picks:</b> ${clipsList(S.clips?.goals_allowed_off_picks, ([id, v, j, film]) => clipLink(id, v, '#' + j, film, null, 'goal'))}</p></div></div>
+  <div class="g2"><div class="panel"><div class="ph"><b>How their goals happen</b><small>most common possession paths to a goal</small></div><div class="tw"><table><thead><tr><th class="l">Path</th><th>Goals</th></tr></thead><tbody>${seqs}</tbody></table></div>
+     <p class="note"><b>Goals off picks:</b> ${clipsList(S.clips?.goals_off_picks, ([id, v, j, film]) => clipLink(id, v, nmJ(j), film, null, 'goal'))}<br><b>Settled goals:</b> ${clipsList(S.clips?.settled_goals, ([id, v, j, film]) => clipLink(id, v, nmJ(j), film, null, 'goal'))}<br><b>Dodge goals (no pick):</b> ${clipsList(S.clips?.dodge_goals, ([id, v, j, film]) => clipLink(id, v, nmJ(j), film, null, 'goal'))}<br><b>Transition goals:</b> ${clipsList(S.clips?.transition_goals, ([id, v, j, film]) => clipLink(id, v, nmJ(j), film, null, 'goal'))}</p></div>
+   <div class="panel"><div class="ph"><b>Faceoffs by man</b><small>record vs each FOGO they faced · W&amp;L underlined</small></div><div class="tw"><table><thead><tr><th class="l">FOGO</th><th>W-L</th><th>Win%</th><th class="l">Vs</th></tr></thead><tbody>${fo || '<tr><td class="l" colspan="4">No tagged faceoffs.</td></tr>'}</tbody></table></div>
+     <p class="note"><b>Goalie saves by phase:</b><br>${gk || '—'}</p>
+     <p class="note"><b>Coming out of timeouts:</b> ${S.off.after_timeout?.n ? `${S.off.after_timeout.n} possessions, scored ${pc(S.off.after_timeout.goal_pct)} — ` + clipsList(S.timeout_poss, ([id, v, ty, pk, dg, gl, j, film, vEnd]) => clipLink(id, v, `${ty}${pk ? ' +pick' : ''}${gl ? ' GOAL' : ''}`, film, vEnd, 'poss')) : 'too few tagged to read'}</p></div></div>
+  ${shots}${schemes}
+  ${wd ? `<div class="panel"><div class="ph"><b>What decides their games</b><small>wins (${wd.n_w}) vs losses (${wd.n_l}) in tagged games</small></div><p class="note" style="margin-top:0">${wd.diffs.map(([k, d]) => `<b>${esc(WD_LAB[k] || k)}</b>: ${d > 0 ? '+' : ''}${(d * 100).toFixed(1)} pts in wins`).join(' · ')}</p></div>` : ''}`;
+}
+
+
+// ---------- staff film tags: one tap per clip, shared by all staff (Firestore filmTags/<kind>) ----------
+let TAGS = {};
+const TAG_KINDS = ['pick', 'slide', 'ride', 'clear', 'manup', 'mandown', 'fomove', 'shot_off', 'shot_def'];
+async function loadTags() {
+  const docs = await Promise.all(TAG_KINDS.map(k => DBX.collection('filmTags').doc(k).get()));
+  docs.forEach((d, i) => { TAGS[TAG_KINDS[i]] = d.exists ? (d.data().t || {}) : {}; });
+}
+function saveTag(kind, id, val) {
+  TAGS[kind] = TAGS[kind] || {}; TAGS[kind][id] = val;
+  DBX.collection('filmTags').doc(kind).set({ t: { [id]: val }, updatedAt: new Date().toISOString(), updatedBy: ME }, { merge: true }).catch(e => console.error('tag save failed', e));
+}
+const jName = (j, tid) => { const R = tid === undefined || tid === T.id ? T.roster : []; const r = R.find(x => String(x.jersey_number) === String(j)); return r ? `${r.player} #${j}` : (j ? '#' + j : ''); };
+// kind: { title, question, options, sub (second question), list(S) -> [{id, c, outcome}], outcomeLabel }
+let TAGGERS = {};
+function buildTaggers() { TAGGERS = {
+  pick: { title: 'How they play the pick', q: 'How did ' + T.name + ' defend this pick?', options: ['Switch', 'Fight over', 'Go under', 'Hedge & recover', 'Jump / double', 'Got beat (slip/roll)'],
+    list: S => (S.pick_clips_def || []).map(([sb, v, film, goal, typ, id]) => ({ id, c: clipObj(sb, v, 'Pick vs ' + T.name, film, null, 'pick'), out: goal })), outLabel: 'Scored on' },
+  slide: { title: 'Slide package vs dodges', q: 'How did ' + T.name + ' slide on this dodge?', options: ['Adjacent slide', 'Crease slide', '2nd-man slide', 'No slide', 'Double team'], sub: { q: 'Dodge from where?', options: ['Top', 'Wing', 'X'], skipFor: ['No slide'] },
+    list: S => (S.dodge_clips_def || []).map(([sb, v, film, goal, typ, id]) => ({ id, c: clipObj(sb, v, 'Dodge vs ' + T.name, film, null, 'dodge'), out: goal })), outLabel: 'Scored on' },
+  ride: { title: 'Their ride', q: 'What ride is ' + T.name + ' in?', options: ['10-man ride', '3-3-4 zone', 'Man ride (7–8 man)', 'No ride / back off', 'Other'],
+    list: S => (S.ride_clips || []).map(([sb, v, film, fail, id]) => ({ id, c: clipObj(sb, v, 'Opponent clear vs ' + T.name + ' ride', film, null, 'clear'), out: fail })), outLabel: 'Clear failed' },
+  clear: { title: 'Their clear', q: 'What clear is ' + T.name + ' running?', options: ['4-3-3 / standard', 'Banana', 'Wide spread', 'Goalie carry', 'Other'],
+    list: S => (S.clear_clips || []).map(([sb, v, film, fail, id]) => ({ id, c: clipObj(sb, v, T.name + ' clear', film, null, 'clear'), out: fail })), outLabel: 'Clear failed' },
+  manup: { title: 'Their man-up set', q: T.name + ' man-up formation?', options: ['1-4-1', '2-3-1', '3-3', '2-2-2', 'Other'],
+    list: S => (S.manup_clips_off || []).map(([sb, v, film, goal, id, vEnd]) => ({ id, c: clipObj(sb, v, T.name + ' man-up', film, vEnd, 'poss'), out: goal })), outLabel: 'Scored' },
+  mandown: { title: 'Their man-down', q: T.name + ' man-down look?', options: ['Box & 1', 'Rotating zone', 'Tight man', 'Other'],
+    list: S => (S.manup_clips_def || []).map(([sb, v, film, goal, id, vEnd]) => ({ id, c: clipObj(sb, v, 'Opponent man-up vs ' + T.name, film, vEnd, 'poss'), out: goal })), outLabel: 'Scored on' },
+  fomove: { title: 'Faceoff moves', q: 'What move did ' + T.name + '’s FOGO use?', options: ['Clamp', 'Rake', 'Plunger', 'Jump / exit', 'Other'],
+    list: S => (S.fo_clips || []).map(([sb, v, film, won, mj, oj, id]) => ({ id, c: clipObj(sb, v, `Faceoff — ${jName(mj)} ${won ? 'won' : 'lost'}`, film, null, 'fo'), out: won })), outLabel: 'Won' },
+}; }
+let TAGKIND = null, PEND = null;
+function tagSummary(kind, S) {
+  const cfg = TAGGERS[kind]; const L = cfg.list(S).filter(x => x.c); window['__TAGLIST_' + kind] = L;
+  const tg = TAGS[kind] || {}; const done = L.filter(x => tg[x.id]);
+  const cnt = {}; done.forEach(x => { const t = tg[x.id]; cnt[t] = cnt[t] || { n: 0, o: 0 }; cnt[t].n++; cnt[t].o += x.out ? 1 : 0; });
+  const rows = Object.entries(cnt).sort((a, b) => b[1].n - a[1].n).map(([t, v]) => `<tr><td class="l"><b>${esc(t)}</b></td><td>${pc(v.n / done.length)}</td><td>${v.n}</td><td>${pc(v.o / v.n)}</td></tr>`).join('');
+  return `<div style="border:1px solid var(--line);padding:10px 12px;margin:10px 0;background:var(--card-2)">
+    <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center"><b style="font-size:13px">${esc(cfg.title)} — staff film tags</b><span style="flex:1"></span>
+      ${L.length ? `<button class="playall" data-tagstart="${kind}">▶ Tag (${done.length}/${L.length} done)</button>` : '<span class="note" style="margin:0">no clips on film</span>'}</div>
+    ${done.length ? `<div class="tw" style="margin-top:8px"><table><thead><tr><th class="l">Tag</th><th>Share</th><th>n</th><th>${esc(cfg.outLabel)}</th></tr></thead><tbody>${rows}</tbody></table></div>
+      <p class="note" style="margin:6px 0 0">${done.length} tagged.${done.length < 15 ? ' Tag at least 15 for a reliable read.' : ''}</p>` : ''}</div>`;
+}
+const pickDefBlock = S => tagSummary('pick', S) + tagSummary('slide', S);
+function startTagger(kind) {
+  const L = window['__TAGLIST_' + kind] || []; const tg = TAGS[kind] || {};
+  const order = L.filter(x => !tg[x.id]).concat(L.filter(x => tg[x.id])); if (!order.length) return;
+  TAGKIND = kind; PEND = null; REEL = order.map(x => Object.assign({}, x.c, { tagId: x.id })); RI = 0; PLAYCTX = 'tag';
+  let p = $('#player'); if (!p) { p = document.createElement('div'); p.id = 'player'; p.className = 'player'; document.body.appendChild(p); }
+  p.hidden = false; showClip();
+}
+function tagBar(c) {
+  if (PLAYCTX === 'shot') return shotBar(c);
+  const cfg = TAGGERS[TAGKIND]; const cur = (TAGS[TAGKIND] || {})[c.tagId];
+  const btn = (o, k, attr) => `<button ${attr}="${esc(o)}" style="${cur && cur.startsWith(o) ? 'background:#E3A92B;color:#081A33;border-color:#E3A92B' : ''}">${k + 1}. ${esc(o)}</button>`;
+  if (PEND && cfg.sub) return `<div class="pbar" style="gap:6px"><span style="color:#E3A92B;font-weight:700">${esc(PEND)} — ${esc(cfg.sub.q)}</span>${cfg.sub.options.map((o, k) => btn(o, k, 'data-tsub')).join('')}<button data-tsub="">Not sure</button></div>`;
+  return `<div class="pbar" style="gap:6px"><span style="color:#E3A92B;font-weight:700">${esc(cfg.q)}</span>${cfg.options.map((o, k) => btn(o, k, 'data-tag')).join('')}<button data-tag="">Skip / can't tell</button></div>`;
+}
+function recordTag(val) {
+  const c = REEL[RI]; if (val) saveTag(TAGKIND, c.tagId, val);
+  PEND = null; if (RI < REEL.length - 1) { RI++; showClip(); } else closePlayer();
+}
+function wireTagBar(p) {
+  p.querySelectorAll('[data-tag]').forEach(b => b.onclick = () => { const v = b.dataset.tag; const cfg = TAGGERS[TAGKIND];
+    if (v && cfg.sub && !(cfg.sub.skipFor || []).includes(v)) { PEND = v; showClip(true); } else recordTag(v); });
+  p.querySelectorAll('[data-tsub]').forEach(b => b.onclick = () => recordTag(b.dataset.tsub ? PEND + ' · ' + b.dataset.tsub : PEND));
+}
+// ---------- shot location: click the field (where from) and the goal (where it went) ----------
+const SHOTKINDS = { shot_off: { title: 'Where their goals come from', list: S => (S.goal_clips_off || []).map(([sb, v, film, j, typ, id]) => ({ id, c: clipObj(sb, v, `Goal ${jName(j)}`, film, null, 'goal'), j })) },
+  shot_def: { title: 'Where their goalie gets beaten', list: S => (S.goal_clips_def || []).map(([sb, v, film, j, typ, id]) => ({ id, c: clipObj(sb, v, 'Goal allowed (#' + j + ')', film, null, 'goal'), j })) } };
+let SHOT = null;
+const FIELD_SVG = (dots, clickable) => `<svg viewBox="0 0 100 70" ${clickable ? 'id="shotfield"' : ''} style="width:${clickable ? '260px' : '100%'};max-width:360px;background:#1C5C3A;display:block;${clickable ? 'cursor:crosshair' : ''}">
+  <rect x="2" y="2" width="96" height="66" fill="none" stroke="#fff" stroke-width=".4"/><line x1="2" y1="60" x2="98" y2="60" stroke="#fff" stroke-width=".3"/>
+  <rect x="20" y="8" width="60" height="40" fill="none" stroke="#fff" stroke-width=".3"/><circle cx="50" cy="18" r="3" fill="none" stroke="#fff" stroke-width=".4"/>
+  <line x1="47" y1="18" x2="53" y2="18" stroke="#E3A92B" stroke-width="1"/>${dots}</svg>`;
+const GOAL_ZONES = ['High left', 'High middle', 'High right', 'Mid left', 'Mid middle', 'Mid right', 'Low left', 'Low middle', 'Low right'];
+function shotSummary(kind, S) {
+  const cfg = SHOTKINDS[kind]; const L = cfg.list(S).filter(x => x.c); window['__SHOT_' + kind] = L;
+  const tg = TAGS[kind] || {}; const done = L.filter(x => tg[x.id]);
+  const good = kind === 'shot_def'; const rgb = good ? '30,158,85' : '229,81,44';
+  const dots = done.map(x => { const t = tg[x.id]; return t.x != null ? `<circle cx="${t.x}" cy="${t.y}" r="1.6" fill="rgb(${rgb})" stroke="#fff" stroke-width=".3"/>` : ''; }).join('');
+  const zc = {}; done.forEach(x => { const z = tg[x.id].zone; if (z) zc[z] = (zc[z] || 0) + 1; });
+  const zmax = Math.max(1, ...Object.values(zc));
+  const grid = `<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:2px;width:150px;border:3px solid #888;padding:2px;background:#fff">${GOAL_ZONES.map(z => `<div style="height:34px;display:grid;place-items:center;font:600 11px var(--mono);background:rgba(${rgb},${(zc[z] || 0) / zmax * .85});color:${(zc[z] || 0) / zmax > .5 ? '#fff' : '#081A33'}">${zc[z] || 0}</div>`).join('')}</div>`;
+  return `<div style="border:1px solid var(--line);padding:10px 12px;margin:10px 0;background:var(--card-2)">
+    <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center"><b style="font-size:13px">${esc(cfg.title)} — staff click-tags</b><span style="flex:1"></span>
+      ${L.length ? `<button class="playall" data-shotstart="${kind}">▶ Tag shot locations (${done.length}/${L.length} done)</button>` : ''}</div>
+    ${done.length ? `<div style="display:flex;flex-wrap:wrap;gap:16px;margin-top:8px;align-items:flex-start"><div><div class="note" style="margin:0 0 4px">Shot origin (${done.length})</div>${FIELD_SVG(dots)}</div><div><div class="note" style="margin:0 0 4px">Where it went in</div>${grid}</div></div>` : '<p class="note" style="margin:6px 0 0">No goals tagged yet — click where each shot came from, then where it went in.</p>'}</div>`;
+}
+function startShotTagger(kind) {
+  const L = window['__SHOT_' + kind] || []; const tg = TAGS[kind] || {};
+  const order = L.filter(x => !tg[x.id]).concat(L.filter(x => tg[x.id])); if (!order.length) return;
+  TAGKIND = kind; SHOT = {}; REEL = order.map(x => Object.assign({}, x.c, { tagId: x.id })); RI = 0; PLAYCTX = 'shot';
+  let p = $('#player'); if (!p) { p = document.createElement('div'); p.id = 'player'; p.className = 'player'; document.body.appendChild(p); }
+  p.hidden = false; showClip();
+}
+function shotBar(c) {
+  const cur = (TAGS[TAGKIND] || {})[c.tagId] || {}; const s = Object.assign({}, cur, SHOT);
+  const dot = s.x != null ? `<circle cx="${s.x}" cy="${s.y}" r="2" fill="#E3A92B" stroke="#081A33" stroke-width=".5"/>` : '';
+  return `<div class="pbar" style="align-items:flex-start;gap:14px"><div><div style="color:#E3A92B;font-weight:700;margin-bottom:4px">1. Click where the shot came from</div>${FIELD_SVG(dot, true)}</div>
+    <div><div style="color:#E3A92B;font-weight:700;margin-bottom:4px">2. Where did it go in?</div><div style="display:grid;grid-template-columns:repeat(3,52px);gap:3px;border:3px solid #E5512C;padding:3px;background:#fff">${GOAL_ZONES.map(z => `<button data-zone="${z}" style="height:34px;border:0;background:${s.zone === z ? '#E3A92B' : '#EEF1F5'};color:#081A33;cursor:pointer;font-size:10px">${z.replace(' ', '<br>')}</button>`).join('')}</div>
+    <div style="margin-top:8px;display:flex;gap:6px"><button id="shotsave" ${s.x != null && s.zone ? '' : 'disabled style="opacity:.5"'}>Save & next ▶</button><button id="shotskip">Skip</button></div></div></div>`;
+}
+function wireShotBar(p) {
+  const f = p.querySelector('#shotfield');
+  if (f) f.onclick = e => { const r = f.getBoundingClientRect(); SHOT.x = Math.round((e.clientX - r.left) / r.width * 1000) / 10; SHOT.y = Math.round((e.clientY - r.top) / r.height * 700) / 10; showClip(true); };
+  p.querySelectorAll('[data-zone]').forEach(b => b.onclick = () => { SHOT.zone = b.dataset.zone; showClip(true); });
+  const sv = p.querySelector('#shotsave'); if (sv) sv.onclick = () => { const c = REEL[RI]; const cur = (TAGS[TAGKIND] || {})[c.tagId] || {}; saveTag(TAGKIND, c.tagId, Object.assign({}, cur, SHOT)); SHOT = {}; if (RI < REEL.length - 1) { RI++; showClip(); } else closePlayer(); };
+  const sk = p.querySelector('#shotskip'); if (sk) sk.onclick = () => { SHOT = {}; if (RI < REEL.length - 1) { RI++; showClip(); } else closePlayer(); };
+}
+// ---------- game-week film package ----------
+function buildGameWeek() {
+  const S = T.sb || {}; const add = (L, n, f) => { let k = 0; for (const x of (L || [])) { const c = f(x); if (c && k < n) { addToSession(c); k++; } } };
+  SESS = { name: `${T.name} — game week`, clips: [] };
+  const threats = T.roster.filter(r => r.role === 'offensive' && r.threat?.qual && (!r.grad || marked.has(r.player_ID))).sort((a, b) => scoreOf(b) - scoreOf(a)).slice(0, 3);
+  threats.forEach(r => { const cd = D.cards[r.player_ID]; add(cd?.sb?.clip_goals, 2, ([id, v, ty, pk, dg, as, film]) => { const c = clipObj(id, v, `Threat: ${r.player} (${ty}${pk ? '+pick' : ''}${dg ? '+dodge' : ''})`, film, null, 'goal'); if (c) c.note = 'Top threat'; return c; }); });
+  add(S.clips?.goals_off_picks, 3, ([id, v, j, film]) => clipObj(id, v, `Their goal off a pick — ${jName(j)}`, film, null, 'goal'));
+  add(S.clips?.transition_goals, 2, ([id, v, j, film]) => clipObj(id, v, `Their transition goal — ${jName(j)}`, film, null, 'goal'));
+  add(S.clips?.settled_goals, 2, ([id, v, j, film]) => clipObj(id, v, `Their settled goal — ${jName(j)}`, film, null, 'goal'));
+  add(S.clips?.goals_allowed_off_picks, 3, ([id, v, j, film]) => clipObj(id, v, `Beating them with a pick (#${j})`, film, null, 'goal'));
+  add(S.clips?.failed_clears, 2, ([id, v, j, film, vEnd]) => clipObj(id, v, 'Their failed clear (ride them)', film, vEnd, 'poss'));
+  saveSess(); const s = $('#sess'); if (!s || s.hidden) toggleSess(); else renderSess();
+}
+document.addEventListener('click', e => {
+  const t = e.target.closest('[data-tagstart]'); if (t) { startTagger(t.dataset.tagstart); return; }
+  const s = e.target.closest('[data-shotstart]'); if (s) { startShotTagger(s.dataset.shotstart); return; }
+  if (e.target.id === 'gwBuild') buildGameWeek();
+});
+
+// ---------- player card ----------
+function openCard(pid) {
+  const r = T.roster.find(x => x.player_ID === pid); if (!r) return;
+  const c = D.cards[pid], C = D.meta.gamelog_cols, ix = k => C.indexOf(k);
+  // LR player-page game log when we have it, otherwise the box-score log every player has
+  const BL = D.meta.boxlog_cols || [], bx = k => BL.indexOf(k);
+  const useBox = !(c?.log || []).length && (c?.box_log || []).length;
+  const log = useBox ? c.box_log.map(g => { const o = []; o[ix('goals')] = g[bx('goals')]; o[ix('assists')] = g[bx('assists')]; o[ix('shots')] = g[bx('shots')]; o[ix('game_score')] = g[bx('game_score')];
+      o[ix('game_date')] = g[bx('epoch')] ? new Date(g[bx('epoch')] * 1000).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : ''; o[ix('short_code')] = TEAMNAME[g[bx('opp')]] || ''; return o; }) : (c?.log || []).slice();
+  const pts = log.map(g => (g[ix('goals')] || 0) + (g[ix('assists')] || 0));
+  const avg = pts.length ? pts.reduce((a, b) => a + b, 0) / pts.length : 0;
+  const l5 = pts.slice(-5), a5 = l5.length ? l5.reduce((a, b) => a + b, 0) / l5.length : 0;
+  const trend = !pts.length ? '' : a5 > avg * 1.25 && a5 - avg >= 1 ? '<span class="up">▲ Hot</span>' : a5 < avg * .75 && avg - a5 >= 1 ? '<span class="dn">▼ Cold</span>' : 'Steady';
+  const best = log.map((g, i) => [g[ix('game_score')] || 0, i]).sort((a, b) => b[0] - a[0]);
+  const gl = i => { const g = log[i]; return `${esc(g[ix('game_date')])} vs ${esc(g[ix('short_code')])}: ${g[ix('goals')] || 0}G ${g[ix('assists')] || 0}A on ${g[ix('shots')] || 0} shots`; };
+  const t = r.threat || {}, i = t.ing || {};
+  const b = c?.buckets?.shots_by_bucket || [];
+  // our matching player: same role, nearest play share among W&L returners
+  const ours = D.wl.roster.filter(x => x.role === r.role && !x.grad && x.threat?.qual).sort((a, b) => Math.abs((a.team_play_shares || 0) - (r.team_play_shares || 0)) - Math.abs((b.team_play_shares || 0) - (r.team_play_shares || 0)))[0];
+  const vsRows = r.role === 'offensive' ? ['Volume', 'Finishing', 'Creating', 'EGA'] : r.role === 'faceoff' ? ['FaceoffElo', 'WinRate'] : r.role === 'goalkeeper' ? ['SavePct', 'GoalieEGA'] : ['DefensiveEGA', 'CausedTOs', 'GroundBalls'];
+  let h = `<div class="dh"><div class="j">${esc(r.jersey_number ?? '')}</div><div><h4>${esc(r.player)}</h4><div class="m">${esc(T.name)} · ${esc(r.team_listed_class)} · ${esc(ROLE[r.role] || '')}${r.height ? ' · ' + (+r.height > 50 ? Math.floor(r.height / 12) + "'" + (r.height % 12) + '"' : esc(r.height)) : ''}${t.qual ? ' · Threat ' + (r.role === 'offensive' ? scoreOf(r) : t.score) : ''}</div><div style="margin-top:6px">${tagsHtml(r)}</div></div><button id="dx" aria-label="Close">✕</button></div><div class="db">`;
+  if (r.role === 'offensive') {
+    h += `<h5>How he hurts you</h5><div class="kv"><div><div class="k">Goals / Ast</div><div class="v">${r.goals}/${r.assists}</div><div class="p">${(r.goals / Math.max(1, r.games_appeared_in)).toFixed(1)} G/g</div></div>
+      <div><div class="k">Shooting</div><div class="v">${pc(r.shooting_pct)}</div><div class="p">${r.shots} shots</div></div><div><div class="k">On-goal %</div><div class="v">${pc(r.on_goal_shooting_pct)}</div><div class="p">pct ${t.p?.ogp ?? '—'}</div></div>
+      <div><div class="k">Team shots</div><div class="v">${pc(r.share_of_team_shots)}</div><div class="p">${pc(r.share_of_team_assists)} of assists</div></div></div>
+      ${b.length ? `<div class="bars" style="margin-top:10px"><span class="hd">Shot clock used</span><span class="hd">Share of his shots ┃</span><span class="hd" style="text-align:right">Goal%</span><span class="hd" style="text-align:right">Shots</span>
+        ${['< 20s', '20-40s', '40-60s', '> 60s'].map(k => b.find(x => x.bucket === k)).filter(Boolean).map(x => `<span>${esc(x.bucket.replace('<', 'Under ').replace('>', 'Over '))}</span><span class="t"><i style="width:${(x.attempt_share || 0) * 100}%; background:var(--critical)"></i></span><span class="v">${pc(x.goal_pct)}</span><span class="s">${x.attempts}</span>`).join('')}</div>` : ''}`;
+  } else if (r.role === 'faceoff') {
+    h += `<h5>How he hurts you</h5><div class="kv"><div><div class="k">Win %</div><div class="v">${pc(r.faceoff_win_rate)}</div><div class="p">${r.faceoff_wins}/${r.faceoffs_taken}</div></div><div><div class="k">Faceoff Elo</div><div class="v">${Math.round(r.faceoff_ELO || 0)}</div><div class="p">pct ${t.p?.elo ?? '—'}</div></div><div><div class="k">GBs</div><div class="v">${r.gbs ?? 0}</div></div><div><div class="k">FO value</div><div class="v">${f1(r.faceoff_EGA)}</div><div class="p">EGA</div></div></div>`;
+  } else if (r.role === 'goalkeeper') {
+    h += `<h5>How he hurts you</h5><div class="kv"><div><div class="k">Save %</div><div class="v">${pc(r.save_pct)}</div><div class="p">${r.saves ?? 0} saves</div></div><div><div class="k">vs expected</div><div class="v">${(r.excess_saves >= 0 ? '+' : '') + f1(r.excess_saves)}</div><div class="p">saves</div></div><div><div class="k">SOG faced</div><div class="v">${r.sog_faced ?? 0}</div></div><div><div class="k">Goalie EGA</div><div class="v">${f1(r.defensive_EGA)}</div></div></div>`;
+  } else {
+    h += `<h5>How he hurts you</h5><div class="kv"><div><div class="k">Caused TO</div><div class="v">${r.caused_turnovers ?? 0}</div></div><div><div class="k">GBs</div><div class="v">${r.gbs ?? 0}</div></div><div><div class="k">Penalties</div><div class="v">${r.penalties ?? 0}</div></div><div><div class="k">D value</div><div class="v">${f1(r.defensive_EGA)}</div><div class="p">EGA</div></div></div>`;
+  }
+  const sd = c?.shots_detail, gd = c?.games_detail;
+  if (sd && r.role === 'offensive') {
+    const o = sd.outcome || {}, tot = Object.values(o).reduce((a, b) => a + b, 0) || 1;
+    const cols = { goal: 'var(--critical)', saved: '#1E9E55', missed: '#7CCB9B', blocked: '#2E7D4F', pipe: '#B5E3C6' };
+    const sit = (k, l) => sd.situation?.[k] ? `<span>${l}</span><span class="t"><i style="width:${sd.situation[k][0] / sd.shots * 100}%;background:var(--critical)"></i></span><span class="v">${pc(sd.situation[k][1] / Math.max(1, sd.situation[k][0]))}</span><span class="s">${sd.situation[k][0]}</span>` : '';
+    h += `<h5>Shot detail</h5>
+      <div class="kv"><div><div class="k">Unassisted</div><div class="v">${sd.unassisted_pct == null ? '—' : pc(sd.unassisted_pct)}</div><div class="p">${sd.goals_matched} goals${sd.unassisted_pct >= D.meta.tags.dodger_unassisted ? ' · dodger' : ''}</div></div>
+        <div><div class="k">Transition</div><div class="v">${sd.transition[1]}</div><div class="p">goals on ${sd.transition[0]} shots ≤10s in</div></div>
+        <div><div class="k">Late & close</div><div class="v">${sd.late_close[1]}/${sd.late_close[0]}</div><div class="p">Q4, within 2</div></div>
+        <div><div class="k">Man-up</div><div class="v">${sd.man_up[1]}/${sd.man_up[0]}</div><div class="p">goals / shots</div></div></div>
+      <div class="kv" style="margin-top:6px"><div><div class="k">When it matters</div><div class="v">${sd.high_leverage ? sd.high_leverage[1] : '—'}</div><div class="p">goals on ${sd.high_leverage?.[0] ?? 0} shots, win chance 20–80%</div></div>
+        <div><div class="k">Garbage time</div><div class="v">${sd.garbage ? sd.garbage[1] : '—'}</div><div class="p">goals with the game decided</div></div>
+        <div><div class="k">Late shot clock</div><div class="v">${sd.late_clock ? sd.late_clock[1] + '/' + sd.late_clock[0] : '—'}</div><div class="p">goals / shots, under 10s</div></div>
+        <div><div class="k">Leverage share</div><div class="v">${sd.high_leverage && sd.shots ? pc(sd.high_leverage[0] / sd.shots) : '—'}</div><div class="p">of his shots</div></div></div>
+      <b style="font-size:12px;display:block;margin-top:10px">How his shots end</b>
+      <div style="display:flex;height:18px;margin:5px 0">${Object.entries(o).sort((a, b) => b[1] - a[1]).map(([k, v]) => `<i title="${k}" style="flex:${v};background:${cols[k]}"></i>`).join('')}</div>
+      <div class="legend" style="flex-wrap:wrap">${Object.entries(o).sort((a, b) => b[1] - a[1]).map(([k, v]) => `<span><i style="background:${cols[k]}"></i>${k} ${pc(v / tot)}</span>`).join('')}</div>
+      <div class="bars" style="margin-top:10px"><span class="hd">Score state</span><span class="hd">Share of his shots</span><span class="hd" style="text-align:right">Sh%</span><span class="hd" style="text-align:right">Shots</span>${sit('leading', 'Leading')}${sit('tied', 'Tied')}${sit('trailing', 'Trailing')}</div>`;
+  }
+  if (gd) {
+    const qs = gd.quarter_share || [];
+    h += `<h5>When + against whom</h5>
+      <div class="kv"><div><div class="k">vs top 25</div><div class="v">${gd.vs_top25 ? gd.vs_top25.ppg : '—'}</div><div class="p">pts/g · ${gd.vs_top25?.n || 0} games</div></div><div><div class="k">vs others</div><div class="v">${gd.vs_others ? gd.vs_others.ppg : '—'}</div><div class="p">pts/g</div></div>
+        <div><div class="k">Opp.-adjusted</div><div class="v">${gd.adj_ppg ?? '—'}</div><div class="p">pts/g vs average D (raw ${gd.ppg})</div></div><div><div class="k">Consistency</div><div class="v" style="font-size:17px">${(r.threat?.tags || []).includes('Steady') ? 'Steady' : (r.threat?.tags || []).includes('Boom/bust') ? 'Boom / bust' : 'Normal'}</div><div class="p">${gd.ppg} ± ${gd.spread ?? '—'} pts/g</div></div></div>
+      <div class="bars" style="margin-top:10px"><span class="hd">Quarter</span><span class="hd">Share of his value added</span><span></span><span></span>${qs.map((v, i) => `<span>Q${i + 1}</span><span class="t"><i style="width:${v * 100}%;background:var(--critical)"></i></span><span class="v">${pc(v)}</span><span></span>`).join('')}</div>`;
+  }
+  if (c?.fo_h2h?.length) {
+    h += `<h5>Faceoff head-to-head</h5><div class="tw"><table><thead><tr><th class="l">Opponent FOGO</th><th class="l">Team</th><th>Won</th><th>Lost</th></tr></thead><tbody>${c.fo_h2h.slice(-8).reverse().map(f => `<tr><td class="l">${esc(f.opp_fogo)}</td><td class="l">${esc(TEAMNAME[f.opp] || '')}</td><td>${f.w}</td><td>${f.l}</td></tr>`).join('')}</tbody></table></div>`;
+  }
+  if (r.role === 'goalkeeper') {
+    const dp = (T.def_shot_profile?.this_year || []).reduce((a, p) => (a[p.tag] = p.buckets, a), {});
+    const b2 = dp.shot_clock_remaining_bucket || [];
+    h += `<h5>Shots against ${esc(T.name)} by shot clock</h5><div class="bars">${b2.map(x => `<span>${({ 0: '0–19s left', 20: '20–39s', 40: '40–59s', 60: '60s+' })[x.bucket] ?? x.bucket}</span><span class="t"><i style="width:${Math.min(100, x.pct / .6 * 100)}%;background:${x.pct < x.league_avg ? 'var(--critical)' : 'var(--good)'}"></i><u style="left:${Math.min(100, x.league_avg / .6 * 100)}%"></u></span><span class="v">${pc(x.pct)}</span><span class="s">${x.shots}</span>`).join('')}</div><p class="note">Opponents' shooting % (team level, all goalies). Red = better than D3 average.</p>`;
+  }
+  const pb = c?.pbp;
+  if (pb) {
+    const nmAny = p => { const r = T.roster.find(x => x.player_ID === p) || D.wl.roster.find(x => x.player_ID === p); return r ? esc(r.player) : '#' + p; };
+    const list = (L, f) => (L || []).map(([p, n, name, team]) => `${name ? esc(name) + (team && team !== T.name ? ' <small style="color:var(--muted)">' + esc(team) + '</small>' : '') : f(p)} (${n})`).join(', ');
+    h += `<h5>Who he plays with</h5><div class="note" style="margin:0">
+      ${pb.goals ? `<b>Goals:</b> ${pb.goals} · ${pb.unassisted_pct != null ? pc(pb.unassisted_pct) + ' unassisted' : ''}${pb.assisted_by?.length ? ` · fed by ${list(pb.assisted_by, nmAny)}` : ''}${pb.top_feeder_share != null ? ` · <b>${pc(pb.top_feeder_share)}</b> of his goals come from one feeder${pb.top_feeder_share >= .25 ? ' — take that feeder away' : ''}` : ''}<br>` : ''}
+      ${pb.assists_to?.length ? `<b>His assists go to:</b> ${list(pb.assists_to, nmAny)}<br>` : ''}
+      ${pb.turnovers ? `<b>Turnovers:</b> ${pb.turnovers} (${pb.to_forced} forced, ${pb.to_transition ?? 0} in transition)${pb.to_forced_by?.length ? ` · most often by ${list(pb.to_forced_by, p => '#' + p)}` : ''}<br>` : ''}
+      ${pb.caused ? `<b>Takeaways:</b> ${pb.caused}${pb.caused_off?.length ? ` · off ${list(pb.caused_off, p => '#' + p)}` : ''}` : ''}</div>`;
+    if (pb.goalie) {
+      const g = pb.goalie, row = (l, v) => v && v[0] ? `<span>${l}</span><span class="t"><i style="width:${(v[1] || 0) * 100}%;background:var(--critical)"></i></span><span class="v">${pc(v[1])}</span><span class="s">${v[0]}</span>` : '';
+      h += `<h5>Saves by situation</h5><div class="bars"><span class="hd">Shots on goal</span><span class="hd">Save %</span><span class="hd" style="text-align:right">Sv%</span><span class="hd" style="text-align:right">SOG</span>
+        ${row('All', [g.sog, g.sv_pct])}${row('Transition (≤10s)', g.transition)}${row('Settled', g.settled)}${row('Assisted shots', g.vs_assisted)}${row('Unassisted shots', g.vs_unassisted)}${Object.entries(g.by_q || {}).map(([q, v]) => row('Q' + q, v)).join('')}</div>`;
+    }
+  }
+  if (c?.sb && Object.keys(c.sb.goals || {}).length) {
+    const g2 = c.sb.goals, s2 = c.sb.shots || {}, keys = Object.keys(s2).sort((a, b) => (s2[b] || 0) - (s2[a] || 0)).slice(0, 6);
+    const xg2 = c.sb.xg;
+    h += `<h5>Goals by possession type (film)</h5>${xg2 && xg2.shots >= 15 ? `<p class="note" style="margin-top:0"><b>Shot quality:</b> ${xg2.goals} goals on ${xg2.shots} film-matched shots vs ${xg2.xg} expected · <b style="color:${xg2.goals - xg2.xg >= 0 ? 'var(--critical)' : 'var(--good)'}">${xg2.goals - xg2.xg >= 0 ? '+' : ''}${(xg2.goals - xg2.xg).toFixed(1)}</b> (${xg2.goals - xg2.xg >= 3 ? 'finishing above his chances' : xg2.goals - xg2.xg <= -3 ? 'below his chances' : 'about what his chances deserve'})</p>` : ''}<div class="tw"><table><thead><tr><th class="l">Possession</th><th>Shots</th><th>Goals</th><th>Sh%</th></tr></thead><tbody>${keys.map(k => `<tr><td class="l">${esc(k.replace(/\+/g, ' + '))}</td><td>${s2[k]}</td><td>${g2[k] || 0}</td><td>${pc((g2[k] || 0) / s2[k])}</td></tr>`).join('')}</tbody></table></div>
+      <p class="note"><b>His goals on film:</b> ${(() => { const st = CLIPREG.length; const html = (c.sb.clip_goals || []).slice(0, 12).map(([id, v, ty, pk, dg, as, film]) => clipLink(id, v, `${ty}${pk ? '+pick' : ''}${dg ? '+dodge' : ''}`, film, null, 'goal')).join(' '); const idx = []; for (let i = st; i < CLIPREG.length; i++) idx.push(i); return playAll(idx) + ' ' + html; })()}</p>`;
+  }
+  h += `<h5>Role + usage</h5><div class="kv"><div><div class="k">Plays</div><div class="v">${pc(r.team_play_shares)}</div><div class="p">of team plays</div></div><div><div class="k">Games</div><div class="v">${r.games_appeared_in ?? 0}</div></div><div><div class="k">Class 2027</div><div class="v">${esc({ FR: 'SO', SO: 'JR', JR: 'SR', SR: 'GR?', GR: '—' }[r.team_listed_class] || '—')}</div><div class="p">was ${esc(r.team_listed_class)}</div></div><div><div class="k">LR role</div><div class="v" style="font-size:16px">${esc(r.raw_team_listed_role || r.role || '')}</div></div></div>`;
+  h += `<h5>Form</h5>${log.length ? `<div class="form"><div><div style="font-family:var(--num);font-size:24px;font-weight:700">${a5.toFixed(1)}</div><div class="note" style="margin:0">pts/g last 5 · season ${avg.toFixed(1)}</div><div style="margin-top:4px;font-weight:600">${trend}</div></div>${spark(pts, 'var(--critical)')}</div>
+      <p class="note">Best: ${gl(best[0][1])}<br>Worst: ${gl(best[best.length - 1][1])}${useBox ? '<br><i>From box scores (no LR player page for him).</i>' : ''}</p>` : '<p class="note">No games logged for this player.</p>'}`;
+  h += `<h5>vs ours</h5>${ours ? `<div class="vs"><span class="hd">${esc(r.player.split(' ').slice(-1)[0])}</span><span></span><span class="hd r">${esc(ours.player)}</span>
+      ${vsRows.map(k => { const a = i[k], o = ours.threat.ing[k]; return `<span class="a"><i style="width:${a}%"></i><span>${a ?? '—'}</span></span><span class="c">${k.replace(/([a-z])([A-Z])/g, '$1 $2')}</span><span class="b"><i style="width:${o}%"></i><span>${o ?? '—'}</span></span>`; }).join('')}</div>
+      <p class="note">D3 percentiles. Matched to our returning ${esc((ROLE[r.role] || '').toLowerCase())} player with the most similar role (share of team plays).</p>` : '<p class="note">No matching W&L returner.</p>'}`;
+  h += '</div>';
+  const d = $('#drawer'); d.innerHTML = h; d.classList.add('open'); $('#dx').onclick = () => d.classList.remove('open');
+}
+// ---------- clip player + reels ----------
+let REEL = [], RI = 0, PLAYCTX = null;
+function openPlayer(list, i, ctx) {
+  REEL = list; RI = i || 0; PLAYCTX = ctx || null;
+  let p = $('#player'); if (!p) { p = document.createElement('div'); p.id = 'player'; p.className = 'player'; document.body.appendChild(p); }
+  p.hidden = false; showClip();
+}
+function showClip(barOnly) {
+  const p = $('#player'), c = REEL[RI]; if (!c) return closePlayer();
+  if (barOnly && $('#tagbar')) { $('#tagbar').innerHTML = tagBar(c); if (PLAYCTX === 'tag') wireTagBar(p); if (PLAYCTX === 'shot') wireShotBar(p); return; }
+  p.innerHTML = `<video id="pv" controls playsinline preload="auto"></video>
+    <div class="pbar"><b>${esc(c.label)}</b><span>${esc(c.team || '')} · ${mmss(c.start)}–${mmss(c.end)}</span><span class="sp"></span>
+      <span>${RI + 1} / ${REEL.length}</span><button id="pprev">◀ Prev</button><button id="preplay">↺ Replay</button><button id="pnext">Next ▶</button>
+      ${PLAYCTX === 'session' ? '' : '<button id="padd">＋ Session</button>'}<a href="${SBURL(c.sb)}" target="_blank" rel="noopener" style="color:#8FB5FF;font-size:12px">open in ScoreBreak ↗</a><button id="pclose">✕ Close</button></div>
+    ${PLAYCTX === 'session' && c.note ? `<div class="note2" style="color:#E3A92B">Coach note: ${esc(c.note)}</div>` : ''}
+    <div id="tagbar" style="width:min(1100px,100%)">${PLAYCTX === 'tag' || PLAYCTX === 'shot' ? tagBar(c) : ''}</div>`;
+  const v = $('#pv'); v.src = c.mp4 + '#t=' + c.start;
+  v.addEventListener('loadedmetadata', () => { v.currentTime = c.start; v.play().catch(() => {}); }, { once: true });
+  v.addEventListener('timeupdate', () => { if (v.currentTime >= c.end) { if (PLAYCTX === 'tag' || PLAYCTX === 'shot') { v.currentTime = c.start; } else if (RI < REEL.length - 1) { RI++; showClip(); } else v.pause(); } });
+  if (PLAYCTX === 'tag') wireTagBar(p); if (PLAYCTX === 'shot') wireShotBar(p);
+  $('#pprev').onclick = () => { if (RI > 0) { RI--; showClip(); } };
+  $('#pnext').onclick = () => { if (RI < REEL.length - 1) { RI++; showClip(); } };
+  $('#preplay').onclick = () => { v.currentTime = c.start; v.play(); };
+  $('#pclose').onclick = closePlayer;
+  const a = $('#padd'); if (a) a.onclick = () => { addToSession(c); a.textContent = '✓ Added'; };
+}
+function closePlayer() { const p = $('#player'); const wasTag = PLAYCTX === 'tag' || PLAYCTX === 'shot'; if (p) { const v = $('#pv'); if (v) v.pause(); p.hidden = true; p.innerHTML = ''; } PLAYCTX = null; if (wasTag) render(); }
+document.addEventListener('click', e => {
+  const b = e.target.closest('[data-clip]'); if (b) { const i = +b.dataset.clip; openPlayer([CLIPREG[i]], 0); return; }
+  const r = e.target.closest('[data-reel]'); if (r) { const list = r.dataset.reel.split(',').map(i => CLIPREG[+i]); openPlayer(list, 0); return; }
+  const a = e.target.closest('[data-add]'); if (a) { addToSession(CLIPREG[+a.dataset.add]); a.textContent = '✓'; return; }
+});
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') { $('#drawer').classList.remove('open'); closePlayer(); }
+  const p = $('#player'); if (p && !p.hidden && PLAYCTX === 'tag' && /^[1-6]$/.test(e.key)) { const b = p.querySelectorAll('[data-tsub],[data-tag]')[+e.key - 1]; if (b) b.click(); return; }
+  if (p && !p.hidden) { if (e.key === 'ArrowRight' && RI < REEL.length - 1) { RI++; showClip(); } if (e.key === 'ArrowLeft' && RI > 0) { RI--; showClip(); } }
+});
+// ---------- film-session builder: sessions are shared by all staff (Firestore filmSessions) ----------
+let SESS = { name: 'Film session', clips: [] }, SESS_ID = null, SESS_LIST = [], sessTimer = null;
+const newSess = () => ({ name: (T ? T.name : 'Film') + ' film session', opponent: T ? T.name : '', clips: [] });
+async function loadSessions() {
+  const qs = await DBX.collection('filmSessions').orderBy('updatedAt', 'desc').limit(40).get();
+  SESS_LIST = []; qs.forEach(d => SESS_LIST.push(Object.assign({ id: d.id }, d.data())));
+  let want = null; try { want = localStorage.getItem('wluSessId'); } catch (e) {}
+  const cur = SESS_LIST.find(x => x.id === want);
+  if (cur) { SESS_ID = cur.id; SESS = { name: cur.name, opponent: cur.opponent, clips: cur.clips || [] }; } else { SESS_ID = null; SESS = newSess(); }
+}
+const saveSess = () => {
+  renderSessBtn();
+  clearTimeout(sessTimer);
+  sessTimer = setTimeout(async () => {
+    const body = { name: SESS.name, opponent: SESS.opponent || (T ? T.name : ''), clips: SESS.clips, updatedAt: new Date().toISOString(), updatedBy: ME };
+    try {
+      if (!SESS_ID) { if (!SESS.clips.length) return; body.createdBy = ME; body.createdAt = body.updatedAt; const r = await DBX.collection('filmSessions').add(body); SESS_ID = r.id; SESS_LIST.unshift(Object.assign({ id: r.id }, body)); try { localStorage.setItem('wluSessId', SESS_ID); } catch (e) {} if ($('#sess') && !$('#sess').hidden) renderSess(); }
+      else { await DBX.collection('filmSessions').doc(SESS_ID).set(body, { merge: true }); const x = SESS_LIST.find(y => y.id === SESS_ID); if (x) Object.assign(x, body); }
+    } catch (e) { console.error('session save failed', e); }
+  }, 600);
+};
+function addToSession(c) { if (!c) return; const { sb, mp4, start, end, label, team } = c; if (!SESS.clips.some(x => x.mp4 === mp4 && x.start === start)) SESS.clips.push({ sb, mp4, start, end, label, team: team || '', note: c.note || '' }); saveSess(); }
+function renderSessBtn() { let b = $('#sessbtn'); if (!b) { b = document.createElement('button'); b.id = 'sessbtn'; b.className = 'sessbtn'; document.body.appendChild(b); b.onclick = toggleSess; } b.textContent = `🎬 Film session (${SESS.clips.length})`; }
+function toggleSess() { let s = $('#sess'); if (!s) { s = document.createElement('div'); s.id = 'sess'; s.className = 'sess'; document.body.appendChild(s); s.hidden = true; } s.hidden = !s.hidden; if (!s.hidden) renderSess(); }
+function renderSess() {
+  const s = $('#sess');
+  s.innerHTML = `<div class="sh"><input id="sname" value="${esc(SESS.name)}"><button id="sclose" style="background:none;border:0;color:#fff;cursor:pointer">✕</button></div>
+    <div style="display:flex;gap:6px;padding:8px 12px;border-bottom:1px solid var(--line-2);align-items:center"><select id="spick" style="flex:1;padding:4px;border:1px solid var(--line);background:var(--card);color:var(--ink)">
+      ${SESS_ID ? '' : '<option value="">(new — not saved yet)</option>'}${SESS_LIST.map(x => `<option value="${x.id}" ${x.id === SESS_ID ? 'selected' : ''}>${esc(x.name)} · ${(x.clips || []).length} clips · ${esc((x.updatedBy || '').split('@')[0])}</option>`).join('')}</select>
+      <button id="snew" style="border:1px solid var(--line);background:var(--card);padding:4px 8px;cursor:pointer;color:var(--ink)">＋ New</button></div>
+    ${SESS.clips.map((c, i) => `<div class="row"><b>${i + 1}</b><div>${esc(c.label)} <small style="color:var(--muted)">${esc(c.team || '')} ${mmss(c.start)}</small><input data-note="${i}" placeholder="Coaching point for this clip…" value="${esc(c.note || '')}"></div>
+      <div style="display:flex;gap:3px"><button data-up="${i}">↑</button><button data-down="${i}">↓</button><button data-del="${i}">✕</button></div></div>`).join('') || '<p class="note" style="padding:12px">Add clips with ＋ from any clip list or the player.</p>'}
+    <div class="sf"><button id="splay">▶ Play session</button><button id="sclear" style="background:var(--card-2);color:var(--ink);border:1px solid var(--line)">Clear</button></div>
+    <p class="note" style="padding:0 12px 10px">Sessions save for all staff — anyone can open, edit or play them.</p>`;
+  $('#sname').oninput = e => { SESS.name = e.target.value; saveSess(); };
+  $('#sclose').onclick = toggleSess;
+  $('#spick').onchange = e => { const x = SESS_LIST.find(y => y.id === e.target.value); if (x) { SESS_ID = x.id; SESS = { name: x.name, opponent: x.opponent, clips: (x.clips || []).slice() }; try { localStorage.setItem('wluSessId', SESS_ID); } catch (er) {} renderSessBtn(); renderSess(); } };
+  $('#snew').onclick = () => { SESS_ID = null; SESS = newSess(); try { localStorage.removeItem('wluSessId'); } catch (er) {} renderSessBtn(); renderSess(); };
+  $('#splay').onclick = () => SESS.clips.length && openPlayer(SESS.clips, 0, 'session');
+  $('#sclear').onclick = () => { SESS.clips = []; saveSess(); renderSess(); };
+  s.querySelectorAll('[data-note]').forEach(x => x.oninput = () => { SESS.clips[+x.dataset.note].note = x.value; saveSess(); });
+  s.querySelectorAll('[data-up]').forEach(x => x.onclick = () => { const i = +x.dataset.up; if (i > 0) { [SESS.clips[i - 1], SESS.clips[i]] = [SESS.clips[i], SESS.clips[i - 1]]; saveSess(); renderSess(); } });
+  s.querySelectorAll('[data-down]').forEach(x => x.onclick = () => { const i = +x.dataset.down; if (i < SESS.clips.length - 1) { [SESS.clips[i + 1], SESS.clips[i]] = [SESS.clips[i], SESS.clips[i + 1]]; saveSess(); renderSess(); } });
+  s.querySelectorAll('[data-del]').forEach(x => x.onclick = () => { SESS.clips.splice(+x.dataset.del, 1); saveSess(); renderSess(); });
+}
+// The tracker's search can ask this page to open a team ("Scout: York").
+window.addEventListener('message', e => { if (e.origin === location.origin && e.data && e.data.openTeam && D.meta && (!T || +e.data.openTeam !== T.id)) openTeam(+e.data.openTeam); });
+// ---------- boot ----------
+(async function boot() {
+  if (!DBX) { $('#app').innerHTML = '<p class="warnbox">Open this from the tracker (Opponent → Scouting) while signed in.</p>'; return; }
+  syncTheme(); try { new HOST.MutationObserver(syncTheme).observe(HOST.document.documentElement, { attributes: true, attributeFilter: ['data-theme'] }); } catch (e) {}
+  try {
+    const [meta, wl] = await Promise.all([getDoc('app', 'lrMeta'), getDoc('lrTeams', WL_ID)]);
+    if (!meta || !wl) { $('#app').innerHTML = '<p class="warnbox">Scouting data hasn’t been imported yet. The owner can load it from Data Health → Import LR data.</p>'; return; }
+    D.meta = meta; D.wl = wl; TEAMNAME = Object.fromEntries(meta.teams.map(t => [t.id, t.name])); FILMS = (meta.sb_league || {}).films || {};
+    W0 = Object.assign({}, meta.weights.offensive); W = Object.assign({}, W0);
+    $('#upd').textContent = '· LR data as of ' + meta.updated;
+    const seen = new Set(); D.pinned = [];
+    for (const g of wl.games || []) if (g.opponentID && !seen.has(g.opponentID) && TEAMNAME[g.opponentID]) { seen.add(g.opponentID); D.pinned.push([g.opponentID, TEAMNAME[g.opponentID]]); }
+    D.pinned.sort((a, b) => a[1].localeCompare(b[1]));
+    Object.assign(D.cards, await getCards(WL_ID));
+    await Promise.all([loadTags(), loadSessions()]);
+    renderSessBtn();
+    let start = null; try { start = +localStorage.getItem('wluScoutTeam') || null; } catch (e) {}
+    await openTeam(start && TEAMNAME[start] ? start : (D.pinned[0] || [WL_ID])[0]);
+  } catch (e) { console.error(e); $('#app').innerHTML = `<p class="warnbox">Could not load scouting data: ${esc(e.message || e)}. If this says "permission", the Firestore rules need the new collections (see the PR notes).</p>`; }
+})();
+</script>
+</body></html>
