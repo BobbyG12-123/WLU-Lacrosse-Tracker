@@ -13908,7 +13908,7 @@ const SA_CATALOG = [
   { id: 'beaten', label: 'Times beaten on-ball', words: 'beaten, gets beat, get beat, gets beaten, beat the most, beaten the most, loses his man, gets dodged, gets taken', page: 'defense', fmt: SA_NUM(0), f: d => saDefBy(d, 'defender', l => { const b = l.filter(s => s.defBeaten === 'Yes' || s.defBeaten === 'No'); return b.length ? { v: b.filter(s => s.defBeaten === 'Yes').length, n: b.length, extra: `${b.filter(s => s.defBeaten === 'Yes').length} of ${b.length}` } : null; }) },
   { id: 'onballG', label: 'Goal % allowed on-ball', words: 'on-ball defender, on ball defender, on-ball defense, on ball defense, best defender, lockdown, shutdown, cover defender, covers, guards the ball', dir: 'low', min: 8, page: 'defense', fmt: SA_PCT, f: d => saDefBy(d, 'defender', l => ({ v: l.filter(s => s.goal === 1).length / l.length, n: l.length, extra: `${l.filter(s => s.goal === 1).length} goals on ${l.length} shots` })) },
   { id: 'slides', label: 'Slides', words: 'slides, slide, sliding, slider, slides the most, help defense', page: 'defense', fmt: SA_NUM(0), f: d => saDefBy(d, 'slideDefender', l => ({ v: l.length, n: l.length })) },
-  { id: 'offFault', label: 'Off-ball breakdowns', words: 'off-ball breakdowns, off ball breakdowns, breakdowns, off-ball mistakes, loses his man off ball, off ball defense, off-ball defense', page: 'defense', fmt: SA_NUM(0), f: d => saDefBy(d, 'offBallFault', l => ({ v: l.length, n: l.length })) },
+  { id: 'offFault', label: 'Off-ball breakdowns', words: 'off-ball breakdowns, off ball breakdowns, breakdowns, breakdown, off-ball defender, off ball defender, off-ball mistakes, loses his man off ball, off ball defense, off-ball defense', page: 'defense', fmt: SA_NUM(0), f: d => saDefBy(d, 'offBallFault', l => ({ v: l.length, n: l.length })) },
   { id: 'pickFreed', label: 'Pick defense: ball carrier freed', words: 'pick defense, defending picks, defends picks, pick defender, guarding picks, switches', dir: 'low', min: 5, page: 'pickdef', fmt: SA_PCT, f: d => { const m = {}; try { pickDefenderRows(d.possList.filter(pp => pp.pick), d.xgOf, EFF_SEASON).forEach(r => { if (r.n) m[r.jersey] = { v: r.freed, n: r.n, extra: `${r.n} picks` }; }); } catch (e) { /* not ready */ } return m; } },
   { id: 'gb', label: 'Ground balls', words: 'ground balls, ground ball, gbs, gb, scrappy', page: 'eff', fmt: SA_NUM(0), f: d => saMap(d, p => p.gb ? { v: p.gb, n: p.gb } : null) },
   { id: 'ct', label: 'Caused turnovers', words: 'caused turnovers, takeaways, takeaway, steals, forced turnovers, causes turnovers, causes the most turnovers, cause turnovers, causing turnovers, forces turnovers, forcing turnovers, causes, forces', page: 'eff', fmt: SA_NUM(0), f: d => saMap(d, p => p.ct ? { v: p.ct, n: p.ct } : null) },
@@ -13925,7 +13925,7 @@ const SA_CATALOG = [
 ];
 // Concepts: plain-language roles = a blend of catalog stats, each scored vs the team (z-score).
 const SA_CONCEPTS = [
-  { off: true, id: 'offball', label: 'Off-ball offense', words: 'off ball, off-ball, offball, without the ball, off the ball, screens and cuts', parts: [['advCreated', 1, 'screen advantages'], ['catchXg', 1, 'xG off catches']], page: 'picks', minN: 6 },
+  { off: true, id: 'offball', label: 'Off-ball offense', not: 'breakdown, breakdowns, defender, defense, defensive, loses his man', words: 'off ball, off-ball, offball, without the ball, off the ball, screens and cuts', parts: [['advCreated', 1, 'screen advantages'], ['catchXg', 1, 'xG off catches']], page: 'picks', minN: 6 },
   { off: true, id: 'initiator', label: 'Initiator', words: 'initiator, initiators, creator, creates offense, breaks down', parts: [['dom', 1, 'dominoes started'], ['xa', 1, 'xA']], page: 'dominoes', minN: 8 },
   { off: true, id: 'finisher', label: 'Finisher', words: 'finisher, finishers, clutch finisher', parts: [['gmx', 1, 'G−xG'], ['shpct', 1, 'Sh%']], page: 'eff', minN: 15 },
   { off: true, id: 'feeder', label: 'Feeder', words: 'feeder, feeders, quarterback, best passer', parts: [['xa', 1, 'xA'], ['feeds', 1, 'shots set up']], page: 'passing', minN: 8 },
@@ -13993,7 +13993,8 @@ function saPlan(q) {
   const exp = ' ' + navExpand(q).replace(/\s+/g, ' ') + ' ';
   // Phrases, not loose words: 'protects the ball' must not match 'off ball'. Longer phrases weigh more.
   const score = words => words.split(',').map(x => x.trim()).filter(Boolean).reduce((a, ph) => a + (exp.includes(' ' + ph + ' ') ? ph.split(' ').length : 0), 0);
-  const concept = SA_CONCEPTS.map(c => ({ c, s: score(c.words) })).sort((a, b) => b.s - a.s)[0];
+  // A concept steps aside when the question has one of its 'not' words ("off-ball breakdowns" is defense, not off-ball offense).
+  const concept = SA_CONCEPTS.map(c => ({ c, s: c.not && score(c.not) ? 0 : score(c.words) })).sort((a, b) => b.s - a.s)[0];
   const tier = (t.match(/\b(gold|silver|bronze)\b/) || [])[1];
   const metric = SA_CATALOG.map(c => ({ c, s: score(c.words) + (tier && c.id === tier ? 5 : 0) })).sort((a, b) => b.s - a.s)[0];
   const wantCount = /\bmost\b|\bhow many\b/.test(t);
