@@ -13939,6 +13939,8 @@ const SA_PCT = v => v === null || v === undefined ? '—' : (100 * v).toFixed(v 
 const SA_NUM = d => v => v === null || v === undefined ? '—' : (+v).toFixed(d);
 const SA_SGN = d => v => v === null || v === undefined ? '—' : (v >= 0 ? '+' : '') + (+v).toFixed(d);
 function saPlayers(d) { return Object.values(d.players).filter(p => p.jersey && !isOppJersey(p.jersey)); }
+// WLU defenders: shots grouped by who was in that defensive spot.
+function saDefBy(d, field, f) { const by = {}; d.shots.forEach(s => { const j = s[field]; if (j && !isOppJersey(j)) (by[j] = by[j] || []).push(s); }); const m = {}; Object.keys(by).forEach(j => { const r = f(by[j]); if (r) m[j] = r; }); return m; }
 function saMap(d, f) { const m = {}; saPlayers(d).forEach(p => { const r = f(p); if (r) m[p.jersey] = r; }); return m; }
 function saTier(d, tier, rate) {
   return saMap(d, p => { const l = p.ownShots.filter(s => s.shotQuality === tier); const g = l.filter(s => s.goal === 1).length; return l.length ? { v: rate ? g / l.length : l.length, n: l.length, extra: `${g} of ${l.length}` } : null; });
@@ -13958,7 +13960,7 @@ function saCatchXg(d) {   // look value finished off a teammate's feed, catching
 const SA_CATALOG = [
   { off: true, id: 'shooterScore', label: 'Shooter Score', words: 'shooter score, best shooter, best shooters, shooter, shooters, sniper, snipers', page: 'shooter', fmt: SA_NUM(0), seasonOnly: true, f: () => { const m = {}; computeShooterScores(EFF_SEASON, 'shooting').list.filter(r => r.score !== null).forEach(r => { m[r.jersey] = { v: r.score, n: r.shots }; }); return m; } },
   { id: 'goalieScore', label: 'Goalie Score', words: 'goalie score, best goalie, goalie, goalies, keeper, netminder', page: 'gscore', fmt: SA_NUM(0), seasonOnly: true, f: () => { const m = {}; computeGoalieScores(EFF_SEASON).filter(r => r.score !== null).forEach(r => { m[r.jersey] = { v: r.score, n: r.faced }; }); return m; } },
-  { off: true, id: 'goals', label: 'Goals', words: 'goals, goal scorer, scorers, scoring', page: 'eff', fmt: SA_NUM(0), f: d => saMap(d, p => p.shots ? { v: p.goals, n: p.shots } : null) },
+  { off: true, id: 'goals', label: 'Goals', words: 'goals, goal scorer, scorers, scorer, scoring, scores, scored, top scorer, leading scorer, puts it in', page: 'eff', fmt: SA_NUM(0), f: d => saMap(d, p => p.shots ? { v: p.goals, n: p.shots } : null) },
   { off: true, id: 'assists', label: 'Assists', words: 'assists, assist', page: 'eff', fmt: SA_NUM(0), f: d => saMap(d, p => (p.potAst || p.assists) ? { v: p.assists, n: p.potAst } : null) },
   { off: true, id: 'points', label: 'Points (G+A)', words: 'points, production, producer', page: 'eff', fmt: SA_NUM(0), f: d => saMap(d, p => (p.shots || p.potAst) ? { v: p.goals + p.assists, n: p.shots + p.potAst } : null) },
   { off: true, id: 'shots', label: 'Shots', words: 'shots taken, shot attempts, most shots, volume', page: 'eff', fmt: SA_NUM(0), f: d => saMap(d, p => p.shots ? { v: p.shots, n: p.shots } : null) },
@@ -13977,10 +13979,16 @@ const SA_CATALOG = [
   { off: true, id: 'toTouch', label: 'Turnovers per touch', words: 'ball security, protects the ball, protect the ball, takes care of the ball, careless, sloppy, turnover rate, secure', dir: 'low', min: 25, page: 'pertouch', fmt: SA_PCT, f: d => saMap(d, p => { const t = p.shots + p.potAst + p.to; return t ? { v: p.to / t, n: t, extra: `${p.to} in ${t} touches` } : null; }) },
   { off: true, id: 'usage', label: 'Usage', words: 'usage, involvement, involved, runs through', page: 'eff', fmt: SA_PCT, f: d => { const all = saPlayers(d), T = d.shots.length + all.reduce((a, p) => a + p.potAst, 0); return saMap(d, p => (p.shots + p.potAst) ? { v: (p.shots + p.potAst) / T, n: p.shots + p.potAst } : null); } },
   { off: true, id: 'possUsed', label: 'Possessions used', words: 'possessions used, ends possessions', page: 'eff', fmt: SA_PCT, f: d => { const all = saPlayers(d), T = d.shots.length + all.reduce((a, p) => a + p.to, 0); return saMap(d, p => (p.shots + p.to) ? { v: (p.shots + p.to) / T, n: p.shots + p.to } : null); } },
+  // Defense (practice: both sides are WLU, so these are WLU defenders).
+  { id: 'beaten', label: 'Times beaten on-ball', dir: 'low', words: 'beaten, gets beat, get beat, gets beaten, beat the most, beaten the most, loses his man, gets dodged, gets taken', page: 'defense', fmt: SA_NUM(0), f: d => saDefBy(d, 'defender', l => { const b = l.filter(s => s.defBeaten === 'Yes' || s.defBeaten === 'No'); return b.length ? { v: b.filter(s => s.defBeaten === 'Yes').length, n: b.length, extra: `${b.filter(s => s.defBeaten === 'Yes').length} of ${b.length}` } : null; }) },
+  { id: 'onballG', label: 'Goal % allowed on-ball', words: 'on-ball defender, on ball defender, on-ball defense, on ball defense, best defender, lockdown, shutdown, cover defender, covers, guards the ball', dir: 'low', min: 8, page: 'defense', fmt: SA_PCT, f: d => saDefBy(d, 'defender', l => ({ v: l.filter(s => s.goal === 1).length / l.length, n: l.length, extra: `${l.filter(s => s.goal === 1).length} goals on ${l.length} shots` })) },
+  { id: 'slides', label: 'Slides', words: 'slides, slide, sliding, slider, slides the most, help defense', page: 'defense', fmt: SA_NUM(0), f: d => saDefBy(d, 'slideDefender', l => ({ v: l.length, n: l.length })) },
+  { id: 'offFault', label: 'Off-ball breakdowns', dir: 'low', words: 'off-ball breakdowns, off ball breakdowns, breakdowns, breakdown, off-ball mistakes, loses his man off ball, off ball defense, off-ball defense', page: 'defense', fmt: SA_NUM(0), f: d => saDefBy(d, 'offBallFault', l => ({ v: l.length, n: l.length })) },
+  { id: 'pickFreed', label: 'Pick defense: ball carrier freed', words: 'pick defense, defending picks, defends picks, pick defender, guarding picks, switches', dir: 'low', min: 5, page: 'pickdef', fmt: SA_PCT, f: d => { const m = {}; try { pickDefenderRows(d.possList.filter(pp => pp.pick), d.xgOf, EFF_SEASON).forEach(r => { if (r.n) m[r.jersey] = { v: r.freed, n: r.n, extra: `${r.n} picks` }; }); } catch (e) { /* not ready */ } return m; } },
   { id: 'gb', label: 'Ground balls', words: 'ground balls, ground ball, gbs, gb, scrappy', page: 'eff', fmt: SA_NUM(0), f: d => saMap(d, p => p.gb ? { v: p.gb, n: p.gb } : null) },
   { id: 'ct', label: 'Caused turnovers', words: 'caused turnovers, takeaways, takeaway, steals, forced turnovers, causes turnovers, causes the most turnovers, cause turnovers, causing turnovers, forces turnovers, forcing turnovers, causes, forces', page: 'eff', fmt: SA_NUM(0), f: d => saMap(d, p => p.ct ? { v: p.ct, n: p.ct } : null) },
   { off: true, id: 'dom', label: 'Dominoes started', words: 'dominoes, starts the dominoes, initiator, initiates, breaks down, dodger, dodgers, dodging, draws slides', page: 'dominoes', fmt: SA_NUM(0), f: d => saMap(d, p => p.dominoes ? { v: p.dominoes, n: p.dominoes } : null) },
-  { off: true, id: 'advCreated', label: 'Screen advantages created', words: 'screen advantages, advantages created, screens, screen, screener, screeners, picks, pick setter', page: 'picks', fmt: SA_NUM(0), f: d => { const s = saScreens(d); const m = {}; Object.keys(s.set).forEach(j => { m[j] = { v: s.adv[j] || 0, n: s.set[j], extra: `${s.adv[j] || 0} of ${s.set[j]} screens` }; }); return m; } },
+  { off: true, id: 'advCreated', label: 'Screen advantages created', not: 'defender, defense, defensive, breakdown, breakdowns', words: 'screen advantages, advantages created, screens, screen, screener, screeners, picks, pick setter', page: 'picks', fmt: SA_NUM(0), f: d => { const s = saScreens(d); const m = {}; Object.keys(s.set).forEach(j => { m[j] = { v: s.adv[j] || 0, n: s.set[j], extra: `${s.adv[j] || 0} of ${s.set[j]} screens` }; }); return m; } },
   { off: true, id: 'gold', label: 'Shooting % on Gold shots', words: 'gold', min: 8, page: 'quality', fmt: SA_PCT, f: d => saTier(d, '1-Gold', true) },
   { off: true, id: 'silver', label: 'Shooting % on Silver shots', words: 'silver', min: 8, page: 'quality', fmt: SA_PCT, f: d => saTier(d, '2-Silver', true) },
   { off: true, id: 'bronze', label: 'Shooting % on Bronze shots', words: 'bronze', min: 8, page: 'quality', fmt: SA_PCT, f: d => saTier(d, '3-Bronze', true) },
@@ -13992,7 +14000,7 @@ const SA_CATALOG = [
 ];
 // Concepts: plain-language roles = a blend of catalog stats, each scored vs the team (z-score).
 const SA_CONCEPTS = [
-  { off: true, id: 'offball', label: 'Off-ball offense', words: 'off ball, off-ball, offball, without the ball, off the ball, screens and cuts', parts: [['advCreated', 1, 'screen advantages'], ['catchXg', 1, 'xG off catches']], page: 'picks', minN: 6 },
+  { off: true, id: 'offball', label: 'Off-ball offense', not: 'breakdown, breakdowns, defender, defense, defensive, loses his man', words: 'off ball, off-ball, offball, without the ball, off the ball, screens and cuts', parts: [['advCreated', 1, 'screen advantages'], ['catchXg', 1, 'xG off catches']], page: 'picks', minN: 6 },
   { off: true, id: 'initiator', label: 'Initiator', words: 'initiator, initiators, creator, creates offense, breaks down', parts: [['dom', 1, 'dominoes started'], ['xa', 1, 'xA']], page: 'dominoes', minN: 8 },
   { off: true, id: 'finisher', label: 'Finisher', words: 'finisher, finishers, clutch finisher', parts: [['gmx', 1, 'G−xG'], ['shpct', 1, 'Sh%']], page: 'eff', minN: 15 },
   { off: true, id: 'feeder', label: 'Feeder', words: 'feeder, feeders, quarterback, best passer', parts: [['xa', 1, 'xA'], ['feeds', 1, 'shots set up']], page: 'passing', minN: 8 },
@@ -14060,9 +14068,10 @@ function saPlan(q) {
   const exp = ' ' + navExpand(q).replace(/\s+/g, ' ') + ' ';
   // Phrases, not loose words: 'protects the ball' must not match 'off ball'. Longer phrases weigh more.
   const score = words => words.split(',').map(x => x.trim()).filter(Boolean).reduce((a, ph) => a + (exp.includes(' ' + ph + ' ') ? ph.split(' ').length : 0), 0);
-  const concept = SA_CONCEPTS.map(c => ({ c, s: score(c.words) })).sort((a, b) => b.s - a.s)[0];
+  // A concept steps aside when the question has one of its 'not' words ("off-ball breakdowns" is defense, not off-ball offense).
+  const concept = SA_CONCEPTS.map(c => ({ c, s: c.not && score(c.not) ? 0 : score(c.words) })).sort((a, b) => b.s - a.s)[0];
   const tier = (t.match(/\b(gold|silver|bronze)\b/) || [])[1];
-  const metric = SA_CATALOG.map(c => ({ c, s: score(c.words) + (tier && c.id === tier ? 5 : 0) })).sort((a, b) => b.s - a.s)[0];
+  const metric = SA_CATALOG.map(c => ({ c, s: c.not && score(c.not) ? 0 : score(c.words) + (tier && c.id === tier ? 5 : 0) })).sort((a, b) => b.s - a.s)[0];
   const wantCount = /\bmost\b|\bhow many\b/.test(t);
   let pick = null;
   if (concept.s && concept.s >= metric.s) pick = { kind: 'concept', c: concept.c };
@@ -14070,7 +14079,7 @@ function saPlan(q) {
   if (!pick) return null;
   if (players.length) return { type: 'player', pick, players, filters };
   if (!/\b(who|top|best|worst|most|least|fewest|leader|leaders|rank|highest|lowest|better|struggl)/.test(t) && !n) return null;
-  return { type: 'rank', pick, n: n || 3, dir, filters };
+  return { type: 'rank', pick, n: n || 3, dir, filters, most: wantCount && !/\b(best|worst|fewest|least)\b/.test(t) };
 }
 // ---- running a plan ----
 // ---------------- Scrimmage Planner (Bobby, Oct 22) ----------------
@@ -14179,11 +14188,6 @@ function scrimModel(noAdj) {
   const vals = k => Object.values(P).map(x => x[k]), zf = (k, v) => { const a = vals(k), m = a.reduce((x, y) => x + y, 0) / a.length, sd = Math.sqrt(a.reduce((x, y) => x + (y - m) ** 2, 0) / Math.max(1, a.length - 1)) || 1; return (v - m) / sd; };
   Object.values(P).forEach(x => { x.finRate = x.fin.reduce((a, f, i) => a + x.mix[i] * f.a / (f.a + f.b), 0); x.creat = x.dom + x.pFeed; });
   Object.values(P).forEach(x => { const c = zf('creat', x.creat), f = zf('finRate', x.finRate), s = zf('scr', x.scr); const best = Math.max(c, f, s); x.role = best < 0.3 ? 'balanced' : best === c ? 'creator' : best === f ? 'finisher' : 'screener'; });
-  // Role-pair chemistry from every logged feed: goals vs expected when a role feeds a role.
-  const pr = {}; let pg = 0, px = 0;
-  d.shots.forEach(s => { const a = P[s.assistJersey], b = P[s.shooterJersey]; if (!a || !b || s.assistJersey === s.shooterJersey) return; const key = a.role + '>' + b.role, x = xgOf(s), r = (pr[key] = pr[key] || { g: 0, x: 0, n: 0 }); r.g += s.goal === 1 ? 1 : 0; r.x += x; r.n++; pg += s.goal === 1 ? 1 : 0; px += x; });
-  const base = px ? pg / px : 1, roleMult = {};
-  Object.keys(pr).forEach(k => { const r = pr[k]; roleMult[k] = Math.max(0.85, Math.min(1.15, ((r.g + 20 * base * (r.x / r.n)) / (r.x + 20 * (r.x / r.n))) / base)); });
   // Passer effect: goals on the shots he set up vs what those shooters usually finish on that tier,
   // relative to the average feeder, with 30 shots of "average" mixed in (small samples stay near 1), capped 0.8-1.25.
   const fedSh = d.shots.filter(s => s.assistJersey && P[s.assistJersey] && P[s.shooterJersey] && s.assistJersey !== s.shooterJersey);
@@ -14191,6 +14195,12 @@ function scrimModel(noAdj) {
   const fg = fedSh.filter(s => s.goal === 1).length, fx = fedSh.reduce((a, s) => a + expOf(s), 0), lift = fx ? fg / fx : 1, pgP = {};
   fedSh.forEach(s => { const r = (pgP[s.assistJersey] = pgP[s.assistJersey] || { g: 0, x: 0, n: 0 }); r.g += s.goal === 1 ? 1 : 0; r.x += expOf(s) * lift; r.n++; });
   Object.values(P).forEach(x => { const r = pgP[x.j]; x.passN = r ? r.n : 0; x.pass = r ? Math.max(0.8, Math.min(1.25, (r.g + 30 * (r.x / r.n)) / (r.x + 30 * (r.x / r.n)))) : 1; });
+  // Role-pair chemistry from every logged feed: goals vs expected when a role feeds a role. With the passer effect on,
+  // "expected" already includes how well that passer's feeds finish, so the two don't count the same thing twice.
+  const pr = {}; let pg = 0, px = 0;
+  d.shots.forEach(s => { const a = P[s.assistJersey], b = P[s.shooterJersey]; if (!a || !b || s.assistJersey === s.shooterJersey) return; const key = a.role + '>' + b.role, x = xgOf(s) * (scrimOpt('pass') ? (a.pass || 1) : 1), r = (pr[key] = pr[key] || { g: 0, x: 0, n: 0 }); r.g += s.goal === 1 ? 1 : 0; r.x += x; r.n++; pg += s.goal === 1 ? 1 : 0; px += x; });
+  const base = px ? pg / px : 1, roleMult = {};
+  Object.keys(pr).forEach(k => { const r = pr[k]; roleMult[k] = Math.max(0.85, Math.min(1.15, ((r.g + 20 * base * (r.x / r.n)) / (r.x + 20 * (r.x / r.n))) / base)); });
   const meanUse = Object.values(P).reduce((a, x) => a + x.use, 0) / Math.max(1, Object.keys(P).length);
   const out = { P, tMix, tFin, tCat, daySd, teamDaySd, roleMult, meanUse, sessN, pairs: pr, domYes, domNo };
   if (!noAdj) scrimApplyAdj(out);
@@ -15876,7 +15886,7 @@ function saRun(plan) {
     const posSet = Object.keys(POSITIONS[season] || {}).length > 0;
     if (f.pos) { if (posSet) rows = rows.filter(r => posIs(season, r.jersey, f.pos)); else out0.note = 'Positions aren’t set yet (Personnel › Depth Chart), so this shows everyone.'; }
     else if (meta.off && posSet) rows = rows.filter(r => isOffensePos(season, r.jersey));   // offense questions: attack and middies only
-    const asc = (better === 'low') !== (plan.dir === 'worst');
+    const asc = plan.most ? false : (better === 'low') !== (plan.dir === 'worst');   // "who … the most": highest first
     rows.sort((a, b) => asc ? a.v - b.v : b.v - a.v);
     rows.forEach((r, i) => { r.rank = i + 1; });
     const fmt = isC ? (v => (v >= 0 ? '+' : '') + v.toFixed(2) + ' vs team') : meta.fmt;
