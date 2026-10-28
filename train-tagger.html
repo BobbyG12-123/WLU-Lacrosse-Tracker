@@ -65,11 +65,16 @@ const DBX = window.__STUB_DB || (HOST && HOST.firebase.firestore());
 const ME = ((HOST && HOST.firebase.auth().currentUser.email) || window.__STUB_ME || 'staff').toLowerCase();
 const MEK = ME.replace(/[^a-z0-9]/g, '_');
 let D = null, S = {}, OTHERS = {};
-const save = () => {};
+// The tracker's Firestore rejects objects made in this frame ("a custom Object object"), so rebuild every write in its window.
+const toHost = o => HOST ? HOST.JSON.parse(JSON.stringify(o)) : o;
 function saveAns(id) {
   const a = Object.assign({}, S[id], { by: ME, grade: shotGrade(S[id]) });
-  DBX.collection('trainShots').doc(D.key).set({ a: { [id]: { [MEK]: a } }, updatedAt: new Date().toISOString() }, { merge: true })
-    .then(() => { $('saved').textContent = 'Saved ✓'; }).catch(e => { console.error(e); $('saved').textContent = 'Not saved — check connection'; });
+  const fail = e => { console.error(e); $('saved').textContent = 'Not saved — check connection'; };
+  $('saved').textContent = 'Saving…';
+  try {
+    DBX.collection('trainShots').doc(D.key).set(toHost({ a: { [id]: { [MEK]: a } }, updatedAt: new Date().toISOString() }), { merge: true })
+      .then(() => { $('saved').textContent = 'Saved ✓'; }).catch(fail);
+  } catch (e) { fail(e); }
 }
 const $ = id => document.getElementById(id);
 const mmss = v => `${Math.floor(v / 60)}:${String(Math.floor(v % 60)).padStart(2, '0')}`;
