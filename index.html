@@ -1701,6 +1701,11 @@
     <p class="view-intro">Individual defense from the <b>Defense</b> card on the Log Shot form (on-ball defender, slide defender, beaten). Shows one season at a time, 2027 and later, live as you log. Lower is better for goals and expected goals allowed.</p>
     <div class="view-tiles trend-grid" id="defTiles"></div>
     <div class="panel">
+      <p class="panel-title">Defensive Value <span class="n-note">supplemental &middot; not part of Goals Added or any rating</span></p>
+      <p class="panel-sub" id="defValueSub"></p>
+      <div class="table-wrap" id="defValueWrap"></div>
+    </div>
+    <div class="panel">
       <p class="panel-title">On-Ball Defense</p>
       <p class="panel-sub" id="defSub"></p>
       <div class="table-wrap" id="defPlayerWrap"></div>
@@ -8407,10 +8412,41 @@ function beatenMostOf(list) {
   const top = Object.keys(counts).sort((a, b) => counts[b] - counts[a])[0];
   return { label: top, share: counts[top] / tagged.length, n: tagged.length };
 }
+// Caused turnovers and shot defense side by side (supplemental; see defensePartsFrom).
+function renderDefValue(season) {
+  const wrap = document.getElementById('defValueWrap'), sub = document.getElementById('defValueSub'); if (!wrap || !sub) return;
+  if (defContext === 'Game') { sub.innerHTML = 'Caused-turnover value and shot defense come from practice possessions (our offense against our defense). Games aren&rsquo;t included yet.'; wrap.innerHTML = ''; return; }
+  const R = defensePartsFor(season, defContext);
+  sub.innerHTML = `<b>Caused turnovers</b>: +${num(R.V, 3)} goals each, an average possession ended. <b>Shot defense</b>: the looks he was responsible for allowing against an average possession (positive = held the offense below it), from the defensive tags; the goalie&rsquo;s saves aren&rsquo;t in it. `
+    + defCoverageHtml(R) + ` <span class="n-note"><b>Sampling range</b>: how much the number moves with a different set of practices. <b>Attribution band</b>: how much it rests on provisional calls (each counted as 0% or 100% his). Grayed = under ${DEF_MIN_REPS} tagged reps.</span>`;
+  const sg = (v, dd) => v === null || v === undefined || !isFinite(v) ? '—' : (v >= 0 ? '+' : '') + v.toFixed(dd);
+  const rng = (a, dd) => a && a[0] !== null ? `<span style="white-space:nowrap;">${sg(a[0], dd)} to ${sg(a[1], dd)}</span>` : '<span class="n-note">—</span>';
+  const gray = (v, r) => r.reps && r.low ? 'color:var(--muted); font-style:italic;' : '';
+  const CT = 'Caused turnovers (+V each)', SD = 'Shot defense (responsibility)', BR = 'His tagged breakdowns';
+  const rows = R.rows.map(r => Object.assign({ name: nameFor(r.jersey, season) }, r));
+  renderSortableTable('defValueWrap', [
+    { key: 'jersey', label: '#', type: 'text', value: r => r.jersey },
+    { key: 'name', label: 'Name', type: 'text', value: r => r.name, format: nameCell },
+    { key: 'ctN', label: 'Caused TOs', type: 'num', value: r => r.ctN, group: CT },
+    { key: 'ctV', label: 'Value', type: 'num', value: r => r.ctV, format: (v, r) => r.ctN ? `<b>${sg(v, 1)}</b>` : '<span class="n-note">—</span>', group: CT, title: 'Caused turnovers × V (goals): each one ended an average possession.' },
+    { key: 'ctPer', label: 'Per Practice', type: 'num', value: r => r.ctN ? r.ctPer : null, format: v => sg(v, 2), group: CT, title: 'Value per practice he appeared in.' },
+    { key: 'ctRange', label: '90% Sampling Range', type: 'text', value: r => r.ctRange, format: v => rng(v, 1), sortable: false, group: CT, title: 'Value with a different set of practices: 1,000 resamples of whole practices.' },
+    { key: 'sd', label: 'Value', type: 'num', value: r => r.sd, format: v => v === null ? '<span class="n-note">—</span>' : `<b>${sg(v, 1)}</b>`, cellStyle: gray, group: SD, title: 'Sum over his tagged reps of (V − xG) × his share. Positive = the looks he was responsible for were worse than an average possession.' },
+    { key: 'sdC', label: 'Certain', type: 'num', value: r => r.repsC ? r.sdC : null, format: (v, r) => v === null ? '<span class="n-note">—</span>' : `${sg(v, 1)} <span class="n-note">(${r.repsC})</span>`, cellStyle: gray, group: SD, title: 'From reps the tags fully determine.' },
+    { key: 'sdP', label: 'Provisional', type: 'num', value: r => r.repsP ? r.sdP : null, format: (v, r) => v === null ? '<span class="n-note">—</span>' : `${sg(v, 1)} <span class="n-note">(${r.repsP})</span>`, cellStyle: gray, group: SD, title: 'From reps that rest on an inferred fact: slide timing read from the contest level, beaten not logged, or only the slider known.' },
+    { key: 'reps', label: 'Tagged Reps', type: 'num', value: r => r.reps || null, group: SD },
+    { key: 'nDates', label: 'Practices', type: 'num', value: r => r.reps ? r.nDates : null, group: SD, title: 'Different practice dates those reps came from.' },
+    { key: 'perRep', label: 'Per Rep', type: 'num', value: r => r.perRep, format: v => sg(v, 3), cellStyle: gray, group: SD },
+    { key: 'perRange', label: '90% Sampling Range', type: 'text', value: r => r.perRange, format: v => rng(v, 3), sortable: false, cellStyle: gray, group: SD, title: 'Per rep with a different set of practices (statistical noise).' },
+    { key: 'band', label: 'Attribution Band', type: 'text', value: r => r.band, format: v => rng(v, 1), sortable: false, cellStyle: gray, group: SD, title: 'Shot-defense value if every provisional call were 0% or 100% his (how much it rests on unverified calls; separate from the sampling range).' },
+  ].concat(DEF_ROLES.map(([k, l]) => ({ key: 'role_' + k, label: l, type: 'num', value: r => r.roles[k] || null, group: BR }))),
+  rows, { dense: true, defaultSort: { key: 'ctV', dir: 'desc' }, emptyMsg: `No ${season} caused turnovers or tagged defensive reps yet.` });
+}
 function renderDefense() {
   const wrap = document.getElementById('defPlayerWrap');
   if (!wrap) return;
   const season = defSeason;
+  renderDefValue(season);
   const model = xgModelFor(season);
   const shots = defShotsFor(season);
   const wlu = j => j && !isOppJersey(j);
@@ -8785,6 +8821,18 @@ async function runSelfCheck() {
       add('Formulas', 'Unknown dominoes count the same as blank', diff.length ? 'fail' : 'pass', diff.length ? `Differs on ${diff.slice(0, 5).join(', ')}` : `${unk.length} Unknown answers: Goals Added and domino counts identical to blank.`);
     }
   } catch (e) { add('Data', 'Dominoes checks ran', 'fail', e.message); }
+  // 6. Supplemental defense: every possession counted once, shares add to 1, caused turnovers = count × V.
+  try {
+    const R = defensePartsFor(season, 'All'), T = R.T, ctSum = R.rows.reduce((a, r) => a + r.ctV, 0);
+    const ok = Math.abs(T.totalV - (T.goals - T.xg)) < 1e-6 && T.maxShareErr < 1e-9 && Math.abs(ctSum - T.ctCount * R.V) < 1e-9 && T.cert + T.prov + T.un === T.shots;
+    add('Formulas', 'Supplemental defense reconciles', ok ? 'pass' : 'fail', `${T.poss} practice possessions: defense value ${num(T.totalV, 2)} = goals − xG ${num(T.goals - T.xg, 2)}; shares on every credited shot add to 1; caused turnovers ${T.ctCount} × V = ${num(ctSum, 2)}; ${T.cert} certain + ${T.prov} provisional + ${T.un} unattributed = ${T.shots} shots.`);
+    if (!SHOTS.concat(POSSESSIONS).some(e => seasonForDate(e.date) === season && e.context === 'Game')) {
+      const s0 = EFF_SEASON, c0 = EFF_CONTEXT, f0 = EFF_FROM; EFF_SEASON = season; EFF_CONTEXT = 'All'; EFF_FROM = null; let g;
+      try { g = computeGoalsAdded(); } finally { EFF_SEASON = s0; EFF_CONTEXT = c0; EFF_FROM = f0; }
+      const same = g.poss === T.poss && Math.abs(g.V - R.V) < 1e-12;
+      add('Formulas', 'Supplemental defense uses the Goals Added possessions', same ? 'pass' : 'fail', same ? `${T.poss} possessions, V ${num(R.V, 3)} in both.` : `Goals Added ${g.poss} / ${num(g.V, 4)} vs ${T.poss} / ${num(R.V, 4)}.`);
+    }
+  } catch (e) { add('Formulas', 'Supplemental defense check ran', 'fail', e.message); }
   // Report.
   const icon = { pass: '✓', warn: '!', fail: '✕' }, cnt = k => R.filter(r => r.status === k).length;
   out.innerHTML = `<p class="panel-sub"><b>${cnt('pass')} passed</b> · ${cnt('warn')} to look at · ${cnt('fail')} failed · ${escapeHtml(season)} · ${new Date().toLocaleString()}</p>
@@ -10645,6 +10693,103 @@ function renderGoalieProjections() {
 // change the split; Goals Added is also shown by trigger.
 const GA_OFF = ['adv', 'look', 'screen', 'finish', 'security'], GA_DEF = ['takeaway', 'onball', 'goalie'];
 const GA_PARTS = [['adv', 'Advantage'], ['look', 'Look creation'], ['screen', 'Screening'], ['finish', 'Finishing'], ['security', 'Ball security'], ['takeaway', 'Takeaways'], ['onball', 'On-ball D'], ['goalie', 'Goalie']];
+// ---------------- Supplemental defensive value (Stage 3 PR 2, Bobby Oct 28) ----------------
+// Two parts shown beside the existing defense numbers, never added into Goals Added or any rating:
+//  - Caused turnovers: +V each to the credited defender (V = the average WLU possession, as in Goals
+//    Added). Its own number, so creating possessions is never buried in a blend.
+//  - Shot defense: each shot's value goes to the defender(s) the tags make responsible. A possession's
+//    first shot is worth V − xG to the defense (positive = held the offense below an average
+//    possession), a rebound −xG (no second baseline). Shares on one shot add to 1, so nothing counts
+//    twice. No tag = unattributed, never guessed. A share that rests on an inferred fact (slide timing
+//    read from the contest level, beaten not logged, only the slider known) is "provisional".
+// Practice and scrimmage possessions only (our offense vs our defense); games come later.
+// Known limit: a turnover after the offense kept a missed shot counts as its own possession (only 12
+// of the first 452 turnovers say which shot they followed), so those carry a second baseline.
+const DEF_MIN_REPS = 30;   // shown from 30 tagged reps: a display minimum, not proof the number is reliable
+const DEF_ROLES = [['beaten', 'Beaten'], ['lateSlide', 'Late slide'], ['offBall', 'Off-ball'], ['blownPick', 'Blown pick']];
+// Who is responsible for one shot: { shares: {jersey: share}, status: 'certain' | 'provisional', rule, roles }, or null.
+function defResponsibility(s) {
+  const W = j => j && !isOppJersey(j);
+  const D = W(s.defender) ? s.defender : null, Sl = W(s.slideDefender) && s.slideDefender !== D ? s.slideDefender : null, O = W(s.offBallFault) && s.offBallFault !== D ? s.offBallFault : null;
+  const beaten = s.defBeaten === 'Yes', notBeaten = s.defBeaten === 'No';
+  const picks = s.pick === 'Yes' ? [...new Set([s.pickScreenerDef, s.pickUserDef].filter(W))] : [];
+  const split = (js, status, rule, roles) => { const shares = {}; js.forEach(j => { shares[j] = (shares[j] || 0) + 1 / js.length; }); return { shares, status, rule, roles: roles || {} }; };
+  if (picks.length && s.pickCoverage === 'Blown') return split(picks, 'certain', 'Pick coverage blown', Object.fromEntries(picks.map(j => [j, 'blownPick'])));
+  if (beaten && D) {
+    const js = [D], roles = { [D]: 'beaten' }; let status = 'certain', rule = 'Beaten';
+    if (Sl) { status = 'provisional'; if (s.contestLevel === 'Open') { js.push(Sl); roles[Sl] = 'lateSlide'; rule += ', slide likely late (open shot)'; } else rule += ', slide likely on time (contested shot)'; }
+    if (O) { js.push(O); if (!roles[O]) roles[O] = 'offBall'; rule += ', off-ball breakdown'; }
+    return split(js, status, rule, roles);
+  }
+  if (O) return split([O], D && !notBeaten ? 'provisional' : 'certain', D && !notBeaten ? 'Off-ball breakdown (beaten not logged)' : 'Off-ball breakdown', { [O]: 'offBall' });
+  if (D) return split([D], notBeaten ? 'certain' : 'provisional', notBeaten ? 'On-ball, not beaten' : 'On-ball, beaten not logged');
+  if (picks.length) return split(picks, 'certain', 'Pick defended');
+  if (Sl) return split([Sl], 'provisional', 'Only the slide defender logged');
+  return null;
+}
+// Both parts for every player, from one buildEffData() result. Ranges come from resampling whole
+// practices (fixed seed, so they don't move between renders).
+function defensePartsFrom(d) {
+  const wp = [];   // the WLU practice possessions, split exactly as Goals Added splits them (a goal ends one)
+  d.possList.filter(p => p.team === 'WLU' && p.e.context !== 'Game').forEach(pp => {
+    if (!pp.shots.length) { wp.push(pp); return; }
+    let cur = null;
+    pp.shots.forEach(s => { if (!cur) { cur = Object.assign({}, pp, { shots: [], goal: 0 }); wp.push(cur); } cur.shots.push(s); if (s.goal === 1) { cur.goal = 1; cur = null; } });
+  });
+  const V = wp.length ? wp.filter(p => p.goal).length / wp.length : 0;
+  const P = {}, row = j => (P[j] = P[j] || { jersey: j, ctN: 0, ctV: 0, ctSess: {}, ctDates: new Set(), sdC: 0, sdP: 0, reps: 0, repsC: 0, repsP: 0, sdSess: {}, repSess: {}, dates: new Set(), bandLo: 0, bandHi: 0, roles: { beaten: 0, lateSlide: 0, offBall: 0, blownPick: 0 } });
+  const T = { V, poss: wp.length, shots: 0, cert: 0, prov: 0, un: 0, tos: 0, toCaused: 0, noShot: 0, totalV: 0, attV: 0, goals: 0, xg: 0, maxShareErr: 0, ctCount: 0 };
+  const sessions = new Set(), tagSessions = new Set(), seen = {};
+  const saw = (j, sid) => { if (j && !isOppJersey(j)) (seen[j] = seen[j] || new Set()).add(sid); };
+  wp.forEach(pp => {
+    const sid = sessKey(pp.e); sessions.add(sid);
+    if (!pp.shots.length) {
+      T.noShot++; T.totalV += V;   // a possession that ends without a shot is worth V to the defense
+      [pp.e.turnoverBy, pp.e.causedBy].forEach(j => saw(j, sid));
+      if (pp.to) { T.tos++; const j = pp.e.causedBy; if (j && !isOppJersey(j)) { T.toCaused++; T.ctCount++; const r = row(j); r.ctN++; r.ctV += V; r.ctSess[sid] = (r.ctSess[sid] || 0) + V; r.ctDates.add(pp.e.date); T.attV += V; } }
+      return;
+    }
+    T.goals += pp.goal;
+    pp.shots.forEach((s, i) => {
+      [s.shooterJersey, s.assistJersey, s.goalieJersey, s.defender, s.slideDefender, s.offBallFault, s.pickScreenerDef, s.pickUserDef].forEach(j => saw(j, sid));
+      const xg = d.xgOf(s), v = (i === 0 ? V : 0) - xg; T.shots++; T.totalV += v; T.xg += xg;
+      const resp = defResponsibility(s);
+      if (!resp) { T.un++; return; }
+      const cert = resp.status === 'certain'; T[cert ? 'cert' : 'prov']++; T.attV += v; tagSessions.add(sid);
+      T.maxShareErr = Math.max(T.maxShareErr, Math.abs(Object.values(resp.shares).reduce((a, b) => a + b, 0) - 1));
+      Object.entries(resp.shares).forEach(([j, w]) => {
+        const r = row(j), c = v * w;
+        if (cert) { r.sdC += c; r.repsC++; } else { r.sdP += c; r.repsP++; r.bandLo += Math.min(0, v); r.bandHi += Math.max(0, v); }
+        r.reps++; r.repSess[sid] = (r.repSess[sid] || 0) + 1; r.sdSess[sid] = (r.sdSess[sid] || 0) + c; r.dates.add(s.date);
+        if (resp.roles[j]) r.roles[resp.roles[j]]++;
+      });
+    });
+  });
+  const sess = [...sessions].sort(); let seed = 2027;
+  const rnd = () => (seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648;
+  const draws = sess.length ? Array.from({ length: 1000 }, () => sess.map(() => sess[Math.floor(rnd() * sess.length)])) : [];
+  const q = (a, p) => { const s = a.filter(x => x !== null).sort((x, y) => x - y); return s.length ? s[Math.floor(p * (s.length - 1))] : null; };
+  const rows = Object.values(P).map(r => {
+    const sd = r.sdC + r.sdP, apps = (seen[r.jersey] || new Set()).size;
+    const perB = draws.map(pk => { let v = 0, n = 0; pk.forEach(sid => { v += r.sdSess[sid] || 0; n += r.repSess[sid] || 0; }); return n ? v / n : null; });
+    const ctB = draws.map(pk => pk.reduce((a, sid) => a + (r.ctSess[sid] || 0), 0));
+    return { jersey: r.jersey, ctN: r.ctN, ctV: r.ctV, ctPer: apps ? r.ctV / apps : null, ctRange: r.ctN ? [q(ctB, 0.05), q(ctB, 0.95)] : null, ctDates: r.ctDates.size, apps,
+      sd: r.reps ? sd : null, sdC: r.sdC, sdP: r.sdP, reps: r.reps, repsC: r.repsC, repsP: r.repsP, nDates: r.dates.size, perRep: r.reps ? sd / r.reps : null,
+      perRange: r.reps ? [q(perB, 0.05), q(perB, 0.95)] : null, band: r.repsP ? [r.sdC + r.bandLo, r.sdC + r.bandHi] : null, roles: r.roles, low: r.reps < DEF_MIN_REPS };
+  });
+  return { V, rows, T, nSess: sess.length, nTagSess: tagSessions.size };
+}
+// One season and context (the Defense page's filters), all practice dates.
+function defensePartsFor(season, ctx) {
+  const s0 = EFF_SEASON, c0 = EFF_CONTEXT, f0 = EFF_FROM; EFF_SEASON = season; EFF_CONTEXT = ctx || 'All'; EFF_FROM = null;
+  try { return defensePartsFrom(buildEffData()); } finally { EFF_SEASON = s0; EFF_CONTEXT = c0; EFF_FROM = f0; }
+}
+// The coverage line that goes over every table of these numbers.
+function defCoverageHtml(R) {
+  const T = R.T, att = T.cert + T.prov;
+  return `Shot defense tagged on <b>${att} of ${T.shots}</b> shots (${pct(ratio(att, T.shots))}) in <b>${R.nTagSess} of ${R.nSess}</b> practices; ${T.un} untagged shots are left unattributed and ${T.prov} credited shots are <b>provisional</b> (slide timing read from the contest level, beaten not logged, or only the slider known). `
+    + `Caused-by logged on ${T.toCaused} of ${T.tos} turnovers. V = ${num(T.V, 3)} goals per possession. Compare shot defense <b>per tagged rep with its range</b>; under ${DEF_MIN_REPS} tagged reps is grayed (${DEF_MIN_REPS} is a display minimum, not proof of reliability).`;
+}
 function gaOffPick(s) { return s.pick === 'Yes' && s.pickAction !== 'Get' && s.pickType === 'Off-ball' && s.pickScreener && !isOppJersey(s.pickScreener) && s.pickScreener !== s.shooterJersey ? s.pickScreener : null; }
 function computeGoalsAdded(onCredit) {
   const d = buildEffData();
@@ -10720,8 +10865,12 @@ function renderGoalsAdded() {
   const wrap = document.getElementById('gaWrap');
   if (!wrap) return;
   const r = computeGoalsAdded();
+  const dp = EFF_CONTEXT === 'Game' ? null : defensePartsFrom(buildEffData()), dpBy = {};
+  if (dp) dp.rows.forEach(x => { dpBy[x.jersey] = x; });
+  r.rows.forEach(x => { x._dp = dpBy[x.jersey] || null; });
   document.getElementById('gaSub').innerHTML = `${escapeHtml(EFF_SEASON)} ${EFF_CTX_WORD()}: ${r.poss} WLU possessions. An average possession is worth <b>${num(r.V, 2)}</b> goals; with dominoes started, <b>${num(r.Vadv, 2)}</b>. Each player gets credit for how much he moved the value of the possessions he touched &mdash; starting the advantage, creating the look (split with the passer, and the screener on an off-ball pick), finishing it, or losing it (turnover). Defenders get the possession value for turnovers they cause and the goals their man didn&rsquo;t score vs expected; goalies get saves above expected. <b>+1.0 = one goal more</b> than an average player would produce with the same chances. In practice both sides are WLU, so one player&rsquo;s plus can be a teammate&rsquo;s minus.`
-    + ` <b>Offense</b> credits add up to ${signed(r.rows.reduce((a, x) => a + x.off, 0))} (our ${r.goals} goals minus ${num(r.V * r.poss, 1)} for average possessions = ${signed(r.goals - r.V * r.poss)}; the gap is turnovers with no player logged and possessions that end without a shot or turnover). <b>Defense</b> credits (takeaways, on-ball D, goalie) are counted on top, ${signed(r.rows.reduce((a, x) => a + x.def, 0))} &mdash; in practice the defense is WLU too, so the two don&rsquo;t net to zero.`;
+    + ` <b>Offense</b> credits add up to ${signed(r.rows.reduce((a, x) => a + x.off, 0))} (our ${r.goals} goals minus ${num(r.V * r.poss, 1)} for average possessions = ${signed(r.goals - r.V * r.poss)}; the gap is turnovers with no player logged and possessions that end without a shot or turnover). <b>Defense</b> credits (takeaways, on-ball D, goalie) are counted on top, ${signed(r.rows.reduce((a, x) => a + x.def, 0))} &mdash; in practice the defense is WLU too, so the two don&rsquo;t net to zero.`
+    + (dp ? ` <b>Supplemental defense</b> (last two columns, not in the total): caused turnovers at +V each and shot defense by responsibility from the defensive tags, shown for comparison; coverage and ranges are on the Defense page.` : '');
   const cell = v => v === null || v === undefined ? '<span class="n-note">—</span>' : signed(v);
   renderSortableTable('gaWrap', [
     { key: 'jersey', label: '#', type: 'text', value: x => x.jersey },
@@ -10730,7 +10879,9 @@ function renderGoalsAdded() {
     { key: 'perApp', label: 'Per Session', type: 'num', value: x => x.perApp, format: v => signed(v, 2), title: 'Goals added per session he appeared in.' },
     { key: 'off', label: 'Offense', type: 'num', value: x => x.off, format: v => signed(v), title: 'Advantage + look creation + screening + finishing + ball security.' },
     { key: 'def', label: 'Defense', type: 'num', value: x => x.def, format: v => signed(v), title: 'Takeaways + on-ball D + goalie.' },
-  ].concat(GA_PARTS.map(([k, label]) => ({ key: k, label, type: 'num', value: x => x[k] === undefined ? null : x[k], format: cell, group: 'Where it came from' }))),
+  ].concat(GA_PARTS.map(([k, label]) => ({ key: k, label, type: 'num', value: x => x[k] === undefined ? null : x[k], format: cell, group: 'Where it came from' })),
+    [{ key: 'dpCt', label: 'Caused TOs (+V)', type: 'num', value: x => x._dp && x._dp.ctN ? x._dp.ctV : null, format: (v, x) => v === null ? '<span class="n-note">—</span>' : `${signed(v)} <span class="n-note">(${x._dp.ctN})</span>`, group: 'Supplemental defense (not in the total)', title: 'Caused turnovers × V, practice possessions. Shown for comparison; not part of Goals Added. Details on the Defense page.' },
+     { key: 'dpSd', label: 'Shot Defense', type: 'num', value: x => x._dp && x._dp.reps ? x._dp.sd : null, format: (v, x) => v === null ? '<span class="n-note">—</span>' : `${signed(v)} <span class="n-note">${x._dp.reps} reps${x._dp.repsP ? ', part provisional' : ''}</span>`, cellStyle: (v, x) => x._dp && x._dp.low ? 'opacity:0.55;' : '', group: 'Supplemental defense (not in the total)', title: `Responsibility-based shot defense from the defensive tags (grayed under ${DEF_MIN_REPS} tagged reps). Shown for comparison; not part of Goals Added. Details and coverage on the Defense page.` }]),
   r.rows, { dense: true, defaultSort: { key: 'total', dir: 'desc' }, emptyMsg: 'No possessions logged yet.' });
   const tRows = r.triggers.filter(t => t.n >= 5).map(t => Object.assign({ per: t.total / t.n }, t));
   renderSortableTable('gaTrigWrap', [
@@ -14255,6 +14406,8 @@ const SA_CATALOG = [
   { id: 'ga', label: 'Goals Added', words: 'goals added, most valuable, value, impact, helps most, contribution', page: 'ga', fmt: SA_SGN(1), f: () => { const r = computeGoalsAdded(); const m = {}; r.rows.forEach(x => { m[x.jersey] = { v: x.total, n: x.apps, extra: `offense ${SA_SGN(1)(x.off)}, defense ${SA_SGN(1)(x.def)}` }; }); return m; } },
   { off: true, id: 'gaOff', label: 'Goals Added on offense', words: 'offensive value, offense goals added, offensive impact', page: 'ga', fmt: SA_SGN(1), f: () => { const r = computeGoalsAdded(); const m = {}; r.rows.forEach(x => { m[x.jersey] = { v: x.off, n: x.apps }; }); return m; } },
   { id: 'gaDef', label: 'Goals Added on defense (field players)', words: 'defensive value, defense goals added, defensive impact, best defender, best defenders, defenders', page: 'ga', fmt: SA_SGN(1), f: () => { const r = computeGoalsAdded(); const m = {}; r.rows.forEach(x => { if (x.goalie === undefined) m[x.jersey] = { v: (x.takeaway || 0) + (x.onball || 0), n: x.apps }; }); return m; } },
+  { id: 'ctValue', label: 'Caused-turnover value (+V each, practice; supplemental)', words: 'possessions created, turnover value, value of caused turnovers', page: 'defense', fmt: SA_SGN(1), f: d => { const m = {}; defensePartsFrom(d).rows.forEach(r => { if (r.ctN) m[r.jersey] = { v: r.ctV, n: r.ctN, extra: `${r.ctN} caused` }; }); return m; } },
+  { id: 'shotDef', label: 'Shot defense per tagged rep (supplemental)', words: 'shot defense, dangerous shots prevented, prevents good looks, shot quality allowed', min: DEF_MIN_REPS, page: 'defense', fmt: SA_SGN(3), f: d => { const m = {}; defensePartsFrom(d).rows.forEach(r => { if (r.reps) m[r.jersey] = { v: r.perRep, n: r.reps, extra: `${SA_SGN(1)(r.sd)} over ${r.reps} tagged reps${r.repsP ? `, ${r.repsP} provisional` : ''}` }; }); return m; } },
   { id: 'fo', label: 'Faceoff win %', words: 'faceoffs, faceoff, fogo, draws, wins draws, wins our faceoffs', min: 10, page: 'fosum', fmt: SA_PCT, goalie: false, f: () => { const m = {}; FACEOFFS.filter(f => f.playerJersey && seasonForDate(f.date) === EFF_SEASON && effContextOk(f) && effFromOk(f)).forEach(f => { const r = (m[f.playerJersey] = m[f.playerJersey] || { w: 0, n: 0 }); r.n++; if (Number(f.won) === 1) r.w++; }); Object.keys(m).forEach(j => { m[j] = { v: m[j].w / m[j].n, n: m[j].n, extra: `${m[j].w}-${m[j].n - m[j].w}` }; }); return m; } },
   { id: 'savePct', label: 'Save %', words: 'save percentage, save %, save%, saves, stopper', min: 20, page: 'gsummary', fmt: SA_PCT, f: () => { const m = {}; goalieShotsForSeason(EFF_SEASON).filter(s => s.onKeeper === 1 && s.goalieJersey && effContextOk(s) && effFromOk(s)).forEach(s => { const r = (m[s.goalieJersey] = m[s.goalieJersey] || { sv: 0, n: 0 }); r.n++; if (s.goal !== 1) r.sv++; }); Object.keys(m).forEach(j => { m[j] = { v: m[j].sv / m[j].n, n: m[j].n, extra: `${m[j].sv} of ${m[j].n}` }; }); return m; } },
 ];
