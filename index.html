@@ -5465,7 +5465,7 @@ document.getElementById('submitPossBtn').addEventListener('click', async () => {
   }
   const dominoes = document.getElementById('p_dominoes').dataset.value || null;
   if (end === 'Turnover' && !DOM_TO_VALUES.includes(dominoes)) { showMsg(DOM_TO_MSG, false); return; }
-  if (dominoes === 'Yes' && !adv.value) { showMsg('Type who started the dominoes, or set Created Dominoes to No.', false); return; }
+  if (dominoes === 'Yes' && !adv.value) { showMsg('Type who started the dominoes, or pick No or Unknown.', false); return; }
   const pk = readPickFields('p', team);
   if (!pk.ok) { showMsg(pk.why, false); return; }
   const scr = readScreens('p', team);
