@@ -1386,6 +1386,11 @@
       <p class="panel-sub">Each shooter&rsquo;s two finishing numbers against each other. Right = scores more than his looks predict (Finishing). Up = scores more than the goalie he shot on usually allows (Goalie-Adjusted). Dashed lines are the team average. Top-right is good at both; the other corners are a gap worth a look.</p>
       <div class="chart-wrap" id="ssChart" style="max-width:640px;"></div>
     </div>
+    <div class="panel" id="ssFsPanel">
+      <p class="panel-title">Fall vs Spring</p>
+      <p class="panel-sub" id="ssFsSub"></p>
+      <div class="table-wrap" id="ssFsWrap"></div>
+    </div>
     </div>
     <div class="subpage" data-label="Heat Map">
     <div class="panel">
@@ -3768,6 +3773,20 @@ function seasonForDate(dateStr) {
 // The season filter used by every season-toggled tab: "All Seasons" is a
 // no-op (every shot ever logged), a specific year keeps only shots whose
 // date resolves to that season.
+// Fall / Spring (Bobby, Oct 28): the shooting pages can show one part of a season. A season turns over in
+// August (seasonForDate), so season 2027 = Fall (Aug 1 - Dec 31, 2026) + Spring (Jan 1 - Jul 31, 2027).
+// Only which shots are shown changes; models (xgModelFor) are still built from the whole season.
+let SEASON_PART = 'Full';   // 'Full' | 'Fall' | 'Spring', set from the top bar
+function partRange(season, part) {
+  part = part || SEASON_PART;
+  const y = Number(season);
+  if (part === 'Full' || !Number.isInteger(y)) return null;
+  return part === 'Fall' ? { from: `${y - 1}-08-01`, to: `${y - 1}-12-31` } : { from: `${y}-01-01`, to: `${y}-07-31` };
+}
+function inPart(e, season) { const r = partRange(season); return !r || (!!e.date && e.date >= r.from && e.date <= r.to); }
+// The part applies on the shooting pages only (Offense player pages, Efficiency); switchTab keeps this current.
+// Depth chart, reports, the brief and profiles compute on their own pages and keep the whole season.
+let PART_PAGE_ON = false;
 function shotsForSeason(season) {
   return season === 'All Seasons' ? SHOTS : SHOTS.filter(s => seasonForDate(s.date) === season);
 }
@@ -3856,6 +3875,7 @@ function populateSelect(sel, items, placeholderText, includeEmptyNet) {
 // ---------------- Tabs ----------------
 function switchTab(viewId) {
   if (viewId === 'healthView' && !IS_DH_OWNER) return;
+  PART_PAGE_ON = viewId === 'playerView' || viewId === 'efficiencyView';
   document.querySelectorAll('.tab-btn').forEach(b=>b.classList.toggle('active', b.dataset.view === viewId));
   document.querySelectorAll('.view').forEach(v=>v.classList.toggle('active', v.id === viewId));
   if (viewId === 'playerView') { renderPlayerHeat(); renderShooterScore(); }
@@ -5809,7 +5829,7 @@ let deepDiveCompareMode = 'teammates';
 function renderPlayerDeepDive() {
   const wrap = document.getElementById('playerDeepDiveWrap');
   if (!wrap) return;
-  const seasonShots = shotsForSeason(heatSeason);
+  const seasonShots = shotsForSeason(heatSeason).filter(s => inPart(s, heatSeason));
   const rows = computePlayerDeepDive(seasonShots);
   if (!rows.length) { wrap.innerHTML = '<p class="sans" style="color:var(--muted); font-size:13px;">No players with 5+ shots yet.</p>'; return; }
   const allPlayerShots = seasonShots.filter(s => s.shooterJersey);
@@ -5905,7 +5925,7 @@ function computeShotQualityShare(shots) {
 function renderShotQualityShare() {
   const wrap = document.getElementById('shotQualityShareWrap');
   if (!wrap) return;
-  const allPlayerShots = shotsForSeason(heatSeason).filter(s => s.shooterJersey);
+  const allPlayerShots = shotsForSeason(heatSeason).filter(s => s.shooterJersey && inPart(s, heatSeason));
   const rows = computeShotQualityShare(allPlayerShots);
   if (!rows.length) { wrap.innerHTML = '<p class="sans" style="color:var(--muted); font-size:13px;">No players with 5+ shots yet.</p>'; return; }
   // Grouped (not interleaved) so each group reads as one story: the first
@@ -6021,7 +6041,7 @@ function renderTriggerEfficiency() {
   const noteEl = document.getElementById('trigModelNote');
   const explainerEl = document.getElementById('trigExplainer');
   controlsRow.style.display = '';
-  const allShots = advShots(season).filter(s => s.shooterJersey);
+  const allShots = advShots(season).filter(s => s.shooterJersey && inPart(s, season));
   const tagged = allShots.filter(s => s.trigger);
 
   if (!allShots.length) {
@@ -6081,7 +6101,7 @@ function renderTriggerEfficiency() {
 }
 
 function renderNewEfficiencyTables() {
-  const shots = shotsForSeason(heatSeason).filter(s => s.shooterJersey);
+  const shots = shotsForSeason(heatSeason).filter(s => s.shooterJersey && inPart(s, heatSeason));
   if (isAdvSeason(heatSeason)) {
     renderTriggerEfficiency();
   } else {
@@ -6801,7 +6821,7 @@ function effContextOk(e) { return EFF_CONTEXT === 'All' || e.context === EFF_CON
 // EFF_FROM: an optional first date (the depth chart's Recent form); null
 // everywhere else, so every other view reads the whole season.
 let EFF_FROM = null, EFF_TO = null, EFF_OPP = null;   // EFF_TO / EFF_OPP: set only by search answers
-const effFromOk = e => (!EFF_FROM || (e.date && e.date >= EFF_FROM)) && (!EFF_TO || (e.date && e.date <= EFF_TO)) && (!EFF_OPP || e.opponent === EFF_OPP);
+const effFromOk = e => (!EFF_FROM || (e.date && e.date >= EFF_FROM)) && (!EFF_TO || (e.date && e.date <= EFF_TO)) && (!EFF_OPP || e.opponent === EFF_OPP) && (!PART_PAGE_ON || inPart(e, EFF_SEASON));
 function effShots() { return advShots(EFF_SEASON).filter(e => effContextOk(e) && effFromOk(e)); }
 function effOppShots() { return OPP_SHOTS.filter(s => seasonForDate(s.date) === EFF_SEASON && effContextOk(s) && effFromOk(s)); }
 function effPoss() { return POSSESSIONS.filter(p => seasonForDate(p.date) === EFF_SEASON && effContextOk(p) && effFromOk(p)); }
@@ -8246,6 +8266,7 @@ function renderShooterScore() {
   if (!cards) return;
   const season = heatSeason;
   const sub = document.getElementById('ssSub'), note = document.getElementById('ssNote'), chartPanel = document.getElementById('ssChartPanel');
+  renderFallSpring(season);
   if (!isAdvSeason(season)) {
     sub.textContent = '';
     note.style.display = 'none';
@@ -8258,7 +8279,7 @@ function renderShooterScore() {
   const { list: all, tFin, tGa } = computeShooterScores(season, ssTab);
   const shown = PLAYER_MODE ? all.filter(g => pmHas(g.name)) : all;
   const parts = SS_PARTS[ssTab];
-  sub.textContent = `${season}, practice + game shots. 0–100: 50 is a team-average ${ssTab === 'shooting' ? 'shooter' : 'offensive player'}, higher is better. Players with ${SS_MIN_SHOTS}+ shots.${PLAYER_MODE ? '' : ' Ranked best first.'}`;
+  sub.textContent = `${season}${PART_PAGE_ON && SEASON_PART !== 'Full' ? ' ' + SEASON_PART.toLowerCase() + ' only' : ''}, practice + game shots. 0–100: 50 is a team-average ${ssTab === 'shooting' ? 'shooter' : 'offensive player'}, higher is better. Players with ${SS_MIN_SHOTS}+ shots.${PLAYER_MODE ? '' : ' Ranked best first.'}`;
   note.innerHTML = (ssTab === 'shooting'
     ? 'Weights: Finishing (goals vs the look, per 100 shots) 35%, Goalie-Adjusted Finishing (goals vs what the goalie he shot on allows, practice shots on cage) 35%, shot quality (Look Value) 20%, accuracy (on cage) 10%. Built like basketball&rsquo;s shot making + shot quality.'
     : 'Weights follow basketball&rsquo;s Four Factors: shooting 35% (Finishing 12, Goalie-Adjusted 12, shot quality 11), ball security 25% (turnovers per touch), creation 25% (expected assists per touch 12.5, dominoes started per session 12.5), possession winning 15% (ground balls + caused turnovers per session). Drawn penalties (basketball&rsquo;s free throws) aren&rsquo;t logged yet.')
@@ -8288,6 +8309,47 @@ function renderShooterScore() {
     xLabel: 'Finishing /100 (vs the look) &rarr;', yLabel: 'Goalie-Adjusted /100 (vs the goalie) &rarr;' });
 }
 setupSeg('ssTabSeg', v => { ssTab = v; renderShooterScore(); });
+// Fall vs Spring (Bobby, Oct 28): each shooter's fall next to his spring in the same season, and the change.
+// Always both halves, whatever the Part toggle says; follows the Sessions filter, so Practice-only compares like with like
+// (spring has games, fall doesn't). Expected goals use the whole-season model, so both halves are on one scale.
+const FS_MIN_SHOTS = SS_MIN_SHOTS;   // per half
+function renderFallSpring(season) {
+  const panel = document.getElementById('ssFsPanel'), wrap = document.getElementById('ssFsWrap'), sub = document.getElementById('ssFsSub');
+  if (!panel || !wrap) return;
+  if (!isAdvSeason(season)) { panel.style.display = 'none'; return; }
+  panel.style.display = '';
+  const ctx = (typeof NAV_ST !== 'undefined' && NAV_ST.ctx) || 'All', fall = partRange(season, 'Fall'), spring = partRange(season, 'Spring');
+  const model = xgModelFor(season), within = (x, r) => !!x.date && x.date >= r.from && x.date <= r.to;
+  const shots = advShots(season).filter(x => x.shooterJersey && (ctx === 'All' || x.context === ctx));
+  const by = {};
+  shots.forEach(x => { const h = within(x, fall) ? 'f' : within(x, spring) ? 's' : null; if (h) (by[x.shooterJersey] = by[x.shooterJersey] || { f: [], s: [] })[h].push(x); });
+  const st = l => {
+    const n = l.length, g = l.filter(x => x.goal === 1).length, graded = l.filter(x => x.shotQuality);
+    return { n, sh: n ? g / n : null, cage: n ? l.filter(x => x.onKeeper === 1).length / n : null, gold: graded.length ? graded.filter(x => x.shotQuality === '1-Gold').length / graded.length : null, fin: n ? (g - xgSum(l, model)) / n * 100 : null };
+  };
+  const nF = shots.filter(x => within(x, fall)).length, nS = shots.filter(x => within(x, spring)).length;
+  const rows = Object.keys(by).map(j => ({ j, name: nameFor(j, season) || '', f: st(by[j].f), s: st(by[j].s) }))
+    .filter(r => r.f.n >= FS_MIN_SHOTS && r.s.n >= FS_MIN_SHOTS && (!PLAYER_MODE || pmHas(r.name)));
+  const d = (a, b) => (a === null || b === null) ? null : b - a;
+  const pts = v => v === null ? '—' : (v >= 0 ? '+' : '') + (v * 100).toFixed(1) + ' pts';
+  const sgn = v => v === null ? '—' : (v >= 0 ? '+' : '') + v.toFixed(1);
+  const trio = (key, label, fmt, dfmt) => [
+    { key: key + 'F', label: 'Fall', type: 'num', value: r => r.f[key], format: fmt, group: label },
+    { key: key + 'S', label: 'Spring', type: 'num', value: r => r.s[key], format: fmt, group: label },
+    { key: key + 'D', label: 'Change', type: 'num', value: r => d(r.f[key], r.s[key]), format: dfmt, group: label }];
+  const fallYr = Number(season) - 1;
+  sub.textContent = `${season}: fall ${fallYr} (Aug–Dec) vs spring ${season} (Jan–Jul), ${ctx === 'All' ? 'all sessions' : ctx.toLowerCase() + ' only'}. Players with ${FS_MIN_SHOTS}+ shots in each half. ${nF} fall shots, ${nS} spring shots logged.`
+    + (ctx === 'All' ? ' Spring has games and fall doesn’t, so pick Practice in Sessions to compare like with like.' : '');
+  renderSortableTable('ssFsWrap', [
+    { key: 'name', label: 'Player', type: 'text', value: r => r.name, format: (v, r) => `#${escapeHtml(r.j)} ${escapeHtml(v)}` },
+    { key: 'nf', label: 'Shots F / S', type: 'num', value: r => r.f.n + r.s.n, format: (v, r) => `${r.f.n} / ${r.s.n}` },
+    ...trio('sh', 'Shooting %', pct, pts),
+    ...trio('cage', 'On cage %', pct, pts),
+    ...trio('gold', 'Gold share', pct, pts),
+    ...trio('fin', 'Goals vs expected /100', sgn, sgn),
+  ], rows, { dense: true, defaultSort: { key: 'finD', dir: 'desc' },
+    emptyMsg: !nS ? `No spring ${season} shots yet — this fills in once spring logging starts in January.` : !nF ? `No fall ${fallYr} shots logged.` : `No player has ${FS_MIN_SHOTS}+ shots in both halves yet.` });
+}
 
 // ---------------- Defense (2027+) ----------------
 // From the Defense card on the Log Shot form: who was on the ball, who slid,
@@ -11944,7 +12006,7 @@ function renderPlayerHeat() {
   const filters = readFilterState('pf_');
   const season = heatSeason;
   const seasonLabel = season === 'All Seasons' ? 'All Seasons' : season;
-  const seasonShots = season === 'All Seasons' ? SHOTS : SHOTS.filter(s => seasonForDate(s.date) === season);
+  const seasonShots = (season === 'All Seasons' ? SHOTS : SHOTS.filter(s => seasonForDate(s.date) === season)).filter(s => inPart(s, season));
 
   let subset, title, n;
   if (sel === '__TEAM__' || !sel) {
@@ -13372,7 +13434,7 @@ function renderShootingTrends() {
     rollingWrap.style.display = 'none';
     groupsWrap.style.display = '';
     subEl.textContent = "Shot % across each quarter of a player's logged shots, in order — who's heating up, who's cooling off. Players need 12+ shots (3+ per quarter) to show a trend.";
-    const trends = pmOnly(computeShootingTrends(shotsForSeason(heatSeason)));
+    const trends = pmOnly(computeShootingTrends(shotsForSeason(heatSeason).filter(s => inPart(s, heatSeason))));
     const up = trends.filter(t => t.delta > 0).sort((a, b) => b.delta - a.delta).slice(0, 5);
     const down = trends.filter(t => t.delta < 0).sort((a, b) => a.delta - b.delta).slice(0, 3);
     renderTrendGroup('shootingTrendsUpGrid', up, 'up', 'players');
@@ -13382,7 +13444,7 @@ function renderShootingTrends() {
 
   // 2027 and later: windowed trends, live as new shots are logged.
   controlsRow.style.display = '';
-  const shots = advShots(heatSeason).filter(s => s.shooterJersey);
+  const shots = advShots(heatSeason).filter(s => s.shooterJersey && inPart(s, heatSeason));
   const model = xgModelFor(heatSeason);
 
   if (trendWindow === 'rolling') {
@@ -13798,7 +13860,7 @@ const NAV_FILTERS = {
   depthView: { a: 'depthSeasonPills' }, healthView: { a: 'healthSeasonPills' },
 };
 const NAV_ST = { cur: null, history: [], season: null, ctx: 'All', pins: [], busy: false, open: {} };
-try { const g = JSON.parse(localStorage.getItem('wluGlobal') || 'null'); if (g) { NAV_ST.season = g.season || null; NAV_ST.ctx = g.ctx || 'All'; } } catch (e) { /* storage unavailable */ }
+try { const g = JSON.parse(localStorage.getItem('wluGlobal') || 'null'); if (g) { NAV_ST.season = g.season || null; NAV_ST.ctx = g.ctx || 'All'; SEASON_PART = ['Fall', 'Spring'].includes(g.part) ? g.part : 'Full'; } } catch (e) { /* storage unavailable */ }
 try { const p = JSON.parse(localStorage.getItem('wluPins') || '[]'); if (Array.isArray(p)) NAV_ST.pins = p.filter(id => NAV_PAGES[id]); } catch (e) { /* storage unavailable */ }
 
 function navVisible(p) {
@@ -13822,7 +13884,7 @@ function navScrollTo(p, title) {
   const box = el.closest('.panel') || el, bar = document.querySelector('.view.active .view-bar:not(.nav-hidden)');
   window.scrollTo({ top: box.getBoundingClientRect().top + window.scrollY - 112 - (bar ? bar.offsetHeight : 0), behavior: 'smooth' });
 }
-function navSave() { try { localStorage.setItem('wluPage', NAV_ST.cur || ''); localStorage.setItem('wluGlobal', JSON.stringify({ season: NAV_ST.season, ctx: NAV_ST.ctx })); } catch (e) { /* storage unavailable */ } }
+function navSave() { try { localStorage.setItem('wluPage', NAV_ST.cur || ''); localStorage.setItem('wluGlobal', JSON.stringify({ season: NAV_ST.season, ctx: NAV_ST.ctx, part: SEASON_PART })); } catch (e) { /* storage unavailable */ } }
 
 // ---- global season / sessions ----
 function navPick(groupId, label) {
@@ -13836,8 +13898,17 @@ function navApplyFilters(viewId) {
   if (f.s) navPick(f.s, season);
   if (f.a) { const t = ADV_SEASONS.includes(season) ? season : currentAdvSeason(); navPick(f.a, t); if (t !== season) notes.push(`This page starts in ${ADV_FIRST_SEASON} — showing ${t}.`); }
   [].concat(f.c || []).forEach(c => { const opts = [...document.querySelectorAll('#' + c + ' .pill')].map(b => b.textContent), t = opts.includes(ctx) ? ctx : 'All'; navPick(c, t); if (t !== ctx) notes.push(`No ${ctx.toLowerCase()} split on this page — showing all sessions.`); });
+  if (SEASON_PART !== 'Full' && viewId !== 'playerView' && viewId !== 'efficiencyView') notes.push(`${SEASON_PART} applies to the shooting pages — this page shows the full season.`);
   if (f.sel) { const sel = document.getElementById(f.sel), want = ctx === 'All' ? '' : ctx; if (sel && sel.value !== want && [...sel.options].some(o => o.value === want)) { sel.value = want; sel.dispatchEvent(new Event('change')); } }
   return notes;
+}
+// Fall / Spring / Full for the shooting pages: redraw them (and whatever page is up) with the new part.
+function navSetPart(part) {
+  SEASON_PART = ['Fall', 'Spring'].includes(part) ? part : 'Full';
+  navSave();
+  if (window.__appReady) { renderPlayerHeat(); renderPlayerDeepDive(); renderShotQualityShare(); renderNewEfficiencyTables(); renderShootingTrends(); renderShooterScore(); renderEfficiencyView(); }
+  const p = NAV_PAGES[NAV_ST.cur]; NAV_ST.notes = p ? navApplyFilters(p.view) : [];
+  drawNav();
 }
 function navSetGlobal(season, ctx) {
   if (season) NAV_ST.season = season; if (ctx) NAV_ST.ctx = ctx;
@@ -13884,7 +13955,7 @@ function drawNav() {
   const secs = NAV.filter(s => s.pages.some(([id]) => navVisible(NAV_PAGES[id])));
   document.getElementById('sdSecs').innerHTML = secs.map(s => `<button type="button" class="${s === sec ? 'on' : ''}${s.id === 'lab' ? ' lab' : ''}" data-nsec="${s.id}">${s.name}</button>`).join('');
   document.getElementById('sdCrumb').innerHTML = `${NAV_ST.history.length ? '<button type="button" class="back" data-nback="1">&larr; Back</button>' : ''}<button type="button" data-nsec="${sec.id}">${sec.name}</button><span>/</span><span class="cur">${navEsc(p.name)}</span>`;
-  document.getElementById('sdFilters').innerHTML = `<span class="cap">Season</span><div class="tog">${[...SEASONS, 'All Seasons'].map(v => `<button type="button" class="${NAV_ST.season === v ? 'on' : ''}" data-nseason="${v}">${v === 'All Seasons' ? 'All' : v}</button>`).join('')}</div><span class="cap">Sessions</span><div class="tog">${['All', 'Practice', 'Scrimmage', 'Game'].map(v => `<button type="button" class="${NAV_ST.ctx === v ? 'on' : ''}" data-nctx="${v}">${v}</button>`).join('')}</div>`;
+  document.getElementById('sdFilters').innerHTML = `<span class="cap">Season</span><div class="tog">${[...SEASONS, 'All Seasons'].map(v => `<button type="button" class="${NAV_ST.season === v ? 'on' : ''}" data-nseason="${v}">${v === 'All Seasons' ? 'All' : v}</button>`).join('')}</div><span class="cap">Sessions</span><div class="tog">${['All', 'Practice', 'Scrimmage', 'Game'].map(v => `<button type="button" class="${NAV_ST.ctx === v ? 'on' : ''}" data-nctx="${v}">${v}</button>`).join('')}</div>${NAV_ST.season === 'All Seasons' ? '' : `<span class="cap" title="Fall = Aug-Dec, Spring = Jan-Jul of the season. Shooting pages only.">Part</span><div class="tog">${['Full', 'Fall', 'Spring'].map(v => `<button type="button" class="${SEASON_PART === v ? 'on' : ''}" data-npart="${v}">${v}</button>`).join('')}</div>`}`;
   const pins = NAV_ST.pins.filter(id => NAV_PAGES[id] && navVisible(NAV_PAGES[id]));
   const panels = navPanels(p);
   document.getElementById('sdRail').innerHTML = (PLAYER_MODE ? '' : `<div class="rg"><span class="cap">&#9733; Pinned</span></div><ul class="rl">${pins.map(id => `<li><button type="button" data-npage="${id}" class="${id === p.id ? 'on' : ''}">${NAV_PAGES[id].name}<span class="rs">${NAV_PAGES[id].sec.name}</span></button></li>`).join('') || '<li class="rnote">Pin any page with the &#9734; button by its title.</li>'}</ul><hr>`) +
@@ -16673,7 +16744,7 @@ function renderWhere() {
 
 // ---- events + boot ----
 document.addEventListener('click', e => {
-  const t = e.target.closest('[data-npage],[data-nsec],[data-nback],[data-nseason],[data-nctx],[data-npin],[data-nbottom],[data-nclose],[data-nall]');
+  const t = e.target.closest('[data-npage],[data-nsec],[data-nback],[data-nseason],[data-nctx],[data-npart],[data-npin],[data-nbottom],[data-nclose],[data-nall]');
   if (!t) return;
   if (t.tagName === 'A') e.preventDefault();
   if (t.dataset.nclose) return navCloseLayer();
@@ -16683,6 +16754,7 @@ document.addEventListener('click', e => {
   if (t.dataset.nback) return navBack();
   if (t.dataset.nseason) return navSetGlobal(t.dataset.nseason, null);
   if (t.dataset.nctx) return navSetGlobal(null, t.dataset.nctx);
+  if (t.dataset.npart) return navSetPart(t.dataset.npart);
   if (t.dataset.npin) { const id = t.dataset.npin; NAV_ST.pins = NAV_ST.pins.includes(id) ? NAV_ST.pins.filter(x => x !== id) : NAV_ST.pins.concat(id); try { localStorage.setItem('wluPins', JSON.stringify(NAV_ST.pins)); } catch (err) { /* storage unavailable */ } return drawNav(); }
   if (t.dataset.nbottom) { const b = t.dataset.nbottom; if (b === '__search') { const q = document.getElementById('sdQ'); q.focus(); return; } if (b === '__pins') return navOpenPins(); if (b === '__menu') return navOpenMenu(); return goNav(b); }
 });
