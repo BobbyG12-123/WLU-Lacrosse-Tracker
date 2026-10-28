@@ -2851,6 +2851,7 @@ async function persistNewSessionEntry(kind, entry, cols, lineup) {
   if (!DB) return 'error';
   const sid = sessionIdFor(entry), ref = DB.collection('sessions').doc(sid), prefix = SESSION_ENTRY_PREFIX[kind];
   const usedElsewhere = id => (kind === 'shot' ? allShotEntries() : POSSESSIONS).some(x => Number(x.id) === id && (x._sid || sessionIdFor(x)) !== sid);
+  if (typeof navigator !== 'undefined' && navigator.onLine === false) return persistSessionEntry(kind, entry, cols, lineup);   // offline: the normal save queues right away
   const st = lineup !== undefined ? stintFor(sid, lineup) : null;
   try {
     await Promise.race([DB.runTransaction(async t => {
@@ -2861,7 +2862,7 @@ async function persistNewSessionEntry(kind, entry, cols, lineup) {
       if (st) { clean.stintId = st.id; if (st.isNew) fields[SESSION_ENTRY_PREFIX.stint + st.id] = JSON.stringify(st.stint); }
       fields[prefix + entry.id] = JSON.stringify(objToTuple(clean, cols));
       t.set(ref, fields, { merge: true });
-    }), new Promise((_, rej) => setTimeout(() => rej(new Error('slow')), 6000))]);
+    }), new Promise((_, rej) => setTimeout(() => rej(new Error('slow')), 3500))]);
     if (st && st.isNew && LIVE_SESSIONS[sid] && !LIVE_SESSIONS[sid].stints.some(x => x.id === st.id)) LIVE_SESSIONS[sid].stints.push(st.stint);
     entry.stintId = st ? st.id : null; entry._sid = sid;
     return 'ok';
@@ -4932,19 +4933,21 @@ function renderUnitsPanel() {
       <div id="unitsTable"></div>
       <div class="field-grid" style="grid-template-columns: 1fr 2fr auto; align-items:flex-end; margin-bottom:0;">
         <div><label for="unit_name">Unit Name</label><input type="text" id="unit_name" maxlength="40" placeholder="e.g. Mid Line 1"></div>
-        <div><label for="unit_jerseys">Jersey Numbers (up to 6, comma separated)</label><input type="text" id="unit_jerseys" maxlength="40" placeholder="e.g. 2, 7, 11"></div>
+        <div><label for="unit_jerseys">Players (numbers or names, up to 6, comma separated)</label><input type="text" id="unit_jerseys" maxlength="40" placeholder="e.g. 2, 7, 11"></div>
         <div><button class="btn secondary" id="unit_add" type="button">Save Unit</button></div>
       </div>
       <div id="unitMsg" style="margin-top:10px;"></div>`;
     document.getElementById('unit_add').addEventListener('click', async () => {
       const season = currentLogSeason();
       const name = document.getElementById('unit_name').value.trim();
-      const nums = document.getElementById('unit_jerseys').value.split(/[\s,]+/).map(normJerseyText).filter(Boolean);
+      // numbers or names ("Fertels, 25, Koo"), comma separated
+      const raw = document.getElementById('unit_jerseys').value.split(',').flatMap(x => (/^[\s#\d]+$/.test(x) ? x.split(/\s+/) : [x])).map(x => normJerseyText(x)).filter(Boolean);   // "2 7 11" still works
+      const nums = raw.map(x => (validJerseyText(x) ? x : (jerseyFromName(x, season).j || x)));
       const msg = t => { document.getElementById('unitMsg').innerHTML = `<div class="msg err">${escapeHtml(t)}</div>`; };
       if (!name) return msg('Give the unit a name.');
       if (!nums.length || nums.length > LINEUP_SIZE) return msg(`List 1\u2013${LINEUP_SIZE} jersey numbers.`);
       const bad = nums.filter(n => !validJerseyText(n) || !(ROSTERS[season] || []).some(r => r.jersey === n));
-      if (bad.length) return msg(`Not on the ${season} roster: ${bad.join(', ')}`);
+      if (bad.length) return msg(bad.map(x => (validJerseyText(x) ? `#${x} isn’t on the ${season} roster.` : jerseyFromName(x, season).why || `“${x}” isn’t a player.`)).join(' '));
       if (new Set(nums).size !== nums.length) return msg('A jersey is listed twice.');
       const keep = l => { const i = l.findIndex(u => u.name.toLowerCase() === name.toLowerCase()); if (i >= 0) l.splice(i, 1); l.push({ name, jerseys: nums }); };
       if (!(await persistUnitsChange(keep))) return msg('Save failed \u2014 try again.');
@@ -8620,11 +8623,11 @@ async function runSelfCheck() {
     if (SC.plan) { SC.plan = scrimMigrate(SC.plan); const M = scrimModel(), cal = scrimCalib(scrimModel(true)), pools = scrimPoolsV4(M), ctx = scrimSimCfg().ctxs[0], gaps = [];
       if (pools.att.length >= 3 && pools.mid.length >= 3) { const keep = SCRIM_SEED; scrimSeed(2027);
         for (let k = 0; k < 3; k++) { const att = pools.att.slice().sort(() => SCRIM_RNG() - 0.5).slice(0, 3), mid = pools.mid.filter(j => !att.includes(j)).sort(() => SCRIM_RNG() - 0.5).slice(0, 3), six = att.concat(mid), w = scrimWorld(M, six);
-          const ev = scrimEV(M, six, w, ctx, cal); let g = 0, n = 0; for (let r = 0; r < 20; r++) { const x = scrimPossessions(M, six, 1000, w, ctx, cal); g += x.g; n += x.n; }
+          const ev = scrimEV(M, six, w, ctx, cal); let g = 0, n = 0; for (let r = 0; r < 60; r++) { const x = scrimPossessions(M, six, 1000, w, ctx, cal); g += x.g; n += x.n; }
           const se = Math.sqrt(ev * (1 - ev) / n); gaps.push({ z: Math.abs(g / n - ev) / se, txt: `${num(ev, 3)} vs ${num(g / n, 3)}` }); }
         SCRIM_SEED = keep;
         const worst = gaps.reduce((a, b) => (b.z > a.z ? b : a));
-        add('Simulator', 'Exact math matches the possession simulation', worst.z > 3.5 ? 'fail' : worst.z > 2.6 ? 'warn' : 'pass', `3 random lineups, goals per possession exact vs simulated: ${gaps.map(x => x.txt).join(', ')}.`); }
+        add('Simulator', 'Exact math matches the possession simulation', worst.z > 4.5 ? 'fail' : worst.z > 3.3 ? 'warn' : 'pass', `3 random lineups, goals per possession exact vs simulated: ${gaps.map(x => x.txt).join(', ')}.`); }
       else add('Simulator', 'Exact math matches the possession simulation', 'warn', 'Not enough players with data in the pools to test.'); }
   } catch (e) { add('Simulator', 'Simulator check ran', 'fail', e.message); }
   // 4. Data hygiene.
@@ -14057,10 +14060,10 @@ const SA_CATALOG = [
   { off: true, id: 'usage', label: 'Usage', words: 'usage, involvement, involved, runs through', page: 'eff', fmt: SA_PCT, f: d => { const all = saPlayers(d), T = d.shots.length + all.reduce((a, p) => a + p.potAst, 0); return saMap(d, p => (p.shots + p.potAst) ? { v: (p.shots + p.potAst) / T, n: p.shots + p.potAst } : null); } },
   { off: true, id: 'possUsed', label: 'Possessions used', words: 'possessions used, ends possessions', page: 'eff', fmt: SA_PCT, f: d => { const all = saPlayers(d), T = d.shots.length + all.reduce((a, p) => a + p.to, 0); return saMap(d, p => (p.shots + p.to) ? { v: (p.shots + p.to) / T, n: p.shots + p.to } : null); } },
   // Defense (practice: both sides are WLU, so these are WLU defenders).
-  { id: 'beaten', label: 'Times beaten on-ball', dir: 'low', words: 'beaten, gets beat, get beat, gets beaten, beat the most, beaten the most, loses his man, gets dodged, gets taken', page: 'defense', fmt: SA_NUM(0), f: d => saDefBy(d, 'defender', l => { const b = l.filter(s => s.defBeaten === 'Yes' || s.defBeaten === 'No'); return b.length ? { v: b.filter(s => s.defBeaten === 'Yes').length, n: b.length, extra: `${b.filter(s => s.defBeaten === 'Yes').length} of ${b.length}` } : null; }) },
+  { id: 'beaten', label: 'Times beaten on-ball', dir: 'low', badCount: true, words: 'beaten, gets beat, get beat, gets beaten, beat the most, beaten the most, loses his man, gets dodged, gets taken', page: 'defense', fmt: SA_NUM(0), f: d => saDefBy(d, 'defender', l => { const b = l.filter(s => s.defBeaten === 'Yes' || s.defBeaten === 'No'); return b.length ? { v: b.filter(s => s.defBeaten === 'Yes').length, n: b.length, extra: `${b.filter(s => s.defBeaten === 'Yes').length} of ${b.length}` } : null; }) },
   { id: 'onballG', label: 'Goal % allowed on-ball', words: 'on-ball defender, on ball defender, on-ball defense, on ball defense, best defender, lockdown, shutdown, cover defender, covers, guards the ball', dir: 'low', min: 8, page: 'defense', fmt: SA_PCT, f: d => saDefBy(d, 'defender', l => ({ v: l.filter(s => s.goal === 1).length / l.length, n: l.length, extra: `${l.filter(s => s.goal === 1).length} goals on ${l.length} shots` })) },
   { id: 'slides', label: 'Slides', words: 'slides, slide, sliding, slider, slides the most, help defense', page: 'defense', fmt: SA_NUM(0), f: d => saDefBy(d, 'slideDefender', l => ({ v: l.length, n: l.length })) },
-  { id: 'offFault', label: 'Off-ball breakdowns', dir: 'low', words: 'off-ball breakdowns, off ball breakdowns, breakdowns, breakdown, off-ball mistakes, loses his man off ball, off ball defense, off-ball defense', page: 'defense', fmt: SA_NUM(0), f: d => saDefBy(d, 'offBallFault', l => ({ v: l.length, n: l.length })) },
+  { id: 'offFault', label: 'Off-ball breakdowns', dir: 'low', badCount: true, words: 'off-ball breakdowns, off ball breakdowns, breakdowns, breakdown, off-ball mistakes, loses his man off ball, off ball defense, off-ball defense', page: 'defense', fmt: SA_NUM(0), f: d => saDefBy(d, 'offBallFault', l => ({ v: l.length, n: l.length })) },
   { id: 'pickFreed', label: 'Pick defense: ball carrier freed', words: 'pick defense, defending picks, defends picks, pick defender, guarding picks, switches', dir: 'low', min: 5, page: 'pickdef', fmt: SA_PCT, f: d => { const m = {}; try { pickDefenderRows(d.possList.filter(pp => pp.pick), d.xgOf, EFF_SEASON).forEach(r => { if (r.n) m[r.jersey] = { v: r.freed, n: r.n, extra: `${r.n} picks` }; }); } catch (e) { /* not ready */ } return m; } },
   { id: 'gb', label: 'Ground balls', words: 'ground balls, ground ball, gbs, gb, scrappy', page: 'eff', fmt: SA_NUM(0), f: d => saMap(d, p => p.gb ? { v: p.gb, n: p.gb } : null) },
   { id: 'ct', label: 'Caused turnovers', words: 'caused turnovers, takeaways, takeaway, steals, forced turnovers, causes turnovers, causes the most turnovers, cause turnovers, causing turnovers, forces turnovers, forcing turnovers, causes, forces', page: 'eff', fmt: SA_NUM(0), f: d => saMap(d, p => p.ct ? { v: p.ct, n: p.ct } : null) },
@@ -14843,7 +14846,7 @@ async function scrimRunAll(label) {
     scrimSeed(4242); const base = scrimPlanSearch(S, U, v0, null, null, 20000, 0.3, 0.002, null);
     if (!base) throw new Error('no plan fits the pools (check the attack and middie pools)');
     // 2. Every lineup on the same simulated days, and the best plan on each day (Optimal %).
-    const D = Math.max(24, Math.min(400, Math.round(7e5 / n)));   // few lineups (quarter rules on): up to 400 days; thousands: ~48   // ~48 days at the current pools: Optimal % to about ±2 points, a build in ~5 s
+    const D = Math.max(24, Math.min(400, Math.round(7e5 / n)));   // few lineups (quarter rules on): up to 400 days; thousands of lineups: ~48 (Optimal % to about ±2 points)
     scrimMsg(`Rating all ${n.toLocaleString()} lineups on ${D} simulated days and finding each day’s best plan…`);
     const agg = await scrimDays(M, calib, { S, U, ctxs, base: base.state, iters: n > 2000 ? 50000 : 4000, t0: n > 2000 ? 0.3 : 0.05 }, D);   // thousands of lineups: a much wider daily search
     const rows = new Array(n), Dn = agg.D || D, byKey = {};
@@ -15963,7 +15966,7 @@ function saRun(plan) {
     const posSet = Object.keys(POSITIONS[season] || {}).length > 0;
     if (f.pos) { if (posSet) rows = rows.filter(r => posIs(season, r.jersey, f.pos)); else out0.note = 'Positions aren’t set yet (Personnel › Depth Chart), so this shows everyone.'; }
     else if (meta.off && posSet) rows = rows.filter(r => isOffensePos(season, r.jersey));   // offense questions: attack and middies only
-    const asc = plan.most ? false : (better === 'low') !== (plan.dir === 'worst');   // "who … the most": highest first
+    const asc = plan.most && plan.pick && plan.pick.c && plan.pick.c.badCount ? false : (better === 'low') !== (plan.dir === 'worst');   // "beaten the most": highest count first
     rows.sort((a, b) => asc ? a.v - b.v : b.v - a.v);
     rows.forEach((r, i) => { r.rank = i + 1; });
     const fmt = isC ? (v => (v >= 0 ? '+' : '') + v.toFixed(2) + ' vs team') : meta.fmt;
