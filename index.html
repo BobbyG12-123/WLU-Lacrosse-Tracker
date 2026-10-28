@@ -3125,7 +3125,7 @@ async function loadAll() {
   }, e => console.error('backfill sync error', e)));
   DB.doc('app/filmcheck_index').onSnapshot(snap => {
     const d = snap.exists ? snap.data() : {}; FC.index = {};
-    Object.keys(d).forEach(k => { const m = /^p_(\d{4}-\d{2}-\d{2})$/.exec(k); if (!m || typeof d[k] !== 'string') return; try { const o = JSON.parse(d[k]); FC.index[m[1]] = { shots: Number(o.shots) || 0, tos: Number(o.tos) || 0 }; } catch (e) { /* skip a bad row */ } });
+    Object.keys(d).forEach(k => { const m = /^p_(\d{4}-\d{2}-\d{2}(?:-scrimmage)?)$/.exec(k); if (!m || typeof d[k] !== 'string') return; try { const o = JSON.parse(d[k]); FC.index[m[1]] = { shots: Number(o.shots) || 0, tos: Number(o.tos) || 0 }; } catch (e) { /* skip a bad row */ } });
     if (window.__appReady && document.getElementById('filmcheckView').classList.contains('active') && !FC.date) renderFilmCheck();
   }, e => console.error('film check index sync error', e));
   const unitsRef = DB.doc('app/units');
@@ -15619,8 +15619,12 @@ function bfInit() {
 // matched shots fill blanks like Backfill, unlogged ones get a short form. Nothing reaches the
 // shot log until Save. Saves go through persistShot / persistPossession like the Log page.
 // app/filmcheck_index: p_<date> = summary; app/filmcheck_<date>: drafts, account, st_<draft id> = what was done.
-const FC = { date: null, drafts: null, account: null, st: {}, idx: 0, draft: null, mode: null, pick: null, msg: '', pending: null, index: {}, unsub: null, choosing: false, busy: false, more: false };
+const FC = { key: null, date: null, context: 'Practice', drafts: null, account: null, st: {}, idx: 0, draft: null, mode: null, pick: null, msg: '', pending: null, index: {}, unsub: null, choosing: false, busy: false, more: false };
 const FC_FILE_ID = /^[A-Za-z0-9_-]{20,80}$/, FC_DRAFT_ID = /^[A-Za-z0-9_-]{1,40}$/, FC_DATE = /^\d{4}-\d{2}-\d{2}$/;
+// One entry per tracker session: '<date>' is that day's practice, '<date>-scrimmage' its scrimmage (9/25 had both on one film).
+const FC_KEY = /^\d{4}-\d{2}-\d{2}(-scrimmage)?$/;
+const fcKeyInfo = key => ({ date: key.slice(0, 10), context: /-scrimmage$/.test(key) ? 'Scrimmage' : 'Practice' });
+const fcLabel = key => { const k = fcKeyInfo(key); return `${k.date} ${k.context.toLowerCase()}`; };
 const fcNum = v => typeof v === 'number' && isFinite(v) && v >= 0;
 // Checks an imported / stored draft list; returns null if anything is off.
 function fcValidDrafts(list) {
@@ -15638,7 +15642,7 @@ function fcValidDrafts(list) {
   return out.sort((a, b) => a.t - b.t);
 }
 const fcClock = s => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
-const fcSid = () => sessionIdFor({ date: FC.date, context: 'Practice' });
+const fcSid = () => sessionIdFor({ date: FC.date, context: FC.context });
 const fcSeason = () => seasonForDate(FC.date);
 // A number or a name typed in a player box, like Backfill (bfResolve), for this practice's season.
 function fcResolve(text) { const v = normJerseyText(text), season = fcSeason(); if (!v) return {}; if (validJerseyText(v)) return (ROSTERS[season] || []).some(r => r.jersey === v) ? { j: v } : { why: `#${v} isn’t on the ${season} roster` }; return jerseyFromName(v, season); }
@@ -15663,22 +15667,23 @@ function fcPlan() {
 }
 function fcStatusWrite(id, val) {
   const v = val === null ? firebase.firestore.FieldValue.delete() : JSON.stringify(Object.assign({ by: dpWho(), at: new Date().toISOString().slice(0, 10) }, val));
-  return settleWrite(DB.doc('app/filmcheck_' + FC.date).set({ ['st_' + id]: v }, { merge: true }));
+  return settleWrite(DB.doc('app/filmcheck_' + FC.key).set({ ['st_' + id]: v }, { merge: true }));
 }
-function fcOpen(date) {
+function fcOpen(key) {
+  if (!FC_KEY.test(key || '')) return;
   if (FC.unsub) { FC.unsub(); FC.unsub = null; }
-  Object.assign(FC, { date, drafts: null, account: null, st: {}, idx: 0, draft: null, mode: null, pick: null, msg: '', choosing: false });
-  FC.unsub = DB.doc('app/filmcheck_' + date).onSnapshot(snap => {
+  Object.assign(FC, { key, date: fcKeyInfo(key).date, context: fcKeyInfo(key).context, drafts: null, account: null, st: {}, idx: 0, draft: null, mode: null, pick: null, msg: '', choosing: false });
+  FC.unsub = DB.doc('app/filmcheck_' + key).onSnapshot(snap => {
     const d = snap.exists ? snap.data() : {};
     let list = null; try { list = fcValidDrafts(JSON.parse(d.drafts || 'null')); } catch (e) { list = null; }
     const st = {};
     Object.keys(d).forEach(k => { if (!k.startsWith('st_') || typeof d[k] !== 'string') return; try { const o = cleanDeep(JSON.parse(d[k])); if (o && ['m', 'n', 'x', 't'].includes(o.s)) st[k.slice(3)] = o; } catch (e) { /* skip a bad mark */ } });
     const first = FC.drafts === null;
     FC.drafts = list; FC.st = st; FC.account = typeof d.account === 'string' && /^[^@\s]+@[^@\s]+$/.test(d.account) ? d.account : null;
-    if (!list) FC.msg = snap.exists ? 'This practice’s clip list couldn’t be read.' : 'This practice isn’t in Film Check.';
+    if (!list) FC.msg = snap.exists ? 'This clip list couldn’t be read.' : 'This session isn’t in Film Check.';
     if (first && list) { const plan = fcPlan(); const i = plan.items.findIndex(it => !it.st); FC.idx = i >= 0 ? i : 0; }
     if (document.getElementById('filmcheckView').classList.contains('active')) renderFilmCheck();
-  }, e => { console.error('film check load', e); FC.msg = 'Could not load this practice.'; renderFilmCheck(); });
+  }, e => { console.error('film check load', e); FC.msg = 'Could not load this session.'; renderFilmCheck(); });
 }
 function fcGo(i) { FC.idx = i; FC.draft = null; FC.mode = null; FC.pick = null; FC.msg = ''; FC.choosing = false; renderFilmCheck(); }
 function fcNewDraft(it) {
@@ -15692,6 +15697,8 @@ function fcTarget(it) { return FC.pick != null ? fcLogged().find(x => x.id === F
 const FC_NEW_MAIN = ['shooterJersey', 'outcome', 'shotQuality', 'contestLevel', 'catchDodge', 'trigger'];
 const FC_NEW_DEF = ['defScheme', 'defender', 'offBallFault'];
 const FC_NEW_SKIP = new Set(['defender', 'offBallFault', 'trigger', 'defScheme', 'goalX']);
+// Scrimmage shots carry no goalie (same as Log Shot), so the goalie questions are left out there.
+const fcSections = () => BF_SECTIONS.filter(([sec]) => !(sec === 'goalie' && FC.context === 'Scrimmage'));
 function fcE(d) { return { outcome: d.f.outcome || null, goal: d.f.outcome === 'Goal' ? 1 : 0 }; }
 function fcFieldPick() {
   const f = FC.draft.f, txt = f.distanceYds != null ? `${f.distanceYds} yds from goal, ${f.lateralYds} yds lateral &middot; tap again to move it` : 'Tap where he shot from';
@@ -15710,11 +15717,11 @@ function fcNewCardHtml(it) {
     + (goalNeeded ? bfFieldHtml(['goalX', 'Where it went in the cage', 'goal'], e, d, null).replace('</div>', req + '</div>') : '')
     + fld('trigger', 'Trigger', 'text');
   const def = fld('defScheme', 'Defense was in', 'pills', ['Man', 'Zone']) + fld('defender', 'On-ball defender', 'jdef') + fld('offBallFault', 'Off-ball breakdown (who lost his man)', 'jdef') + bfRowsHtml(d, null);
-  const more = BF_SECTIONS.map(([sec, name]) => {
+  const more = fcSections().map(([sec, name]) => {
     const fs = BF_SHOT_FIELDS.filter(fd => fd[4] === sec && !FC_NEW_SKIP.has(fd[0]) && (!fd[5] || fd[5](e, d.f)));
     return fs.length ? `<section class="bf-box"><div class="bf-boxh">${escapeHtml(name)}</div>${fs.map(fd => bfFieldHtml(fd, e, d, null)).join('')}</section>` : '';
   }).join('');
-  return `<div class="bf-match"><div><div class="bf-big">Shot ${it.n} of ${fcPlan().nShots} <span class="bf-res fc-newtag">NOT LOGGED YET</span></div><div class="bf-sub">Saving adds it to the ${escapeHtml(FC.date)} practice.</div></div></div>
+  return `<div class="bf-match"><div><div class="bf-big">Shot ${it.n} of ${fcPlan().nShots} <span class="bf-res fc-newtag">NOT LOGGED YET</span></div><div class="bf-sub">Saving adds it to the ${escapeHtml(fcLabel(FC.key))}.</div></div></div>
     <p class="bf-hint">Type numbers, tap the rest. <b class="fc-req">*</b> = needed to save, same as Log Shot.</p>
     <section class="bf-box"><div class="bf-boxh">The shot</div>${shot}</section>
     <section class="bf-box"><div class="bf-boxh">Defense</div>${def}</section>
@@ -15728,7 +15735,7 @@ function fcMatchCardHtml(it, plan) {
   const bits = [Number(e.offDodge) === 1 ? 'Off the dodge' : 'Off the catch', e.distanceYds != null ? Math.round(e.distanceYds) + ' yds' : '', e.shotQuality ? e.shotQuality.replace(/^\d-/, '') : '', e.contestLevel ? e.contestLevel + ' contest' : '', e.trigger ? 'Trigger: ' + e.trigger : ''].filter(Boolean);
   const warn = it.d.guessGoal && e.goal !== 1 ? `<p class="bf-msg bad">ScoreBreak has a goal tag on this clip, but logged shot ${n} is ${escapeHtml(res.toLowerCase())}. Check it's the right shot.</p>` : '';
   const blankNow = fd => (BF_ALWAYS.has(fd[0]) || bfBlank(e[fd[0]])) && (!fd[5] || fd[5](e, d.f));
-  const secs = BF_SECTIONS.map(([sec, name]) => {
+  const secs = fcSections().map(([sec, name]) => {
     const fs = BF_SHOT_FIELDS.filter(fd => fd[4] === sec && blankNow(fd));
     const body = fs.map(fd => bfFieldHtml(fd, e, d, null)).join('') + (sec === 'picks' && d.picksBlank ? bfRowsHtml(d, null) : '');
     return body ? `<section class="bf-box"><div class="bf-boxh">${escapeHtml(name)}</div>${body}</section>` : '';
@@ -15754,13 +15761,13 @@ function fcDoneCardHtml(it) {
     <div class="bf-actions"><button type="button" class="btn secondary" data-fc="prev">&larr; Back</button><button type="button" class="btn" data-fc="skip">Next &rarr;</button>${st.s === 'x' ? '<button type="button" class="btn secondary" data-fc="undo">Undo</button>' : ''}</div>`;
 }
 function fcListHtml() {
-  const rows = Object.keys(FC.index).sort().reverse().map(date => {
-    const p = FC.index[date];
-    return `<tr><td>${escapeHtml(date)}</td><td>${p.shots}</td><td>${p.tos}</td><td><button type="button" class="pill" data-fc="open" data-date="${escapeHtml(date)}">Open &rarr;</button></td></tr>`;
+  const rows = Object.keys(FC.index).sort().reverse().map(key => {
+    const p = FC.index[key];
+    return `<tr><td>${escapeHtml(fcLabel(key))}</td><td>${p.shots}</td><td>${p.tos}</td><td><button type="button" class="pill" data-fc="open" data-key="${escapeHtml(key)}">Open &rarr;</button></td></tr>`;
   }).join('');
-  const pend = FC.pending ? `<div class="bf-box"><div class="bf-boxh">Ready to add</div><p>${escapeHtml(FC.pending.date)} practice: ${FC.pending.list.filter(d => d.kind === 'shot').length} shot clips, ${FC.pending.list.filter(d => d.kind === 'turnover').length} turnover clips.${FC.index[FC.pending.date] ? ' This practice is already here; adding it again replaces its clip list and keeps what was checked.' : ''}</p><div class="bf-actions"><button type="button" class="btn" data-fc="import">Add to Film Check</button><button type="button" class="btn secondary" data-fc="cancelimport">Cancel</button></div></div>` : '';
+  const pend = FC.pending ? `<div class="bf-box"><div class="bf-boxh">Ready to add</div><p>${escapeHtml(fcLabel(FC.pending.key))}: ${FC.pending.list.filter(d => d.kind === 'shot').length} shot clips, ${FC.pending.list.filter(d => d.kind === 'turnover').length} turnover clips.${FC.index[FC.pending.key] ? ' This session is already here; adding it again replaces its clip list and keeps what was checked.' : ''}</p><div class="bf-actions"><button type="button" class="btn" data-fc="import">Add to Film Check</button><button type="button" class="btn secondary" data-fc="cancelimport">Cancel</button></div></div>` : '';
   return `<div class="panel"><p class="panel-title">Film Check</p><p class="panel-sub">Each shot and turnover from practice film, with its clip from your Drive. Check or fill in each one; nothing goes into the stats until you save it. Clips play only for someone signed in to the Google account the clips are in.</p>
-    ${rows ? `<div class="table-wrap"><table class="shotlog"><thead><tr><th>Practice</th><th>Shot clips</th><th>Turnover clips</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>` : '<p class="n-note">No practices yet.</p>'}
+    ${rows ? `<div class="table-wrap"><table class="shotlog"><thead><tr><th>Session</th><th>Shot clips</th><th>Turnover clips</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>` : '<p class="n-note">No practices yet.</p>'}
     <p style="margin-top:12px;"><label class="btn secondary" style="display:inline-block;">Add practice film (filmcheck_&lt;date&gt;.json)<input type="file" accept=".json,application/json" data-fc-file="1" hidden></label></p>${pend}
     ${FC.msg ? `<p class="bf-msg${/could|isn|n’t|failed/i.test(FC.msg) ? ' bad' : ''}">${escapeHtml(FC.msg)}</p>` : ''}</div>`;
 }
@@ -15777,7 +15784,7 @@ function renderFilmCheck() {
   const strip = plan.items.map((x, i) => `<button type="button" class="bf-chip ${x.st ? (x.st.s === 'x' ? 'fc-x' : 'done') : x.d.kind === 'turnover' ? 'fc-to' : x.offer ? 'part' : 'fc-new'}${i === FC.idx ? ' cur' : ''}" data-fc="go" data-i="${i}" title="${x.d.kind === 'shot' ? 'Shot ' + x.n : 'Turnover ' + x.n} · film ${fcClock(x.d.t)}">${x.d.kind === 'shot' ? x.n : 'TO'}</button>`).join('');
   const src = `https://drive.google.com/file/d/${encodeURIComponent(it.d.fileId)}/preview${FC.account ? '?authuser=' + encodeURIComponent(FC.account) : ''}`;
   const card = it.st ? fcDoneCardHtml(it) : it.d.kind === 'turnover' ? fcTurnoverCardHtml(it) : FC.mode === 'new' ? fcNewCardHtml(it) : fcMatchCardHtml(it, plan);
-  const head = `<div class="bf-top"><button type="button" class="pill" data-fc="list">&larr; Practices</button><b>${escapeHtml(FC.date)} practice &middot; Film Check</b><span class="n-note">${done} of ${plan.items.length} checked &middot; ${plan.logged.length} shots logged</span></div>
+  const head = `<div class="bf-top"><button type="button" class="pill" data-fc="list">&larr; Practices</button><b>${escapeHtml(fcLabel(FC.key))} &middot; Film Check</b><span class="n-note">${done} of ${plan.items.length} checked &middot; ${plan.logged.length} shots logged</span></div>
     <div class="n-note fc-legend"><span class="bf-chip part"></span>offered a logged shot <span class="bf-chip fc-new"></span>no logged shot left <span class="bf-chip fc-to"></span>turnover <span class="bf-chip done"></span>checked <span class="bf-chip fc-x"></span>not a shot</div>
     <div class="bf-strip">${strip}</div>`;
   const meta = `<div class="fc-meta"><span>Clip starts at the possession start</span><span>${it.d.kind === 'shot' ? 'Shot' : 'Turnover tag'} at about <b>${fcClock(it.d.inClip)}</b> of ${fcClock(it.d.len)}</span><span>Film time <b>${fcClock(it.d.t)}</b></span></div>`;
@@ -15821,7 +15828,7 @@ function fcNewShot(d, film) {
   if (f.distanceYds == null) return { why: 'Tap the field where he shot from.' };
   if ((f.outcome === 'Goal' || f.outcome === 'Saved') && f.goalX == null) return { why: 'Tap where it went in the cage.' };
   const derived = OUTCOME_DERIVED[f.outcome];
-  const base = { id: nextShotId(), date: FC.date, practiceId: null, context: 'Practice', shooterJersey: null, goalieJersey: null,
+  const base = { id: nextShotId(), date: FC.date, practiceId: null, context: FC.context, shooterJersey: null, goalieJersey: null,
     onGoal: derived.onGoal, onKeeper: derived.onKeeper, goal: derived.goal, blocked: derived.blocked, outcome: f.outcome,
     defScheme: null, transition: null, offDodge: f.catchDodge === 'Off the Dodge' ? 1 : 0, rightHanded: null, shotQuality: null, cleanSave: 0,
     fieldX: null, fieldY: null, distanceYds: f.distanceYds, lateralYds: f.lateralYds, goalX: null, goalY: null, customTags: null, contestLevel: null,
@@ -15847,7 +15854,7 @@ async function fcSave() {
     if (!d.f.turnoverBy) { FC.msg = 'Type who turned it over (or Not a turnover).'; renderFilmCheck(); return; }
     // Goes after the last checked shot before it on film, so Backfill shows it in the right spot.
     const prev = plan.items.slice(0, FC.idx).reverse().find(x => x.d.kind === 'shot' && x.st && (x.st.s === 'm' || x.st.s === 'n'));
-    const base = { id: nextPossId(), date: FC.date, context: 'Practice', opponent: null, team: 'WLU', possStart: null, possStartJersey: null, dominoes: null, advCreator: null, advType: null, manSituation: 'Even', afterShot: prev ? prev.st.id : null };
+    const base = { id: nextPossId(), date: FC.date, context: FC.context, opponent: null, team: 'WLU', possStart: null, possStartJersey: null, dominoes: null, advCreator: null, advType: null, manSituation: 'Even', afterShot: prev ? prev.st.id : null };
     const out = bfApply(base, d); out.filmTime = film;
     // Like Backfill: the number is claimed in a transaction and can move up if someone else just took it, so read it after.
     FC.busy = true; res = await persistNewPossession(out); FC.busy = false;
@@ -15864,7 +15871,8 @@ async function fcSave() {
     const out = bfApply(e, d); out.filmTime = film;
     FC.busy = true; res = await persistShot(out); FC.busy = false;
     val = { s: 'm', id: e.id };
-    try { await DB.doc('app/backfill_' + fcSeason()).set({ [bfKey(fcSid(), 'shot', e.id)]: dpWho() + ' ' + new Date().toISOString().slice(0, 10) }, { merge: true }); } catch (err) { console.error('backfill mark', err); }
+    // Backfill walks practices only, so only a practice shot gets its reviewed mark there.
+    if (FC.context === 'Practice') try { await DB.doc('app/backfill_' + fcSeason()).set({ [bfKey(fcSid(), 'shot', e.id)]: dpWho() + ' ' + new Date().toISOString().slice(0, 10) }, { merge: true }); } catch (err) { console.error('backfill mark', err); }
   }
   if (res === 'error') { FC.msg = 'Save failed — please try again.'; renderFilmCheck(); return; }
   FC.st[it.d.id] = Object.assign({ by: dpWho(), at: new Date().toISOString().slice(0, 10) }, val);   // shows right away; the snapshot confirms
@@ -15880,7 +15888,10 @@ async function fcImportFile(file) {
     const data = JSON.parse(await file.text());
     const list = fcValidDrafts(data && data.drafts);
     if (!data || !FC_DATE.test(data.practice || '') || !list) throw new Error('bad');
-    FC.pending = { date: data.practice, list, raw: data.drafts, account: typeof data.account === 'string' ? cleanText(data.account) : null, film: typeof data.film === 'string' ? cleanText(data.film).slice(0, 120) : null };
+    if (data.context != null && data.context !== 'Practice' && data.context !== 'Scrimmage') throw new Error('bad');
+    const key = data.practice + (data.context === 'Scrimmage' ? '-scrimmage' : '');
+    if (data.key != null && data.key !== key) throw new Error('bad');
+    FC.pending = { key, date: data.practice, list, raw: data.drafts, account: typeof data.account === 'string' ? cleanText(data.account) : null, film: typeof data.film === 'string' ? cleanText(data.film).slice(0, 120) : null };
   } catch (e) { FC.msg = 'That file isn’t a Film Check clip list (filmcheck_<date>.json from the Mac tool).'; }
   renderFilmCheck();
 }
@@ -15888,11 +15899,11 @@ async function fcImport() {
   const p = FC.pending; if (!p || !DB) return;
   const drafts = p.raw.map(d => cleanDeep(d)).filter(d => p.list.some(x => x.id === d.id));
   const batch = DB.batch();
-  batch.set(DB.doc('app/filmcheck_' + p.date), { drafts: JSON.stringify(drafts), account: p.account, film: p.film, by: dpWho(), at: new Date().toISOString() }, { merge: true });
-  batch.set(DB.doc('app/filmcheck_index'), { ['p_' + p.date]: JSON.stringify({ shots: p.list.filter(d => d.kind === 'shot').length, tos: p.list.filter(d => d.kind === 'turnover').length }) }, { merge: true });
+  batch.set(DB.doc('app/filmcheck_' + p.key), { drafts: JSON.stringify(drafts), account: p.account, film: p.film, by: dpWho(), at: new Date().toISOString() }, { merge: true });
+  batch.set(DB.doc('app/filmcheck_index'), { ['p_' + p.key]: JSON.stringify({ shots: p.list.filter(d => d.kind === 'shot').length, tos: p.list.filter(d => d.kind === 'turnover').length }) }, { merge: true });
   const res = await settleWrite(batch.commit());
   if (res === 'error') { FC.msg = 'Could not add it — please try again.'; renderFilmCheck(); return; }
-  FC.pending = null; FC.msg = `Added the ${p.date} practice.`;
+  FC.pending = null; FC.msg = `Added the ${fcLabel(p.key)}.`;
   renderFilmCheck();
 }
 function fcInit() {
@@ -15901,8 +15912,8 @@ function fcInit() {
   wrap.addEventListener('click', ev => {
     const b = ev.target.closest('[data-fc], [data-bf]'); if (!b) return;
     const a = b.dataset.fc;
-    if (a === 'open') { fcOpen(b.dataset.date); renderFilmCheck(); window.scrollTo(0, 0); return; }
-    if (a === 'list') { if (FC.unsub) { FC.unsub(); FC.unsub = null; } FC.date = null; FC.msg = ''; renderFilmCheck(); return; }
+    if (a === 'open') { fcOpen(b.dataset.key); renderFilmCheck(); window.scrollTo(0, 0); return; }
+    if (a === 'list') { if (FC.unsub) { FC.unsub(); FC.unsub = null; } FC.key = null; FC.date = null; FC.msg = ''; renderFilmCheck(); return; }
     if (a === 'import') { fcImport(); return; }
     if (a === 'cancelimport') { FC.pending = null; renderFilmCheck(); return; }
     if (a === 'go') { fcGo(Number(b.dataset.i)); return; }
