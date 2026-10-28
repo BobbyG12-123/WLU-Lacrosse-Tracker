@@ -13914,6 +13914,7 @@ function navSetGlobal(season, ctx) {
   if (season) NAV_ST.season = season; if (ctx) NAV_ST.ctx = ctx;
   navSave();
   const p = NAV_PAGES[NAV_ST.cur]; NAV_ST.notes = p ? navApplyFilters(p.view) : [];
+  if (window.__appReady) renderFallSpring(heatSeason);   // it reads Sessions directly, so redraw it here
   drawNav();
 }
 
