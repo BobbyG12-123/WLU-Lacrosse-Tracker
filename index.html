@@ -16035,7 +16035,7 @@ async function fcSave() {
   if (FC.editing) return fcSaveEdit(it);
   if (it.st) return;
   const film = Math.round(it.d.t * 100) / 100;
-  let res, val;
+  let res, val, corrected = false;
   if (it.d.kind === 'turnover') {
     const why = fcCheck(d, null); if (why) { FC.msg = why; renderFilmCheck(); return; }
     if (!d.f.turnoverBy) { FC.msg = 'Type who turned it over (or Not a turnover).'; renderFilmCheck(); return; }
@@ -16057,15 +16057,14 @@ async function fcSave() {
     const why = fcCheck(d, e); if (why) { FC.msg = why; renderFilmCheck(); return; }
     const out = bfApply(e, d); out.filmTime = film;
     FC.busy = true; res = await persistShot(out); FC.busy = false;
-    val = { s: 'm', id: e.id, edit: !!d.edit };
+    val = { s: 'm', id: e.id }; corrected = !!d.edit;
     // Backfill walks practices only, so only a practice shot gets its reviewed mark there.
     if (FC.context === 'Practice' && it.d.kind === 'shot') try { await DB.doc('app/backfill_' + fcSeason()).set({ [bfKey(fcSid(), 'shot', e.id)]: dpWho() + ' ' + new Date().toISOString().slice(0, 10) }, { merge: true }); } catch (err) { console.error('backfill mark', err); }
   }
   if (res === 'error') { FC.msg = 'Save failed — please try again.'; renderFilmCheck(); return; }
   FC.st[it.d.id] = Object.assign({ by: dpWho(), at: new Date().toISOString().slice(0, 10) }, val);   // shows right away; the snapshot confirms
   const mark = await fcStatusWrite(it.d.id, val);
-  const opp = it.d.kind === 'oppshot' ? 'opponent ' : '', saved = val.s === 't' ? 'turnover' : val.s === 'n' ? `new ${opp}shot #${val.id}` : `${val.edit ? 'corrections to ' : ''}logged ${opp}shot #${val.id}`;
-  delete val.edit;
+  const opp = it.d.kind === 'oppshot' ? 'opponent ' : '', saved = val.s === 't' ? 'turnover' : val.s === 'n' ? `new ${opp}shot #${val.id}` : `${corrected ? 'corrections to ' : ''}logged ${opp}shot #${val.id}`;
   fcGo(FC.idx + 1);
   FC.msg = `Saved ${saved}.${res === 'queued' || mark === 'queued' ? ' (Offline — it will sync.)' : ''}${mark === 'error' ? ' The shot saved, but the checked mark didn’t; it may show as open.' : ''}`;
   renderFilmCheck();
