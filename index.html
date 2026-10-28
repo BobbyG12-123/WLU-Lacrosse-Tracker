@@ -8434,7 +8434,7 @@ function renderDefValue(season) {
     { key: 'sd', label: 'Value', type: 'num', value: r => r.sd, format: v => v === null ? '<span class="n-note">—</span>' : `<b>${sg(v, 1)}</b>`, cellStyle: gray, group: SD, title: 'Sum over his tagged reps of (V − xG) × his share. Positive = the looks he was responsible for were worse than an average possession.' },
     { key: 'sdC', label: 'Certain', type: 'num', value: r => r.repsC ? r.sdC : null, format: (v, r) => v === null ? '<span class="n-note">—</span>' : `${sg(v, 1)} <span class="n-note">(${r.repsC})</span>`, cellStyle: gray, group: SD, title: 'From reps the tags fully determine.' },
     { key: 'sdP', label: 'Provisional', type: 'num', value: r => r.repsP ? r.sdP : null, format: (v, r) => v === null ? '<span class="n-note">—</span>' : `${sg(v, 1)} <span class="n-note">(${r.repsP})</span>`, cellStyle: gray, group: SD, title: 'From reps that rest on an inferred fact: slide timing read from the contest level, beaten not logged, or only the slider known.' },
-    { key: 'reps', label: 'Tagged Reps', type: 'num', value: r => r.reps || null, group: SD },
+    { key: 'reps', label: 'Tagged Reps', type: 'num', value: r => r.reps || null, format: (v, r) => v === null ? '<span class="n-note">—</span>' : `${v}${Math.abs(r.repW - v) > 0.05 ? ` <span class="n-note">(${num(r.repW, 1)} by share)</span>` : ''}`, group: SD, title: 'Shots he was responsible for or shared. Per-rep numbers count a shared shot as his share of a rep.' },
     { key: 'nDates', label: 'Practices', type: 'num', value: r => r.reps ? r.nDates : null, group: SD, title: 'Different practice dates those reps came from.' },
     { key: 'perRep', label: 'Per Rep', type: 'num', value: r => r.perRep, format: v => sg(v, 3), cellStyle: gray, group: SD },
     { key: 'vsTeamGoals', label: 'vs Team', type: 'num', value: r => r.vsTeamGoals, format: v => v === null ? '<span class="n-note">—</span>' : `<b>${sg(v, 1)}</b>`, cellStyle: gray, group: SD, title: 'Goals better (+) or worse (−) than an average defender would have been on the same number of tagged reps.' },
@@ -8826,8 +8826,9 @@ async function runSelfCheck() {
   // 6. Supplemental defense: every possession counted once, shares add to 1, caused turnovers = count × V.
   try {
     const R = defensePartsFor(season, 'All'), T = R.T, ctSum = R.rows.reduce((a, r) => a + r.ctV, 0);
-    const ok = Math.abs(T.totalV - (T.goals - T.xg)) < 1e-6 && T.maxShareErr < 1e-9 && Math.abs(ctSum - T.ctCount * R.V) < 1e-9 && T.cert + T.prov + T.un === T.shots;
-    add('Formulas', 'Supplemental defense reconciles', ok ? 'pass' : 'fail', `${T.poss} practice possessions: defense value ${num(T.totalV, 2)} = goals − xG ${num(T.goals - T.xg, 2)}; shares on every credited shot add to 1; caused turnovers ${T.ctCount} × V = ${num(ctSum, 2)}; ${T.cert} certain + ${T.prov} provisional + ${T.un} unattributed = ${T.shots} shots.`);
+    const vsSum = R.rows.reduce((a, r) => a + (r.vsTeamGoals || 0), 0);
+    const ok = Math.abs(T.totalV - (T.goals - T.xg)) < 1e-6 && T.maxShareErr < 1e-9 && Math.abs(ctSum - T.ctCount * R.V) < 1e-9 && T.cert + T.prov + T.un === T.shots && Math.abs(vsSum) < 1e-6;
+    add('Formulas', 'Supplemental defense reconciles', ok ? 'pass' : 'fail', `${T.poss} practice possessions: defense value ${num(T.totalV, 2)} = goals − xG ${num(T.goals - T.xg, 2)}; shares on every credited shot add to 1; caused turnovers ${T.ctCount} × V = ${num(ctSum, 2)}; ${T.cert} certain + ${T.prov} provisional + ${T.un} unattributed = ${T.shots} shots; shot defense vs team adds to ${num(vsSum, 3)} over the team.`);
     if (!SHOTS.concat(POSSESSIONS).some(e => seasonForDate(e.date) === season && e.context === 'Game')) {
       const s0 = EFF_SEASON, c0 = EFF_CONTEXT, f0 = EFF_FROM; EFF_SEASON = season; EFF_CONTEXT = 'All'; EFF_FROM = null; let g;
       try { g = computeGoalsAdded(); } finally { EFF_SEASON = s0; EFF_CONTEXT = c0; EFF_FROM = f0; }
@@ -10739,7 +10740,7 @@ function defensePartsFrom(d) {
     pp.shots.forEach(s => { if (!cur) { cur = Object.assign({}, pp, { shots: [], goal: 0 }); wp.push(cur); } cur.shots.push(s); if (s.goal === 1) { cur.goal = 1; cur = null; } });
   });
   const V = wp.length ? wp.filter(p => p.goal).length / wp.length : 0;
-  const P = {}, row = j => (P[j] = P[j] || { jersey: j, ctN: 0, ctV: 0, ctSess: {}, ctDates: new Set(), sdC: 0, sdP: 0, reps: 0, repsC: 0, repsP: 0, sdSess: {}, repSess: {}, dates: new Set(), bandLo: 0, bandHi: 0, roles: { beaten: 0, lateSlide: 0, offBall: 0, blownPick: 0 } });
+  const P = {}, row = j => (P[j] = P[j] || { jersey: j, ctN: 0, ctV: 0, ctSess: {}, ctDates: new Set(), sdC: 0, sdP: 0, reps: 0, repW: 0, repsC: 0, repsP: 0, sdSess: {}, repSess: {}, dates: new Set(), bandLo: 0, bandHi: 0, roles: { beaten: 0, lateSlide: 0, offBall: 0, blownPick: 0 } });
   const T = { V, poss: wp.length, shots: 0, cert: 0, prov: 0, un: 0, tos: 0, toCaused: 0, noShot: 0, totalV: 0, attV: 0, shotAttV: 0, goals: 0, xg: 0, maxShareErr: 0, ctCount: 0 };
   const sessions = new Set(), tagSessions = new Set(), seen = {};
   const saw = (j, sid) => { if (j && !isOppJersey(j)) (seen[j] = seen[j] || new Set()).add(sid); };
@@ -10762,7 +10763,8 @@ function defensePartsFrom(d) {
       Object.entries(resp.shares).forEach(([j, w]) => {
         const r = row(j), c = v * w;
         if (cert) { r.sdC += c; r.repsC++; } else { r.sdP += c; r.repsP++; r.bandLo += Math.min(0, v); r.bandHi += Math.max(0, v); }
-        r.reps++; r.repSess[sid] = (r.repSess[sid] || 0) + 1; r.sdSess[sid] = (r.sdSess[sid] || 0) + c; r.dates.add(s.date);
+        // A shared shot is part of a rep: per-rep numbers divide by his shares, so they line up with the team's per shot.
+        r.reps++; r.repW += w; r.repSess[sid] = (r.repSess[sid] || 0) + w; r.sdSess[sid] = (r.sdSess[sid] || 0) + c; r.dates.add(s.date);
         if (resp.roles[j]) r.roles[resp.roles[j]]++;
       });
     });
@@ -10772,16 +10774,18 @@ function defensePartsFrom(d) {
   const draws = sess.length ? Array.from({ length: 1000 }, () => sess.map(() => sess[Math.floor(rnd() * sess.length)])) : [];
   const q = (a, p) => { const s = a.filter(x => x !== null).sort((x, y) => x - y); return s.length ? s[Math.floor(p * (s.length - 1))] : null; };
   // Any shot is worse for the defense than an average possession (which includes turnovers), so shot
-  // defense runs negative for everyone; "vs team" compares his per rep to the team's per tagged shot.
+  // defense runs negative for everyone and grows with reps; "vs team" compares his per rep (by share) to
+  // the team's per tagged shot. vs Team in goals = per-rep gap × his reps by share, so it adds to 0 over
+  // the team and an exactly average defender is 0 however many reps he has.
   T.teamPerRep = T.cert + T.prov ? T.shotAttV / (T.cert + T.prov) : null;
   const rows = Object.values(P).map(r => {
     const sd = r.sdC + r.sdP, apps = (seen[r.jersey] || new Set()).size;
     const perB = draws.map(pk => { let v = 0, n = 0; pk.forEach(sid => { v += r.sdSess[sid] || 0; n += r.repSess[sid] || 0; }); return n ? v / n : null; });
     const ctB = draws.map(pk => pk.reduce((a, sid) => a + (r.ctSess[sid] || 0), 0));
     return { jersey: r.jersey, ctN: r.ctN, ctV: r.ctV, ctPer: apps ? r.ctV / apps : null, ctRange: r.ctN ? [q(ctB, 0.05), q(ctB, 0.95)] : null, ctDates: r.ctDates.size, apps,
-      sd: r.reps ? sd : null, sdC: r.sdC, sdP: r.sdP, reps: r.reps, repsC: r.repsC, repsP: r.repsP, nDates: r.dates.size, perRep: r.reps ? sd / r.reps : null,
-      perRange: r.reps ? [q(perB, 0.05), q(perB, 0.95)] : null, vsTeam: r.reps && T.teamPerRep !== null ? sd / r.reps - T.teamPerRep : null,
-      vsTeamGoals: r.reps && T.teamPerRep !== null ? sd - r.reps * T.teamPerRep : null, band: r.repsP ? [r.sdC + r.bandLo, r.sdC + r.bandHi] : null, roles: r.roles, low: r.reps < DEF_MIN_REPS };
+      sd: r.reps ? sd : null, sdC: r.sdC, sdP: r.sdP, reps: r.reps, repW: r.repW, repsC: r.repsC, repsP: r.repsP, nDates: r.dates.size, perRep: r.repW ? sd / r.repW : null,
+      perRange: r.repW ? [q(perB, 0.05), q(perB, 0.95)] : null, vsTeam: r.repW && T.teamPerRep !== null ? sd / r.repW - T.teamPerRep : null,
+      vsTeamGoals: r.repW && T.teamPerRep !== null ? sd - r.repW * T.teamPerRep : null, band: r.repsP ? [r.sdC + r.bandLo, r.sdC + r.bandHi] : null, roles: r.roles, low: r.reps < DEF_MIN_REPS };
   });
   return { V, rows, T, nSess: sess.length, nTagSess: tagSessions.size };
 }
