@@ -3774,16 +3774,16 @@ function seasonForDate(dateStr) {
 // no-op (every shot ever logged), a specific year keeps only shots whose
 // date resolves to that season.
 // Fall / Spring (Bobby, Oct 28): the shooting pages can show one part of a season. A season turns over in
-// August (seasonForDate), so season 2027 = Fall (Aug 1 - Dec 31, 2026) + Spring (Jan 1 - Jul 31, 2027).
+// August (seasonForDate), so season 2027 = Fall (Aug-Dec 2026) + Spring (Jan-Jul 2027). The half is decided by the
+// month, so Fall + Spring always add up to the whole season (2026 also holds a few older, spring-2025 shots).
 // Only which shots are shown changes; models (xgModelFor) are still built from the whole season.
 let SEASON_PART = 'Full';   // 'Full' | 'Fall' | 'Spring', set from the top bar
-function partRange(season, part) {
+const partOfDate = d => (d && Number(d.slice(5, 7)) >= 8) ? 'Fall' : 'Spring';
+function inPart(e, season, part) {
   part = part || SEASON_PART;
-  const y = Number(season);
-  if (part === 'Full' || !Number.isInteger(y)) return null;
-  return part === 'Fall' ? { from: `${y - 1}-08-01`, to: `${y - 1}-12-31` } : { from: `${y}-01-01`, to: `${y}-07-31` };
+  if (part === 'Full' || !Number.isInteger(Number(season))) return true;   // All Seasons: no part
+  return !!e.date && partOfDate(e.date) === part;
 }
-function inPart(e, season) { const r = partRange(season); return !r || (!!e.date && e.date >= r.from && e.date <= r.to); }
 // The part applies on the shooting pages only (Offense player pages, Efficiency); switchTab keeps this current.
 // Depth chart, reports, the brief and profiles compute on their own pages and keep the whole season.
 let PART_PAGE_ON = false;
@@ -8318,16 +8318,16 @@ function renderFallSpring(season) {
   if (!panel || !wrap) return;
   if (!isAdvSeason(season)) { panel.style.display = 'none'; return; }
   panel.style.display = '';
-  const ctx = (typeof NAV_ST !== 'undefined' && NAV_ST.ctx) || 'All', fall = partRange(season, 'Fall'), spring = partRange(season, 'Spring');
-  const model = xgModelFor(season), within = (x, r) => !!x.date && x.date >= r.from && x.date <= r.to;
+  const ctx = (typeof NAV_ST !== 'undefined' && NAV_ST.ctx) || 'All';
+  const model = xgModelFor(season);
   const shots = advShots(season).filter(x => x.shooterJersey && (ctx === 'All' || x.context === ctx));
   const by = {};
-  shots.forEach(x => { const h = within(x, fall) ? 'f' : within(x, spring) ? 's' : null; if (h) (by[x.shooterJersey] = by[x.shooterJersey] || { f: [], s: [] })[h].push(x); });
+  shots.forEach(x => { if (!x.date) return; const h = partOfDate(x.date) === 'Fall' ? 'f' : 's'; (by[x.shooterJersey] = by[x.shooterJersey] || { f: [], s: [] })[h].push(x); });
   const st = l => {
     const n = l.length, g = l.filter(x => x.goal === 1).length, graded = l.filter(x => x.shotQuality);
     return { n, sh: n ? g / n : null, cage: n ? l.filter(x => x.onKeeper === 1).length / n : null, gold: graded.length ? graded.filter(x => x.shotQuality === '1-Gold').length / graded.length : null, fin: n ? (g - xgSum(l, model)) / n * 100 : null };
   };
-  const nF = shots.filter(x => within(x, fall)).length, nS = shots.filter(x => within(x, spring)).length;
+  const nF = shots.filter(x => x.date && partOfDate(x.date) === 'Fall').length, nS = shots.filter(x => x.date && partOfDate(x.date) === 'Spring').length;
   const rows = Object.keys(by).map(j => ({ j, name: nameFor(j, season) || '', f: st(by[j].f), s: st(by[j].s) }))
     .filter(r => r.f.n >= FS_MIN_SHOTS && r.s.n >= FS_MIN_SHOTS && (!PLAYER_MODE || pmHas(r.name)));
   const d = (a, b) => (a === null || b === null) ? null : b - a;
