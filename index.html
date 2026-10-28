@@ -1599,6 +1599,9 @@
     </div>
     <div class="subpage" data-label="Summary">
     <div class="panel">
+      <div class="controls-row" style="margin-bottom:8px;">
+        <div class="control-group"><label>Shots from</label><div class="pill-row" id="goalieSumContextPills"></div></div>
+      </div>
       <p class="panel-title">Goalie Summary</p>
       <p class="panel-sub" id="goalieSummaryNote">Faced = shots where OnKeeper = 1.</p>
       <div class="model-note" id="goalieXgNote" style="display:none;"></div>
@@ -6386,9 +6389,9 @@ function renderGoalieSummary() {
     return;
   }
 
-  // 2027 and later: tiered breakdown + GSAx, live as new shots are logged.
+  // 2027 and later: tiered breakdown + GSAx, live as new shots are logged. "Shots from" picks practice / scrimmage / game.
   const season = goalieHeatSeason;
-  const shots = goalieShotsForSeason(season);
+  const shots = goalieShotsForSeason(season).filter(s => goalieSumContext === 'All' || s.context === goalieSumContext);
   const missed = goalieMissedBy(shots);
   const facedTotal = shots.filter(s => s.onKeeper === 1 && s.goalieJersey).length;
   if (noteEl) noteEl.textContent = `Faced = ${season} shots where OnKeeper = 1 (${facedTotal} so far). Save % by tier shows whether a goalie is stopping the shots he should and stealing the ones he shouldn't.`;
@@ -9744,7 +9747,7 @@ function renderGoalieAdvanced() {
   const faced = goalieAdvShots(season);
   const team = saveStats(faced, model);
   const { byG, rows } = goalieAdvRows(faced, model, season, team);
-  document.getElementById('goalieAdvSub').textContent = `${season} ${goalieAdvContext === 'All' ? 'practice + game' : goalieAdvContext.toLowerCase()} shots on cage with a WLU goalie in net (${faced.length}). In games these are the opponent shots you log. Team save % ${pct(team.svPct)} vs ${pct(team.xSvPct)} expected.`;
+  document.getElementById('goalieAdvSub').textContent = `${season} ${goalieAdvContext === 'All' ? 'practice + scrimmage + game' : goalieAdvContext.toLowerCase()} shots on cage with a WLU goalie in net (${faced.length}). In games these are the opponent shots you log. Team save % ${pct(team.svPct)} vs ${pct(team.xSvPct)} expected.`;
   const small = (n, min) => n < min ? 'color:var(--muted); font-style:italic;' : '';
   const svCell = (nKey) => (v, r) => v === null ? '—' : `${pct(v)} <span class="n-note">(${r[nKey]})</span>`;
   renderSortableTable('goalieAdvWrap', [
@@ -9831,7 +9834,14 @@ setupPillGroup('goalieSitTypePills', ['All', 'Goal zone', 'Height', 'Mechanism',
   if (!v) setPillGroupValue('goalieSitTypePills', 'All');
   renderGoalieAdvanced();
 });
-setupPillGroup('goalieAdvContextPills', ['All', 'Practice', 'Game'], 'All', v => {
+// Goalie Summary's own "Shots from" (2027+; the 2026 table stays as it was).
+let goalieSumContext = 'All';
+setupPillGroup('goalieSumContextPills', ['All', 'Practice', 'Scrimmage', 'Game'], 'All', v => {
+  goalieSumContext = v || 'All';
+  if (!v) setPillGroupValue('goalieSumContextPills', 'All');
+  renderGoalieSummary();
+});
+setupPillGroup('goalieAdvContextPills', ['All', 'Practice', 'Scrimmage', 'Game'], 'All', v => {
   goalieAdvContext = v || 'All';
   if (!v) setPillGroupValue('goalieAdvContextPills', 'All');
   renderGoalieAdvanced();
@@ -13782,7 +13792,7 @@ const NAV_OLD = { logView: 'Log Shot', playerView: 'Player Heat Maps', goalieVie
 // Each view's own season / session pill groups, driven by the global control.
 // s = any season, a = 2027+ only, c = sessions, sel = heat-map filter select.
 const NAV_FILTERS = {
-  playerView: { s: 'playerSeasonPills', sel: 'pf_context' }, goalieView: { s: 'goalieSeasonPills', c: 'goalieAdvContextPills', sel: 'gf_context' },
+  playerView: { s: 'playerSeasonPills', sel: 'pf_context' }, goalieView: { s: 'goalieSeasonPills', c: ['goalieSumContextPills', 'goalieAdvContextPills'], sel: 'gf_context' },
   faceoffView: { s: 'faceoffSeasonPills' }, compareView: { s: 'cpSeasonPills' }, opponentView: { s: 'oppSeasonPills' },
   efficiencyView: { a: 'effSeasonPills', c: 'effContextPills' }, defenseView: { a: 'defSeasonPills', c: 'defContextPills' },
   depthView: { a: 'depthSeasonPills' }, healthView: { a: 'healthSeasonPills' },
@@ -13825,7 +13835,7 @@ function navApplyFilters(viewId) {
   const season = NAV_ST.season, ctx = NAV_ST.ctx;
   if (f.s) navPick(f.s, season);
   if (f.a) { const t = ADV_SEASONS.includes(season) ? season : currentAdvSeason(); navPick(f.a, t); if (t !== season) notes.push(`This page starts in ${ADV_FIRST_SEASON} — showing ${t}.`); }
-  if (f.c) { const opts = [...document.querySelectorAll('#' + f.c + ' .pill')].map(b => b.textContent), t = opts.includes(ctx) ? ctx : 'All'; navPick(f.c, t); if (t !== ctx) notes.push(`No ${ctx.toLowerCase()} split on this page — showing all sessions.`); }
+  [].concat(f.c || []).forEach(c => { const opts = [...document.querySelectorAll('#' + c + ' .pill')].map(b => b.textContent), t = opts.includes(ctx) ? ctx : 'All'; navPick(c, t); if (t !== ctx) notes.push(`No ${ctx.toLowerCase()} split on this page — showing all sessions.`); });
   if (f.sel) { const sel = document.getElementById(f.sel), want = ctx === 'All' ? '' : ctx; if (sel && sel.value !== want && [...sel.options].some(o => o.value === want)) { sel.value = want; sel.dispatchEvent(new Event('change')); } }
   return notes;
 }
