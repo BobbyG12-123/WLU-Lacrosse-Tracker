@@ -15640,6 +15640,8 @@ function fcValidDrafts(list) {
 const fcClock = s => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
 const fcSid = () => sessionIdFor({ date: FC.date, context: 'Practice' });
 const fcSeason = () => seasonForDate(FC.date);
+// A number or a name typed in a player box, like Backfill (bfResolve), for this practice's season.
+function fcResolve(text) { const v = normJerseyText(text), season = fcSeason(); if (!v) return {}; if (validJerseyText(v)) return (ROSTERS[season] || []).some(r => r.jersey === v) ? { j: v } : { why: `#${v} isn’t on the ${season} roster` }; return jerseyFromName(v, season); }
 const fcNm = j => j ? `#${escapeHtml(j)} ${escapeHtml(lastNameOf(nameFor(j, fcSeason()) || ''))}` : '';
 // Logged WLU shots for the practice in logged order (same order Backfill walks).
 function fcLogged() { const s = LIVE_SESSIONS[fcSid()]; return s ? (s.shots || []).filter(x => x.team !== 'OPP').slice().sort((a, b) => a.id - b.id) : []; }
@@ -15794,7 +15796,7 @@ function renderFilmCheck() {
 // Same checks as the Log page / Backfill before anything is written.
 function fcCheck(d, e) {
   const badF = Object.keys(d.ftxt || {}).find(k => normJerseyText(d.ftxt[k]) && !d.f[k]);
-  if (badF) return `#${normJerseyText(d.ftxt[badF])} isn’t on the roster; fix it or clear the box.`;
+  if (badF) return `${(fcResolve(d.ftxt[badF]).why || 'A player box isn’t a player').replace(/\.$/, '')}: fix it or clear the box.`;
   const def = d.f.defender || (e && e.defender), slide = d.f.slideDefender || (e && e.slideDefender), off = d.f.offBallFault || (e && e.offBallFault);
   if (d.f.defender && d.f.defender === slide) return 'The slide defender can’t be the on-ball defender.';
   if (d.f.slideDefender && d.f.slideDefender === def) return 'The slide defender can’t be the on-ball defender.';
@@ -15804,7 +15806,7 @@ function fcCheck(d, e) {
   if (shooter && ['defender', 'slideDefender', 'offBallFault'].some(k => d.f[k] === shooter)) return 'The shooter can’t also be a defender on his own shot.';
   if (d.f.turnoverBy && d.f.turnoverBy === d.f.causedBy) return 'The player who turned it over can’t be the one who caused it.';
   if (d.scr === 'Yes' && d.rows.some(r => (r.s || r.u) && !r.adv)) return 'Screens: tap Advantage Yes or No on every screen.';
-  if (d.scr === 'Yes' && d.rows.some(r => (r.sTxt && !r.s) || (r.uTxt && !r.u))) return 'Screens: a jersey number isn’t on the roster.';
+  if (d.scr === 'Yes' && d.rows.some(r => (r.sTxt && r.sTxt.trim() && !r.s) || (r.uTxt && r.uTxt.trim() && !r.u))) return 'Screens: a player box isn’t a player on the roster.';
   const same = d.rows.findIndex(r => r.s && r.s === r.u);
   if (same >= 0) return `Screen ${same + 1}: the screener and the player who used it can’t be the same.`;
   return null;
@@ -15845,16 +15847,16 @@ async function fcSave() {
     if (!d.f.turnoverBy) { FC.msg = 'Type who turned it over (or Not a turnover).'; renderFilmCheck(); return; }
     // Goes after the last checked shot before it on film, so Backfill shows it in the right spot.
     const prev = plan.items.slice(0, FC.idx).reverse().find(x => x.d.kind === 'shot' && x.st && (x.st.s === 'm' || x.st.s === 'n'));
-    const id = nextPossId();
-    const base = { id, date: FC.date, context: 'Practice', opponent: null, team: 'WLU', possStart: null, possStartJersey: null, dominoes: null, advCreator: null, advType: null, manSituation: 'Even', afterShot: prev ? prev.st.id : null };
+    const base = { id: nextPossId(), date: FC.date, context: 'Practice', opponent: null, team: 'WLU', possStart: null, possStartJersey: null, dominoes: null, advCreator: null, advType: null, manSituation: 'Even', afterShot: prev ? prev.st.id : null };
     const out = bfApply(base, d); out.filmTime = film;
-    FC.busy = true; res = await persistPossession(out); FC.busy = false;
-    val = { s: 't', id };
+    // Like Backfill: the number is claimed in a transaction and can move up if someone else just took it, so read it after.
+    FC.busy = true; res = await persistNewPossession(out); FC.busy = false;
+    val = { s: 't', id: out.id };
   } else if (FC.mode === 'new') {
     const why = fcCheck(d, null); if (why) { FC.msg = why; renderFilmCheck(); return; }
     const r = fcNewShot(d, film); if (r.why) { FC.msg = r.why; renderFilmCheck(); return; }
-    FC.busy = true; res = await persistShot(r.shot); FC.busy = false;
-    val = { s: 'n', id: r.shot.id };
+    FC.busy = true; res = await persistNewShot(r.shot); FC.busy = false;
+    val = { s: 'n', id: r.shot.id };   // read after the save: the transaction may have moved the number up
   } else {
     const e = fcTarget(it); if (!e) return;
     if (plan.used.has(e.id)) { FC.msg = 'That logged shot is already matched to another clip.'; renderFilmCheck(); return; }
@@ -15931,12 +15933,12 @@ function fcInit() {
   });
   wrap.addEventListener('input', ev => {
     if (!FC.draft) return;
-    const season = fcSeason(), onRoster = v => v && (ROSTERS[season] || []).some(x => x.jersey === v);
-    const readout = (v, ok) => !v ? '' : ok ? `#${v} ${nameFor(v, season) || ''}` : `#${v} isn’t on the ${season} roster`;
+    // Number or name, resolved like Backfill; only a real player is stored.
+    const season = fcSeason(), readout = (txt, m) => !txt.trim() ? '' : m.j ? `#${m.j} ${nameFor(m.j, season) || ''}` : m.why;
     const j = ev.target.closest('[data-bf-j]');
-    if (j) { const k = j.dataset.bfJ, v = normJerseyText(j.value), ok = onRoster(v); FC.draft.ftxt = FC.draft.ftxt || {}; FC.draft.ftxt[k] = j.value; FC.draft.f[k] = ok ? v : null; const ro = wrap.querySelector(`[data-bf-ro="f_${k}"]`); if (ro) ro.textContent = readout(v, ok); return; }
+    if (j) { const k = j.dataset.bfJ, m = fcResolve(j.value); FC.draft.ftxt = FC.draft.ftxt || {}; FC.draft.ftxt[k] = j.value; FC.draft.f[k] = m.j || null; const ro = wrap.querySelector(`[data-bf-ro="f_${k}"]`); if (ro) ro.textContent = readout(j.value, m); return; }
     const rw = ev.target.closest('[data-bf-row]');
-    if (rw) { const row = FC.draft.rows[Number(rw.dataset.r)], k = rw.dataset.bfRow, v = normJerseyText(rw.value), ok = onRoster(v); row[k + 'Txt'] = rw.value; row[k] = ok ? v : null; const ro = wrap.querySelector(`[data-bf-ro="${k}${rw.dataset.r}"]`); if (ro) ro.textContent = readout(v, ok); return; }
+    if (rw) { const row = FC.draft.rows[Number(rw.dataset.r)], k = rw.dataset.bfRow, m = fcResolve(rw.value); row[k + 'Txt'] = rw.value; row[k] = m.j || null; const ro = wrap.querySelector(`[data-bf-ro="${k}${rw.dataset.r}"]`); if (ro) ro.textContent = readout(rw.value, m); return; }
     const tx = ev.target.closest('[data-bf-text]');
     if (tx) FC.draft.f[tx.dataset.bfText] = cleanText(tx.value).trim().slice(0, 60) || null;
   });
