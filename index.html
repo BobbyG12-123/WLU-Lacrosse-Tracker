@@ -8417,7 +8417,7 @@ function renderDefValue(season) {
   const wrap = document.getElementById('defValueWrap'), sub = document.getElementById('defValueSub'); if (!wrap || !sub) return;
   if (defContext === 'Game') { sub.innerHTML = 'Caused-turnover value and shot defense come from practice possessions (our offense against our defense). Games aren&rsquo;t included yet.'; wrap.innerHTML = ''; return; }
   const R = defensePartsFor(season, defContext);
-  sub.innerHTML = `<b>Caused turnovers</b>: +${num(R.V, 3)} goals each, an average possession ended. <b>Shot defense</b>: the looks he was responsible for allowing against an average possession (positive = held the offense below it), from the defensive tags; the goalie&rsquo;s saves aren&rsquo;t in it. `
+  sub.innerHTML = `<b>Caused turnovers</b>: +${num(R.V, 3)} goals each, an average possession ended. <b>Shot defense</b>: the looks he was responsible for allowing against an average possession, from the defensive tags; the goalie&rsquo;s saves aren&rsquo;t in it. Any shot is worse for the defense than an average possession (which includes turnovers), so this runs negative for everyone: compare <b>vs Team / Rep</b> (0 = average on the shots he was responsible for). `
     + defCoverageHtml(R) + ` <span class="n-note"><b>Sampling range</b>: how much the number moves with a different set of practices. <b>Attribution band</b>: how much it rests on provisional calls (each counted as 0% or 100% his). Grayed = under ${DEF_MIN_REPS} tagged reps.</span>`;
   const sg = (v, dd) => v === null || v === undefined || !isFinite(v) ? '—' : (v >= 0 ? '+' : '') + v.toFixed(dd);
   const rng = (a, dd) => a && a[0] !== null ? `<span style="white-space:nowrap;">${sg(a[0], dd)} to ${sg(a[1], dd)}</span>` : '<span class="n-note">—</span>';
@@ -8437,6 +8437,7 @@ function renderDefValue(season) {
     { key: 'reps', label: 'Tagged Reps', type: 'num', value: r => r.reps || null, group: SD },
     { key: 'nDates', label: 'Practices', type: 'num', value: r => r.reps ? r.nDates : null, group: SD, title: 'Different practice dates those reps came from.' },
     { key: 'perRep', label: 'Per Rep', type: 'num', value: r => r.perRep, format: v => sg(v, 3), cellStyle: gray, group: SD },
+    { key: 'vsTeam', label: 'vs Team / Rep', type: 'num', value: r => r.vsTeam, format: v => v === null ? '<span class="n-note">—</span>' : `<b>${sg(v, 3)}</b>`, cellStyle: gray, group: SD, title: `Per rep minus the team’s ${R.T.teamPerRep === null ? '' : sg(R.T.teamPerRep, 3) + ' '}per tagged shot. 0 = an average defender on the shots he was responsible for; positive = better.` },
     { key: 'perRange', label: '90% Sampling Range', type: 'text', value: r => r.perRange, format: v => rng(v, 3), sortable: false, cellStyle: gray, group: SD, title: 'Per rep with a different set of practices (statistical noise).' },
     { key: 'band', label: 'Attribution Band', type: 'text', value: r => r.band, format: v => rng(v, 1), sortable: false, cellStyle: gray, group: SD, title: 'Shot-defense value if every provisional call were 0% or 100% his (how much it rests on unverified calls; separate from the sampling range).' },
   ].concat(DEF_ROLES.map(([k, l]) => ({ key: 'role_' + k, label: l, type: 'num', value: r => r.roles[k] || null, group: BR }))),
@@ -10738,7 +10739,7 @@ function defensePartsFrom(d) {
   });
   const V = wp.length ? wp.filter(p => p.goal).length / wp.length : 0;
   const P = {}, row = j => (P[j] = P[j] || { jersey: j, ctN: 0, ctV: 0, ctSess: {}, ctDates: new Set(), sdC: 0, sdP: 0, reps: 0, repsC: 0, repsP: 0, sdSess: {}, repSess: {}, dates: new Set(), bandLo: 0, bandHi: 0, roles: { beaten: 0, lateSlide: 0, offBall: 0, blownPick: 0 } });
-  const T = { V, poss: wp.length, shots: 0, cert: 0, prov: 0, un: 0, tos: 0, toCaused: 0, noShot: 0, totalV: 0, attV: 0, goals: 0, xg: 0, maxShareErr: 0, ctCount: 0 };
+  const T = { V, poss: wp.length, shots: 0, cert: 0, prov: 0, un: 0, tos: 0, toCaused: 0, noShot: 0, totalV: 0, attV: 0, shotAttV: 0, goals: 0, xg: 0, maxShareErr: 0, ctCount: 0 };
   const sessions = new Set(), tagSessions = new Set(), seen = {};
   const saw = (j, sid) => { if (j && !isOppJersey(j)) (seen[j] = seen[j] || new Set()).add(sid); };
   wp.forEach(pp => {
@@ -10755,7 +10756,7 @@ function defensePartsFrom(d) {
       const xg = d.xgOf(s), v = (i === 0 ? V : 0) - xg; T.shots++; T.totalV += v; T.xg += xg;
       const resp = defResponsibility(s);
       if (!resp) { T.un++; return; }
-      const cert = resp.status === 'certain'; T[cert ? 'cert' : 'prov']++; T.attV += v; tagSessions.add(sid);
+      const cert = resp.status === 'certain'; T[cert ? 'cert' : 'prov']++; T.attV += v; T.shotAttV += v; tagSessions.add(sid);
       T.maxShareErr = Math.max(T.maxShareErr, Math.abs(Object.values(resp.shares).reduce((a, b) => a + b, 0) - 1));
       Object.entries(resp.shares).forEach(([j, w]) => {
         const r = row(j), c = v * w;
@@ -10769,13 +10770,16 @@ function defensePartsFrom(d) {
   const rnd = () => (seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648;
   const draws = sess.length ? Array.from({ length: 1000 }, () => sess.map(() => sess[Math.floor(rnd() * sess.length)])) : [];
   const q = (a, p) => { const s = a.filter(x => x !== null).sort((x, y) => x - y); return s.length ? s[Math.floor(p * (s.length - 1))] : null; };
+  // Any shot is worse for the defense than an average possession (which includes turnovers), so shot
+  // defense runs negative for everyone; "vs team" compares his per rep to the team's per tagged shot.
+  T.teamPerRep = T.cert + T.prov ? T.shotAttV / (T.cert + T.prov) : null;
   const rows = Object.values(P).map(r => {
     const sd = r.sdC + r.sdP, apps = (seen[r.jersey] || new Set()).size;
     const perB = draws.map(pk => { let v = 0, n = 0; pk.forEach(sid => { v += r.sdSess[sid] || 0; n += r.repSess[sid] || 0; }); return n ? v / n : null; });
     const ctB = draws.map(pk => pk.reduce((a, sid) => a + (r.ctSess[sid] || 0), 0));
     return { jersey: r.jersey, ctN: r.ctN, ctV: r.ctV, ctPer: apps ? r.ctV / apps : null, ctRange: r.ctN ? [q(ctB, 0.05), q(ctB, 0.95)] : null, ctDates: r.ctDates.size, apps,
       sd: r.reps ? sd : null, sdC: r.sdC, sdP: r.sdP, reps: r.reps, repsC: r.repsC, repsP: r.repsP, nDates: r.dates.size, perRep: r.reps ? sd / r.reps : null,
-      perRange: r.reps ? [q(perB, 0.05), q(perB, 0.95)] : null, band: r.repsP ? [r.sdC + r.bandLo, r.sdC + r.bandHi] : null, roles: r.roles, low: r.reps < DEF_MIN_REPS };
+      perRange: r.reps ? [q(perB, 0.05), q(perB, 0.95)] : null, vsTeam: r.reps && T.teamPerRep !== null ? sd / r.reps - T.teamPerRep : null, band: r.repsP ? [r.sdC + r.bandLo, r.sdC + r.bandHi] : null, roles: r.roles, low: r.reps < DEF_MIN_REPS };
   });
   return { V, rows, T, nSess: sess.length, nTagSess: tagSessions.size };
 }
