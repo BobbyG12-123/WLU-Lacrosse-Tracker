@@ -8418,7 +8418,7 @@ function renderDefValue(season) {
   if (defContext === 'Game') { sub.innerHTML = 'Caused-turnover value and shot defense come from practice possessions (our offense against our defense). Games aren&rsquo;t included yet.'; wrap.innerHTML = ''; return; }
   const R = defensePartsFor(season, defContext);
   sub.innerHTML = `<b>Caused turnovers</b>: +${num(R.V, 3)} goals each, an average possession ended. <b>Shot defense</b>: the looks he was responsible for allowing against an average possession, from the defensive tags; the goalie&rsquo;s saves aren&rsquo;t in it. Any shot is worse for the defense than an average possession (which includes turnovers), so the raw value runs negative for everyone and grows with reps: compare <b>vs Team</b> (goals better than an average defender on the same reps) and <b>vs Team / Rep</b>. `
-    + defCoverageHtml(R) + ` <span class="n-note"><b>Sampling range</b>: how much the number moves with a different set of practices. <b>Attribution band</b>: how much it rests on provisional calls (each counted as 0% or 100% his). Grayed = under ${DEF_MIN_REPS} tagged reps.</span>`;
+    + defCoverageHtml(R) + ` <span class="n-note"><b>Sampling range</b>: how much the number moves with a different set of practices. <b>Attribution band</b>: how much it rests on provisional calls (each counted as 0% or 100% his). Grayed = under ${DEF_MIN_REPS} tagged reps by share (a shared shot counts as his share).</span>`;
   const sg = (v, dd) => v === null || v === undefined || !isFinite(v) ? '—' : (v >= 0 ? '+' : '') + v.toFixed(dd);
   const rng = (a, dd) => a && a[0] !== null ? `<span style="white-space:nowrap;">${sg(a[0], dd)} to ${sg(a[1], dd)}</span>` : '<span class="n-note">—</span>';
   const gray = (v, r) => r.reps && r.low ? 'color:var(--muted); font-style:italic;' : '';
@@ -10708,7 +10708,7 @@ const GA_PARTS = [['adv', 'Advantage'], ['look', 'Look creation'], ['screen', 'S
 // Practice and scrimmage possessions only (our offense vs our defense); games come later.
 // Known limit: a turnover after the offense kept a missed shot counts as its own possession (only 12
 // of the first 452 turnovers say which shot they followed), so those carry a second baseline.
-const DEF_MIN_REPS = 30;   // shown from 30 tagged reps: a display minimum, not proof the number is reliable
+const DEF_MIN_REPS = 30;   // shown from 30 tagged reps by share: a display minimum, not proof the number is reliable
 const DEF_ROLES = [['beaten', 'Beaten'], ['lateSlide', 'Late slide'], ['offBall', 'Off-ball'], ['blownPick', 'Blown pick']];
 // Who is responsible for one shot: { shares: {jersey: share}, status: 'certain' | 'provisional', rule, roles }, or null.
 function defResponsibility(s) {
@@ -10785,7 +10785,7 @@ function defensePartsFrom(d) {
     return { jersey: r.jersey, ctN: r.ctN, ctV: r.ctV, ctPer: apps ? r.ctV / apps : null, ctRange: r.ctN ? [q(ctB, 0.05), q(ctB, 0.95)] : null, ctDates: r.ctDates.size, apps,
       sd: r.reps ? sd : null, sdC: r.sdC, sdP: r.sdP, reps: r.reps, repW: r.repW, repsC: r.repsC, repsP: r.repsP, nDates: r.dates.size, perRep: r.repW ? sd / r.repW : null,
       perRange: r.repW ? [q(perB, 0.05), q(perB, 0.95)] : null, vsTeam: r.repW && T.teamPerRep !== null ? sd / r.repW - T.teamPerRep : null,
-      vsTeamGoals: r.repW && T.teamPerRep !== null ? sd - r.repW * T.teamPerRep : null, band: r.repsP ? [r.sdC + r.bandLo, r.sdC + r.bandHi] : null, roles: r.roles, low: r.reps < DEF_MIN_REPS };
+      vsTeamGoals: r.repW && T.teamPerRep !== null ? sd - r.repW * T.teamPerRep : null, band: r.repsP ? [r.sdC + r.bandLo, r.sdC + r.bandHi] : null, roles: r.roles, low: r.repW < DEF_MIN_REPS };
   });
   return { V, rows, T, nSess: sess.length, nTagSess: tagSessions.size };
 }
