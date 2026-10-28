@@ -332,6 +332,7 @@
   .bf-goal { width: min(260px, 100%); cursor: crosshair; } .bf-goal svg { width: 100%; height: auto; }
   .bf-logged { font: 12.5px var(--text); color: var(--muted); margin: 8px 0; } .bf-logged summary { cursor: pointer; } .bf-logged p { margin: 4px 0 0; line-height: 1.6; }
   .bf-done { font: 600 13px var(--text); color: var(--good); }
+  .bf-domrow { flex-wrap: wrap; } .bf-domrow .bf-domkey { width: 64px; text-transform: uppercase; }
   .bf-jin { display: flex; align-items: center; gap: 10px; } .bf-jin input { width: 80px; font: 16px var(--text); padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--card); color: var(--ink); } .bf-jin .readout { font: 500 13px var(--text); color: var(--ink); }
   .bf-scr { margin-top: 6px; } .bf-scrrow { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px; padding: 6px 0; border-top: 1px solid var(--line); }
   .bf-scrrow label { display: flex; flex-direction: column; font: 600 12px var(--text); color: var(--muted); gap: 2px; } .bf-scrrow input { width: 90px; font: 15px var(--text); padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--card); color: var(--ink); }
@@ -1206,7 +1207,7 @@
           <div class="log-card-head"><span class="step">2</span> Dominoes &amp; possession</div>
           <div class="field-grid">
             <div>
-              <label>Created Dominoes?</label>
+              <label>Created Dominoes? <span id="pDomReq" class="n-note" style="display:none;">required on a turnover &middot; Unknown = check film</span></label>
               <div class="pill-row" id="p_dominoes"></div>
             </div>
             <div id="pAdvCreatorWrap" style="display:none;">
@@ -2339,6 +2340,11 @@
       <div class="table-wrap" id="healthFieldWrap"></div>
     </div>
     <div class="panel">
+      <p class="panel-title">Dominoes: Shots vs Turnovers</p>
+      <p class="panel-sub">The four answers are kept apart: <b>Unknown</b> (couldn&rsquo;t tell, check film) and <b>blank</b> (never asked) are not No. Every stat today counts only Yes. Monitoring only: nothing changes in any stat until Bobby approves it.</p>
+      <div class="table-wrap" id="healthDomWrap"></div>
+    </div>
+    <div class="panel">
       <p class="panel-title">Coverage by Session</p>
       <p class="panel-sub">The optional fields session by session, newest first &mdash; is logging getting more complete?</p>
       <div class="table-wrap" id="healthSessionWrap"></div>
@@ -2575,6 +2581,28 @@ const POSS_COLS = ["id","date","context","opponent","team","possStart","possStar
   "afterShot",
   // Film Check: seconds into the practice film.
   "filmTime"];
+// Dominoes on a turnover (Bobby, Oct 28): every new or edited turnover needs Yes, No or Unknown
+// (couldn't tell, check film). The four states stay separate: Unknown and blank (never asked) are
+// not No. Every existing stat counts only 'Yes', so Unknown reads the same as blank everywhere.
+const DOM_TO_VALUES = ['Yes', 'No', 'Unknown'];
+const DOM_TO_MSG = 'Dominoes: pick Yes, No or Unknown (film).';
+function domState(e) { const v = e && e.dominoes; return v === 'Yes' ? 'yes' : v === 'No' ? 'no' : v === 'Unknown' ? 'unknown' : 'blank'; }
+// Why a Backfill / Film Check turnover draft can't save yet, or null.
+function domTurnoverWhy(d, e) {
+  if (!d || d.kind !== 'poss') return null;
+  const end = d.f.end || (e && e.end), dom = d.edit ? d.f.dominoes : (d.f.dominoes || (e && e.dominoes));
+  return end === 'Turnover' && !DOM_TO_VALUES.includes(dom) ? DOM_TO_MSG : null;
+}
+// Y / N / U typed in the small dominoes box sets the pills, so a turnover can be logged without the mouse.
+function domKeyInput(box, d, rerender, root) {
+  const v = { y: 'Yes', n: 'No', u: 'Unknown' }[box.value.trim().toLowerCase()];
+  box.value = '';
+  if (!v) return;
+  d.f.dominoes = v;
+  if (v !== 'Yes') { delete d.f.advCreator; delete d.f.advType; if (d.ftxt) delete d.ftxt.advCreator; }
+  rerender();
+  const next = document.querySelector(`${root} ${v === 'Yes' ? '[data-bf-j="advCreator"]' : '[data-bf-dom]'}`); if (next) next.focus();
+}
 // Shot Outcome (one required pill pick) replaces the old On Goal/On
 // Keeper/Goal Scored/Blocked checkboxes. Rather than rewriting every
 // existing analytics function that reads onGoal/onKeeper/goal/blocked
@@ -4452,12 +4480,14 @@ setupPillGroup('f_advtype', ADV_TYPE_OPTIONS, null);
 setupPillGroup('f_possstart', POSS_START_OPTIONS, null, v => toggleJerseyWrap('possStartJerseyWrap', 'f_possstart_jersey', !!v));
 setupPillGroup('f_outcome', OUTCOME_OPTIONS, null, () => updateResultFields());
 
+const pDomReqSync = end => { document.getElementById('pDomReq').style.display = end === 'Turnover' ? '' : 'none'; };
 setupPillGroup('p_end', POSS_END_OPTIONS, null, v => {
   toggleJerseyWrap('pTurnoverWrap', 'p_turnover_by', v === 'Turnover');
   toggleJerseyWrap('pCausedWrap', 'p_caused_by', v === 'Turnover');
+  pDomReqSync(v);
 });
 setupPillGroup('p_mansituation', MAN_SITUATION_OPTIONS, 'Even');
-setupPillGroup('p_dominoes', ['Yes','No'], null, v => toggleJerseyWrap('pAdvCreatorWrap', 'p_adv_creator', v === 'Yes'));
+setupPillGroup('p_dominoes', ['Yes', 'No', { value: 'Unknown', label: 'Unknown (film)' }], null, v => toggleJerseyWrap('pAdvCreatorWrap', 'p_adv_creator', v === 'Yes'));
 setupPillGroup('p_possstart', POSS_START_OPTIONS, null, v => toggleJerseyWrap('pPossStartJerseyWrap', 'p_possstart_jersey', !!v));
 setupPillGroup('p_advtype', ADV_TYPE_OPTIONS, null);
 
@@ -5370,6 +5400,7 @@ document.getElementById('submitShotBtn').addEventListener('click', async () => {
 let editingPossId = null;
 function resetPossFields() {
   ['p_end','p_dominoes','p_possstart','p_advtype'].forEach(id => setPillGroupValue(id, null));
+  pDomReqSync(null);
   setPillGroupValue('p_mansituation', 'Even');
   ['p_turnover_by','p_caused_by','p_adv_creator','p_possstart_jersey'].forEach(id => { document.getElementById(id).value = ''; });
   ['pTurnoverWrap','pCausedWrap','pAdvCreatorWrap','pPossStartJerseyWrap'].forEach(id => { document.getElementById(id).style.display = 'none'; });
@@ -5395,6 +5426,7 @@ function startEditPoss(id) {
   resetPossFields();
   const strip = j => j ? String(j).replace(/^o/, '') : '';
   setPillGroupValue('p_end', p.end || null);
+  pDomReqSync(p.end);
   toggleJerseyWrap('pTurnoverWrap', 'p_turnover_by', p.end === 'Turnover');
   toggleJerseyWrap('pCausedWrap', 'p_caused_by', p.end === 'Turnover');
   document.getElementById('p_turnover_by').value = strip(p.turnoverBy);
@@ -5432,6 +5464,7 @@ document.getElementById('submitPossBtn').addEventListener('click', async () => {
     if (!r.ok) { showMsg(what + ': ' + r.why, false); return; }
   }
   const dominoes = document.getElementById('p_dominoes').dataset.value || null;
+  if (end === 'Turnover' && !DOM_TO_VALUES.includes(dominoes)) { showMsg(DOM_TO_MSG, false); return; }
   if (dominoes === 'Yes' && !adv.value) { showMsg('Type who started the dominoes, or set Created Dominoes to No.', false); return; }
   const pk = readPickFields('p', team);
   if (!pk.ok) { showMsg(pk.why, false); return; }
@@ -8735,6 +8768,23 @@ async function runSelfCheck() {
   add('Data', 'Practices look fully logged', thin.length ? 'warn' : 'pass', thin.length ? `Fewer than 10 entries (still being logged?): ${thin.map(dt => `${dt} (${bySes[dt]})`).join(', ')}` : 'Every practice has 10+ entries.');
   const gameDates = [...new Set(S.filter(x => x.context === 'Game').map(x => x.date))], oppBy = new Set(OPP_SHOTS.filter(x => seasonForDate(x.date) === season).map(x => x.date)), noOpp = gameDates.filter(dt => !oppBy.has(dt));
   add('Data', 'Games have the other team’s shots', noOpp.length ? 'warn' : 'pass', noOpp.length ? `No opponent shots logged for ${noOpp.length} game${noOpp.length === 1 ? '' : 's'} (${noOpp.slice(0, 4).join(', ')}): goalie game stats only come from practice.` : gameDates.length ? 'Every game has them.' : `No ${season} games yet.`);
+  // 5. Dominoes: only the four answers, and Unknown counts exactly like blank in every stat.
+  try {
+    const tos = P.filter(p => p.team !== 'OPP' && p.end === 'Turnover'), c = healthDomCounts(tos);
+    const odd = POSSESSIONS.concat(allShotEntries()).filter(e => !bfBlank(e.dominoes) && !DOM_TO_VALUES.includes(e.dominoes));
+    add('Data', 'Dominoes answers are Yes, No, Unknown or blank', odd.length ? 'fail' : 'pass', `${season} turnovers: ${c.yes} Yes · ${c.no} No · ${c.unknown} Unknown · ${c.blank} never asked.${odd.length ? ' Other values on #' + odd.slice(0, 6).map(e => e.id).join(', #') : ''}`);
+    const unk = POSSESSIONS.filter(p => p.dominoes === 'Unknown');
+    if (!unk.length) add('Formulas', 'Unknown dominoes count the same as blank', 'pass', 'No Unknown answers yet.');
+    else {
+      const snap = () => { const s0 = EFF_SEASON, c0 = EFF_CONTEXT, f0 = EFF_FROM, t0 = EFF_TO, o0 = EFF_OPP; EFF_SEASON = season; EFF_CONTEXT = 'All'; EFF_FROM = null; EFF_TO = null; EFF_OPP = null;
+        try { const g = computeGoalsAdded(), d = buildEffData(), o = { V: g.V, Vadv: g.Vadv }; g.rows.forEach(r => { o['ga' + r.jersey] = r.total; }); Object.values(d.players).forEach(p => { o['dom' + p.jersey] = p.dominoes; }); return o; }
+        finally { EFF_SEASON = s0; EFF_CONTEXT = c0; EFF_FROM = f0; EFF_TO = t0; EFF_OPP = o0; } };
+      const P0 = POSSESSIONS; let a, b;
+      try { a = snap(); POSSESSIONS = P0.map(p => (p.dominoes === 'Unknown' ? Object.assign({}, p, { dominoes: null }) : p)); b = snap(); } finally { POSSESSIONS = P0; }
+      const diff = Object.keys(Object.assign({}, a, b)).filter(k => Math.abs((a[k] || 0) - (b[k] || 0)) > 1e-9);
+      add('Formulas', 'Unknown dominoes count the same as blank', diff.length ? 'fail' : 'pass', diff.length ? `Differs on ${diff.slice(0, 5).join(', ')}` : `${unk.length} Unknown answers: Goals Added and domino counts identical to blank.`);
+    }
+  } catch (e) { add('Data', 'Dominoes checks ran', 'fail', e.message); }
   // Report.
   const icon = { pass: '✓', warn: '!', fail: '✕' }, cnt = k => R.filter(r => r.status === k).length;
   out.innerHTML = `<p class="panel-sub"><b>${cnt('pass')} passed</b> · ${cnt('warn')} to look at · ${cnt('fail')} failed · ${escapeHtml(season)} · ${new Date().toLocaleString()}</p>
@@ -8742,6 +8792,25 @@ async function runSelfCheck() {
   btn.disabled = false;   // stays on Data Health so the report is visible
 }
 document.getElementById('selfCheckBtn').addEventListener('click', runSelfCheck);
+// Dominoes on shot possessions vs turnovers, by answer, and how many practices are fully answered on both.
+// The gates (90% answered on both, 8 practices, 100 answered turnovers) only flag "ready for review".
+const DOM_GATE = { share: 0.9, practices: 8, turnovers: 100 };
+function healthDomCounts(list) {
+  const c = { yes: 0, no: 0, unknown: 0, blank: 0 }; list.forEach(e => { c[domState(e)]++; });
+  return Object.assign(c, { n: list.length, obs: list.length ? (c.yes + c.no) / list.length : null });
+}
+function renderHealthDominoes(season) {
+  const wrap = document.getElementById('healthDomWrap'); if (!wrap) return;
+  const shots = advShots(season).filter(s => s.team !== 'OPP' && isNewPossessionShot(s)), tos = POSSESSIONS.filter(p => seasonForDate(p.date) === season && p.team !== 'OPP' && p.end === 'Turnover');
+  const rows = [['Shot possessions', healthDomCounts(shots)], ['Turnovers', healthDomCounts(tos)]];
+  const sess = {}; shots.forEach(x => { (sess[sessKey(x)] = sess[sessKey(x)] || { s: [], t: [] }).s.push(x); }); tos.forEach(x => { (sess[sessKey(x)] = sess[sessKey(x)] || { s: [], t: [] }).t.push(x); });
+  const ok = l => !l.length || healthDomCounts(l).obs >= DOM_GATE.share;
+  const complete = Object.values(sess).filter(x => ok(x.s) && ok(x.t)).length, tObs = rows[1][1].yes + rows[1][1].no;
+  const ready = complete >= DOM_GATE.practices && tObs >= DOM_GATE.turnovers;
+  const cell = (v, n) => `${v} <span class="n-note">${n ? Math.round(v / n * 100) + '%' : ''}</span>`;
+  wrap.innerHTML = `<table class="shotlog"><thead><tr><th></th><th>Yes</th><th>No</th><th>Unknown</th><th>Blank (never asked)</th><th>Answered (Yes or No)</th></tr></thead><tbody>${rows.map(([lab, c]) => `<tr><td><b>${lab}</b> <span class="n-note">${c.n}</span></td><td>${cell(c.yes, c.n)}</td><td>${cell(c.no, c.n)}</td><td>${cell(c.unknown, c.n)}</td><td>${cell(c.blank, c.n)}</td><td>${healthBar(c.obs)}</td></tr>`).join('')}</tbody></table>
+    <p class="n-note">Practices answered on 90%+ of both shot possessions and turnovers: <b>${complete}</b> of ${Object.keys(sess).length}. Answered turnovers: <b>${tObs}</b>. Status: <b>${ready ? 'ready for review' : 'monitoring only'}</b> (review once ${DOM_GATE.practices}+ such practices and ${DOM_GATE.turnovers}+ answered turnovers; any use still needs Bobby&rsquo;s OK).</p>`;
+}
 function renderDataHealth() {
   const wrap = document.getElementById('healthFieldWrap');
   if (!wrap) return;
@@ -8762,6 +8831,7 @@ function renderDataHealth() {
     { key: 'k', label: 'Count', type: 'num', value: r => r.k, format: (v, r) => `${v} <span class="n-note">of ${r.n}</span>` },
     { key: 'affects', label: 'What Depends on It', type: 'text', value: r => r.affects, sortable: false },
   ], rows, { dense: true, defaultSort: { key: 'p', dir: 'asc' }, emptyMsg: `No ${season} entries yet.` });
+  renderHealthDominoes(season);
   // By session.
   const SO = S.concat(OPP_SHOTS.filter(s => seasonForDate(s.date) === season));
   const sess = {};
@@ -15485,7 +15555,7 @@ const BF_POSS_FIELDS = [
   ['causedBy', 'Caused by (blank = unforced)', 'jdef', null, 'def', (e, f) => (e.end || f.end) === 'Turnover'],
   ['possStart', 'How the possession started', 'pills', POSS_START_OPTIONS, 'poss'],
   ['possStartJersey', 'Who started it', 'joff', null, 'poss', (e, f) => e.possStart || f.possStart],
-  ['dominoes', 'Were dominoes created?', 'yn', null, 'picks'],
+  ['dominoes', 'Were dominoes created? (Unknown = check film)', 'ynu', null, 'picks'],
   ['advCreator', 'Who created them', 'joff', null, 'picks', (e, f) => (e.dominoes || f.dominoes) === 'Yes'],
   ['advType', 'How', 'pills', ADV_TYPE_OPTIONS, 'picks', (e, f) => (e.dominoes || f.dominoes) === 'Yes'],
   ['manSituation', 'Man situation', 'pills', MAN_SITUATION_OPTIONS, 'poss'],
@@ -15503,7 +15573,7 @@ function bfDraftFor(item) {
 function bfApply(e, d) {
   const out = Object.assign({}, e), f = d.f || {};
   Object.keys(f).forEach(k => { if (!bfBlank(f[k]) && (d.isNew || d.edit || BF_ALWAYS.has(k) || bfBlank(e[k]))) out[k] = f[k]; else if (d.edit && bfBlank(f[k]) && !bfBlank(e[k])) out[k] = null; });
-  if (f.dominoes === 'No') { out.advCreator = null; out.advType = null; }
+  if (f.dominoes === 'No' || f.dominoes === 'Unknown') { out.advCreator = null; out.advType = null; }
   if (bfBlank(out.defender)) { out.defBeaten = e.defBeaten || null; out.beatenHow = e.beatenHow || null; }
   if (out.defBeaten !== 'Yes') out.beatenHow = e.beatenHow || null;
   if (out.end && out.end !== 'Turnover') { out.turnoverBy = null; out.causedBy = null; }
@@ -15525,6 +15595,7 @@ function bfFieldHtml(fd, e, d, item) {
   let ctl = '';
   if (kind === 'pills') ctl = bfPills(k, v, opts);
   else if (kind === 'yn') ctl = bfPills(k, v, ['Yes', 'No']);
+  else if (kind === 'ynu') ctl = `<div class="bf-jin bf-domrow">${bfPills(k, v, DOM_TO_VALUES)}<input type="text" class="bf-domkey" maxlength="1" size="5" data-bf-dom="${k}" placeholder="Y/N/U" autocomplete="off" aria-label="Dominoes: type Y, N or U"></div>`;
   else if (kind === 'jdef' || kind === 'joff' || kind === 'jg') {
     const txt = (d.ftxt || {})[k] != null ? d.ftxt[k] : (v || '');
     ctl = `<div class="bf-jin"><input type="text" maxlength="30" placeholder="# or name" autocomplete="off" data-bf-j="${k}" value="${escapeHtml(txt)}" aria-label="${escapeHtml(label)} jersey number"><span class="readout" data-bf-ro="f_${k}">${v ? `#${escapeHtml(v)} ${escapeHtml(nameFor(v, season) || '')}` : ''}</span></div>`;
@@ -15536,14 +15607,19 @@ function bfFieldHtml(fd, e, d, item) {
 // A new turnover: two typed numbers like the Log page (turned over by, caused by), the rest folded away.
 function bfTurnoverHtml(item, tl) {
   const d = BF.draft, e = item.e, sh = tl.list.find(x => x.kind === 'shot' && x.e.id === Number(item.after));
-  const rest = BF_POSS_FIELDS.filter(fd => fd[0] !== 'turnoverBy' && fd[0] !== 'causedBy' && (!fd[5] || fd[5](e, d.f)));
+  const main = ['turnoverBy', 'causedBy', 'dominoes', 'advCreator'], rest = BF_POSS_FIELDS.filter(fd => !main.includes(fd[0]) && (!fd[5] || fd[5](e, d.f)));
   const box = (name, body) => `<section class="bf-box"><div class="bf-boxh">${escapeHtml(name)}</div>${body}</section>`;
   const more = box('Possession', rest.filter(fd => fd[4] === 'poss').map(fd => bfFieldHtml(fd, e, d, item)).join('')) + box('Dominoes & screens', rest.filter(fd => fd[4] === 'picks').map(fd => bfFieldHtml(fd, e, d, item)).join('') + bfRowsHtml(d, item));
-  return `<div class="bf-match"><div><div class="bf-big">Turnover <span class="n-note">after shot ${sh ? sh.n : ''}</span></div><div class="bf-sub">Type who turned it over, Enter, then who caused it (leave it blank if unforced), Enter saves.</div></div></div>
-    <section class="bf-box bf-tobox">${bfFieldHtml(['turnoverBy', 'Turnover (#)', 'joff'], e, d, item)}${bfFieldHtml(['causedBy', 'Caused by (#) — blank = unforced', 'jdef'], e, d, item)}</section>
-    <details class="bf-logged"${BF.toMore ? ' open' : ''} data-bf-tomore="1"><summary>More (optional): how it started, man situation, dominoes, screens</summary>${more}</details>
+  return `<div class="bf-match"><div><div class="bf-big">Turnover <span class="n-note">after shot ${sh ? sh.n : ''}</span></div><div class="bf-sub">Type who turned it over, Enter, who caused it (blank if unforced), Enter, then Y / N / U for dominoes, Enter saves.</div></div></div>
+    <section class="bf-box bf-tobox">${bfFieldHtml(['turnoverBy', 'Turnover (#)', 'joff'], e, d, item)}${bfFieldHtml(['causedBy', 'Caused by (#) — blank = unforced', 'jdef'], e, d, item)}${domToFieldsHtml(e, d, item)}</section>
+    <details class="bf-logged"${BF.toMore ? ' open' : ''} data-bf-tomore="1"><summary>More (optional): how it started, man situation, how the dominoes started, screens</summary>${more}</details>
     <div class="bf-actions"><button type="button" class="btn" data-bf="save">Save turnover &rarr;</button><button type="button" class="btn secondary" data-bf="saveagain">Save + another turnover here</button><button type="button" class="btn secondary" data-bf="cancelnew">Cancel</button></div>
-    ${BF.msg ? `<p class="bf-msg${/can’t|failed|type who/i.test(BF.msg) ? ' bad' : ''}">${BF.msg}</p>` : ''}`;
+    ${BF.msg ? `<p class="bf-msg${/can’t|failed|type who|pick yes/i.test(BF.msg) ? ' bad' : ''}">${BF.msg}</p>` : ''}`;
+}
+// The dominoes answer on a new turnover card (Backfill and Film Check), plus who started them on Yes.
+function domToFieldsHtml(e, d, item) {
+  return bfFieldHtml(['dominoes', 'Dominoes? (Unknown = check film)', 'ynu'], e, d, item)
+    + (d.f.dominoes === 'Yes' ? bfFieldHtml(['advCreator', 'Who started them (#)', 'joff'], e, d, item) : '');
 }
 function bfCardHtml(item, tl) {
   if (item.isNew) return bfTurnoverHtml(item, tl);
@@ -15555,8 +15631,9 @@ function bfCardHtml(item, tl) {
   const logged = fields.filter(fd => !d.isNew && !d.edit && !bfBlank(e[fd[0]]) && fd[0] !== 'goalX' && !BF_ALWAYS.has(fd[0])).map(fd => `${fd[1].replace(/\?$/, '')}: <b>${escapeHtml(bfShowVal(fd[0], e[fd[0]], season))}</b>`)
     .concat(!picksOpen ? [`Screens: <b>${e.screens === 'none' ? 'none' : decodeScreens(e.screens).length + ' logged'}</b>`] : []);
   const secHtml = BF_SECTIONS.map(([sec, name]) => {
-    if (hidden.has(sec) || !counts[sec]) return '';
-    const body = by[sec].map(fd => bfFieldHtml(fd, e, d, item)).join('') + (sec === 'picks' && picksOpen ? bfRowsHtml(d, item) : '');
+    const toDom = sec === 'picks' && item.kind === 'poss' && e.end === 'Turnover';   // required, so never hidden
+    if ((hidden.has(sec) && !toDom) || !counts[sec]) return '';
+    const body = (hidden.has(sec) ? by[sec].filter(fd => fd[0] === 'dominoes' || fd[0] === 'advCreator') : by[sec]).map(fd => bfFieldHtml(fd, e, d, item)).join('') + (sec === 'picks' && picksOpen && !hidden.has(sec) ? bfRowsHtml(d, item) : '');
     return `<section class="bf-box"><div class="bf-boxh">${escapeHtml(name)}</div>${body}</section>`;
   }).join('');
   const toggles = `<div class="bf-toggles"><span class="n-note">Show:</span>${BF_SECTIONS.map(([sec, name]) => `<button type="button" class="pill${hidden.has(sec) ? '' : ' active'}" data-bf="sec" data-sec="${sec}">${escapeHtml(name)}${counts[sec] ? '' : ' &#10003;'}</button>`).join('')}</div>`;
@@ -15569,7 +15646,7 @@ function bfCardHtml(item, tl) {
     ${logged.length ? `<details class="bf-logged"><summary>Already logged (${logged.length}), not changed here</summary><p>${logged.join(' &middot; ')}</p></details>` : ''}
     <div class="bf-actions"><button type="button" class="btn secondary" data-bf="prev">&larr; Back</button><button type="button" class="btn" data-bf="save">${d.isNew ? 'Save possession' : 'Save &amp; next'} &rarr;</button><button type="button" class="btn secondary" data-bf="skip">Skip</button>
     ${item.kind === 'shot' ? `<button type="button" class="btn secondary" data-bf="addposs" title="Or press T">+ Turnover here</button>` : ''}${d.isNew ? `<button type="button" class="btn secondary" data-bf="cancelnew">Cancel</button>` : ''}</div>
-    ${BF.msg ? `<p class="bf-msg${/can’t|failed/i.test(BF.msg) ? ' bad' : ''}">${BF.msg}</p>` : ''}`;
+    ${BF.msg ? `<p class="bf-msg${/can’t|failed|pick yes/i.test(BF.msg) ? ' bad' : ''}">${BF.msg}</p>` : ''}`;
 }
 function renderBackfill() {
   const wrap = document.getElementById('backfillWrap'); if (!wrap) return;
@@ -15612,6 +15689,8 @@ async function bfSave() {
   const same = d.rows.findIndex(r => r.s && r.s === r.u);
   if (same >= 0) { BF.msg = `Screen ${same + 1}: the screener and the player who used it can’t be the same.`; renderBackfill(); return; }
   if (d.isNew && !d.f.turnoverBy) { BF.msg = 'Type who turned it over (or Cancel).'; renderBackfill(); const i = document.querySelector('[data-bf-j="turnoverBy"]'); if (i) i.focus(); return; }
+  const domWhy = domTurnoverWhy(d, item.e);
+  if (domWhy) { BF.msg = domWhy; renderBackfill(); const k = document.querySelector('#backfillWrap [data-bf-dom]'); if (k) k.focus(); return; }
   let res, kind = item.kind, id;
   if (d.kind === 'shot') { const out = bfApply(item.e, d); id = out.id; res = await persistShot(out); }
   else if (d.isNew) {
@@ -15660,20 +15739,21 @@ function bfInit() {
     if (a === 'rowdel') { d.rows.splice(r, 1); if (!d.rows.length) d.scr = 'No'; }
     if (a === 'nopicks') d.noPicks = !d.noPicks;
     if (a === 'more') BF.more['r' + r] = true;
-    if (a === 'set') { const f = b.dataset.f, v = b.dataset.v, tgt = r != null ? d.rows[r] : d.f; tgt[f] = tgt[f] === v ? null : v; if (f === 'defender' && !tgt[f]) { delete d.f.defBeaten; delete d.f.beatenHow; } if (f === 'dominoes' && tgt[f] !== 'Yes') { delete d.f.advCreator; delete d.f.advType; } }
+    if (a === 'set') { const f = b.dataset.f, v = b.dataset.v, tgt = r != null ? d.rows[r] : d.f; tgt[f] = tgt[f] === v ? null : v; if (f === 'defender' && !tgt[f]) { delete d.f.defBeaten; delete d.f.beatenHow; } if (f === 'dominoes' && tgt[f] !== 'Yes') { delete d.f.advCreator; delete d.f.advType; if (d.ftxt) delete d.ftxt.advCreator; } }
     BF.msg = ''; renderBackfill();
   });
   // Typed jersey numbers on a field: same idea.
   wrap.addEventListener('input', ev => {
+    const dk = ev.target.closest('[data-bf-dom]'); if (dk && BF.draft) { domKeyInput(dk, BF.draft, () => { BF.msg = ''; renderBackfill(); }, '#backfillWrap'); return; }
     const t = ev.target.closest('[data-bf-j]'); if (!t || !BF.draft) return;
     const k = t.dataset.bfJ, season = bfSeason(), m = bfResolve(t.value);
     BF.draft.ftxt = BF.draft.ftxt || {}; BF.draft.ftxt[k] = t.value; BF.draft.f[k] = m.j || null;
     const ro = wrap.querySelector(`[data-bf-ro="f_${k}"]`); if (ro) ro.textContent = !t.value.trim() ? '' : m.j ? `#${m.j} ${nameFor(m.j, season) || ''}` : m.why;
   });
   wrap.addEventListener('keydown', ev => {
-    const t = ev.target.closest('[data-bf-j], [data-bf-row]'); if (!t || ev.key !== 'Enter') return;
+    const t = ev.target.closest('[data-bf-j], [data-bf-row], [data-bf-dom]'); if (!t || ev.key !== 'Enter') return;
     ev.preventDefault();
-    const all = [...wrap.querySelectorAll('[data-bf-j], [data-bf-row]')].filter(x => x.offsetParent !== null), i = all.indexOf(t);
+    const all = [...wrap.querySelectorAll('[data-bf-j], [data-bf-row], [data-bf-dom]')].filter(x => x.offsetParent !== null), i = all.indexOf(t);
     if (i >= 0 && i < all.length - 1) all[i + 1].focus(); else { t.blur(); bfSave(); }
   });
   // Typed jersey numbers in a screen row: keep what's typed, store it only when it's on the roster.
@@ -15880,8 +15960,8 @@ function fcEditCardHtml(it, e) {
 // A turnover added right after a logged shot (Backfill's "+ Turnover here"), not tied to a clip.
 function fcAddToCardHtml() {
   const a = FC.addTo, d = FC.draft, e = { end: 'Turnover' }, sh = fcLogged('shot').find(x => x.id === a.after);
-  return `<div class="bf-match"><div><div class="bf-big">New turnover <span class="n-note">right after logged shot ${sh ? fcLogged('shot').indexOf(sh) + 1 + ' (' + fcNm(sh.shooterJersey) + ')' : '#' + a.after}</span></div><div class="bf-sub">Type who turned it over, then who caused it (blank = unforced). Enter in the last box saves.</div></div></div>
-    <section class="bf-box bf-tobox">${bfFieldHtml(['turnoverBy', 'Turnover (#)', 'joff'], e, d, null)}${bfFieldHtml(['causedBy', 'Caused by (#) — blank = unforced', 'jdef'], e, d, null)}</section>
+  return `<div class="bf-match"><div><div class="bf-big">New turnover <span class="n-note">right after logged shot ${sh ? fcLogged('shot').indexOf(sh) + 1 + ' (' + fcNm(sh.shooterJersey) + ')' : '#' + a.after}</span></div><div class="bf-sub">Type who turned it over, then who caused it (blank = unforced), then Y / N / U for dominoes. Enter in the last box saves.</div></div></div>
+    <section class="bf-box bf-tobox">${bfFieldHtml(['turnoverBy', 'Turnover (#)', 'joff'], e, d, null)}${bfFieldHtml(['causedBy', 'Caused by (#) — blank = unforced', 'jdef'], e, d, null)}${domToFieldsHtml(e, d, null)}</section>
     <div class="bf-actions"><button type="button" class="btn" data-fc="save">Save turnover</button><button type="button" class="btn secondary" data-fc="saveagain">Save + another turnover here</button><button type="button" class="btn secondary" data-fc="canceladd">Cancel</button></div>`;
 }
 // An opponent's shot on our goalie. New: the Log Shot fields for an opponent shot, with our goalie required
@@ -15916,7 +15996,7 @@ function fcOppMatchCardHtml(it, plan) {
 function fcTurnoverCardHtml(it) {
   const d = FC.draft, e = { end: 'Turnover' };
   return `<div class="bf-match"><div><div class="bf-big">Turnover ${it.n}</div><div class="bf-sub">Tagged in ScoreBreak${it.d.note ? ': ' + escapeHtml(it.d.note) : ''}. Saved after the shot before it on film.</div></div></div>
-    <section class="bf-box bf-tobox">${bfFieldHtml(['turnoverBy', 'Turnover (#)', 'joff'], e, d, null)}${bfFieldHtml(['causedBy', 'Caused by (#) — blank = unforced', 'jdef'], e, d, null)}</section>
+    <section class="bf-box bf-tobox">${bfFieldHtml(['turnoverBy', 'Turnover (#)', 'joff'], e, d, null)}${bfFieldHtml(['causedBy', 'Caused by (#) — blank = unforced', 'jdef'], e, d, null)}${domToFieldsHtml(e, d, null)}</section>
     <div class="bf-actions"><button type="button" class="btn secondary" data-fc="prev">&larr; Back</button><button type="button" class="btn" data-fc="save">Save turnover &amp; next &rarr;</button><button type="button" class="btn secondary" data-fc="notshot">Not a turnover</button><button type="button" class="btn secondary" data-fc="skip">Skip</button></div>`;
 }
 function fcDoneCardHtml(it) {
@@ -15952,7 +16032,7 @@ function renderFilmCheck() {
   const card = FC.addTo ? fcAddToCardHtml() : FC.editing ? fcEditCardHtml(it, fcSavedEntry(it)) : it.st ? fcDoneCardHtml(it) : it.d.kind === 'turnover' ? fcTurnoverCardHtml(it) : it.d.kind === 'oppshot' ? (FC.mode === 'new' ? fcOppNewCardHtml(it, plan) : fcOppMatchCardHtml(it, plan)) : FC.mode === 'new' ? fcNewCardHtml(it) : fcMatchCardHtml(it, plan);
   const head = `<div class="bf-top"><button type="button" class="pill" data-fc="list">&larr; Practices</button><b>${escapeHtml(fcLabel(FC.key))} &middot; Film Check</b><span class="n-note">${done} of ${plan.items.length} checked &middot; ${plan.logged.length} shots logged${plan.nOpp || plan.loggedOpp.length ? ` &middot; ${plan.loggedOpp.length} opponent shots logged` : ''}</span></div>
     <div class="n-note fc-legend"><span class="bf-chip part"></span>offered a logged shot <span class="bf-chip fc-new"></span>no logged shot left <span class="bf-chip fc-to"></span>turnover ${plan.nOpp ? '<span class="bf-chip fc-opp"></span>opponent shot (O) ' : ''}<span class="bf-chip done"></span>checked <span class="bf-chip fc-x"></span>not a shot</div>
-    <div class="bf-strip">${strip}</div>`;
+    <div class="bf-strip">${strip}</div>${fcDomReviewHtml(plan)}`;
   const meta = `<div class="fc-meta"><span>Clip starts at the possession start</span><span>${fcIsShot(it.d) ? 'Shot' : 'Turnover tag'} at about <b>${fcClock(it.d.inClip)}</b> of ${fcClock(it.d.len)}</span><span>Film time <b>${fcClock(it.d.t)}</b></span></div>`;
   const body = card + (FC.msg ? `<p class="bf-msg${/can’t|failed|isn’t|type|pick|tap|already|didn’t/i.test(FC.msg) ? ' bad' : ''}">${escapeHtml(FC.msg)}</p>` : '');
   // Tapping a pill redraws the form only; the clip player is rebuilt just when the clip changes, so it keeps playing.
@@ -15965,6 +16045,19 @@ function renderFilmCheck() {
   const cur = wrap.querySelector('.bf-chip.cur'); if (cur) cur.scrollIntoView({ block: 'nearest', inline: 'center' });
   const gw = wrap.querySelector('[data-bf-goal] svg'); if (gw && FC.draft && FC.draft.f.goalX != null) { const [x, y] = goalMouthPoint(FC.draft.f.goalX, FC.draft.f.goalY); makeMarker(gw, 1.6, 0.5).place(x, y); }
   const fw = wrap.querySelector('[data-fc-field] svg'); if (fw && FC.draft && FC.draft.f.distanceYds != null) { const [x, y] = projectField(FC.draft.f.lateralYds, FC.draft.f.distanceYds); makeMarker(fw, 1.1, 0.35).place(x, y); }
+}
+// Turnovers in this practice still needing a dominoes call: Unknown, plus (on request) older ones never asked.
+// One with a clip opens it to correct; one logged without film is set in Backfill.
+function fcDomReviewHtml(plan) {
+  const s = LIVE_SESSIONS[fcSid()]; if (!s) return '';
+  const tos = (s.poss || []).filter(p => p.team !== 'OPP' && p.end === 'Turnover').sort((a, b) => a.id - b.id);
+  const unk = tos.filter(p => domState(p) === 'unknown'), blank = tos.filter(p => domState(p) === 'blank');
+  if (!unk.length && !blank.length) return '';
+  const clipOf = p => plan.items.findIndex(x => x.st && x.st.s === 't' && x.st.id === p.id);
+  const rows = (FC.domAll ? unk.concat(blank) : unk).map(p => { const i = clipOf(p);
+    return `<li>Turnover #${p.id} by ${fcNm(p.turnoverBy) || '?'}${p.causedBy ? ', caused by ' + fcNm(p.causedBy) : ' (unforced)'} &middot; ${domState(p) === 'unknown' ? 'Unknown' : 'never asked'} ${i >= 0 ? `<button type="button" class="pill" data-fc="domgo" data-i="${i}">Open its clip</button>` : '<span class="n-note">no clip: set it in Backfill</span>'}</li>`; }).join('');
+  return `<details class="bf-logged fc-domrev"${FC.domOpen ? ' open' : ''} data-fc-domrev="1"><summary>Turnovers needing a dominoes call: <b>${unk.length}</b> Unknown${blank.length ? ` &middot; ${blank.length} never asked` : ''}</summary>
+    ${blank.length ? `<p><button type="button" class="pill${FC.domAll ? ' active' : ''}" data-fc="domall">Include the ${blank.length} never asked</button></p>` : ''}<ul>${rows || '<li class="n-note">None marked Unknown.</li>'}</ul></details>`;
 }
 // Same checks as the Log page / Backfill before anything is written.
 function fcCheck(d, e) {
@@ -15979,6 +16072,7 @@ function fcCheck(d, e) {
   const shooter = now('shooterJersey');
   if (shooter && ['defender', 'slideDefender', 'offBallFault'].some(k => d.f[k] === shooter)) return 'The shooter can’t also be a defender on his own shot.';
   if (d.edit && d.kind === 'poss' && (e && e.end) === 'Turnover' && !d.f.turnoverBy) return 'A turnover needs who turned it over.';
+  const domWhy = domTurnoverWhy(d, e); if (domWhy) return domWhy;
   if (d.f.turnoverBy && d.f.turnoverBy === d.f.causedBy) return 'The player who turned it over can’t be the one who caused it.';
   if (d.scr === 'Yes' && d.rows.some(r => (r.s || r.u) && !r.adv)) return 'Screens: tap Advantage Yes or No on every screen.';
   if (d.scr === 'Yes' && d.rows.some(r => (r.sTxt && r.sTxt.trim() && !r.s) || (r.uTxt && r.uTxt.trim() && !r.u))) return 'Screens: a player box isn’t a player on the roster.';
@@ -16137,6 +16231,11 @@ function fcInit() {
     if (a === 'skip') { fcGo(FC.idx + 1); return; }
     if (a === 'save') { fcSave(); return; }
     if (a === 'saveagain') { fcSaveAddTo(true); return; }
+    if (a === 'domall') { FC.domAll = !FC.domAll; FC.domOpen = true; renderFilmCheck(); return; }
+    if (a === 'domgo') {   // jump to a turnover's clip with it open for correcting
+      const i = Number(b.dataset.i); fcGo(i); const pl = fcPlan(), x = pl.items[i], e = x && x.st && x.st.s === 't' ? fcSavedEntry(x) : null;
+      if (e) { FC.editing = { id: x.d.id }; FC.draft = fcEditDraft('poss', e); renderFilmCheck(); }
+      return; }
     if (a === 'canceladd') { if (FC.addTo) { FC.draft = FC.addTo.prev; FC.mode = FC.addTo.prevMode; FC.addTo = null; } FC.msg = ''; renderFilmCheck(); return; }
     const plan = FC.drafts ? fcPlan() : null, it = plan && plan.items[FC.idx];
     if (a === 'addto') {   // keep whatever was typed on the clip's card; it comes back after
@@ -16166,12 +16265,13 @@ function fcInit() {
       tgt[f] = tgt[f] === v ? null : v;
       if (f === 'defender' && !tgt[f]) { delete d.f.defBeaten; delete d.f.beatenHow; }
       if (f === 'defBeaten' && tgt[f] !== 'Yes') delete d.f.beatenHow;
-      if (f === 'dominoes' && tgt[f] !== 'Yes') { delete d.f.advCreator; delete d.f.advType; }
+      if (f === 'dominoes' && tgt[f] !== 'Yes') { delete d.f.advCreator; delete d.f.advType; if (d.ftxt) delete d.ftxt.advCreator; }
     }
     FC.msg = ''; renderFilmCheck();
   });
   wrap.addEventListener('input', ev => {
     if (!FC.draft) return;
+    const dk = ev.target.closest('[data-bf-dom]'); if (dk) { domKeyInput(dk, FC.draft, () => { FC.msg = ''; renderFilmCheck(); }, '#filmcheckWrap'); return; }
     // Number or name, resolved like Backfill; only a real player is stored.
     const season = fcSeason(), readout = (txt, m) => !txt.trim() ? '' : m.j ? `#${m.j} ${nameFor(m.j, season) || ''}` : m.why;
     const j = ev.target.closest('[data-bf-j]');
@@ -16184,12 +16284,12 @@ function fcInit() {
     if (tx) FC.draft.f[tx.dataset.bfText] = cleanText(tx.value).trim().slice(0, 60) || null;
   });
   wrap.addEventListener('keydown', ev => {
-    const t = ev.target.closest('[data-bf-j], [data-bf-row], [data-fc-opp]'); if (!t || ev.key !== 'Enter') return;
+    const t = ev.target.closest('[data-bf-j], [data-bf-row], [data-fc-opp], [data-bf-dom]'); if (!t || ev.key !== 'Enter') return;
     ev.preventDefault();
-    const all = [...wrap.querySelectorAll('[data-bf-j], [data-bf-row], [data-fc-opp]')].filter(x => x.offsetParent !== null), i = all.indexOf(t);
+    const all = [...wrap.querySelectorAll('[data-bf-j], [data-bf-row], [data-fc-opp], [data-bf-dom]')].filter(x => x.offsetParent !== null), i = all.indexOf(t);
     if (i >= 0 && i < all.length - 1) all[i + 1].focus(); else { t.blur(); fcSave(); }
   });
-  wrap.addEventListener('toggle', ev => { if (ev.target.dataset && ev.target.dataset.fcMore) FC.more = ev.target.open; }, true);
+  wrap.addEventListener('toggle', ev => { if (ev.target.dataset && ev.target.dataset.fcMore) FC.more = ev.target.open; if (ev.target.dataset && ev.target.dataset.fcDomrev) FC.domOpen = ev.target.open; }, true);
   wrap.addEventListener('click', ev => {
     if (!FC.draft) return;
     const g = ev.target.closest('[data-bf-goal]');
