@@ -336,6 +336,7 @@
   .bf-chip.ds-in { box-shadow: inset 0 -3px 0 var(--navy-3, #33507A); } .bf-chip.ds-sel { outline: 2px solid #D4AF37; outline-offset: 1px; }
   .ds-poss { border: 1px solid var(--line); border-left: 4px solid var(--line); border-radius: 6px; padding: 8px 10px; margin: 8px 0; background: var(--card); }
   .ds-poss.ds-clean { border-left-color: var(--good); } .ds-poss.ds-breakdown { border-left-color: var(--critical); } .ds-poss.ds-reconfirm, .ds-poss.ds-conflict, .ds-poss.ds-partial { border-left-color: #D9A400; }
+  .ds-row .btn[disabled], .bf-actions .btn[disabled] { opacity: 0.35; cursor: not-allowed; filter: grayscale(1); }
   .ds-ph { font-size: 13px; margin-bottom: 4px; } .ds-row { padding: 6px 0; border-top: 1px dashed var(--line); font-size: 13px; } .ds-row .bf-actions { margin-top: 4px; flex-wrap: wrap; } .ds-bd { color: var(--critical); }
   .bf-domrow { flex-wrap: wrap; } .bf-domrow .bf-domkey { width: 64px; text-transform: uppercase; }
   .bf-jin { display: flex; align-items: center; gap: 10px; } .bf-jin input { width: 80px; font: 16px var(--text); padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--card); color: var(--ink); } .bf-jin .readout { font: 500 13px var(--text); color: var(--ink); }
