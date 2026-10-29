@@ -8461,8 +8461,9 @@ function renderDefValue(season) {
     { key: 'afterMix', label: 'Gold / Silver / Bronze', type: 'text', value: r => r.after, format: a => a.n ? `<span style="white-space:nowrap;">${pct(a.gold)} / ${pct(a.silver)} / ${pct(a.bronze)}</span>` : '—', sortable: false, group: AF },
     { key: 'afterGoal', label: 'Goal Rate', type: 'num', value: r => r.after.goal, format: (v, r) => v === null ? '—' : `${pct(v)} <span class="n-note">(${Math.round(v * r.after.n)}/${r.after.n})</span>`, group: AF },
   ], bRows, { dense: true, defaultSort: { key: 'total', dir: 'desc' }, emptyMsg: `No ${season} breakdowns logged yet.` });
-  document.getElementById('defBreakTypeSub').innerHTML = `Team-wide, by breakdown type. The last row is shots where a defender was logged and held his man (or the pick coverage was executed): <b>a selected sample</b> (those tags are mostly logged on poorer shots), so it&rsquo;s shown for reference only. No goals-cost rating is computed: the Oct 29 audit found that cost depends on which clean baseline is used (by about 75%) and on what would have happened without the breakdown, which isn&rsquo;t logged.`;
-  const tRows = DEF_BREAK_TYPES.map(([k, l]) => Object.assign({ type: l }, B.types[k])).concat([Object.assign({ type: 'Defender held / coverage executed (reference, selected)' }, B.clean)]);
+  const C = B.clean;
+  document.getElementById('defBreakTypeSub').innerHTML = `Team-wide, by breakdown type. For reference only: shots where a defender was logged and held his man or the pick coverage was executed &mdash; ${C.n} shots, avg xG ${C.n ? num(C.xg, 2) : '—'}, ${C.n ? `${pct(C.gold)} / ${pct(C.silver)} / ${pct(C.bronze)}` : '—'} Gold / Silver / Bronze, ${C.n ? pct(C.goal) : '—'} scored. That&rsquo;s <b>a selected sample</b> (those tags are mostly logged on poorer shots), so no goals-cost rating is computed from it: the Oct 29 audit found the cost moves by about 75% depending on which clean baseline is used, and what would have happened without the breakdown isn&rsquo;t logged.`;
+  const tRows = DEF_BREAK_TYPES.map(([k, l]) => Object.assign({ type: l }, B.types[k]));
   renderSortableTable('defBreakTypeWrap', [
     { key: 'type', label: 'Type', type: 'text', value: r => r.type, format: v => `<span style="white-space:nowrap;">${escapeHtml(v)}</span>` },
     { key: 'n', label: 'Shots', type: 'num', value: r => r.n },
