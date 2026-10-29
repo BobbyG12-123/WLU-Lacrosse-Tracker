@@ -8944,6 +8944,9 @@ function renderHealthCoverage(season) {
     (IS_DH_OWNER ? dsCreateSegment(season, sid, 'Attested historical', 'attested', keys) : Promise.resolve({ why: 'Owner only.' })).then(r => { DS_HEALTH.arm = null; DS_HEALTH.msg = r.why || `Attested ${keys.length} entries as historical (left out of every rate).`; renderHealthCoverage(season); }); } }); })();
 // Synthetic checks for PR 6 (Self-check). Pure: no Firestore, no live data.
 function dsTests() {
+  try { return dsTestsRun(); } catch (e) { return [{ name: 'Defensive coverage tests ran without an error (' + e.message + ')', pass: false }]; }
+}
+function dsTestsRun() {
   let n = 0; const sh = (id, x) => Object.assign({ id, date: '2000-01-01', context: 'Practice', team: 'WLU', goal: 0, shotQuality: '2-Silver', rebound: 'No' }, x || {});
   const rec = (key, state, fp, lu, base, extra) => ({ ['rv_' + key + '__r' + (++n)]: JSON.stringify(Object.assign({ state, bd: [], ev: [], fp, lu, base: base || [], by: 'test', at: '2000-01-01T00:00:' + String(n).padStart(2, '0') + 'Z' }, extra || {})) });
   const seg = (id, groups, extra, meta) => dsSegFromDoc(id, Object.assign({ meta: JSON.stringify(Object.assign({ id, method: 'backfill', status: 'active', label: id }, meta || {})), members: JSON.stringify(groups.map(g => ({ pk: g[0], keys: g }))), excluded: '[]' }, extra || {}));
@@ -8980,7 +8983,7 @@ function dsTests() {
   const stint = { id: 'L1', offense: ['1'], defense: ['2', '3', '4'] }, eL = sh(1, { defender: '2', defBeaten: 'No', stintId: 'L1' });
   const rL = rec('s1', 'clean', fpOf(eL), dsLu(eL, [stint]));
   const stL = (e, stints) => dsCoverageFor({ shots: [e], poss: [], stints }, [seg('a', [['s1']], rL)], {}).status.s1;
-  T.push(['Lineup: unchanged keeps the review; a changed defensive row or a removed lineup needs reconfirmation', stL(eL, [stint]).st === 'clean' && stL(eL, [Object.assign({}, stint, { defense: ['2', '3', '9'] })]).why.includes('lineup') && stL(Object.assign({}, eL, { stintId: null }), [stint]).st === 'reconfirm']);
+  T.push(['Lineup: unchanged keeps the review; a changed defensive row or a removed lineup needs reconfirmation', stL(eL, [stint]).st === 'clean' && (stL(eL, [Object.assign({}, stint, { defense: ['2', '3', '9'] })]).why || []).includes('lineup') && stL(Object.assign({}, eL, { stintId: null }), [stint]).st === 'reconfirm']);
   // Safeguard C: a possession across the segment boundary is partial
   S = { shots: [sh(1), sh(2, { rebound: 'Yes' })], poss: [], stints: [] };
   C = dsCoverageFor(S, [seg('a', [['s2']], rec('s2', 'clean', fpOf(S.shots[1]), 'none'))], {});
