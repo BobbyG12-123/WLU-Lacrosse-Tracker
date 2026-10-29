@@ -4066,7 +4066,9 @@ function pmEnter(p) {
   const isDefender = allShotEntries().some(s => (mine(s.defender) && s.defender === p.seasons[seasonForDate(s.date)]) || (mine(s.slideDefender) && s.slideDefender === p.seasons[seasonForDate(s.date)]) || (mine(s.offBallFault) && s.offBallFault === p.seasons[seasonForDate(s.date)]))
     || allShotEntries().concat(POSSESSIONS).some(e => [e.pickScreenerDef, e.pickUserDef].some(j => j && j === p.seasons[seasonForDate(e.date)]));
   const show = { briefView: false, methodsView: false, labView: false, whereView: false, profileView: isPlayer || isGoalie, logView: false, playerView: isPlayer, goalieView: isGoalie, defenseView: isDefender, efficiencyView: isPlayer, faceoffView: PLAYER_MODE.fogo,
-    tableView: true, compareView: isPlayer, opponentView: false, reportsView: true, depthView: false, healthView: false, recruitsView: false, boardView: false };
+    tableView: true, compareView: isPlayer, opponentView: false, reportsView: true, depthView: false, healthView: false, recruitsView: false, boardView: false,
+    // Staff tools hidden by a class in the page: listed here too, because leaving Player View clears every pm-off.
+    scrimView: false, backfillView: false, filmcheckView: false };
   Object.keys(show).forEach(id => {
     document.querySelectorAll(`.tab-btn[data-view="${id}"]`).forEach(b => b.classList.toggle('pm-off', !show[id]));
     document.getElementById(id).classList.toggle('pm-off', !show[id]);
