@@ -2548,7 +2548,7 @@ const ALLOWED_COACHES = ['bgriffith@wlu.edu', 'rdglax22@icloud.com', 'wgarrett@w
 // last starts the tracker, exactly once (later sign-in callbacks never start it again). If start-up throws,
 // or the tracker still isn't ready long after sign-in, the loading box says so and offers a reload: a full
 // reload is the only retry, so listeners and handlers can never be set up twice.
-const BOOT = window.__boot = { user: false, started: false, watch: null, stallMs: 45000 };
+const BOOT = window.__boot = { user: false, email: null, started: false, watch: null, stallMs: 45000 };
 function bootMsg(text, isError) {
   const box = document.getElementById('loadingBox'); if (!box) return;
   box.style.display = '';
@@ -2588,6 +2588,13 @@ firebase.auth().onAuthStateChanged(user => {
   const app = document.getElementById('appRoot');
   const msg = document.getElementById('authGateMsg');
   const btn = document.getElementById('authGateBtn');
+  // Signed out, or a different account, after the tracker started in this page: hide everything and reload,
+  // so nothing loaded for the previous account stays in memory and the listeners start fresh (once).
+  if (BOOT.started && (!user || (user.email || '').toLowerCase() !== BOOT.email)) {
+    gate.style.display = 'flex'; app.style.display = 'none'; btn.style.display = 'none';
+    msg.textContent = user ? 'Account changed. Reloading…' : 'Signed out. Reloading…';
+    location.reload(); return;
+  }
   if (!user) {
     BOOT.user = false;
     gate.style.display = 'flex'; app.style.display = 'none';
@@ -2607,7 +2614,7 @@ firebase.auth().onAuthStateChanged(user => {
   gate.style.display = 'none'; app.style.display = '';
   IS_DH_OWNER = email === DATA_HEALTH_OWNER;
   document.querySelectorAll('.tab-btn[data-view="healthView"], #healthView').forEach(el => el.classList.toggle('owner-off', !IS_DH_OWNER));
-  BOOT.user = true; bootWatch(); bootTry();
+  BOOT.user = true; BOOT.email = email; bootWatch(); bootTry();
 });
 </script>
 <script>
