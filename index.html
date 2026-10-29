@@ -11156,7 +11156,7 @@ async function dsCreateSegment(season, sid, label, method, keys) {
       t.set(dsIdx(season), { ['seg_' + id]: JSON.stringify({ id, sid, label: meta.label, method, status: 'active', by: meta.createdBy, at }) }, { merge: true });
     });
   } catch (e) {
-    if (e.clash) return { why: `${e.clash.length} of these entr${e.clash.length === 1 ? 'y is' : 'ies are'} already in another defense segment. Pick a range outside it.` };
+    if (e.clash) return { why: `${e.clash.length === 1 ? '1 entry is' : e.clash.length + ' entries are'} already in another defense segment. Pick a range outside it.` };
     console.error('defense segment create', e); return { why: 'Couldn’t save the segment. Check the connection and try again.' };
   }
   return { id, added };
