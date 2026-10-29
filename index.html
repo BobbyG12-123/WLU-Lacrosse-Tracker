@@ -11124,7 +11124,7 @@ function dsCoverage(season, sid) { const sess = LIVE_SESSIONS[sid]; return sess 
 function dsSeasonSummary(season) {
   const sids = [...new Set(Object.values(DEFSEG.index[season] || {}).filter(m => m.status !== 'deleted').map(m => m.sid))];
   const out = { practices: 0, segments: 0, complete: 0, reviewed: 0, inProgress: 0 };
-  sids.forEach(sid => { const c = dsCoverage(season, sid); if (!c) return; out.practices++; Object.values(c.bySeg).forEach(b => { if (b.seg.meta.method === 'attested') return; out.segments++; if (b.complete) { out.complete++; out.reviewed += b.poss.length; } else out.inProgress += b.poss.length; }); });
+  sids.forEach(sid => { const c = dsCoverage(season, sid); if (!c) return; let any = false; Object.values(c.bySeg).forEach(b => { if (b.seg.meta.method === 'attested') return; any = true; out.segments++; if (b.complete) { out.complete++; out.reviewed += b.poss.length; } else out.inProgress += b.poss.length; }); if (any) out.practices++; });
   return out;
 }
 function dsCoverageLine(season) {
