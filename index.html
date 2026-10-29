@@ -2544,6 +2544,39 @@ const DATA_HEALTH_OWNER = 'rdglax22@icloud.com';
 let IS_DH_OWNER = false;
 const ALLOWED_COACHES = ['bgriffith@wlu.edu', 'rdglax22@icloud.com', 'wgarrett@wlu.edu', 'mccabee@wlu.edu', '5cornersports@gmail.com', 'eugenemccabe11@gmail.com', 'tfmarcille@gmail.com', 'jrn8819@gmail.com'];
 
+// Start-up (Oct 29): sign-in can finish before the main script below has defined init(). Whichever comes
+// last starts the tracker, exactly once (later sign-in callbacks never start it again). If start-up throws,
+// or the tracker still isn't ready long after sign-in, the loading box says so and offers a reload: a full
+// reload is the only retry, so listeners and handlers can never be set up twice.
+const BOOT = window.__boot = { user: false, started: false, watch: null, stallMs: 45000 };
+function bootMsg(text, isError) {
+  const box = document.getElementById('loadingBox'); if (!box) return;
+  box.style.display = '';
+  box.textContent = text + ' ';
+  const b = document.createElement('button'); b.type = 'button'; b.className = 'btn'; b.id = 'bootReload'; b.textContent = 'Reload';
+  b.addEventListener('click', () => location.reload()); box.appendChild(b);
+  box.dataset.boot = isError ? 'failed' : 'stalled';
+}
+function bootFailed(e) {
+  console.error('Tracker start-up failed', e);
+  bootMsg(`The tracker couldn’t finish loading (${(e && e.message) || 'unknown error'}). Nothing was saved or changed. Reload to try again.`, true);
+}
+function bootTry() {
+  if (BOOT.started || !BOOT.user || typeof window.init !== 'function') return;
+  BOOT.started = true; window.__appInited = true;
+  let p; try { p = window.init(); } catch (e) { p = Promise.reject(e); }
+  Promise.resolve(p).catch(bootFailed);
+}
+function bootWatch() {
+  if (BOOT.watch) return;
+  BOOT.watch = setTimeout(() => {
+    if (window.__appReady) return;
+    const box = document.getElementById('loadingBox'); if (box && box.dataset.boot === 'failed') return;
+    bootMsg(typeof window.init !== 'function' ? 'The tracker’s code hasn’t finished downloading (slow or dropped connection?).' : 'Still loading after 45 seconds (slow connection?).', false);
+  }, BOOT.stallMs);
+}
+window.addEventListener('load', bootTry);   // safety net: every script on the page has run by now
+
 document.getElementById('authGateBtn').addEventListener('click', () => {
   document.getElementById('authGateMsg').textContent = 'Signing in…';
   firebase.auth().signInWithPopup(new firebase.auth.GoogleAuthProvider())
@@ -2556,6 +2589,7 @@ firebase.auth().onAuthStateChanged(user => {
   const msg = document.getElementById('authGateMsg');
   const btn = document.getElementById('authGateBtn');
   if (!user) {
+    BOOT.user = false;
     gate.style.display = 'flex'; app.style.display = 'none';
     msg.textContent = 'Sign in with your coaching staff Google account to continue.';
     btn.style.display = '';
@@ -2564,6 +2598,7 @@ firebase.auth().onAuthStateChanged(user => {
   const email = (user.email || '').toLowerCase();
   if (!ALLOWED_COACHES.includes(email)) {
     gate.style.display = 'flex'; app.style.display = 'none';
+    BOOT.user = false;
     msg.textContent = `${user.email} isn’t on the coaching staff list for this tracker. Sign in with an authorized account, or ask the tracker owner to add you.`;
     btn.style.display = '';
     firebase.auth().signOut();
@@ -2572,7 +2607,7 @@ firebase.auth().onAuthStateChanged(user => {
   gate.style.display = 'none'; app.style.display = '';
   IS_DH_OWNER = email === DATA_HEALTH_OWNER;
   document.querySelectorAll('.tab-btn[data-view="healthView"], #healthView').forEach(el => el.classList.toggle('owner-off', !IS_DH_OWNER));
-  if (!window.__appInited) { window.__appInited = true; init(); }
+  BOOT.user = true; bootWatch(); bootTry();
 });
 </script>
 <script>
@@ -18034,6 +18069,8 @@ async function init() {
   renderUnitsPanel();
   if (LIVE_SHOTS_TUPLES.length) migrateShotsInbox(LIVE_SHOTS_TUPLES);
 }
+// The main code is all in: start now if sign-in already finished (bootTry, in the sign-in script above).
+if (typeof bootTry === 'function') bootTry();
 </script>
 <script>
 if ('serviceWorker' in navigator) {
