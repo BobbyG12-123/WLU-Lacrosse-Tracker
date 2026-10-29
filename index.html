@@ -332,6 +332,12 @@
   .bf-goal { width: min(260px, 100%); cursor: crosshair; } .bf-goal svg { width: 100%; height: auto; }
   .bf-logged { font: 12.5px var(--text); color: var(--muted); margin: 8px 0; } .bf-logged summary { cursor: pointer; } .bf-logged p { margin: 4px 0 0; line-height: 1.6; }
   .bf-done { font: 600 13px var(--text); color: var(--good); }
+  .ds-bar { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 8px 0; }
+  .bf-chip.ds-in { box-shadow: inset 0 -3px 0 var(--navy-3, #33507A); } .bf-chip.ds-sel { outline: 2px solid #D4AF37; outline-offset: 1px; }
+  .ds-poss { border: 1px solid var(--line); border-left: 4px solid var(--line); border-radius: 6px; padding: 8px 10px; margin: 8px 0; background: var(--card); }
+  .ds-poss.ds-clean { border-left-color: var(--good); } .ds-poss.ds-breakdown { border-left-color: var(--critical); } .ds-poss.ds-reconfirm, .ds-poss.ds-conflict, .ds-poss.ds-partial { border-left-color: #D9A400; }
+  .ds-row .btn[disabled], .bf-actions .btn[disabled] { opacity: 0.35; cursor: not-allowed; filter: grayscale(1); }
+  .ds-ph { font-size: 13px; margin-bottom: 4px; } .ds-row { padding: 6px 0; border-top: 1px dashed var(--line); font-size: 13px; } .ds-row .bf-actions { margin-top: 4px; flex-wrap: wrap; } .ds-bd { color: var(--critical); }
   .bf-domrow { flex-wrap: wrap; } .bf-domrow .bf-domkey { width: 64px; text-transform: uppercase; }
   .bf-jin { display: flex; align-items: center; gap: 10px; } .bf-jin input { width: 80px; font: 16px var(--text); padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--card); color: var(--ink); } .bf-jin .readout { font: 500 13px var(--text); color: var(--ink); }
   .bf-scr { margin-top: 6px; } .bf-scrrow { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px; padding: 6px 0; border-top: 1px solid var(--line); }
@@ -1703,6 +1709,7 @@
     <div class="panel">
       <p class="panel-title">Defensive Value <span class="n-note">supplemental &middot; not part of Goals Added or any rating</span></p>
       <p class="panel-sub" id="defValueSub"></p>
+      <p class="panel-sub" id="defCoverageLine"></p>
       <p class="panel-title" style="font-size:13px; margin-top:6px;">Caused turnovers</p>
       <div class="table-wrap" id="defValueWrap"></div>
       <p class="panel-title" style="font-size:13px; margin-top:14px;">Logged breakdowns</p>
@@ -2350,6 +2357,11 @@
       <p class="panel-title">Field Coverage</p>
       <p class="panel-sub">Share of the entries each field applies to where it was filled in (placement only counts shots on cage, Turnover By only counts turnover possessions, and so on). Green 80%+, yellow 40&ndash;79%, red under 40%. Lowest first.</p>
       <div class="table-wrap" id="healthFieldWrap"></div>
+    </div>
+    <div class="panel">
+      <p class="panel-title">Defensive Coverage</p>
+      <p class="panel-sub">Possessions whose defense was reviewed in a marked segment (Backfill or Film Check), by result. Nothing counts as reviewed without an explicit review: practices with no segment are not reviewed. <b>Reviewed</b> here is coverage only, not a rating. Possessions are counted once, however many shots they had.</p>
+      <div class="table-wrap" id="healthCovWrap"></div>
     </div>
     <div class="panel">
       <p class="panel-title">Defensive Tags: Counted vs Excluded</p>
@@ -3174,6 +3186,7 @@ async function loadAll() {
     try { SCRIM_HIST = snap.exists ? JSON.parse(snap.data().json || '[]') : []; } catch (e) { SCRIM_HIST = []; }
     if (window.__appReady && document.getElementById('scrimView').classList.contains('active') && !SC.busy) renderScrim();
   }, e => console.error('scrimmage history sync error', e));
+  ADV_SEASONS.forEach(season => DB.doc('app/defseg_index_' + season).onSnapshot(snap => dsOnIndex(season, snap.exists ? snap.data() : {}), e => console.error('defense coverage index sync error', e)));
   ADV_SEASONS.forEach(season => DB.doc('app/backfill_' + season).onSnapshot(snap => {
     const d = snap.exists ? snap.data() : {}; Object.keys(d).forEach(k => { if (/^r_/.test(k)) BF.reviewed[k] = 1; });
     if (window.__appReady && document.getElementById('backfillView').classList.contains('active')) renderBackfill();
@@ -4054,7 +4067,9 @@ function pmEnter(p) {
   const isDefender = allShotEntries().some(s => (mine(s.defender) && s.defender === p.seasons[seasonForDate(s.date)]) || (mine(s.slideDefender) && s.slideDefender === p.seasons[seasonForDate(s.date)]) || (mine(s.offBallFault) && s.offBallFault === p.seasons[seasonForDate(s.date)]))
     || allShotEntries().concat(POSSESSIONS).some(e => [e.pickScreenerDef, e.pickUserDef].some(j => j && j === p.seasons[seasonForDate(e.date)]));
   const show = { briefView: false, methodsView: false, labView: false, whereView: false, profileView: isPlayer || isGoalie, logView: false, playerView: isPlayer, goalieView: isGoalie, defenseView: isDefender, efficiencyView: isPlayer, faceoffView: PLAYER_MODE.fogo,
-    tableView: true, compareView: isPlayer, opponentView: false, reportsView: true, depthView: false, healthView: false, recruitsView: false, boardView: false };
+    tableView: true, compareView: isPlayer, opponentView: false, reportsView: true, depthView: false, healthView: false, recruitsView: false, boardView: false,
+    // Staff tools hidden by a class in the page: listed here too, because leaving Player View clears every pm-off.
+    scrimView: false, backfillView: false, filmcheckView: false };
   Object.keys(show).forEach(id => {
     document.querySelectorAll(`.tab-btn[data-view="${id}"]`).forEach(b => b.classList.toggle('pm-off', !show[id]));
     document.getElementById(id).classList.toggle('pm-off', !show[id]);
@@ -8427,6 +8442,7 @@ function beatenMostOf(list) {
 // Caused turnovers and logged breakdowns (supplemental; see defensePartsFrom / defBreakdownsFrom).
 function renderDefValue(season) {
   const wrap = document.getElementById('defValueWrap'), sub = document.getElementById('defValueSub'); if (!wrap || !sub) return;
+  const cl = document.getElementById('defCoverageLine'); if (cl) cl.innerHTML = dsCoverageLine(season);
   const ids = ['defBreakWrap', 'defBreakTypeWrap', 'defBreakSub', 'defBreakTypeSub'];
   if (defContext === 'Game') { sub.innerHTML = 'Caused turnovers and logged breakdowns come from practice possessions (our offense against our defense). Games aren&rsquo;t included yet.'; wrap.innerHTML = ''; ids.forEach(id => { const el = document.getElementById(id); if (el) el.innerHTML = ''; }); return; }
   const R = defensePartsFor(season, defContext), B = R.B;
@@ -8869,6 +8885,19 @@ async function runSelfCheck() {
     const tests = defBreakdownTests(), bad = tests.filter(x => !x.pass);
     add('Formulas', 'Breakdown rules pass their synthetic tests', bad.length ? 'fail' : 'pass', bad.length ? 'Failed: ' + bad.map(x => x.name).join(' · ') : `${tests.length} of ${tests.length}: ${tests.map(x => x.name.split(':')[0]).join(' · ')}.`);
   } catch (e) { add('Formulas', 'Supplemental defense checks ran', 'fail', e.message); }
+  // 7. Defensive coverage (PR 6): synthetic tests of the rules, and the live coverage reconciles.
+  try {
+    const tests = dsTests(), bad = tests.filter(x => !x.pass);
+    add('Formulas', 'Defensive coverage rules pass their synthetic tests', bad.length ? 'fail' : 'pass', bad.length ? 'Failed: ' + bad.map(x => x.name).join(' · ') : `${tests.length} of ${tests.length}: grouping, review states, conflicts, offline order, lineup changes, partial possessions, late entries, reconciliation, historical, no ratings.`);
+    const sids = Object.keys(LIVE_SESSIONS).filter(sid => LIVE_SESSIONS[sid].context !== 'Game' && seasonForDate(LIVE_SESSIONS[sid].date) === season);
+    let segs = 0, poss = 0, reviewed = 0, issues = [], groupsMatch = 0;
+    sids.forEach(sid => { const c = dsCoverage(season, sid); if (!c) return; groupsMatch += dsPossessions(LIVE_SESSIONS[sid]).length; segs += Object.keys(c.bySeg).length; poss += c.sum.possessions; reviewed += c.sum.complete;
+      const sumBy = Object.values(c.sum.by).reduce((a, x) => a + x, 0); if (sumBy !== c.possessions.length || c.sum.inSeg + c.sum.attested + c.sum.outside !== c.sum.possessions) issues.push(sid); if (c.overlaps.length) issues.push(sid + ' overlap'); });
+    add('Data', 'Defensive coverage reconciles', issues.length ? 'fail' : 'pass', issues.length ? issues.slice(0, 4).join(', ') : `${segs} segment${segs === 1 ? '' : 's'}; ${reviewed} of ${poss} practice possessions in complete segments; everything else not reviewed.`);
+    const s0 = EFF_SEASON, c0 = EFF_CONTEXT, f0 = EFF_FROM; EFF_SEASON = season; EFF_CONTEXT = 'All'; EFF_FROM = null; let dp;
+    try { dp = defPossessions(buildEffData()).length; } finally { EFF_SEASON = s0; EFF_CONTEXT = c0; EFF_FROM = f0; }
+    add('Formulas', 'Coverage possessions match Goals Added possessions', dp === groupsMatch ? 'pass' : 'fail', `${groupsMatch} by session vs ${dp} in the Goals Added split.`);
+  } catch (e) { add('Formulas', 'Defensive coverage checks ran', 'fail', e.message); }
   // Report.
   const icon = { pass: '✓', warn: '!', fail: '✕' }, cnt = k => R.filter(r => r.status === k).length;
   out.innerHTML = `<p class="panel-sub"><b>${cnt('pass')} passed</b> · ${cnt('warn')} to look at · ${cnt('fail')} failed · ${escapeHtml(season)} · ${new Date().toLocaleString()}</p>
@@ -8894,6 +8923,94 @@ function renderHealthDominoes(season) {
   const cell = (v, n) => `${v} <span class="n-note">${n ? Math.round(v / n * 100) + '%' : ''}</span>`;
   wrap.innerHTML = `<table class="shotlog"><thead><tr><th></th><th>Yes</th><th>No</th><th>Unknown</th><th>Blank (never asked)</th><th>Answered (Yes or No)</th></tr></thead><tbody>${rows.map(([lab, c]) => `<tr><td><b>${lab}</b> <span class="n-note">${c.n}</span></td><td>${cell(c.yes, c.n)}</td><td>${cell(c.no, c.n)}</td><td>${cell(c.unknown, c.n)}</td><td>${cell(c.blank, c.n)}</td><td>${healthBar(c.obs)}</td></tr>`).join('')}</tbody></table>
     <p class="n-note">Practices answered on 90%+ of both shot possessions and turnovers: <b>${complete}</b> of ${Object.keys(sess).length}. Answered turnovers: <b>${tObs}</b>. Status: <b>${ready ? 'ready for review' : 'monitoring only'}</b> (review once ${DOM_GATE.practices}+ such practices and ${DOM_GATE.turnovers}+ answered turnovers; any use still needs Bobby&rsquo;s OK).</p>`;
+}
+// Owner-only: coverage by practice and segment, with soft delete and attested historical segments.
+let DS_HEALTH = { arm: null, msg: '' };
+function renderHealthCoverage(season) {
+  const wrap = document.getElementById('healthCovWrap'); if (!wrap) return;
+  const sids = Object.keys(LIVE_SESSIONS).filter(sid => { const s = LIVE_SESSIONS[sid]; return s.context !== 'Game' && seasonForDate(s.date) === season && ((s.shots || []).length || (s.poss || []).length); }).sort();
+  const when = iso => { try { return new Date(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }); } catch (e) { return ''; } };
+  const rows = sids.map(sid => { const s = LIVE_SESSIONS[sid], c = dsCoverage(season, sid), by = c.sum.by, segs = Object.values(c.bySeg);
+    const segHtml = segs.map(b => { const warn = [b.late.length ? `${b.late.length} logged after marking` : '', b.missing.length ? `${b.missing.length} deleted/moved` : '', b.counts.reconfirm ? `${b.counts.reconfirm} need reconfirmation` : '', b.counts.conflict ? `${b.counts.conflict} in conflict` : '', b.counts.partial ? `${b.counts.partial} partial` : ''].filter(Boolean).join(', ');
+      const del = DS_HEALTH.arm === 'del:' + b.seg.id ? `<button type="button" class="pill" data-ds="del-yes" data-seg="${escapeHtml(b.seg.id)}">Yes, delete</button><button type="button" class="pill" data-ds="arm" data-v="">Cancel</button>` : `<button type="button" class="pill" data-ds="arm" data-v="del:${escapeHtml(b.seg.id)}">Delete</button>`;
+      return `<div class="n-note">${escapeHtml(b.seg.meta.label)} &middot; ${escapeHtml(b.seg.meta.method)} &middot; ${escapeHtml(b.seg.meta.createdBy || '')} ${when(b.seg.meta.createdAt)} &middot; ${b.seg.meta.method === 'attested' ? 'attested (left out of rates)' : b.complete ? '<b>complete</b>' : `${b.poss.filter(p => DS_FINAL.includes(p.st)).length}/${b.poss.length} reviewed`}${warn ? ' &middot; &#9888; ' + warn : ''} ${del}</div>`; }).join('');
+    const att = DS_HEALTH.arm === 'att:' + sid ? `<button type="button" class="pill" data-ds="att-yes" data-sid="${escapeHtml(sid)}">Yes: attest the rest of this practice</button><button type="button" class="pill" data-ds="arm" data-v="">Cancel</button>` : `<button type="button" class="pill" data-ds="arm" data-v="att:${escapeHtml(sid)}">Attest historical</button>`;
+    return `<tr><td style="white-space:nowrap;">${escapeHtml(s.date)} ${escapeHtml(s.context || '')}</td><td>${c.sum.possessions}</td><td>${c.sum.inSeg}</td><td>${by.clean || 0}</td><td>${by.breakdown || 0}</td><td>${by.cant || 0}</td><td>${by.none || 0}</td><td>${(by.reconfirm || 0) + (by.conflict || 0)}</td><td>${by.partial || 0}</td><td>${c.sum.attested}</td><td>${c.sum.outside}</td><td>${c.sum.inSeg ? Math.round(((by.clean || 0) + (by.breakdown || 0) + (by.cant || 0)) / c.sum.inSeg * 100) + '%' : '—'}</td></tr>`
+      + (segs.length || IS_DH_OWNER ? `<tr><td colspan="12">${segHtml}${IS_DH_OWNER ? `<div>${att}</div>` : ''}</td></tr>` : ''); }).join('');
+  wrap.innerHTML = `<table class="shotlog"><thead><tr><th>Practice</th><th>Poss.</th><th>In segments</th><th>Clean</th><th>Breakdown</th><th>Can&rsquo;t tell</th><th>Not reviewed</th><th>Reconfirm / conflict</th><th>Partial</th><th>Attested</th><th>Outside</th><th>Reviewed (coverage)</th></tr></thead><tbody>${rows || '<tr><td colspan="12" class="n-note">No practices yet.</td></tr>'}</tbody></table>${DS_HEALTH.msg ? `<p class="bf-msg">${escapeHtml(DS_HEALTH.msg)}</p>` : ''}`;
+}
+(() => { const w = document.getElementById('healthCovWrap'); if (!w) return; w.addEventListener('click', ev => { const b = ev.target.closest('[data-ds]'); if (!b) return; const a = b.dataset.ds, season = healthSeason;
+  if (a === 'arm') { DS_HEALTH.arm = b.dataset.v || null; DS_HEALTH.msg = ''; renderHealthCoverage(season); return; }
+  if (a === 'del-yes') { b.disabled = true; dsSoftDelete(season, b.dataset.seg).then(r => { DS_HEALTH.arm = null; DS_HEALTH.msg = r.why || 'Segment deleted (kept for audit).'; renderHealthCoverage(season); }); return; }
+  if (a === 'att-yes') { const sid = b.dataset.sid, sess = LIVE_SESSIONS[sid], c = dsCoverage(season, sid); b.disabled = true;
+    const keys = dsPossessions(sess).filter(p => !p.keys.some(k => c.owner[k])).flatMap(p => p.keys);
+    (IS_DH_OWNER ? dsCreateSegment(season, sid, 'Attested historical', 'attested', keys) : Promise.resolve({ why: 'Owner only.' })).then(r => { DS_HEALTH.arm = null; DS_HEALTH.msg = r.why || `Attested ${keys.length} entries as historical (left out of every rate).`; renderHealthCoverage(season); }); } }); })();
+// Synthetic checks for PR 6 (Self-check). Pure: no Firestore, no live data.
+function dsTests() {
+  try { return dsTestsRun(); } catch (e) { return [{ name: 'Defensive coverage tests ran without an error (' + e.message + ')', pass: false }]; }
+}
+function dsTestsRun() {
+  let n = 0; const sh = (id, x) => Object.assign({ id, date: '2000-01-01', context: 'Practice', team: 'WLU', goal: 0, shotQuality: '2-Silver', rebound: 'No' }, x || {});
+  const rec = (key, state, fp, lu, base, extra) => ({ ['rv_' + key + '__r' + (++n)]: JSON.stringify(Object.assign({ state, bd: [], ev: [], fp, lu, base: base || [], by: 'test', at: '2000-01-01T00:00:' + String(n).padStart(2, '0') + 'Z' }, extra || {})) });
+  const seg = (id, groups, extra, meta) => dsSegFromDoc(id, Object.assign({ meta: JSON.stringify(Object.assign({ id, method: 'backfill', status: 'active', label: id }, meta || {})), members: JSON.stringify(groups.map(g => ({ pk: g[0], keys: g }))), excluded: '[]' }, extra || {}));
+  const fpOf = e => dsFp('shot', e), T = [];
+  // Possession grouping
+  let S = { shots: [sh(1), sh(2, { rebound: 'Yes' }), sh(3, { rebound: 'Yes' }), sh(4, { goal: 1 }), sh(5, { rebound: 'Yes' })], poss: [{ id: 9, team: 'WLU', end: 'Turnover' }], stints: [] };
+  let P = dsPossessions(S);
+  T.push(['Grouping: a shot + 2 rebounds = 1 possession; a rebound after a goal starts a new one; a turnover is its own', P.length === 4 && P[0].keys.length === 3 && P[1].keys.join() === 's4' && P[2].keys.join() === 's5' && P[3].keys.join() === 'p9']);
+  // Possession counted once with two confirmed breakdowns
+  S = { shots: [sh(1, { offBallFault: '7' }), sh(2, { rebound: 'Yes', defender: '8', defBeaten: 'Yes' })], poss: [], stints: [] };
+  let C = dsCoverageFor(S, [seg('a', [['s1', 's2']], Object.assign(rec('s1', 'breakdown', fpOf(S.shots[0]), 'none'), rec('s2', 'breakdown', fpOf(S.shots[1]), 'none')))], {});
+  T.push(['A possession with two confirmed breakdowns counts once', C.possessions.length === 1 && C.possessions[0].st === 'breakdown' && C.bySeg.a.complete]);
+  // Review-state transitions: material vs cosmetic edit, reconfirm
+  const e0 = sh(1, { defender: '8', defBeaten: 'No' }), r1 = rec('s1', 'clean', fpOf(e0), 'none');
+  const st = (e, doc) => dsCoverageFor({ shots: [e], poss: [], stints: [] }, [seg('a', [['s1']], doc)], {}).status.s1;
+  const cos = Object.assign({}, e0, { shotQuality: '1-Gold', trigger: 'Rub' }), mat = Object.assign({}, e0, { defBeaten: 'Yes' });
+  const rk = Object.keys(r1)[0].split('__')[1];
+  T.push(['Review states: clean; a cosmetic edit keeps it; a material edit needs reconfirmation; a new review clears it', st(e0, r1).st === 'clean' && st(cos, r1).st === 'clean' && st(mat, r1).st === 'reconfirm' && st(mat, Object.assign({}, r1, rec('s1', 'breakdown', fpOf(mat), 'none', [rk]))).st === 'breakdown']);
+  // Clean refused with a breakdown tagged; a provisional late slide needs a judgment
+  const pBeat = dsProposed('shot', sh(1, { defender: '8', defBeaten: 'Yes' })), pLate = dsProposed('shot', sh(1, { defender: '8', defBeaten: 'Yes', slideDefender: '6', contestLevel: 'Open' }));
+  const pSlide = dsProposed('shot', sh(1, { defender: '8', defBeaten: 'No', slideDefender: '6', contestLevel: 'Open' }));
+  T.push(['Clean is refused while a breakdown is tagged; a late slide must be judged', !dsCanClean(pBeat, null) && !dsCanClean(dsProposed('shot', sh(1, { slideDefender: '6', defender: '8', defBeaten: 'Yes', contestLevel: 'Open' })), null) && pLate.lateSlide === '6' && dsCanClean(pSlide, null)]);
+  // Breakdown vs event
+  const ev = dsProposed('shot', sh(1, { defender: '8', defBeaten: 'No', slideDefender: '6', pick: 'Yes', pickCoverage: 'Switch', pickScreenerDef: '5', pickUserDef: '4' }));
+  T.push(['Events are not breakdowns: held, slide, executed pick', !ev.bd.length && ev.ev.map(x => x.t).sort().join() === 'held,pickExecuted,pickExecuted,slideLogged']);
+  // Safeguard A: concurrent / offline reviews never silently overwrite
+  const ra = rec('s1', 'clean', fpOf(e0), 'none'), rb = rec('s1', 'cant', fpOf(e0), 'none'), ka = Object.keys(ra)[0].split('__')[1], kb = Object.keys(rb)[0].split('__')[1];
+  const agree = rec('s1', 'clean', fpOf(e0), 'none'), fix = rec('s1', 'clean', fpOf(e0), 'none', [ka, kb]);
+  const late1 = rec('s1', 'cant', fpOf(e0), 'none', [ka]);   // made after seeing ka, arrives before it (offline sync order)
+  T.push(['Two reviews that disagree are a conflict, never a silent overwrite', st(e0, Object.assign({}, ra, rb)).st === 'conflict']);
+  T.push(['Two reviews that agree are not a conflict; a review that saw both resolves it', st(e0, Object.assign({}, ra, agree)).st === 'clean' && st(e0, Object.assign({}, ra, rb, fix)).st === 'clean']);
+  T.push(['Offline: a later review that saw the earlier one wins in any arrival order', st(e0, late1).st === 'cant' && st(e0, Object.assign({}, late1, ra)).st === 'cant']);
+  // Safeguard B: lineup changes invalidate attribution
+  const stint = { id: 'L1', offense: ['1'], defense: ['2', '3', '4'] }, eL = sh(1, { defender: '2', defBeaten: 'No', stintId: 'L1' });
+  const rL = rec('s1', 'clean', fpOf(eL), dsLu(eL, [stint]));
+  const stL = (e, stints) => dsCoverageFor({ shots: [e], poss: [], stints }, [seg('a', [['s1']], rL)], {}).status.s1;
+  T.push(['Lineup: unchanged keeps the review; a changed defensive row or a removed lineup needs reconfirmation', stL(eL, [stint]).st === 'clean' && (stL(eL, [Object.assign({}, stint, { defense: ['2', '3', '9'] })]).why || []).includes('lineup') && stL(Object.assign({}, eL, { stintId: null }), [stint]).st === 'reconfirm']);
+  // Safeguard C: a possession across the segment boundary is partial
+  S = { shots: [sh(1), sh(2, { rebound: 'Yes' })], poss: [], stints: [] };
+  C = dsCoverageFor(S, [seg('a', [['s2']], rec('s2', 'clean', fpOf(S.shots[1]), 'none'))], {});
+  T.push(['A possession with an entry outside the segment is partial, not reviewed', C.possessions[0].st === 'partial' && !C.bySeg.a.complete]);
+  // Late-added entries and reconciliation
+  S = { shots: [1, 2, 3, 4, 5, 9].map(i => sh(i)), poss: [], stints: [] };
+  C = dsCoverageFor(S, [seg('a', [['s1'], ['s2'], ['s3'], ['s5']])], {});
+  T.push(['An entry logged inside a segment’s span after marking is flagged; one after it is not', C.bySeg.a.late.join() === 's4' && !C.bySeg.a.complete]);
+  C = dsCoverageFor({ shots: [sh(1)], poss: [], stints: [] }, [seg('a', [['s1'], ['s2'], ['s3']])], { s3: 'other_session' });
+  T.push(['Deleted and moved members drop out and are listed', C.status.s2.st === 'deleted' && C.status.s3.st === 'moved' && C.bySeg.a.missing.length === 2]);
+  T.push(['Overlapping segments are refused', dsOverlap([seg('a', [['s1', 's2']])], ['s2', 's3']).join() === 's2']);
+  S = { shots: [sh(1), sh(2), sh(3)], poss: [{ id: 9, team: 'WLU', end: 'Turnover' }], stints: [] };
+  C = dsCoverageFor(S, [seg('a', [['s1'], ['s2']], rec('s1', 'clean', fpOf(S.shots[0]), 'none'))], {});
+  const sumBy = Object.values(C.sum.by).reduce((a, x) => a + x, 0);
+  T.push(['Coverage reconciles: in segments + outside = possessions; states add up', sumBy === C.possessions.length && C.sum.inSeg + C.sum.attested + C.sum.outside === C.sum.possessions && C.sum.outside === 2]);
+  // Historical, attested, no ratings
+  S = { shots: [sh(1, { defender: '8', defBeaten: 'No' })], poss: [], stints: [] };
+  C = dsCoverageFor(S, [], {});
+  T.push(['A tagged practice with no segment is not reviewed', C.sum.inSeg === 0 && C.sum.complete === 0 && C.sum.outside === 1]);
+  C = dsCoverageFor(S, [seg('h', [['s1']], {}, { method: 'attested' })], {});
+  T.push(['Attested historical segments are never complete or reviewed', C.possessions[0].st === 'attested' && !C.bySeg.h.complete && C.sum.inSeg === 0]);
+  const line = dsCoverageLine(currentAdvSeason());
+  T.push(['The Defense page line shows counts only: no rating or percentage', !/%|rating|\brates?\b/i.test(line)]);
+  return T.map(([name, pass]) => ({ name, pass: !!pass }));
 }
 // The defensive tag reconciliation and the duplicate-role tags to fix by hand.
 function renderHealthDefTags(season) {
@@ -8924,6 +9041,7 @@ function renderDataHealth() {
   ], rows, { dense: true, defaultSort: { key: 'p', dir: 'asc' }, emptyMsg: `No ${season} entries yet.` });
   renderHealthDominoes(season);
   renderHealthDefTags(season);
+  renderHealthCoverage(season);
   // By session.
   const SO = S.concat(OPP_SHOTS.filter(s => seasonForDate(s.date) === season));
   const sess = {};
@@ -10862,6 +10980,237 @@ function defCoverageHtml(R) {
   return `Caused-by logged on ${R.T.toCaused} of ${R.T.tos} turnovers; V = ${num(R.T.V, 3)} goals per possession. Defensive tags were logged in <b>${B.tagDates}</b> of ${R.nSess} practices `
     + `(${n('On-ball defender')} on-ball defender tags, ${n('Off-ball breakdown')} off-ball, ${n('Slide defender')} slide, ${n('Pick defender')} pick defender). `
     + `Breakdowns per tagged practice are <b>conditional on that tagging</b>: they aren&rsquo;t a true breakdown rate or an assignment success %, because the number of possessions each player defended isn&rsquo;t logged.`;
+}
+// ---------------- Defensive coverage segments (Stage 3 PR 6, Bobby Oct 29) ----------------
+// Which practice entries had their defense reviewed, by whom, and with what result. Nothing is ever
+// inferred from missing tags: an entry is reviewed only by an explicit review record, so every existing
+// practice reads "not reviewed" until someone marks a segment and reviews it. No rates or ratings here.
+// Stored apart from the entries (which are never written): one doc per segment, app/defseg_<season>_<id>
+// ({ meta, members, excluded, rv_<entry>__<rev>, hist_<time>_<rand> }), plus app/defseg_index_<season>.
+//  - members: the entries, grouped by possession at marking (a shot + its rebounds = one possession).
+//  - rv_ records are append-only. Each names the record(s) its reviewer saw (base); two current
+//    records that disagree are a conflict until someone reviews the entry again, so a concurrent or
+//    offline review never silently replaces a newer one.
+//  - Each review keeps a fingerprint of the entry's defensive fields and of its lineup. A material edit
+//    or a lineup change sends the entry back to "needs reconfirmation"; cosmetic edits don't.
+const DEFSEG = { index: {}, docs: {}, subs: {} };   // index[season][segId] = summary; docs[segId] = doc data
+const DS_MATERIAL_SHOT = ['defender', 'defBeaten', 'beatenHow', 'slideDefender', 'offBallFault', 'contestLevel', 'pick', 'pickType', 'pickAction', 'pickCoverage', 'pickResult', 'pickScreenerDef', 'pickUserDef', 'screens', 'goal', 'outcome', 'rebound', 'team'];
+const DS_MATERIAL_POSS = ['end', 'turnoverBy', 'causedBy', 'pick', 'pickType', 'pickAction', 'pickCoverage', 'pickResult', 'pickScreenerDef', 'pickUserDef'];
+const DS_FINAL = ['clean', 'breakdown', 'cant'];
+const dsKey = (kind, id) => (kind === 'shot' ? 's' : 'p') + id;
+const dsParse = (v, d) => { try { return typeof v === 'string' ? JSON.parse(v) : d; } catch (e) { return d; } };
+function dsFp(kind, e) { return JSON.stringify((kind === 'shot' ? DS_MATERIAL_SHOT : DS_MATERIAL_POSS).map(k => (e[k] === undefined || e[k] === '' ? null : e[k]))); }
+// Which defensive fields changed since a review (names, for the reconfirm note).
+function dsFpDiff(kind, oldFp, e) { const names = kind === 'shot' ? DS_MATERIAL_SHOT : DS_MATERIAL_POSS, a = dsParse(oldFp, []), b = dsParse(dsFp(kind, e), []); return names.filter((n, i) => JSON.stringify(a[i] === undefined ? null : a[i]) !== JSON.stringify(b[i])); }
+// The lineup behind an entry: its stint and the defensive row of that stint.
+function dsLu(e, stints) {
+  if (!e.stintId) return 'none';
+  const t = (stints || []).find(x => x.id === e.stintId);
+  return t ? e.stintId + ':' + (t.defense || []).filter(j => !isOppJersey(j)).slice().sort().join(',') : 'missing:' + e.stintId;
+}
+// Breakdowns the tags propose (the PR #100 rules) and defensive events that are not breakdowns.
+function dsProposed(kind, e) {
+  const W = j => j && !isOppJersey(j), bd = [], ev = []; let lateSlide = null;
+  if (kind !== 'shot') { if (e.end === 'Turnover' && W(e.causedBy)) ev.push({ t: 'caused', j: e.causedBy }); return { bd, ev, lateSlide }; }
+  const D = W(e.defender) ? e.defender : null, Sl = W(e.slideDefender) ? e.slideDefender : null, O = W(e.offBallFault) ? e.offBallFault : null;
+  const picks = e.pick === 'Yes' ? [...new Set([e.pickScreenerDef, e.pickUserDef].filter(W))] : [], beaten = !!(D && e.defBeaten === 'Yes');
+  if (D) (beaten ? bd : ev).push({ t: beaten ? 'beat' : e.defBeaten === 'No' ? 'held' : 'onBallLogged', j: D });
+  if (O && O !== D) bd.push({ t: 'off', j: O });
+  if (Sl && Sl !== D) { if (beaten && e.contestLevel === 'Open') lateSlide = Sl; else ev.push({ t: beaten ? 'slideOnTime' : 'slideLogged', j: Sl }); }
+  picks.forEach(j => (e.pickCoverage === 'Blown' ? bd.push({ t: 'blown', j }) : ev.push({ t: e.pickCoverage ? 'pickExecuted' : 'pickLogged', j })));
+  return { bd, ev, lateSlide };
+}
+// Clean is refused while the tags still propose a breakdown (a provisional late slide must be judged first).
+const dsCanClean = (p, slide) => !p.bd.length && (!p.lateSlide || slide === 'onTime');
+// A session's WLU possessions, grouped the way Goals Added groups them: rebounds join the shot before,
+// a goal ends a possession, every no-shot possession stands alone. Returns [{ pk, keys }].
+function dsPossessions(sess) {
+  const out = [], shots = (sess.shots || []).filter(s => s.team !== 'OPP').slice().sort((a, b) => a.id - b.id);
+  let cur = null;
+  shots.forEach(s => { if (s.rebound !== 'Yes' || !cur) { cur = { keys: [] }; out.push(cur); } cur.keys.push(dsKey('shot', s.id)); if (s.goal === 1) cur = null; });
+  (sess.poss || []).filter(p => p.team !== 'OPP').forEach(p => out.push({ keys: [dsKey('poss', p.id)] }));
+  out.forEach(p => { p.pk = p.keys[0]; });
+  return out;
+}
+// Review records for one entry -> its current ("head") records: the ones no later record names as seen.
+function dsRecords(doc) {
+  const by = {};
+  Object.keys(doc || {}).forEach(k => { const m = /^rv_([sp]\d+)__([A-Za-z0-9]+)$/.exec(k); if (!m) return; const r = dsParse(doc[k], null); if (!r || !r.state) return; r.key = m[1]; r.rev = m[2]; (by[m[1]] = by[m[1]] || []).push(r); });
+  return by;
+}
+function dsHeads(list) { const seen = new Set(); list.forEach(r => (r.base || []).forEach(b => seen.add(b))); return list.filter(r => !seen.has(r.rev)); }
+const dsSame = (a, b) => a.state === b.state && JSON.stringify(a.bd || []) === JSON.stringify(b.bd || []) && (a.slide || null) === (b.slide || null);
+// One entry's status from its records and its current fingerprints.
+function dsEntryStatus(recs, cur) {
+  if (!recs || !recs.length) return { st: 'none', heads: [] };
+  const heads = dsHeads(recs);
+  if (heads.length > 1 && !heads.every(h => dsSame(h, heads[0]))) return { st: 'conflict', heads };
+  const h = heads.slice().sort((a, b) => String(b.at).localeCompare(String(a.at)))[0];
+  const why = []; if (h.fp !== cur.fp) why.push('defense'); if (h.lu !== cur.lu) why.push('lineup');
+  return why.length ? { st: 'reconfirm', why, head: h, heads } : { st: h.state, head: h, heads };
+}
+// Every entry of a session in Backfill order: shots by number, a turnover placed after its shot; turnovers
+// logged live (place unknown) last, with no position.
+function dsOrder(sess) {
+  const shots = (sess.shots || []).filter(s => s.team !== 'OPP').slice().sort((a, b) => a.id - b.id), poss = (sess.poss || []).filter(p => p.team !== 'OPP').slice().sort((a, b) => a.id - b.id);
+  const placed = {}, order = [], pos = {};
+  poss.filter(p => p.afterShot != null && shots.some(s => s.id === Number(p.afterShot))).forEach(p => { (placed[p.afterShot] = placed[p.afterShot] || []).push(p); });
+  shots.forEach(s => { order.push(dsKey('shot', s.id)); (placed[s.id] || []).forEach(p => order.push(dsKey('poss', p.id))); });
+  order.forEach((k, i) => { pos[k] = i; });
+  poss.filter(p => pos[dsKey('poss', p.id)] === undefined).forEach(p => order.push(dsKey('poss', p.id)));
+  return { order, pos };
+}
+// Segments that overlap: keys of `keys` already in another active segment of the session.
+function dsOverlap(segs, keys) { const taken = new Set(); segs.filter(s => s.meta.status !== 'deleted').forEach(s => s.members.forEach(g => g.keys.forEach(k => taken.add(k)))); return keys.filter(k => taken.has(k)); }
+// A segment doc -> { id, meta, members (groups), excluded, recs }.
+function dsSegFromDoc(id, d) { return { id, meta: dsParse(d && d.meta, {}), members: dsParse(d && d.members, []), excluded: dsParse(d && d.excluded, []), recs: dsRecords(d) }; }
+// Coverage of one session: entry and possession status for every segment, partial possessions,
+// late-added entries, and the practice summary. Pure: everything it needs is passed in.
+function dsCoverageFor(sess, segs, movedTo) {
+  const ents = {};
+  (sess.shots || []).filter(s => s.team !== 'OPP').forEach(s => { ents[dsKey('shot', s.id)] = { kind: 'shot', e: s }; });
+  (sess.poss || []).filter(p => p.team !== 'OPP').forEach(p => { ents[dsKey('poss', p.id)] = { kind: 'poss', e: p }; });
+  const live = segs.filter(s => s.meta.status !== 'deleted'), poss = dsPossessions(sess), { pos } = dsOrder(sess);
+  const owner = {}; const overlaps = [];
+  live.forEach(s => s.members.forEach(g => g.keys.forEach(k => { if (owner[k] && owner[k] !== s.id) overlaps.push(k); else owner[k] = s.id; })));
+  const status = {};   // entry key -> { st, why, heads, head, seg }
+  Object.keys(owner).forEach(k => {
+    const s = live.find(x => x.id === owner[k]), ent = ents[k];
+    if (!ent) { status[k] = { st: movedTo && movedTo[k] ? 'moved' : 'deleted', seg: s.id, to: movedTo && movedTo[k] }; return; }
+    if (s.meta.method === 'attested') { status[k] = { st: 'attested', seg: s.id }; return; }
+    status[k] = Object.assign(dsEntryStatus(s.recs[k], { fp: dsFp(ent.kind, ent.e), lu: dsLu(ent.e, sess.stints) }), { seg: s.id });
+  });
+  const P = [];
+  poss.forEach(p => {
+    const inSeg = p.keys.filter(k => owner[k]); if (!inSeg.length) return;
+    const seg = owner[inSeg[0]], s = live.find(x => x.id === seg), outside = p.keys.filter(k => !owner[k]);
+    const stored = s.members.find(g => g.keys.includes(p.keys[0]) || g.keys.includes(inSeg[0]));
+    const segsHere = [...new Set(inSeg.map(k => owner[k]))];
+    const groupChanged = segsHere.length > 1 || !stored || stored.keys.length !== p.keys.length || stored.keys.some(k => !p.keys.includes(k));
+    const sts = p.keys.map(k => status[k] ? status[k].st : 'outside');
+    let st;
+    if (s.meta.method === 'attested') st = 'attested';
+    else if (outside.length) st = 'partial';
+    else if (sts.includes('conflict')) st = 'conflict';
+    else if (groupChanged || sts.includes('reconfirm')) st = 'reconfirm';
+    else if (sts.includes('none')) st = 'none';
+    else if (sts.includes('cant')) st = 'cant';
+    else if (sts.includes('breakdown')) st = 'breakdown';
+    else st = 'clean';
+    P.push({ pk: p.pk, keys: p.keys, seg, st, outside, groupChanged, segsHere });
+  });
+  // Entries logged after marking that sit inside a segment's span (Backfill order) and aren't in it.
+  const late = {};
+  live.filter(s => s.meta.method !== 'attested').forEach(s => {
+    const idx = s.members.flatMap(g => g.keys).map(k => pos[k]).filter(v => v !== undefined); if (!idx.length) { late[s.id] = []; return; }
+    const lo = Math.min(...idx), hi = Math.max(...idx);
+    late[s.id] = Object.keys(ents).filter(k => !owner[k] && !s.excluded.includes(k) && pos[k] !== undefined && pos[k] > lo && pos[k] < hi);
+  });
+  const bySeg = {};
+  live.forEach(s => {
+    const mine = P.filter(p => p.seg === s.id), c = {}; mine.forEach(p => { c[p.st] = (c[p.st] || 0) + 1; });
+    const missing = s.members.flatMap(g => g.keys).filter(k => status[k] && (status[k].st === 'deleted' || status[k].st === 'moved'));
+    const complete = s.meta.method !== 'attested' && mine.length > 0 && mine.every(p => DS_FINAL.includes(p.st)) && !(late[s.id] || []).length && !overlaps.some(k => owner[k] === s.id);
+    bySeg[s.id] = { seg: s, poss: mine, counts: c, late: late[s.id] || [], missing, complete };
+  });
+  const sum = { possessions: poss.length, entries: Object.keys(ents).length, inSeg: P.filter(p => p.st !== 'attested').length, attested: P.filter(p => p.st === 'attested').length, by: {} };
+  P.forEach(p => { sum.by[p.st] = (sum.by[p.st] || 0) + 1; });
+  sum.outside = poss.length - P.length;
+  sum.complete = Object.values(bySeg).filter(x => x.complete).reduce((a, x) => a + x.poss.length, 0);
+  return { status, possessions: P, bySeg, sum, overlaps, owner };
+}
+// Live wrappers: this season's segments for a session, and where a missing entry went.
+function dsSegsFor(season, sid) { return Object.keys((DEFSEG.index[season] || {})).filter(id => DEFSEG.index[season][id].sid === sid && DEFSEG.docs[id]).map(id => dsSegFromDoc(id, DEFSEG.docs[id])); }
+function dsMovedMap(sid) { const m = {}; Object.keys(LIVE_SESSIONS).forEach(x => { if (x === sid) return; (LIVE_SESSIONS[x].shots || []).forEach(s => { m[dsKey('shot', s.id)] = x; }); (LIVE_SESSIONS[x].poss || []).forEach(p => { m[dsKey('poss', p.id)] = x; }); }); return m; }
+function dsCoverage(season, sid) { const sess = LIVE_SESSIONS[sid]; return sess ? dsCoverageFor(sess, dsSegsFor(season, sid), dsMovedMap(sid)) : null; }
+// The season total for the Defense page line: counts only, no rates.
+function dsSeasonSummary(season) {
+  const sids = [...new Set(Object.values(DEFSEG.index[season] || {}).filter(m => m.status !== 'deleted').map(m => m.sid))];
+  const out = { practices: 0, segments: 0, complete: 0, reviewed: 0, inProgress: 0 };
+  sids.forEach(sid => { const c = dsCoverage(season, sid); if (!c) return; let any = false; Object.values(c.bySeg).forEach(b => { if (b.seg.meta.method === 'attested') return; any = true; out.segments++; if (b.complete) { out.complete++; out.reviewed += b.poss.length; } else out.inProgress += b.poss.length; }); if (any) out.practices++; });
+  return out;
+}
+function dsCoverageLine(season) {
+  const s = dsSeasonSummary(season);
+  return s.segments ? `Reviewed for defense: <b>${s.reviewed}</b> possessions in ${s.complete} complete segment${s.complete === 1 ? '' : 's'} across ${s.practices} practice${s.practices === 1 ? '' : 's'}${s.inProgress ? `; ${s.inProgress} more in segments still being reviewed` : ''}. Everything else is not reviewed yet.`
+    : 'Reviewed for defense: none yet. Practices are only counted once a coach marks a defense segment in Backfill or Film Check and reviews it.';
+}
+// ---- Coverage writes: segment docs and the season index only, never an entry ----
+const dsDoc = (season, id) => DB.doc(`app/defseg_${season}_${id}`);
+const dsIdx = season => DB.doc('app/defseg_index_' + season);
+const dsOffline = () => typeof navigator !== 'undefined' && navigator.onLine === false;
+function dsHist(what) { return { ['hist_' + Date.now().toString(36) + '_' + newStintId().replace(/[^A-Za-z0-9]/g, '').slice(-6)]: JSON.stringify({ at: new Date().toISOString(), by: dpWho(), what }) }; }
+// New segment: the picked entries widened to whole possessions, refused if any is already in a segment
+// (checked inside the transaction, so two coaches marking at once can't overlap). Online only.
+async function dsCreateSegment(season, sid, label, method, keys) {
+  if (dsOffline()) return { why: 'You’re offline: marking a segment needs a connection (reviewing works offline).' };
+  const sess = LIVE_SESSIONS[sid]; if (!sess) return { why: 'That practice isn’t loaded.' };
+  const want = new Set(keys), groups = dsPossessions(sess).filter(p => p.keys.some(k => want.has(k))).map(p => ({ pk: p.pk, keys: p.keys }));
+  const all = groups.flatMap(g => g.keys), added = all.filter(k => !want.has(k));
+  if (!groups.length) return { why: 'Pick at least one shot or turnover.' };
+  const id = newStintId().replace(/[^A-Za-z0-9]/g, ''), at = new Date().toISOString();
+  const meta = { id, season, sid, label: cleanText(String(label || '')).trim().slice(0, 60) || (method === 'attested' ? 'Attested historical' : 'Defense segment'), method, createdBy: dpWho(), createdAt: at, status: 'active' };
+  try {
+    await DB.runTransaction(async t => {
+      const ix = await t.get(dsIdx(season)), idx = ix.exists ? ix.data() : {}, others = [];
+      for (const k of Object.keys(idx)) { const m = /^seg_/.test(k) ? dsParse(idx[k], null) : null; if (!m || m.sid !== sid || m.status === 'deleted') continue; const sn = await t.get(dsDoc(season, m.id)); if (sn.exists) others.push(dsSegFromDoc(m.id, sn.data())); }
+      const clash = dsOverlap(others, all); if (clash.length) { const e = new Error('overlap'); e.clash = clash; throw e; }
+      t.set(dsDoc(season, id), Object.assign({ meta: JSON.stringify(meta), members: JSON.stringify(groups), excluded: '[]' }, dsHist(`created (${method}): ${all.length} entries${added.length ? `, ${added.length} added to complete their possessions` : ''}`)));
+      t.set(dsIdx(season), { ['seg_' + id]: JSON.stringify({ id, sid, label: meta.label, method, status: 'active', by: meta.createdBy, at }) }, { merge: true });
+    });
+  } catch (e) {
+    if (e.clash) return { why: `${e.clash.length === 1 ? '1 entry is' : e.clash.length + ' entries are'} already in another defense segment. Pick a range outside it.` };
+    console.error('defense segment create', e); return { why: 'Couldn’t save the segment. Check the connection and try again.' };
+  }
+  return { id, added };
+}
+// A review: one new append-only field. Works offline (queued); base = the records the reviewer saw.
+function dsReviewWrite(season, segId, key, rec, heads) {
+  const rev = newStintId().replace(/[^A-Za-z0-9]/g, '').slice(-12);
+  const r = Object.assign({}, rec, { base: (heads || []).map(h => h.rev), by: dpWho(), at: new Date().toISOString() });
+  const note = (heads || []).length > 1 ? ' (resolved a conflict)' : (heads || []).length ? ' (replaced the earlier review)' : '';
+  return settleWrite(dsDoc(season, segId).set(Object.assign({ ['rv_' + key + '__' + rev]: JSON.stringify(r) }, dsHist(`${key}: ${rec.state}${note}`)), { merge: true }));
+}
+// Membership or status change on one segment, read-modify-write in a transaction. Online only.
+async function dsSegUpdate(season, segId, change, what) {
+  if (dsOffline()) return { why: 'You’re offline: this change needs a connection.' };
+  try {
+    await DB.runTransaction(async t => {
+      const sn = await t.get(dsDoc(season, segId)); if (!sn.exists) throw new Error('missing');
+      const out = change(dsSegFromDoc(segId, sn.data())); if (!out) return;
+      t.set(dsDoc(season, segId), Object.assign(out.doc, dsHist(what)), { merge: true });
+      if (out.index) t.set(dsIdx(season), { ['seg_' + segId]: JSON.stringify(out.index) }, { merge: true });
+    });
+    return {};
+  } catch (e) { console.error('defense segment update', e); return { why: 'Couldn’t save. Check the connection and try again.' }; }
+}
+// Bring a whole current possession into the segment (accepts a changed grouping, or a late or partial entry).
+function dsIncludePossession(season, segId, pkKeys) {
+  return dsSegUpdate(season, segId, s => {
+    const keys = pkKeys.slice(), groups = s.members.filter(g => !g.keys.some(k => keys.includes(k))).concat([{ pk: keys[0], keys }]);
+    return { doc: { members: JSON.stringify(groups), excluded: JSON.stringify(s.excluded.filter(k => !keys.includes(k))) } };
+  }, `possession ${pkKeys[0]} taken in as one possession (${pkKeys.length} entries)`);
+}
+function dsSetAside(season, segId, key) { return dsSegUpdate(season, segId, s => ({ doc: { excluded: JSON.stringify([...new Set(s.excluded.concat([key]))]) } }), `${key} set aside (not part of this segment)`); }
+// Owner only: soft delete (kept for audit, read by nothing).
+function dsSoftDelete(season, segId) {
+  if (!IS_DH_OWNER) return Promise.resolve({ why: 'Only the Data Health owner can delete a segment.' });
+  return dsSegUpdate(season, segId, s => { const m = Object.assign({}, s.meta, { status: 'deleted', deletedBy: dpWho(), deletedAt: new Date().toISOString() });
+    return { doc: { meta: JSON.stringify(m) }, index: { id: segId, sid: m.sid, label: m.label, method: m.method, status: 'deleted', by: m.createdBy, at: m.createdAt } }; }, 'deleted (soft; kept for audit)');
+}
+// Live: the season index, and each segment doc it lists.
+function dsOnIndex(season, data) {
+  DEFSEG.index[season] = {};
+  Object.keys(data || {}).forEach(k => { const m = /^seg_/.test(k) ? dsParse(data[k], null) : null; if (!m || !m.id) return; DEFSEG.index[season][m.id] = m;
+    if (!DEFSEG.subs[m.id]) DEFSEG.subs[m.id] = dsDoc(season, m.id).onSnapshot(s => { DEFSEG.docs[m.id] = s.exists ? s.data() : null; dsRerender(); }, e => console.error('defense segment sync error', e)); });
+  dsRerender();
+}
+function dsRerender() {
+  if (!window.__appReady) return;
+  const on = id => { const v = document.getElementById(id); return v && v.classList.contains('active'); };
+  if (on('backfillView') && !(document.activeElement && document.activeElement.id === 'dsLabel')) renderBackfill();
+  if (on('healthView')) renderHealthCoverage(healthSeason);
+  const line = document.getElementById('defCoverageLine'); if (line) line.innerHTML = dsCoverageLine(defSeason);
 }
 function gaOffPick(s) { return s.pick === 'Yes' && s.pickAction !== 'Get' && s.pickType === 'Off-ball' && s.pickScreener && !isOppJersey(s.pickScreener) && s.pickScreener !== s.shooterJersey ? s.pickScreener : null; }
 function computeGoalsAdded(onCredit) {
@@ -15661,7 +16010,7 @@ function scrimMethodHtml() {
 // defense, picks / screens and missed turnovers. Every field is optional. Saves through the
 // same persistShot / persistPossession the Log form uses, so stats work the same way.
 // "Reviewed" marks (shared) live in app/backfill_<season> as r_<session>_<kind><id>.
-const BF = { sid: null, idx: 0, draft: null, dirty: false, reviewed: {}, more: {}, msg: '', showAll: {} };
+const BF = { sid: null, idx: 0, draft: null, dirty: false, reviewed: {}, more: {}, msg: '', showAll: {}, dsMark: null, dsReview: null, dsEdit: {} };
 function bfSeason() { return (NAV_ST && isAdvSeason(NAV_ST.season)) ? NAV_ST.season : currentAdvSeason(); }
 function bfSessions() {
   const season = bfSeason();
@@ -15872,6 +16221,91 @@ function bfCardHtml(item, tl) {
     ${item.kind === 'shot' ? `<button type="button" class="btn secondary" data-bf="addposs" title="Or press T">+ Turnover here</button>` : ''}${d.isNew ? `<button type="button" class="btn secondary" data-bf="cancelnew">Cancel</button>` : ''}</div>
     ${BF.msg ? `<p class="bf-msg${/can’t|failed|pick yes/i.test(BF.msg) ? ' bad' : ''}">${BF.msg}</p>` : ''}`;
 }
+// ---- Backfill: mark a defense segment, review it possession by possession (PR 6) ----
+const DS_ST_LABEL = { none: 'Not reviewed', clean: 'Clean', breakdown: 'Breakdown', cant: 'Can’t tell', reconfirm: 'Needs reconfirmation', conflict: 'Conflict', partial: 'Partial', attested: 'Attested (historical)', deleted: 'Deleted', moved: 'Moved', outside: 'Outside the segment' };
+const DS_T_LABEL = { beat: 'beaten', off: 'off-ball breakdown', blown: 'blown pick coverage', late: 'late slide', held: 'held his man', onBallLogged: 'on-ball (beaten not logged)', slideOnTime: 'slide on time', slideLogged: 'slide logged', pickExecuted: 'pick coverage executed', pickLogged: 'pick defended (coverage not logged)', caused: 'caused the turnover' };
+const dsList = (l, season) => l.map(x => `#${escapeHtml(x.j)} ${escapeHtml(lastNameOf(nameFor(x.j, season) || ''))} ${DS_T_LABEL[x.t] || x.t}`).join(' · ');
+function dsBfBarHtml(sid) {
+  const cov = dsCoverage(bfSeason(), sid), segs = cov ? Object.values(cov.bySeg) : [];
+  const chip = b => { const n = b.poss.length, done = b.poss.filter(p => DS_FINAL.includes(p.st)).length, warn = (b.counts.reconfirm || 0) + (b.counts.conflict || 0) + (b.counts.partial || 0) + b.late.length + b.missing.length;
+    return `<button type="button" class="pill${BF.dsReview === b.seg.id ? ' active' : ''}" data-bf="ds-review" data-seg="${escapeHtml(b.seg.id)}">${escapeHtml(b.seg.meta.label)} &middot; ${b.seg.meta.method === 'attested' ? 'attested' : `${done}/${n} poss.`}${b.complete ? ' &#10003;' : ''}${warn ? ' &#9888;' : ''}</button>`; };
+  return `<div class="ds-bar"><span class="n-note">Defense review:</span> ${segs.length ? segs.map(chip).join(' ') : '<span class="n-note">no segments yet: this practice counts as not reviewed</span>'} ${BF.dsMark || BF.dsReview ? `<button type="button" class="pill" data-bf="ds-close">Back to entries</button>` : '<button type="button" class="pill" data-bf="ds-mark">+ Mark defense segment</button>'}</div>`;
+}
+// The picked span: Backfill items between the two taps, plus any live-logged turnovers ticked.
+function dsMarkPick(tl) {
+  const m = BF.dsMark; if (m.a === null) return [];
+  const lo = Math.min(m.a, m.b === null ? m.a : m.b), hi = Math.max(m.a, m.b === null ? m.a : m.b);
+  return [...new Set(tl.list.slice(lo, hi + 1).filter(x => !x.isNew).map(x => dsKey(x.kind, x.e.id)).concat(Object.keys(m.loose).filter(k => m.loose[k])))];
+}
+function dsMarkCardHtml(sess, tl) {
+  const m = BF.dsMark, picked = dsMarkPick(tl), want = new Set(picked), cov = dsCoverage(bfSeason(), BF.sid);
+  const groups = dsPossessions(sess).filter(p => p.keys.some(k => want.has(k))), all = groups.flatMap(g => g.keys), added = all.filter(k => !want.has(k)), clash = all.filter(k => cov && cov.owner[k]);
+  const loose = tl.list.filter(x => x.loose && !x.isNew), nm = k => { const it = tl.list.find(x => !x.isNew && dsKey(x.kind, x.e.id) === k); return it ? (it.kind === 'shot' ? 'Shot ' + it.n : (it.e.end || 'Possession') + ' #' + it.e.id) : k; };
+  const shots = all.filter(k => k[0] === 's').length;
+  return `<div class="bf-match"><div><div class="bf-big">Mark a defense segment</div><div class="bf-sub">Tap the <b>first</b> and then the <b>last</b> item of the period in the strip above. Whole possessions are kept together (a rebound joins its shot). The entries themselves aren&rsquo;t changed.</div></div></div>
+    <section class="bf-box"><div class="bf-q"><div class="bf-lab">Label (e.g. 6v6, Team O vs D, Whole practice)</div><input type="text" id="dsLabel" maxlength="60" value="${escapeHtml(m.label)}" style="width:100%; max-width:320px;"></div>
+      <p class="n-note">${m.a === null ? 'Tap the first item.' : m.b === null ? 'Now tap the last item.' : `${all.length} entries (${shots} shots, ${all.length - shots} no-shot possessions) in ${groups.length} possessions${added.length ? ` &middot; ${added.length} added so whole possessions stay together: ${added.map(nm).join(', ')}` : ''}.`}</p>
+      ${loose.length ? `<div class="bf-q"><div class="bf-lab">Turnovers logged live have no place in the timeline. Tick any that belong to this period:</div><div class="bf-opts">${loose.map(x => { const k = dsKey(x.kind, x.e.id); return `<button type="button" class="pill${m.loose[k] ? ' active' : ''}" data-bf="ds-loose" data-k="${k}">${escapeHtml(x.e.end || 'Possession')} #${x.e.id}</button>`; }).join('')}</div></div>` : ''}
+      ${clash.length ? `<p class="bf-msg bad">${clash.length} of these entries are already in another segment: ${clash.slice(0, 8).map(nm).join(', ')}. Pick a range outside it.</p>` : ''}</section>
+    <div class="bf-actions"><button type="button" class="btn" data-bf="ds-create"${!all.length || clash.length ? ' disabled' : ''}>Create segment</button><button type="button" class="btn secondary" data-bf="ds-close">Cancel</button></div>
+    ${BF.msg ? `<p class="bf-msg${/couldn|offline|already|pick/i.test(BF.msg) ? ' bad' : ''}">${BF.msg}</p>` : ''}`;
+}
+function dsReviewCardHtml(sess, tl) {
+  const season = bfSeason(), cov = dsCoverage(season, BF.sid), b = cov && cov.bySeg[BF.dsReview];
+  if (!b) return '<p class="n-note">This segment isn’t available.</p>';
+  const seg = b.seg, idxOf = k => tl.list.findIndex(x => !x.isNew && dsKey(x.kind, x.e.id) === k);
+  const nm = k => { const it = tl.list[idxOf(k)]; return it ? (it.kind === 'shot' ? 'Shot ' + it.n : (it.e.end || 'Possession') + ' #' + it.e.id) : k; };
+  const entry = k => { const it = tl.list[idxOf(k)]; return it ? { kind: it.kind, e: it.e, i: idxOf(k) } : null; };
+  const order = dsOrder(sess).pos, poss = b.poss.slice().sort((x, y) => (order[x.keys[0]] ?? 1e9) - (order[y.keys[0]] ?? 1e9));
+  const attested = seg.meta.method === 'attested', when = iso => { try { return new Date(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }); } catch (e) { return ''; } };
+  const rows = p => p.keys.map(k => {
+    const ent = entry(k), st = cov.status[k] || { st: 'outside' };
+    if (!ent) return `<div class="ds-row"><b>${escapeHtml(k)}</b> &middot; ${DS_ST_LABEL[st.st] || st.st}${st.to ? ' to ' + escapeHtml(st.to) : ''}</div>`;
+    const pr = dsProposed(ent.kind, ent.e), e = ent.e;
+    const res = ent.kind === 'shot' ? (e.goal === 1 ? 'Goal' : (e.outcome || '')) + (e.shotQuality ? ' &middot; ' + escapeHtml(e.shotQuality.replace(/^\d-/, '')) : '') : escapeHtml(e.end || '');
+    const tags = (pr.bd.length ? `<span class="ds-bd">Breakdown${pr.bd.length > 1 ? 's' : ''} tagged: ${dsList(pr.bd, season)}</span>` : '<span class="n-note">No breakdown tagged</span>')
+      + (pr.lateSlide ? ` &middot; <span class="ds-bd">Slide by #${escapeHtml(pr.lateSlide)} on an open shot after the beat: late or on time?</span>` : '') + (pr.ev.length ? ` &middot; <span class="n-note">${dsList(pr.ev, season)}</span>` : '');
+    let state = `<b>${DS_ST_LABEL[st.st] || st.st}</b>`;
+    if (st.head && DS_FINAL.includes(st.st)) state += ` <span class="n-note">by ${escapeHtml(st.head.by || '')} ${when(st.head.at)}</span>`;
+    if (st.st === 'reconfirm') state += ` <span class="n-note">${st.why.includes('defense') ? 'defensive tags changed (' + dsFpDiff(ent.kind, st.head.fp, e).join(', ') + ')' : ''}${st.why.length > 1 ? '; ' : ''}${st.why.includes('lineup') ? 'lineup changed since review' : ''}</span>`;
+    if (st.st === 'conflict') state += ` <span class="n-note">two reviews disagree: ${st.heads.map(h => `${escapeHtml(DS_ST_LABEL[h.state])} by ${escapeHtml(h.by || '')}`).join(' vs ')}. Review it again to settle it.</span>`;
+    const outside = st.st === 'outside', locked = DS_FINAL.includes(st.st) && !BF.dsEdit[k];
+    const btn = (v, label, ok, why) => `<button type="button" class="btn${v === 'cant' ? ' secondary' : ''}" data-bf="ds-rv" data-k="${k}" data-v="${v}"${ok ? '' : ` disabled title="${escapeHtml(why || '')}"`}>${label}</button>`;
+    let acts = '';
+    if (!attested && !outside) acts = locked ? `<button type="button" class="pill" data-bf="ds-change" data-k="${k}">Change review</button>`
+      : pr.lateSlide ? (pr.bd.length ? btn('late', 'Breakdowns + late slide', true) + btn('bdOnTime', 'Breakdowns, slide on time', true) : btn('ontime', 'Clean (slide on time)', true) + btn('late', 'Breakdown: late slide', true)) + btn('cant', 'Can’t tell', true)
+      : btn('clean', 'Clean', dsCanClean(pr, null), 'Refused: a breakdown is still tagged. Fix the tags or confirm the breakdown.') + (pr.bd.length ? btn('breakdown', 'Confirm breakdown' + (pr.bd.length > 1 ? 's' : ''), true) : '') + btn('cant', 'Can’t tell', true);
+    return `<div class="ds-row"><div><b>${escapeHtml(nm(k))}</b> <span class="n-note">${res}</span> &middot; ${state}</div><div class="n-note">${tags}</div><div class="bf-actions">${acts}<button type="button" class="pill" data-bf="ds-open" data-i="${ent.i}">Open in Backfill</button></div></div>`;
+  }).join('');
+  const pBox = p => `<div class="ds-poss ds-${p.st}"><div class="ds-ph">Possession &middot; <b>${DS_ST_LABEL[p.st]}</b>${p.outside.length ? ` <span class="n-note">&mdash; ${p.outside.length} of its entries ${p.outside.length === 1 ? 'is' : 'are'} outside this segment, so it isn&rsquo;t counted as reviewed</span>` : ''}${p.groupChanged ? ' <span class="n-note">&mdash; the possession changed since marking (rebound, goal or entry moved)</span>' : ''}${!attested && (p.outside.length || p.groupChanged) ? ` <button type="button" class="pill" data-bf="ds-take" data-keys="${escapeHtml(p.keys.join(','))}">Take in the whole possession</button>` : ''}</div>${rows(p)}</div>`;
+  const late = b.late.length ? `<section class="bf-box"><div class="bf-boxh">Logged after marking, inside this segment&rsquo;s span</div>${b.late.map(k => `<div class="ds-row">${escapeHtml(nm(k))} <button type="button" class="pill" data-bf="ds-take" data-keys="${escapeHtml(((dsPossessions(sess).find(p => p.keys.includes(k)) || { keys: [k] }).keys).join(','))}">Include it</button> <button type="button" class="pill" data-bf="ds-aside" data-k="${k}">Not part of this segment</button></div>`).join('')}</section>` : '';
+  const miss = b.missing.length ? `<p class="n-note">${b.missing.length} entr${b.missing.length === 1 ? 'y was' : 'ies were'} deleted or moved since marking: ${b.missing.map(k => escapeHtml(k)).join(', ')}.</p>` : '';
+  return `<div class="bf-match"><div><div class="bf-big">${escapeHtml(seg.meta.label)} <span class="n-note">${escapeHtml(seg.meta.method)} &middot; marked by ${escapeHtml(seg.meta.createdBy || '')} ${when(seg.meta.createdAt)}</span></div>
+      <div class="bf-sub">${attested ? 'Attested historical: not reviewed entry by entry, and left out of every rate.' : `${b.poss.filter(p => DS_FINAL.includes(p.st)).length} of ${b.poss.length} possessions reviewed${b.complete ? ' &middot; <b>complete</b>' : ''}. Clean needs an explicit tap; an untagged shot is <b>not</b> clean until someone confirms it.`}</div></div></div>
+    ${late}${miss}${poss.map(pBox).join('')}
+    ${BF.msg ? `<p class="bf-msg${/refused|failed|offline|couldn|judge/i.test(BF.msg) ? ' bad' : ''}">${BF.msg}</p>` : ''}`;
+}
+// One review tap -> one append-only record (offline-safe).
+async function dsDoReview(key, v) {
+  const season = bfSeason(), sess = LIVE_SESSIONS[BF.sid], cov = dsCoverage(season, BF.sid); if (!sess || !cov) return;
+  const kind = key[0] === 's' ? 'shot' : 'poss', e = (kind === 'shot' ? sess.shots : sess.poss).find(x => x.id === Number(key.slice(1))); if (!e) return;
+  const p = dsProposed(kind, e), st = cov.status[key]; if (!st || st.st === 'outside' || st.st === 'attested') return;
+  let rec;
+  if (v === 'clean' || v === 'ontime') { const slide = v === 'ontime' ? 'onTime' : null; if (!dsCanClean(p, slide)) { BF.msg = 'Clean refused: a breakdown is still tagged on this entry. Fix the tags in Backfill or confirm the breakdown.'; renderBackfill(); return; }
+    rec = { state: 'clean', bd: [], ev: p.ev.concat(p.lateSlide ? [{ t: 'slideOnTime', j: p.lateSlide }] : []), slide }; }
+  else if (v === 'breakdown' || v === 'late' || v === 'bdOnTime') {
+    if (p.lateSlide && v === 'breakdown') { BF.msg = 'Judge the slide first: late or on time.'; renderBackfill(); return; }
+    const bd = p.bd.concat(v === 'late' && p.lateSlide ? [{ t: 'late', j: p.lateSlide }] : []);
+    if (!bd.length) { BF.msg = 'No breakdown is tagged on this entry.'; renderBackfill(); return; }
+    rec = { state: 'breakdown', bd, ev: p.ev.concat(v === 'bdOnTime' && p.lateSlide ? [{ t: 'slideOnTime', j: p.lateSlide }] : []), slide: v === 'late' ? 'late' : v === 'bdOnTime' ? 'onTime' : null }; }
+  else if (v === 'cant') rec = { state: 'cant', bd: [], ev: [], slide: null };
+  else return;
+  rec.fp = dsFp(kind, e); rec.lu = dsLu(e, sess.stints);
+  const r = await dsReviewWrite(season, st.seg, key, rec, st.heads || []);
+  delete BF.dsEdit[key];
+  BF.msg = r === 'error' ? 'Save failed — please try again.' : r === 'queued' ? 'Saved on this device; it will sync when you reconnect.' : '';
+  renderBackfill();
+}
 function renderBackfill() {
   const wrap = document.getElementById('backfillWrap'); if (!wrap) return;
   const sessions = bfSessions();
@@ -15891,7 +16325,10 @@ function renderBackfill() {
   const rev = tl.list.filter(x => !x.isNew && bfIsRev(BF.sid, x.kind, x.e.id)).length;
   const strip = tl.list.map((x, i) => `<button type="button" class="bf-chip ${x.isNew ? 'part' : bfState(BF.sid, x)}${i === BF.idx ? ' cur' : ''}" data-bf="go" data-i="${i}" title="${x.kind === 'shot' ? 'Shot ' + x.n : x.e.end === 'Turnover' ? 'Turnover' : 'Possession'}">${x.kind === 'shot' ? x.n : x.e.end === 'Turnover' ? 'TO' : 'P'}</button>`).join('');
   wrap.innerHTML = `<div class="panel bf-panel"><div class="bf-top"><button type="button" class="pill" data-bf="list">&larr; Practices</button><b>${escapeHtml(sess.date)} practice</b><span class="n-note">${rev} of ${tl.list.length} reviewed · green = reviewed, gold = has some data</span></div>
-    <div class="bf-strip">${strip}</div>${item ? bfCardHtml(item, tl) : '<p>No shots in this practice.</p>'}</div>`;
+    <div class="bf-strip">${strip}</div>${dsBfBarHtml(BF.sid)}${BF.dsMark ? dsMarkCardHtml(sess, tl) : BF.dsReview ? dsReviewCardHtml(sess, tl) : item ? bfCardHtml(item, tl) : '<p>No shots in this practice.</p>'}</div>`;
+  // Defense segments on the strip: entries already in a segment, and the span being marked.
+  { const cov = dsCoverage(bfSeason(), BF.sid), pick = BF.dsMark ? new Set(dsMarkPick(tl)) : null;
+    wrap.querySelectorAll('.bf-chip[data-i]').forEach(c => { const x = tl.list[Number(c.dataset.i)]; if (!x || x.isNew) return; const k = dsKey(x.kind, x.e.id); if (cov && cov.owner[k]) c.classList.add('ds-in'); if (pick && pick.has(k)) c.classList.add('ds-sel'); }); }
   const cur = wrap.querySelector('.bf-chip.cur'); if (cur) cur.scrollIntoView({ block: 'nearest', inline: 'center' });
   const gw = wrap.querySelector('[data-bf-goal] svg'); if (gw && BF.draft && BF.draft.f.goalX != null) { const [x, y] = goalMouthPoint(BF.draft.f.goalX, BF.draft.f.goalY); makeMarker(gw, 1.6, 0.5).place(x, y); }
 }
@@ -15943,7 +16380,19 @@ function bfInit() {
     const b = ev.target.closest('[data-bf]'); if (!b) return;
     const a = b.dataset.bf, d = BF.draft, r = b.dataset.r != null ? Number(b.dataset.r) : null;
     if (a === 'open') { BF.sid = b.dataset.sid; let i = 0; try { i = JSON.parse(localStorage.getItem('wluBackfillPos') || '{}')[BF.sid] || 0; } catch (e) { /* storage unavailable */ } bfGo(i); window.scrollTo(0, 0); return; }
-    if (a === 'list') { BF.sid = null; BF.draft = null; BF.newItem = null; renderBackfill(); return; }
+    if (a === 'list') { BF.sid = null; BF.draft = null; BF.newItem = null; BF.dsMark = null; BF.dsReview = null; renderBackfill(); return; }
+    if (a === 'go' && BF.dsMark) { const i = Number(b.dataset.i); if (BF.dsMark.a === null || BF.dsMark.b !== null) { BF.dsMark.a = i; BF.dsMark.b = null; } else BF.dsMark.b = i; BF.msg = ''; renderBackfill(); return; }
+    if (a === 'ds-mark') { BF.dsMark = { a: null, b: null, label: '', loose: {} }; BF.dsReview = null; BF.msg = ''; renderBackfill(); return; }
+    if (a === 'ds-close') { BF.dsMark = null; BF.dsReview = null; BF.msg = ''; renderBackfill(); return; }
+    if (a === 'ds-loose') { const k = b.dataset.k; BF.dsMark.loose[k] = !BF.dsMark.loose[k]; renderBackfill(); return; }
+    if (a === 'ds-create') { const tl = bfTimeline(LIVE_SESSIONS[BF.sid]); b.disabled = true;
+      dsCreateSegment(bfSeason(), BF.sid, BF.dsMark.label, 'backfill', dsMarkPick(tl)).then(r => { if (r.why) { BF.msg = r.why; renderBackfill(); return; } BF.dsMark = null; BF.dsReview = r.id; BF.msg = 'Segment created. Review each possession below.'; renderBackfill(); }); return; }
+    if (a === 'ds-review') { BF.dsReview = BF.dsReview === b.dataset.seg ? null : b.dataset.seg; BF.dsMark = null; BF.msg = ''; renderBackfill(); return; }
+    if (a === 'ds-rv') { dsDoReview(b.dataset.k, b.dataset.v); return; }
+    if (a === 'ds-change') { BF.dsEdit[b.dataset.k] = true; renderBackfill(); return; }
+    if (a === 'ds-open') { BF.dsReview = null; bfGo(Number(b.dataset.i)); return; }
+    if (a === 'ds-take') { dsIncludePossession(bfSeason(), BF.dsReview, b.dataset.keys.split(',')).then(r => { BF.msg = r.why || ''; renderBackfill(); }); return; }
+    if (a === 'ds-aside') { dsSetAside(bfSeason(), BF.dsReview, b.dataset.k).then(r => { BF.msg = r.why || ''; renderBackfill(); }); return; }
     if (a === 'go') { bfGo(Number(b.dataset.i)); return; }
     if (a === 'prev') { bfGo(Math.max(0, BF.idx - 1)); return; }
     if (a === 'skip') { bfGo(BF.idx + 1); return; }
@@ -15968,6 +16417,7 @@ function bfInit() {
   });
   // Typed jersey numbers on a field: same idea.
   wrap.addEventListener('input', ev => {
+    if (ev.target.id === 'dsLabel' && BF.dsMark) { BF.dsMark.label = ev.target.value; return; }
     const dk = ev.target.closest('[data-bf-dom]'); if (dk && BF.draft) { domKeyInput(dk, BF.draft, () => { BF.msg = ''; renderBackfill(); }, '#backfillWrap'); return; }
     const t = ev.target.closest('[data-bf-j]'); if (!t || !BF.draft) return;
     const k = t.dataset.bfJ, season = bfSeason(), m = bfResolve(t.value);
@@ -15998,6 +16448,7 @@ function bfInit() {
   });
   document.addEventListener('keydown', ev => {
     if (!document.getElementById('backfillView').classList.contains('active') || !BF.sid || /input|textarea|select/i.test((ev.target.tagName || ''))) return;   // typing a jersey: Enter doesn't save
+    if (BF.dsMark || BF.dsReview) return;   // marking or reviewing a defense segment: no entry shortcuts
     if ((ev.key === 't' || ev.key === 'T') && !BF.newItem) { const btn = document.querySelector('[data-bf="addposs"]'); if (btn) { ev.preventDefault(); btn.click(); } return; }
     if (ev.key === 'ArrowRight') { ev.preventDefault(); bfGo(BF.idx + 1); }
     if (ev.key === 'ArrowLeft') { ev.preventDefault(); bfGo(Math.max(0, BF.idx - 1)); }
@@ -16072,7 +16523,7 @@ function fcOpen(key) {
   if (!FC_KEY.test(key || '')) return;
   if (FC.unsub) { FC.unsub(); FC.unsub = null; }
   const k = fcKeyInfo(key);
-  Object.assign(FC, { key, date: k.date, context: k.context, opponent: k.oppSlug, drafts: null, account: null, st: {}, idx: 0, draft: null, mode: null, pick: null, msg: '', choosing: false, editing: null, addTo: null });
+  Object.assign(FC, { key, date: k.date, context: k.context, opponent: k.oppSlug, drafts: null, account: null, st: {}, idx: 0, draft: null, mode: null, pick: null, msg: '', choosing: false, editing: null, addTo: null, dsMark: null });
   FC.unsub = DB.doc('app/filmcheck_' + key).onSnapshot(snap => {
     const d = snap.exists ? snap.data() : {};
     let list = null; try { list = fcValidDrafts(JSON.parse(d.drafts || 'null')); } catch (e) { list = null; }
@@ -16087,7 +16538,7 @@ function fcOpen(key) {
     if (document.getElementById('filmcheckView').classList.contains('active')) renderFilmCheck();
   }, e => { console.error('film check load', e); FC.msg = 'Could not load this session.'; renderFilmCheck(); });
 }
-function fcGo(i) { FC.idx = i; FC.draft = null; FC.mode = null; FC.pick = null; FC.msg = ''; FC.choosing = false; FC.editing = null; FC.addTo = null; renderFilmCheck(); }
+function fcGo(i) { if (FC.dsMark) return; FC.idx = i; FC.draft = null; FC.mode = null; FC.pick = null; FC.msg = ''; FC.choosing = false; FC.editing = null; FC.addTo = null; renderFilmCheck(); }
 function fcNewDraft(it) {
   if (it.d.kind === 'turnover') return { kind: 'poss', isNew: true, f: { end: 'Turnover' }, rows: [], scr: null, picksBlank: true };
   if (FC.mode === 'new') return { kind: 'shot', isNew: true, f: it.d.guessGoal ? { outcome: 'Goal' } : {}, rows: [], scr: null, picksBlank: true };
@@ -16256,7 +16707,7 @@ function renderFilmCheck() {
   const card = FC.addTo ? fcAddToCardHtml() : FC.editing ? fcEditCardHtml(it, fcSavedEntry(it)) : it.st ? fcDoneCardHtml(it) : it.d.kind === 'turnover' ? fcTurnoverCardHtml(it) : it.d.kind === 'oppshot' ? (FC.mode === 'new' ? fcOppNewCardHtml(it, plan) : fcOppMatchCardHtml(it, plan)) : FC.mode === 'new' ? fcNewCardHtml(it) : fcMatchCardHtml(it, plan);
   const head = `<div class="bf-top"><button type="button" class="pill" data-fc="list">&larr; Practices</button><b>${escapeHtml(fcLabel(FC.key))} &middot; Film Check</b><span class="n-note">${done} of ${plan.items.length} checked &middot; ${plan.logged.length} shots logged${plan.nOpp || plan.loggedOpp.length ? ` &middot; ${plan.loggedOpp.length} opponent shots logged` : ''}</span></div>
     <div class="n-note fc-legend"><span class="bf-chip part"></span>offered a logged shot <span class="bf-chip fc-new"></span>no logged shot left <span class="bf-chip fc-to"></span>turnover ${plan.nOpp ? '<span class="bf-chip fc-opp"></span>opponent shot (O) ' : ''}<span class="bf-chip done"></span>checked <span class="bf-chip fc-x"></span>not a shot</div>
-    <div class="bf-strip">${strip}</div>${fcDomReviewHtml(plan)}`;
+    <div class="bf-strip">${strip}</div>${fcDomReviewHtml(plan)}${fcDsBarHtml(plan)}`;
   const meta = `<div class="fc-meta"><span>Clip starts at the possession start</span><span>${fcIsShot(it.d) ? 'Shot' : 'Turnover tag'} at about <b>${fcClock(it.d.inClip)}</b> of ${fcClock(it.d.len)}</span><span>Film time <b>${fcClock(it.d.t)}</b></span></div>`;
   const body = card + (FC.msg ? `<p class="bf-msg${/can’t|failed|isn’t|type|pick|tap|already|didn’t/i.test(FC.msg) ? ' bad' : ''}">${escapeHtml(FC.msg)}</p>` : '');
   // Tapping a pill redraws the form only; the clip player is rebuilt just when the clip changes, so it keeps playing.
@@ -16269,6 +16720,23 @@ function renderFilmCheck() {
   const cur = wrap.querySelector('.bf-chip.cur'); if (cur) cur.scrollIntoView({ block: 'nearest', inline: 'center' });
   const gw = wrap.querySelector('[data-bf-goal] svg'); if (gw && FC.draft && FC.draft.f.goalX != null) { const [x, y] = goalMouthPoint(FC.draft.f.goalX, FC.draft.f.goalY); makeMarker(gw, 1.6, 0.5).place(x, y); }
   const fw = wrap.querySelector('[data-fc-field] svg'); if (fw && FC.draft && FC.draft.f.distanceYds != null) { const [x, y] = projectField(FC.draft.f.lateralYds, FC.draft.f.distanceYds); makeMarker(fw, 1.1, 0.35).place(x, y); }
+}
+// Defense segments from the clip strip (PR 6): tap the first and last clip; members are the entries those
+// clips were matched or saved to. Reviewing happens in Backfill.
+function fcDsPick(plan) {
+  const m = FC.dsMark; if (!m || m.a === null) return { keys: [], open: [] };
+  const lo = Math.min(m.a, m.b === null ? m.a : m.b), hi = Math.max(m.a, m.b === null ? m.a : m.b), its = plan.items.slice(lo, hi + 1);
+  return { keys: its.filter(x => x.st && ['m', 'n', 't'].includes(x.st.s) && x.st.id).map(x => dsKey(x.st.s === 't' ? 'poss' : 'shot', x.st.id)), open: its.filter(x => !x.st).map(x => x.n) };
+}
+function fcDsBarHtml(plan) {
+  if (FC.context === 'Game') return '';
+  const season = fcSeason(), cov = dsCoverage(season, fcSid()), segs = cov ? Object.values(cov.bySeg) : [];
+  const list = segs.map(b => `<span class="pill">${escapeHtml(b.seg.meta.label)} &middot; ${b.poss.filter(p => DS_FINAL.includes(p.st)).length}/${b.poss.length}${b.complete ? ' &#10003;' : ''}</span>`).join(' ');
+  if (!FC.dsMark) return `<div class="ds-bar"><span class="n-note">Defense review:</span> ${list || '<span class="n-note">no segments yet</span>'} <button type="button" class="pill" data-fc="ds-mark">+ Mark defense segment</button>${segs.length ? ' <button type="button" class="pill" data-fc="ds-tobf">Review in Backfill</button>' : ''}</div>`;
+  const pk = fcDsPick(plan), m = FC.dsMark;
+  return `<div class="bf-box"><div class="bf-boxh">Mark a defense segment</div><p class="n-note">${m.a === null ? 'Tap the first clip in the strip.' : m.b === null ? 'Now tap the last clip.' : `${pk.keys.length} saved entries in that span.`}${pk.open.length ? ` <b>${pk.open.length} clip${pk.open.length === 1 ? ' isn’t' : 's aren’t'} checked yet</b> (${pk.open.slice(0, 6).join(', ')}): check ${pk.open.length === 1 ? 'it' : 'them'} first.` : ''}</p>
+    <input type="text" id="fcDsLabel" maxlength="60" placeholder="Label, e.g. 6v6" value="${escapeHtml(m.label)}" style="max-width:260px;"> <button type="button" class="btn" data-fc="ds-create"${!pk.keys.length || pk.open.length ? ' disabled' : ''}>Create segment</button> <button type="button" class="btn secondary" data-fc="ds-cancel">Cancel</button>
+    ${m.msg ? `<p class="bf-msg bad">${escapeHtml(m.msg)}</p>` : ''}</div>`;
 }
 // Turnovers in this practice still needing a dominoes call: Unknown, plus (on request) older ones never asked.
 // One with a clip opens it to correct; one logged without film is set in Backfill.
@@ -16455,6 +16923,12 @@ function fcInit() {
     if (a === 'skip') { fcGo(FC.idx + 1); return; }
     if (a === 'save') { fcSave(); return; }
     if (a === 'saveagain') { fcSaveAddTo(true); return; }
+    if (a === 'go' && FC.dsMark) { const i = Number(b.dataset.i); if (FC.dsMark.a === null || FC.dsMark.b !== null) { FC.dsMark.a = i; FC.dsMark.b = null; } else FC.dsMark.b = i; renderFilmCheck(); return; }
+    if (a === 'ds-mark') { FC.dsMark = { a: null, b: null, label: '', msg: '' }; renderFilmCheck(); return; }
+    if (a === 'ds-cancel') { FC.dsMark = null; renderFilmCheck(); return; }
+    if (a === 'ds-create') { const pk = fcDsPick(fcPlan()); if (pk.open.length) return; b.disabled = true;
+      dsCreateSegment(fcSeason(), fcSid(), FC.dsMark.label, 'filmcheck', pk.keys).then(r => { if (r.why) { FC.dsMark.msg = r.why; renderFilmCheck(); return; } FC.dsMark = null; FC.msg = 'Defense segment created. Review it in Backfill.'; renderFilmCheck(); }); return; }
+    if (a === 'ds-tobf') { BF.sid = fcSid(); BF.dsMark = null; BF.dsReview = (Object.values((dsCoverage(fcSeason(), fcSid()) || { bySeg: {} }).bySeg)[0] || { seg: {} }).seg.id || null; goNav('backfill'); renderBackfill(); return; }
     if (a === 'domall') { FC.domAll = !FC.domAll; FC.domOpen = true; renderFilmCheck(); return; }
     if (a === 'domgo') {   // jump to a turnover's clip with it open for correcting
       const i = Number(b.dataset.i); fcGo(i); const pl = fcPlan(), x = pl.items[i], e = x && x.st && x.st.s === 't' ? fcSavedEntry(x) : null;
@@ -16494,6 +16968,7 @@ function fcInit() {
     FC.msg = ''; renderFilmCheck();
   });
   wrap.addEventListener('input', ev => {
+    if (ev.target.id === 'fcDsLabel' && FC.dsMark) { FC.dsMark.label = ev.target.value; return; }
     if (!FC.draft) return;
     const dk = ev.target.closest('[data-bf-dom]'); if (dk) { domKeyInput(dk, FC.draft, () => { FC.msg = ''; renderFilmCheck(); }, '#filmcheckWrap'); return; }
     // Number or name, resolved like Backfill; only a real player is stored.
