@@ -1701,6 +1701,18 @@
     <p class="view-intro">Individual defense from the <b>Defense</b> card on the Log Shot form (on-ball defender, slide defender, beaten). Shows one season at a time, 2027 and later, live as you log. Lower is better for goals and expected goals allowed.</p>
     <div class="view-tiles trend-grid" id="defTiles"></div>
     <div class="panel">
+      <p class="panel-title">Defensive Value <span class="n-note">supplemental &middot; not part of Goals Added or any rating</span></p>
+      <p class="panel-sub" id="defValueSub"></p>
+      <p class="panel-title" style="font-size:13px; margin-top:6px;">Caused turnovers</p>
+      <div class="table-wrap" id="defValueWrap"></div>
+      <p class="panel-title" style="font-size:13px; margin-top:14px;">Logged breakdowns</p>
+      <p class="panel-sub" id="defBreakSub"></p>
+      <div class="table-wrap" id="defBreakWrap"></div>
+      <p class="panel-title" style="font-size:13px; margin-top:14px;">What followed each breakdown type</p>
+      <p class="panel-sub" id="defBreakTypeSub"></p>
+      <div class="table-wrap" id="defBreakTypeWrap"></div>
+    </div>
+    <div class="panel">
       <p class="panel-title">On-Ball Defense</p>
       <p class="panel-sub" id="defSub"></p>
       <div class="table-wrap" id="defPlayerWrap"></div>
@@ -2338,6 +2350,11 @@
       <p class="panel-title">Field Coverage</p>
       <p class="panel-sub">Share of the entries each field applies to where it was filled in (placement only counts shots on cage, Turnover By only counts turnover possessions, and so on). Green 80%+, yellow 40&ndash;79%, red under 40%. Lowest first.</p>
       <div class="table-wrap" id="healthFieldWrap"></div>
+    </div>
+    <div class="panel">
+      <p class="panel-title">Defensive Tags: Counted vs Excluded</p>
+      <p class="panel-sub">Every defensive tag on a practice shot, and whether the logged-breakdown counts on the Defense page use it (and if not, why). Tags listed under <b>To correct</b> are left as logged; fix them in Backfill.</p>
+      <div class="table-wrap" id="healthDefTagWrap"></div>
     </div>
     <div class="panel">
       <p class="panel-title">Dominoes: Shots vs Turnovers</p>
@@ -8407,10 +8424,61 @@ function beatenMostOf(list) {
   const top = Object.keys(counts).sort((a, b) => counts[b] - counts[a])[0];
   return { label: top, share: counts[top] / tagged.length, n: tagged.length };
 }
+// Caused turnovers and logged breakdowns (supplemental; see defensePartsFrom / defBreakdownsFrom).
+function renderDefValue(season) {
+  const wrap = document.getElementById('defValueWrap'), sub = document.getElementById('defValueSub'); if (!wrap || !sub) return;
+  const ids = ['defBreakWrap', 'defBreakTypeWrap', 'defBreakSub', 'defBreakTypeSub'];
+  if (defContext === 'Game') { sub.innerHTML = 'Caused turnovers and logged breakdowns come from practice possessions (our offense against our defense). Games aren&rsquo;t included yet.'; wrap.innerHTML = ''; ids.forEach(id => { const el = document.getElementById(id); if (el) el.innerHTML = ''; }); return; }
+  const R = defensePartsFor(season, defContext), B = R.B;
+  sub.innerHTML = `<b>Caused turnovers</b>: +${num(R.V, 3)} goals each, an average possession ended. <b>Logged breakdowns</b>: how often each player was tagged with a breakdown, by type, and what kind of shot followed. They are counts, not a goals rating: a breakdown is never credited because the shot after it happened to be poor. ` + defCoverageHtml(R);
+  const sg = (v, dd) => v === null || v === undefined || !isFinite(v) ? '—' : (v >= 0 ? '+' : '') + v.toFixed(dd);
+  const rng = (a, dd) => a && a[0] !== null ? `<span style="white-space:nowrap;">${sg(a[0], dd)} to ${sg(a[1], dd)}</span>` : '<span class="n-note">—</span>';
+  const pc = v => v === null || v === undefined ? '<span class="n-note">—</span>' : pct(v);
+  const ctRows = R.rows.map(r => Object.assign({ name: nameFor(r.jersey, season) }, r));
+  renderSortableTable('defValueWrap', [
+    { key: 'jersey', label: '#', type: 'text', value: r => r.jersey },
+    { key: 'name', label: 'Name', type: 'text', value: r => r.name, format: nameCell },
+    { key: 'ctN', label: 'Caused TOs', type: 'num', value: r => r.ctN },
+    { key: 'ctV', label: 'Value (+V each)', type: 'num', value: r => r.ctV, format: v => `<b>${sg(v, 1)}</b>`, title: 'Caused turnovers × V (goals): each one ended an average possession.' },
+    { key: 'ctPer', label: 'Per Practice', type: 'num', value: r => r.ctPer, format: v => sg(v, 2), title: 'Value per practice he appeared in.' },
+    { key: 'ctRange', label: '90% Sampling Range', type: 'text', value: r => r.ctRange, format: v => rng(v, 1), sortable: false, title: 'Value with a different set of practices: 1,000 resamples of whole practices.' },
+  ], ctRows, { dense: true, defaultSort: { key: 'ctV', dir: 'desc' }, emptyMsg: `No ${season} caused turnovers logged yet.` });
+  document.getElementById('defBreakSub').innerHTML = `Each tag counted once, by type. <b>Blown pick coverage</b> counts once for each pick defender involved (which one blew it isn&rsquo;t logged). <b>Late slide</b> is <b>provisional</b>: timing is read from the contest level (open shot after a beaten defender); a slide on a contested shot is never charged. <b>Per tagged practice</b> is conditional on defensive tagging, not a true rate. The shots after his breakdowns are context, not a rating.`;
+  const bRows = B.rows.map(r => Object.assign({ name: nameFor(r.jersey, season) }, r));
+  const BK = 'Breakdowns logged', AF = 'Shots after his breakdowns (context)';
+  renderSortableTable('defBreakWrap', [
+    { key: 'jersey', label: '#', type: 'text', value: r => r.jersey },
+    { key: 'name', label: 'Name', type: 'text', value: r => r.name, format: nameCell },
+    { key: 'off', label: 'Off-ball', type: 'num', value: r => r.off || null, group: BK },
+    { key: 'beat', label: 'Beaten', type: 'num', value: r => r.beat || null, group: BK },
+    { key: 'blown', label: 'Blown Pick', type: 'num', value: r => r.blown || null, format: (v, r) => v === null ? '<span class="n-note">—</span>' : `${v}${Math.abs(r.blownW - v) > 0.01 ? ` <span class="n-note">(${num(r.blownW, 1)} by share)</span>` : ''}`, group: BK, title: 'Blown pick coverage he was one of the pick defenders on.' },
+    { key: 'late', label: 'Late Slide*', type: 'num', value: r => r.late || null, group: BK, title: 'Provisional: an open shot after his man’s defender was beaten (slide timing isn’t logged yet).' },
+    { key: 'total', label: 'Total', type: 'num', value: r => r.total, format: v => `<b>${v}</b>`, group: BK },
+    { key: 'tagApps', label: 'Tagged Practices', type: 'num', value: r => r.tagApps, group: BK, title: 'Practices with defensive tagging that he appears in.' },
+    { key: 'perTagged', label: 'Per Tagged Practice', type: 'num', value: r => r.perTagged, format: v => v === null ? '—' : num(v, 1), group: BK, title: 'Conditional on defensive tagging: not a true breakdown rate (possessions defended aren’t logged).' },
+    { key: 'afterN', label: 'Shots', type: 'num', value: r => r.after.n, group: AF },
+    { key: 'afterXg', label: 'Avg xG', type: 'num', value: r => r.after.xg, format: v => v === null ? '—' : num(v, 2), group: AF },
+    { key: 'afterMix', label: 'Gold / Silver / Bronze', type: 'text', value: r => r.after, format: a => a.n ? `<span style="white-space:nowrap;">${pct(a.gold)} / ${pct(a.silver)} / ${pct(a.bronze)}</span>` : '—', sortable: false, group: AF },
+    { key: 'afterGoal', label: 'Goal Rate', type: 'num', value: r => r.after.goal, format: (v, r) => v === null ? '—' : `${pct(v)} <span class="n-note">(${Math.round(v * r.after.n)}/${r.after.n})</span>`, group: AF },
+  ], bRows, { dense: true, defaultSort: { key: 'total', dir: 'desc' }, emptyMsg: `No ${season} breakdowns logged yet.` });
+  const C = B.clean;
+  document.getElementById('defBreakTypeSub').innerHTML = `Team-wide, by breakdown type. For reference only: shots where a defender was logged and held his man or the pick coverage was executed &mdash; ${C.n} shots, avg xG ${C.n ? num(C.xg, 2) : '—'}, ${C.n ? `${pct(C.gold)} / ${pct(C.silver)} / ${pct(C.bronze)}` : '—'} Gold / Silver / Bronze, ${C.n ? pct(C.goal) : '—'} scored. That&rsquo;s <b>a selected sample</b> (those tags are mostly logged on poorer shots), so no goals-cost rating is computed from it: the Oct 29 audit found the cost moves by about 75% depending on which clean baseline is used, and what would have happened without the breakdown isn&rsquo;t logged.`;
+  const tRows = DEF_BREAK_TYPES.map(([k, l]) => Object.assign({ type: l }, B.types[k]));
+  renderSortableTable('defBreakTypeWrap', [
+    { key: 'type', label: 'Type', type: 'text', value: r => r.type, format: v => `<span style="white-space:nowrap;">${escapeHtml(v)}</span>` },
+    { key: 'n', label: 'Shots', type: 'num', value: r => r.n },
+    { key: 'xg', label: 'Avg xG', type: 'num', value: r => r.xg, format: v => v === null ? '—' : num(v, 2) },
+    { key: 'gold', label: 'Gold', type: 'num', value: r => r.gold, format: pc },
+    { key: 'silver', label: 'Silver', type: 'num', value: r => r.silver, format: pc },
+    { key: 'bronze', label: 'Bronze', type: 'num', value: r => r.bronze, format: pc },
+    { key: 'goal', label: 'Goal Rate', type: 'num', value: r => r.goal, format: pc },
+  ], tRows, { dense: true, defaultSort: { key: 'n', dir: 'desc' }, emptyMsg: 'No breakdowns logged yet.' });
+}
 function renderDefense() {
   const wrap = document.getElementById('defPlayerWrap');
   if (!wrap) return;
   const season = defSeason;
+  renderDefValue(season);
   const model = xgModelFor(season);
   const shots = defShotsFor(season);
   const wlu = j => j && !isOppJersey(j);
@@ -8785,6 +8853,22 @@ async function runSelfCheck() {
       add('Formulas', 'Unknown dominoes count the same as blank', diff.length ? 'fail' : 'pass', diff.length ? `Differs on ${diff.slice(0, 5).join(', ')}` : `${unk.length} Unknown answers: Goals Added and domino counts identical to blank.`);
     }
   } catch (e) { add('Data', 'Dominoes checks ran', 'fail', e.message); }
+  // 6. Supplemental defense: caused turnovers = count × V on the Goals Added possessions; every
+  //    defensive tag counted or excluded with a reason; the breakdown rules pass their synthetic tests.
+  try {
+    const R = defensePartsFor(season, 'All'), T = R.T, B = R.B, ctSum = R.rows.reduce((a, r) => a + r.ctV, 0);
+    add('Formulas', 'Caused-turnover value reconciles', Math.abs(ctSum - T.ctCount * R.V) < 1e-9 ? 'pass' : 'fail', `${T.ctCount} caused turnovers × V ${num(R.V, 3)} = ${num(ctSum, 2)} over ${T.poss} practice possessions.`);
+    if (!SHOTS.concat(POSSESSIONS).some(e => seasonForDate(e.date) === season && e.context === 'Game')) {
+      const s0 = EFF_SEASON, c0 = EFF_CONTEXT, f0 = EFF_FROM; EFF_SEASON = season; EFF_CONTEXT = 'All'; EFF_FROM = null; let g;
+      try { g = computeGoalsAdded(); } finally { EFF_SEASON = s0; EFF_CONTEXT = c0; EFF_FROM = f0; }
+      const same = g.poss === T.poss && Math.abs(g.V - R.V) < 1e-12;
+      add('Formulas', 'Caused turnovers use the Goals Added possessions', same ? 'pass' : 'fail', same ? `${T.poss} possessions, V ${num(R.V, 3)} in both.` : `Goals Added ${g.poss} / ${num(g.V, 4)} vs ${T.poss} / ${num(R.V, 4)}.`);
+    }
+    const recs = Object.entries(B.rec), unacc = recs.filter(([, r]) => r.counted + Object.values(r.excluded).reduce((a, x) => a + x, 0) !== r.logged), counted = recs.reduce((a, [, r]) => a + r.counted, 0), totals = B.rows.reduce((a, r) => a + r.total, 0);
+    add('Data', 'Every defensive tag is counted or excluded with a reason', !unacc.length && counted === totals ? 'pass' : 'fail', `${recs.map(([k, r]) => `${k}: ${r.counted} of ${r.logged} counted`).join(' · ')}.${B.errors.length ? ` ${B.errors.length} duplicate-role tags to correct in Backfill (listed on Data Health).` : ''}`);
+    const tests = defBreakdownTests(), bad = tests.filter(x => !x.pass);
+    add('Formulas', 'Breakdown rules pass their synthetic tests', bad.length ? 'fail' : 'pass', bad.length ? 'Failed: ' + bad.map(x => x.name).join(' · ') : `${tests.length} of ${tests.length}: ${tests.map(x => x.name.split(':')[0]).join(' · ')}.`);
+  } catch (e) { add('Formulas', 'Supplemental defense checks ran', 'fail', e.message); }
   // Report.
   const icon = { pass: '✓', warn: '!', fail: '✕' }, cnt = k => R.filter(r => r.status === k).length;
   out.innerHTML = `<p class="panel-sub"><b>${cnt('pass')} passed</b> · ${cnt('warn')} to look at · ${cnt('fail')} failed · ${escapeHtml(season)} · ${new Date().toLocaleString()}</p>
@@ -8811,6 +8895,13 @@ function renderHealthDominoes(season) {
   wrap.innerHTML = `<table class="shotlog"><thead><tr><th></th><th>Yes</th><th>No</th><th>Unknown</th><th>Blank (never asked)</th><th>Answered (Yes or No)</th></tr></thead><tbody>${rows.map(([lab, c]) => `<tr><td><b>${lab}</b> <span class="n-note">${c.n}</span></td><td>${cell(c.yes, c.n)}</td><td>${cell(c.no, c.n)}</td><td>${cell(c.unknown, c.n)}</td><td>${cell(c.blank, c.n)}</td><td>${healthBar(c.obs)}</td></tr>`).join('')}</tbody></table>
     <p class="n-note">Practices answered on 90%+ of both shot possessions and turnovers: <b>${complete}</b> of ${Object.keys(sess).length}. Answered turnovers: <b>${tObs}</b>. Status: <b>${ready ? 'ready for review' : 'monitoring only'}</b> (review once ${DOM_GATE.practices}+ such practices and ${DOM_GATE.turnovers}+ answered turnovers; any use still needs Bobby&rsquo;s OK).</p>`;
 }
+// The defensive tag reconciliation and the duplicate-role tags to fix by hand.
+function renderHealthDefTags(season) {
+  const wrap = document.getElementById('healthDefTagWrap'); if (!wrap) return;
+  const B = defensePartsFor(season, 'All').B, recs = Object.entries(B.rec);
+  wrap.innerHTML = `<table class="shotlog"><thead><tr><th>Tag</th><th>Logged</th><th>Counted as a breakdown</th><th>Not counted, and why</th></tr></thead><tbody>${recs.map(([k, r]) => `<tr><td><b>${escapeHtml(k)}</b></td><td>${r.logged}</td><td>${r.counted}</td><td>${Object.entries(r.excluded).map(([why, n]) => `${n} ${escapeHtml(why)}`).join('<br>') || '—'}</td></tr>`).join('')}</tbody></table>`
+    + (B.errors.length ? `<p class="panel-sub" style="margin-top:10px;"><b>To correct in Backfill</b> (${B.errors.length}):</p><ul class="n-note">${B.errors.map(x => `<li>${escapeHtml(x.date)} &middot; shot #${escapeHtml(String(x.id))} &middot; #${escapeHtml(x.jersey)}: ${escapeHtml(x.issue)}</li>`).join('')}</ul>` : '<p class="n-note">No duplicate-role tags.</p>');
+}
 function renderDataHealth() {
   const wrap = document.getElementById('healthFieldWrap');
   if (!wrap) return;
@@ -8832,6 +8923,7 @@ function renderDataHealth() {
     { key: 'affects', label: 'What Depends on It', type: 'text', value: r => r.affects, sortable: false },
   ], rows, { dense: true, defaultSort: { key: 'p', dir: 'asc' }, emptyMsg: `No ${season} entries yet.` });
   renderHealthDominoes(season);
+  renderHealthDefTags(season);
   // By session.
   const SO = S.concat(OPP_SHOTS.filter(s => seasonForDate(s.date) === season));
   const sess = {};
@@ -10645,6 +10737,132 @@ function renderGoalieProjections() {
 // change the split; Goals Added is also shown by trigger.
 const GA_OFF = ['adv', 'look', 'screen', 'finish', 'security'], GA_DEF = ['takeaway', 'onball', 'goalie'];
 const GA_PARTS = [['adv', 'Advantage'], ['look', 'Look creation'], ['screen', 'Screening'], ['finish', 'Finishing'], ['security', 'Ball security'], ['takeaway', 'Takeaways'], ['onball', 'On-ball D'], ['goalie', 'Goalie']];
+// ---------------- Supplemental defense (Stage 3 PR 2, Bobby Oct 28-29) ----------------
+// Shown beside the existing defense numbers, never added into Goals Added or any rating:
+//  - Caused turnovers: +V each to the credited defender (V = the average WLU possession, as in Goals
+//    Added). Its own number, so creating possessions is never buried in a blend.
+//  - Logged breakdowns: counts by type, per practice that had defensive tagging, and the shots that
+//    followed (xG, grade mix, goal rate). Counts only: a breakdown is never valued by the grade of the
+//    shot after it (that rewarded breakdowns that happened to end in a Bronze shot), and no goals-cost
+//    rating is shown, because the clean-rep baseline it needs couldn't be validated (Oct 29 audit).
+// Practice and scrimmage possessions only (our offense vs our defense); games come later.
+// Every defensive tag is either counted or listed with the reason it isn't (Data Health).
+const DEF_BREAK_TYPES = [['off', 'Off-ball'], ['beat', 'Beaten on-ball'], ['blown', 'Blown pick coverage'], ['late', 'Late slide (provisional)']];
+// The WLU practice possessions, split exactly as Goals Added splits them (a goal ends one).
+function defPossessions(d) {
+  const wp = [];
+  d.possList.filter(p => p.team === 'WLU' && p.e.context !== 'Game').forEach(pp => {
+    if (!pp.shots.length) { wp.push(pp); return; }
+    let cur = null;
+    pp.shots.forEach(s => { if (!cur) { cur = Object.assign({}, pp, { shots: [], goal: 0 }); wp.push(cur); } cur.shots.push(s); if (s.goal === 1) { cur.goal = 1; cur = null; } });
+  });
+  return wp;
+}
+// Caused turnovers for every player. Ranges come from resampling whole practices (fixed seed).
+function defensePartsFrom(d) {
+  const wp = defPossessions(d), V = wp.length ? wp.filter(p => p.goal).length / wp.length : 0;
+  const P = {}, T = { V, poss: wp.length, tos: 0, toCaused: 0, ctCount: 0 }, sessions = new Set(), seen = {};
+  const saw = (j, sid) => { if (j && !isOppJersey(j)) (seen[j] = seen[j] || new Set()).add(sid); };
+  wp.forEach(pp => {
+    const sid = sessKey(pp.e); sessions.add(sid);
+    pp.shots.forEach(s => [s.shooterJersey, s.assistJersey, s.goalieJersey, s.defender, s.slideDefender, s.offBallFault, s.pickScreenerDef, s.pickUserDef].forEach(j => saw(j, sid)));
+    if (pp.shots.length) return;
+    [pp.e.turnoverBy, pp.e.causedBy].forEach(j => saw(j, sid));
+    if (!pp.to) return;
+    T.tos++; const j = pp.e.causedBy; if (!j || isOppJersey(j)) return;
+    T.toCaused++; T.ctCount++;
+    const r = (P[j] = P[j] || { jersey: j, ctN: 0, ctV: 0, ctSess: {} }); r.ctN++; r.ctV += V; r.ctSess[sid] = (r.ctSess[sid] || 0) + V;
+  });
+  const sess = [...sessions].sort(); let seed = 2027;
+  const rnd = () => (seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648;
+  const draws = sess.length ? Array.from({ length: 1000 }, () => sess.map(() => sess[Math.floor(rnd() * sess.length)])) : [];
+  const q = (a, p) => { const s = a.slice().sort((x, y) => x - y); return s.length ? s[Math.floor(p * (s.length - 1))] : null; };
+  const rows = Object.values(P).map(r => { const apps = (seen[r.jersey] || new Set()).size, ctB = draws.map(pk => pk.reduce((a, sid) => a + (r.ctSess[sid] || 0), 0));
+    return { jersey: r.jersey, ctN: r.ctN, ctV: r.ctV, ctPer: apps ? r.ctV / apps : null, ctRange: [q(ctB, 0.05), q(ctB, 0.95)], apps }; });
+  return { V, rows, T, nSess: sess.length };
+}
+// Logged breakdowns. Rules (every tag is counted under one of these or excluded with a reason):
+//   off-ball breakdown -> that defender; beaten -> the on-ball defender; blown pick coverage -> each pick
+//   defender involved (we can't tell which one blew it, so each counts once and the share is 1/n);
+//   late slide -> the slider when his man's defender was beaten and the shot was open. Slide timing is
+//   inferred from the contest level, so it's provisional; a contested shot means the slide counts as on
+//   time and is never charged. A player tagged in two roles on one shot keeps the on-ball role only; the
+//   duplicate is listed for correction in Backfill, never rewritten.
+function defBreakdownsFrom(d) {
+  const W = j => j && !isOppJersey(j), xgOf = d.xgOf;
+  const P = {}, row = j => (P[j] = P[j] || { jersey: j, off: 0, beat: 0, blown: 0, blownW: 0, late: 0, shots: [], dates: new Set() });
+  const types = {}; DEF_BREAK_TYPES.forEach(([k]) => { types[k] = []; }); const clean = [];
+  const rec = {}, R = (tag, counted, reason) => { const r = (rec[tag] = rec[tag] || { logged: 0, counted: 0, excluded: {} }); r.logged++; if (counted) r.counted++; else r.excluded[reason] = (r.excluded[reason] || 0) + 1; };
+  const errors = [], tagDates = new Set(), seen = {};
+  const saw = (j, dt) => { if (W(j)) (seen[j] = seen[j] || new Set()).add(dt); };
+  const add = (j, k, s, w) => { const r = row(j); r[k]++; if (k === 'blown') r.blownW += w; r.shots.push(s); r.dates.add(s.date); types[k].push(s); };
+  defPossessions(d).forEach(pp => {
+    if (!pp.shots.length) {   // a possession that ended without a shot: pick tags here aren't shot breakdowns
+      [pp.e.turnoverBy, pp.e.causedBy].forEach(j => saw(j, pp.e.date));
+      [pp.e.pickScreenerDef, pp.e.pickUserDef].filter(W).forEach(() => R('Pick defender', false, 'on a possession with no shot'));
+      return;
+    }
+    pp.shots.forEach(s => {
+      [s.shooterJersey, s.assistJersey, s.goalieJersey, s.defender, s.slideDefender, s.offBallFault, s.pickScreenerDef, s.pickUserDef].forEach(j => saw(j, s.date));
+      const D = W(s.defender) ? s.defender : null, Sl = W(s.slideDefender) ? s.slideDefender : null, O = W(s.offBallFault) ? s.offBallFault : null;
+      const picks = s.pick === 'Yes' ? [...new Set([s.pickScreenerDef, s.pickUserDef].filter(W))] : [];
+      if (D || Sl || O || picks.length) tagDates.add(s.date);
+      const beaten = D && s.defBeaten === 'Yes';
+      if (D) { if (beaten) { add(D, 'beat', s); R('On-ball defender', true); } else R('On-ball defender', false, s.defBeaten === 'No' ? 'held (not beaten): not a breakdown' : 'beaten not logged: not counted'); }
+      if (O) { if (O === D) { R('Off-ball breakdown', false, 'same player as the on-ball defender (correct in Backfill)'); errors.push({ date: s.date, id: s.id, jersey: O, issue: 'Off-ball breakdown is the same player as the on-ball defender' }); }
+        else { add(O, 'off', s); R('Off-ball breakdown', true); } }
+      if (Sl) { if (Sl === D) { R('Slide defender', false, 'same player as the on-ball defender (correct in Backfill)'); errors.push({ date: s.date, id: s.id, jersey: Sl, issue: 'Slide defender is the same player as the on-ball defender' }); }
+        else if (beaten && s.contestLevel === 'Open') { add(Sl, 'late', s); R('Slide defender', true); }
+        else R('Slide defender', false, beaten ? 'contested shot: slide counted as on time (provisional)' : D ? (s.defBeaten === 'No' ? 'his man’s defender held: no slide breakdown' : 'beaten not logged: slide not judged') : 'no on-ball defender logged: slide not judged'); }
+      if (picks.length) { const blown = s.pickCoverage === 'Blown'; picks.forEach(j => { if (blown) { add(j, 'blown', s, 1 / picks.length); R('Pick defender', true); } else R('Pick defender', false, s.pickCoverage ? 'coverage executed: not a breakdown' : 'coverage not logged'); }); }
+      const any = (O && O !== D) || beaten || (picks.length && s.pickCoverage === 'Blown') || (Sl && Sl !== D && beaten && s.contestLevel === 'Open');
+      if (!any && ((D && s.defBeaten === 'No') || (picks.length && s.pickCoverage && s.pickCoverage !== 'Blown'))) clean.push(s);
+    });
+  });
+  const stat = list => { const n = list.length, c = t => list.filter(s => s.shotQuality === t).length;
+    return { n, xg: n ? list.reduce((a, s) => a + xgOf(s), 0) / n : null, gold: n ? c('1-Gold') / n : null, silver: n ? c('2-Silver') / n : null, bronze: n ? c('3-Bronze') / n : null, goal: n ? list.filter(s => s.goal === 1).length / n : null }; };
+  const rows = Object.values(P).map(r => { const tagApps = [...(seen[r.jersey] || [])].filter(dt => tagDates.has(dt)).length, total = r.off + r.beat + r.blown + r.late;
+    return Object.assign({ jersey: r.jersey, off: r.off, beat: r.beat, blown: r.blown, blownW: r.blownW, late: r.late, total, tagApps, perTagged: tagApps ? total / tagApps : null, nDates: r.dates.size }, { after: stat(r.shots) }); });
+  return { rows, types: Object.fromEntries(DEF_BREAK_TYPES.map(([k]) => [k, stat(types[k])])), clean: stat(clean), rec, errors, tagDates: tagDates.size };
+}
+// One season and context (the Defense page's filters), all practice dates.
+function defensePartsFor(season, ctx) {
+  const s0 = EFF_SEASON, c0 = EFF_CONTEXT, f0 = EFF_FROM; EFF_SEASON = season; EFF_CONTEXT = ctx || 'All'; EFF_FROM = null;
+  try { const d = buildEffData(); return Object.assign(defensePartsFrom(d), { B: defBreakdownsFrom(d) }); } finally { EFF_SEASON = s0; EFF_CONTEXT = c0; EFF_FROM = f0; }
+}
+// Synthetic checks: a worse defensive event must never read better than a cleaner one (Self-check).
+function defBreakdownTests() {
+  const XG = { '1-Gold': 0.606, '2-Silver': 0.37, '3-Bronze': 0.11 }; let id = 1;
+  const run = groups => { const possList = groups.map(g => { const shots = g.map(x => Object.assign({ id: id++, date: '2000-01-01', context: 'Practice', goal: 0, shotQuality: '2-Silver' }, x)); return { team: 'WLU', e: shots[0], shots }; });
+    return defBreakdownsFrom({ possList, xgOf: s => XG[s.shotQuality] }); };
+  const of = (B, j) => B.rows.find(r => r.jersey === j) || { off: 0, beat: 0, blown: 0, blownW: 0, late: 0, total: 0 };
+  const T = [], all = [], run0 = run; let B;
+  const runAll = g => { all.push(...g); return run0(g); };
+  B = runAll([[{ offBallFault: '1' }], [{ defender: '2', defBeaten: 'No' }]]);
+  T.push(['A breakdown counts; a clean hold on the same shot does not', of(B, '1').off === 1 && of(B, '2').total === 0]);
+  B = runAll([[{ offBallFault: '1', shotQuality: '3-Bronze' }], [{ offBallFault: '2', shotQuality: '1-Gold' }]]);
+  T.push(['A breakdown before a Bronze shot counts the same as one before a Gold shot (no credit)', of(B, '1').total === 1 && of(B, '2').total === 1 && !('value' in of(B, '1'))]);
+  B = runAll([[{ defender: '1', defBeaten: 'Yes', offBallFault: '2' }], [{ pick: 'Yes', pickCoverage: 'Blown', pickScreenerDef: '3', pickUserDef: '4' }]]);
+  T.push(['Shared: beaten + off-ball each count once; a blown pick counts once for each defender, share 1/2', of(B, '1').beat === 1 && of(B, '2').off === 1 && of(B, '3').blown === 1 && of(B, '4').blownW === 0.5]);
+  B = runAll([[{ defender: '1', defBeaten: 'Yes', offBallFault: '1' }], [{ defender: '2', defBeaten: 'Yes', slideDefender: '2', contestLevel: 'Open' }]]);
+  T.push(['Duplicate roles: kept once as on-ball, the duplicate is listed for Backfill', of(B, '1').total === 1 && of(B, '2').total === 1 && B.errors.length === 2]);
+  B = runAll([[{}], [{ defender: '1' }]]);
+  T.push(['Missing tags: an untagged shot charges nobody; beaten not logged charges nobody', B.rows.length === 0 && B.rec['On-ball defender'].excluded['beaten not logged: not counted'] === 1]);
+  B = runAll([[{ shotQuality: '3-Bronze' }, { offBallFault: '1', rebound: 'Yes' }], [{ offBallFault: '2' }]]);
+  T.push(['Rebound: a breakdown on a rebound counts exactly like one on a first shot', of(B, '1').off === 1 && of(B, '2').off === 1 && Math.abs(of(B, '1').after.xg - of(B, '2').after.xg) < 1e-9]);
+  B = runAll([[{ defender: '1', defBeaten: 'Yes', slideDefender: '2', contestLevel: 'Open' }], [{ defender: '3', defBeaten: 'Yes', slideDefender: '4', contestLevel: 'Heavy' }], [{ defender: '5', defBeaten: 'No', slideDefender: '6', contestLevel: 'Open' }]]);
+  T.push(['Slides: late (open, provisional) counts; a slide on a contested shot or after a held rep is never charged', of(B, '2').late === 1 && of(B, '4').total === 0 && of(B, '6').total === 0]);
+  const AB = run0(all), ok = Object.values(AB.rec).every(r => r.counted + Object.values(r.excluded).reduce((a, b) => a + b, 0) === r.logged) && AB.rows.reduce((a, r) => a + r.total, 0) === Object.values(AB.rec).reduce((a, r) => a + r.counted, 0);
+  T.push(['Every tag is counted or excluded with a reason', ok]);
+  return T.map(([name, pass]) => ({ name, pass: !!pass }));
+}
+// The coverage line over the breakdown tables.
+function defCoverageHtml(R) {
+  const B = R.B, rec = B.rec, n = k => (rec[k] ? rec[k].logged : 0);
+  return `Caused-by logged on ${R.T.toCaused} of ${R.T.tos} turnovers; V = ${num(R.T.V, 3)} goals per possession. Defensive tags were logged in <b>${B.tagDates}</b> of ${R.nSess} practices `
+    + `(${n('On-ball defender')} on-ball defender tags, ${n('Off-ball breakdown')} off-ball, ${n('Slide defender')} slide, ${n('Pick defender')} pick defender). `
+    + `Breakdowns per tagged practice are <b>conditional on that tagging</b>: they aren&rsquo;t a true breakdown rate or an assignment success %, because the number of possessions each player defended isn&rsquo;t logged.`;
+}
 function gaOffPick(s) { return s.pick === 'Yes' && s.pickAction !== 'Get' && s.pickType === 'Off-ball' && s.pickScreener && !isOppJersey(s.pickScreener) && s.pickScreener !== s.shooterJersey ? s.pickScreener : null; }
 function computeGoalsAdded(onCredit) {
   const d = buildEffData();
@@ -10720,8 +10938,12 @@ function renderGoalsAdded() {
   const wrap = document.getElementById('gaWrap');
   if (!wrap) return;
   const r = computeGoalsAdded();
+  const dp = EFF_CONTEXT === 'Game' ? null : defensePartsFrom(buildEffData()), dpBy = {};
+  if (dp) dp.rows.forEach(x => { dpBy[x.jersey] = x; });
+  r.rows.forEach(x => { x._dp = dpBy[x.jersey] || null; });
   document.getElementById('gaSub').innerHTML = `${escapeHtml(EFF_SEASON)} ${EFF_CTX_WORD()}: ${r.poss} WLU possessions. An average possession is worth <b>${num(r.V, 2)}</b> goals; with dominoes started, <b>${num(r.Vadv, 2)}</b>. Each player gets credit for how much he moved the value of the possessions he touched &mdash; starting the advantage, creating the look (split with the passer, and the screener on an off-ball pick), finishing it, or losing it (turnover). Defenders get the possession value for turnovers they cause and the goals their man didn&rsquo;t score vs expected; goalies get saves above expected. <b>+1.0 = one goal more</b> than an average player would produce with the same chances. In practice both sides are WLU, so one player&rsquo;s plus can be a teammate&rsquo;s minus.`
-    + ` <b>Offense</b> credits add up to ${signed(r.rows.reduce((a, x) => a + x.off, 0))} (our ${r.goals} goals minus ${num(r.V * r.poss, 1)} for average possessions = ${signed(r.goals - r.V * r.poss)}; the gap is turnovers with no player logged and possessions that end without a shot or turnover). <b>Defense</b> credits (takeaways, on-ball D, goalie) are counted on top, ${signed(r.rows.reduce((a, x) => a + x.def, 0))} &mdash; in practice the defense is WLU too, so the two don&rsquo;t net to zero.`;
+    + ` <b>Offense</b> credits add up to ${signed(r.rows.reduce((a, x) => a + x.off, 0))} (our ${r.goals} goals minus ${num(r.V * r.poss, 1)} for average possessions = ${signed(r.goals - r.V * r.poss)}; the gap is turnovers with no player logged and possessions that end without a shot or turnover). <b>Defense</b> credits (takeaways, on-ball D, goalie) are counted on top, ${signed(r.rows.reduce((a, x) => a + x.def, 0))} &mdash; in practice the defense is WLU too, so the two don&rsquo;t net to zero.`
+    + (dp ? ` <b>Caused TOs (+V)</b> (last column, not in the total): caused turnovers at +V each, shown for comparison; ranges and logged breakdowns are on the Defense page.` : '');
   const cell = v => v === null || v === undefined ? '<span class="n-note">—</span>' : signed(v);
   renderSortableTable('gaWrap', [
     { key: 'jersey', label: '#', type: 'text', value: x => x.jersey },
@@ -10730,7 +10952,8 @@ function renderGoalsAdded() {
     { key: 'perApp', label: 'Per Session', type: 'num', value: x => x.perApp, format: v => signed(v, 2), title: 'Goals added per session he appeared in.' },
     { key: 'off', label: 'Offense', type: 'num', value: x => x.off, format: v => signed(v), title: 'Advantage + look creation + screening + finishing + ball security.' },
     { key: 'def', label: 'Defense', type: 'num', value: x => x.def, format: v => signed(v), title: 'Takeaways + on-ball D + goalie.' },
-  ].concat(GA_PARTS.map(([k, label]) => ({ key: k, label, type: 'num', value: x => x[k] === undefined ? null : x[k], format: cell, group: 'Where it came from' }))),
+  ].concat(GA_PARTS.map(([k, label]) => ({ key: k, label, type: 'num', value: x => x[k] === undefined ? null : x[k], format: cell, group: 'Where it came from' })),
+    [{ key: 'dpCt', label: 'Caused TOs (+V)', type: 'num', value: x => x._dp && x._dp.ctN ? x._dp.ctV : null, format: (v, x) => v === null ? '<span class="n-note">—</span>' : `${signed(v)} <span class="n-note">(${x._dp.ctN})</span>`, group: 'Supplemental defense (not in the total)', title: 'Caused turnovers × V, practice possessions. Shown for comparison; not part of Goals Added. Details on the Defense page.' }]),
   r.rows, { dense: true, defaultSort: { key: 'total', dir: 'desc' }, emptyMsg: 'No possessions logged yet.' });
   const tRows = r.triggers.filter(t => t.n >= 5).map(t => Object.assign({ per: t.total / t.n }, t));
   renderSortableTable('gaTrigWrap', [
@@ -14255,6 +14478,7 @@ const SA_CATALOG = [
   { id: 'ga', label: 'Goals Added', words: 'goals added, most valuable, value, impact, helps most, contribution', page: 'ga', fmt: SA_SGN(1), f: () => { const r = computeGoalsAdded(); const m = {}; r.rows.forEach(x => { m[x.jersey] = { v: x.total, n: x.apps, extra: `offense ${SA_SGN(1)(x.off)}, defense ${SA_SGN(1)(x.def)}` }; }); return m; } },
   { off: true, id: 'gaOff', label: 'Goals Added on offense', words: 'offensive value, offense goals added, offensive impact', page: 'ga', fmt: SA_SGN(1), f: () => { const r = computeGoalsAdded(); const m = {}; r.rows.forEach(x => { m[x.jersey] = { v: x.off, n: x.apps }; }); return m; } },
   { id: 'gaDef', label: 'Goals Added on defense (field players)', words: 'defensive value, defense goals added, defensive impact, best defender, best defenders, defenders', page: 'ga', fmt: SA_SGN(1), f: () => { const r = computeGoalsAdded(); const m = {}; r.rows.forEach(x => { if (x.goalie === undefined) m[x.jersey] = { v: (x.takeaway || 0) + (x.onball || 0), n: x.apps }; }); return m; } },
+  { id: 'ctValue', label: 'Caused-turnover value (+V each, practice; supplemental)', words: 'possessions created, turnover value, value of caused turnovers', page: 'defense', fmt: SA_SGN(1), f: d => { const m = {}; defensePartsFrom(d).rows.forEach(r => { if (r.ctN) m[r.jersey] = { v: r.ctV, n: r.ctN, extra: `${r.ctN} caused` }; }); return m; } },
   { id: 'fo', label: 'Faceoff win %', words: 'faceoffs, faceoff, fogo, draws, wins draws, wins our faceoffs', min: 10, page: 'fosum', fmt: SA_PCT, goalie: false, f: () => { const m = {}; FACEOFFS.filter(f => f.playerJersey && seasonForDate(f.date) === EFF_SEASON && effContextOk(f) && effFromOk(f)).forEach(f => { const r = (m[f.playerJersey] = m[f.playerJersey] || { w: 0, n: 0 }); r.n++; if (Number(f.won) === 1) r.w++; }); Object.keys(m).forEach(j => { m[j] = { v: m[j].w / m[j].n, n: m[j].n, extra: `${m[j].w}-${m[j].n - m[j].w}` }; }); return m; } },
   { id: 'savePct', label: 'Save %', words: 'save percentage, save %, save%, saves, stopper', min: 20, page: 'gsummary', fmt: SA_PCT, f: () => { const m = {}; goalieShotsForSeason(EFF_SEASON).filter(s => s.onKeeper === 1 && s.goalieJersey && effContextOk(s) && effFromOk(s)).forEach(s => { const r = (m[s.goalieJersey] = m[s.goalieJersey] || { sv: 0, n: 0 }); r.n++; if (s.goal !== 1) r.sv++; }); Object.keys(m).forEach(j => { m[j] = { v: m[j].sv / m[j].n, n: m[j].n, extra: `${m[j].sv} of ${m[j].n}` }; }); return m; } },
 ];
