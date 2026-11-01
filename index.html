@@ -75,6 +75,7 @@
   .msg { font-family: var(--text); font-size: 13px; padding: 10px 14px; border-radius: 6px; margin-bottom: 14px; }
   .msg.ok { background: #E6F4EA; color: #256029; }
   .msg.err { background: #FBE9E7; color: #B3261E; }
+  .msg.warn { background: #FFF1CC; color: #5C3D00; }
   .badge-shared { display: inline-block; font-family: var(--text); font-size: 10.5px; letter-spacing: .06em; text-transform: uppercase; background: rgba(255,255,255,.12); color: #E9DFB8; border: 1px solid rgba(212,175,55,.5); padding: 3px 9px; border-radius: 999px; margin-left: 10px; }
   .controls-row { display: flex; flex-wrap: wrap; gap: 20px; align-items: flex-end; margin-bottom: 18px; }
   .control-group select { min-width: 240px; }
@@ -227,6 +228,7 @@
   .more-card[open] > summary::after { content: '\25B4'; }
   .span-2 { grid-column: span 2; }
   .save-bar { display: flex; gap: 10px; align-items: center; }
+  .save-msg .msg { margin: 0 0 10px; }
   .save-bar .btn:first-child { flex: 1; padding: 13px 22px; font-size: 15px; }
   .chart-card .click-field { padding: 0; background: none; border: none; }
   details.collapsible > summary { cursor: pointer; list-style: none; display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
@@ -343,7 +345,9 @@
   .bf-scr { margin-top: 6px; } .bf-scrrow { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px; padding: 6px 0; border-top: 1px solid var(--line); }
   .bf-scrrow label { display: flex; flex-direction: column; font: 600 12px var(--text); color: var(--muted); gap: 2px; } .bf-scrrow input { width: 90px; font: 15px var(--text); padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--card); color: var(--ink); }
   .bf-scrrow .readout { font-weight: 500; color: var(--ink); min-height: 1em; } .bf-l2 { display: block; font: 600 12px var(--text); color: var(--muted); margin-bottom: 2px; }
-  .bf-msg { font: 600 13px var(--text); color: var(--good); margin: 6px 0 0; } .bf-msg.bad { color: var(--critical); }
+  .bf-msg { font: 600 13px var(--text); color: var(--good); margin: 6px 0 0; } .bf-msg.bad { color: var(--critical); } .bf-msg.warn { color: #8A5300; }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .bf-msg.warn { color: #FFB340; } }
+  :root[data-theme="dark"] .bf-msg.warn { color: #FFB340; }
   .fc-video { position: relative; aspect-ratio: 16 / 9; background: #000; border-radius: 10px; overflow: hidden; margin-bottom: 6px; } .fc-video iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
   .fc-meta { display: flex; flex-wrap: wrap; gap: 4px 14px; font: 13px var(--text); color: var(--muted); margin-bottom: 10px; } .fc-meta b { color: var(--ink); }
   .bf-chip.fc-new { background: var(--accent-soft, rgba(47,123,255,.12)); border-color: var(--accent, #2F7BFF); border-style: dashed; } .bf-chip.fc-to { border-color: var(--critical); color: var(--critical); } .bf-chip.fc-x { opacity: .45; text-decoration: line-through; } .bf-chip.fc-opp { font-style: italic; box-shadow: inset 0 -3px 0 var(--critical); }
@@ -436,6 +440,7 @@
     #reportsView .rpt-block, #reportsView .rpt-area { break-inside: avoid; }
     #reportsView .table-wrap { max-height: none !important; overflow: visible !important; }
   }
+  #outboxBanner .ob-conflict td { background: rgba(200, 40, 40, .12); } #outboxBanner .ob-row { margin: 6px 0; } #outboxBanner .ob-pre { white-space: pre-wrap; font-size: 11px; max-height: 200px; overflow: auto; }
 </style>
 <style>
   /* ================= Stats Desk theme (Phase 1) =================
@@ -466,6 +471,9 @@
       --good: #34C759; --critical: #FF5C55;
     }
   }
+  /* The pending-change review's confirm button: the standard dark .btn is near-invisible on a dark card. */
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) #outboxBanner .ob-confirm .btn { background: var(--accent); color: #040C18; } }
+  :root[data-theme="dark"] #outboxBanner .ob-confirm .btn { background: var(--accent); color: #040C18; }
   :root[data-theme="dark"] {
     color-scheme: dark;
     --chrome: #040C18; --chrome-2: #0A1830;
@@ -850,6 +858,7 @@
   <div class="sd-ph" id="sdPh"></div>
   <div id="loadingBox" class="loading">Loading shot data&hellip;</div>
   <div id="accessBanner" class="msg err" style="display:none;"></div>
+  <div id="outboxBanner" class="msg" style="display:none;"></div>
   <div id="syncBanner" class="msg err" style="display:none;">Live sync isn&rsquo;t available in this view &mdash; open this page from its published link so changes save and share with the team.</div>
 
   <section id="logView" class="view active">
@@ -1179,8 +1188,9 @@
           <div class="click-field goal-click" id="goalClickWrap"></div>
           <div class="readout" id="goalReadout">Not set</div>
         </div>
+        <div id="shotSaveMsg" class="save-msg" role="status" aria-live="polite"></div>
         <div class="save-bar">
-          <button class="btn" id="submitShotBtn">Save Shot</button>
+          <button type="button" class="btn" id="submitShotBtn">Save Shot</button>
           <button class="btn secondary" id="cancelEditBtn" style="display:none;" type="button">Cancel Edit</button>
         </div>
       </div>
@@ -1312,8 +1322,9 @@
           <div class="log-card-head">What this is for</div>
           <p class="sans" style="font-size:12.5px; color:var(--muted); line-height:1.55; margin:0;">Log every possession that ends <b>without</b> a shot &mdash; turnovers, failed clears, end of period. Possessions that end in a shot are counted from the shot itself. Together they let lineup, dominoes and turnover stats be measured per possession.</p>
         </div>
+        <div id="possSaveMsg" class="save-msg" role="status" aria-live="polite"></div>
         <div class="save-bar">
-          <button class="btn" id="submitPossBtn">Save Possession</button>
+          <button type="button" class="btn" id="submitPossBtn">Save Possession</button>
           <button class="btn secondary" id="cancelPossEditBtn" style="display:none;" type="button">Cancel Edit</button>
         </div>
       </div>
@@ -2181,16 +2192,6 @@
         <select id="tf_grade"><option value="">All grades</option><option value="1-Gold">Gold</option><option value="2-Silver">Silver</option><option value="3-Bronze">Bronze</option></select>
         <select id="tf_context"><option value="">All contexts</option><option value="Practice">Practice</option><option value="Scrimmage">Scrimmage</option><option value="Game">Game</option></select>
         <button class="btn secondary" id="exportShotsBtn">Export CSV</button>
-        <button class="btn secondary" id="resetDataBtn" title="Erases every season's roster, newly logged shots, and all player evaluations for everyone. The historical season (2,285 shots) is untouched.">Reset all data&hellip;</button>
-      </div>
-      <div id="resetConfirmPanel" style="display:none; border:1.5px solid #C0392B; border-radius:8px; padding:14px; margin-bottom:16px; background:#FBE9E7;">
-        <p class="sans" style="font-size:13px; color:#B3261E; font-weight:700; margin:0 0 8px;">This permanently erases every season's roster (2026, 2027, and any others), every live-logged shot, and all player evaluations &mdash; for everyone. The historical season (2,285 shots) is untouched. This can't be undone.</p>
-        <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
-          <label class="sans" style="font-size:12px; color:#B3261E; text-transform:none; letter-spacing:normal; margin:0;">Type <strong>DELETE</strong> to confirm:</label>
-          <input type="text" id="resetConfirmInput" style="width:140px;" autocomplete="off">
-          <button class="btn danger" id="resetConfirmBtn" disabled>Confirm Reset</button>
-          <button class="btn secondary" id="resetCancelBtn" type="button">Cancel</button>
-        </div>
       </div>
       <div class="table-wrap">
         <table class="shotlog">
@@ -2532,7 +2533,7 @@
 </main>
 </div>
 
-<footer>Live data, restricted to signed-in WLU coaching staff.</footer>
+<footer>Live data, restricted to signed-in WLU coaching staff. <span id="buildVersion"></span></footer>
 <nav class="sd-bottom" id="sdBottom" aria-label="Quick"></nav>
 <div id="sdLayer"></div>
 </div>
@@ -2645,7 +2646,11 @@ const COLS =["id","date","practiceId","context","shooterJersey","goalieJersey","
   // ('none' = logged no screens). Stored text loses < > and quotes on read, so none are used.
   "screens",
   // Film Check (2027+): seconds into the practice film where the shot happens.
-  "filmTime"];
+  "filmTime",
+  // Identity (PR 7a-1): set once when the entry is created (the id of the operation that created it), kept through
+  // edits and moves, never reused. A change made to an entry can't land on a different entry that later got the same
+  // number. Entries created before this have none (null).
+  "eid"];
 // team: 'OPP' marks an opponent shot on a WLU goalie (games). Those never go
 // into SHOTS (every shooting stat assumes a WLU shooter); they live in
 // OPP_SHOTS and feed only the goalie views. Opponent jerseys are stored as
@@ -2662,7 +2667,11 @@ const POSS_COLS = ["id","date","context","opponent","team","possStart","possStar
   // Backfill: the shot a possession added later came right after (practice film order).
   "afterShot",
   // Film Check: seconds into the practice film.
-  "filmTime"];
+  "filmTime",
+  // Identity (PR 7a-1): set once when the entry is created (the id of the operation that created it), kept through
+  // edits and moves, never reused. A change made to an entry can't land on a different entry that later got the same
+  // number. Entries created before this have none (null).
+  "eid"];
 // Dominoes on a turnover (Bobby, Oct 28): every new or edited turnover needs Yes, No or Unknown
 // (couldn't tell, check film). The four states stay separate: Unknown and blank (never asked) are
 // not No. Every existing stat counts only 'Yes', so Unknown reads the same as blank everywhere.
@@ -2947,70 +2956,604 @@ function stintById(sid, id) {
   return sess && id ? (sess.stints.find(t => t.id === id) || null) : null;
 }
 
-// Writes one entry into its session doc (plus a new stint when the lineup
-// changed); if an edit moved it to a different session (date/context/
-// opponent changed), removes it from the old one in the same batch.
-function persistSessionEntry(kind, entry, cols, lineup) {
-  if (!DB) return Promise.resolve('error');
-  const sid = sessionIdFor(entry);
-  const key = SESSION_ENTRY_PREFIX[kind] + entry.id;
-  const clean = Object.assign({}, entry); delete clean._sid; delete clean.seed;
-  const fields = sessionMeta(entry);
-  if (lineup !== undefined) {
-    const st = stintFor(sid, lineup);
-    clean.stintId = st.id;
-    if (st.isNew) {
-      fields[SESSION_ENTRY_PREFIX.stint + st.id] = JSON.stringify(st.stint);
-      if (LIVE_SESSIONS[sid]) LIVE_SESSIONS[sid].stints.push(st.stint);
+// Which tracker build this page is. Shown in the footer on every device and stored in every save's audit record, so a
+// device (or a save) still running an older build can be told apart from this one.
+const BUILD_VERSION = '7a1-g2';
+try { window.WLU_BUILD = BUILD_VERSION; document.getElementById('buildVersion').textContent = 'Build ' + BUILD_VERSION; } catch (e) {}
+// ---- Safe saves (Stage 3 PR 7a-1, M1 + M2 + M3) ----
+// Every shot / possession change (Log Shot, Backfill, Film Check, new entries, moves to another session, deletes) is an
+// operation with its own id:
+//  1. It is written to this device's pending-operation queue (IndexedDB, one store per signed-in account) BEFORE anything
+//     is sent, so a reload, a closed tab or a lost connection can't lose it.
+//  2. It is sent as one Firestore transaction that reads the session doc(s) on the server and merges field group by field
+//     group (what the editor started from vs what the coach changed vs what is on the server now). The entry, `rev` and an
+//     audit record (app/op_<operationId>) are written together, or nothing is (each session doc written carries `lastOp`, the
+//     operation id, so the security rules can require that audit record in the same transaction). A move removes the entry from one session and
+//     adds it to the other in that same transaction; a delete removes it only if nobody changed it since it was loaded.
+//     Another coach's changes are never overwritten: a group both coaches changed is a conflict and nothing is written.
+//  3. A retry (same id) first looks for the audit record: if the server already committed it, nothing is written again.
+//  4. Statuses: 'ok' (the server confirmed), 'pending' (stored on this device, not confirmed yet), 'conflict' / 'error'
+//     (kept on this device for the coach to review). Nothing in the queue is ever deleted without being confirmed by the
+//     server or discarded by the coach.
+const SAVE_GROUP_DEFS = [['outcome', 'goal', 'onGoal', 'onKeeper', 'blocked'], ['defender', 'defBeaten', 'beatenHow'],
+  ['pick', 'pickType', 'pickSpot', 'pickScreener', 'pickUser', 'pickCoverage', 'pickResult', 'pickMismatch', 'pickAction', 'pickScreenerDef', 'pickUserDef'],
+  ['date', 'context', 'opponent', 'practiceId']];
+const saveGroups = cols => { const grouped = new Set(SAVE_GROUP_DEFS.flat()), out = SAVE_GROUP_DEFS.map(g => g.filter(c => cols.includes(c))).filter(g => g.length);
+  cols.forEach(c => { if (c !== 'id' && c !== 'eid' && !grouped.has(c)) out.push([c]); }); return out; };
+const SAVE_RETRY_CODES = new Set(['unavailable', 'deadline-exceeded', 'aborted', 'internal', 'unknown', 'cancelled']);
+const colsOf = kind => (kind === 'shot' ? COLS : POSS_COLS);
+let LAST_SAVE = null;              // details of the most recent save (status, conflicts, opId), for messages and tests
+const PENDING_SAVES = new Map();   // when device storage is unavailable: unconfirmed operations by id, so Retry can resend one
+// Identity of an entry (see the "eid" column). A number that left a session (deleted, or moved out) is remembered there
+// as gone_<key>, so it is never handed to a new entry in that session.
+const eidOf = o => (o && o.eid) || null;
+const GONE = 'gone_';
+function newOpId() { const r = crypto.getRandomValues(new Uint8Array(16)); return [...r].map(b => b.toString(16).padStart(2, '0')).join(''); }
+function saveHash(s) { let h1 = 0x811c9dc5, h2 = 0x01000193; for (let i = 0; i < s.length; i++) { const c = s.charCodeAt(i); h1 = Math.imul(h1 ^ c, 16777619) >>> 0; h2 = Math.imul(h2 ^ c, 2246822519) >>> 0; } return h1.toString(16).padStart(8, '0') + h2.toString(16).padStart(8, '0'); }
+const saveVal = v => (v === undefined || v === '' ? null : v);
+const groupVal = (o, g) => JSON.stringify(g.map(c => saveVal(o ? o[c] : null)));
+const saveUser = () => { try { return (DB && DB.app && DB.app.auth ? DB.app.auth() : firebase.auth()).currentUser; } catch (e) { return null; } };
+const isOffline = () => typeof navigator !== 'undefined' && navigator.onLine === false;
+const plainCopy = o => JSON.parse(JSON.stringify(o, (k, v) => (v === undefined ? null : v)));
+const opFrom = o => o.fromSid || o.sid;   // the session the entry is in before the operation (a move's source)
+
+// ---- The pending-operation queue (one IndexedDB database per signed-in account; nothing else is shared) ----
+const OUTBOX = { db: null, uid: null, name: null, available: null, why: null, ops: new Map(), timer: null, draining: false, listening: false, opening: null, persisted: null };
+const OUTBOX_MAX_AGE_MS = 7 * 864e5, OUTBOX_MAX_ATTEMPTS = 30, OUTBOX_MAX_BACKOFF_MS = 10 * 60e3, OUTBOX_LIVE = new Set(['pending', 'saving']);
+const outboxProject = () => { try { return (DB && DB.app ? DB.app.options.projectId : firebase.app().options.projectId) || 'none'; } catch (e) { return 'none'; } };
+const outboxDbName = uid => 'wluOutbox_' + saveHash(uid + '|' + outboxProject());
+function opValid(r) { return !!(r && typeof r.opId === 'string' && /^[0-9a-f]{32}$/.test(r.opId) && typeof r.uid === 'string' && (r.kind === 'shot' || r.kind === 'poss' || r.kind === 'adj') && typeof r.sid === 'string' && r.next && typeof r.next === 'object' && (r.isNew || (r.base && typeof r.base === 'object')) && typeof r.hash === 'string' && typeof r.createdAt === 'number'); }
+const idbReq = req => new Promise((res, rej) => { req.onsuccess = () => res(req.result); req.onerror = () => rej(req.error); });
+// Open this account's queue (idempotent). If storage can't be used, saves still work online (no offline safety net).
+function outboxOpen() {
+  const user = saveUser(); if (!user) return Promise.resolve(false);
+  if (OUTBOX.uid === user.uid && (OUTBOX.db || OUTBOX.available === false)) return Promise.resolve(!!OUTBOX.db);
+  if (OUTBOX.opening && OUTBOX.opening.uid === user.uid) return OUTBOX.opening.p;
+  if (OUTBOX.db) { try { OUTBOX.db.close(); } catch (e) {} }
+  Object.assign(OUTBOX, { db: null, uid: user.uid, name: outboxDbName(user.uid), available: null, why: null, ops: new Map() });
+  const p = (async () => {
+    try {
+      if (typeof indexedDB === 'undefined' || !indexedDB) throw new Error('IndexedDB is not available in this browser');
+      const req = indexedDB.open(OUTBOX.name, 1);
+      req.onupgradeneeded = () => { if (!req.result.objectStoreNames.contains('ops')) req.result.createObjectStore('ops', { keyPath: 'opId' }); };
+      const db = await Promise.race([idbReq(req), new Promise((_, rej) => setTimeout(() => rej(new Error('device storage did not open')), 4000))]);
+      const all = await idbReq(db.transaction('ops', 'readonly').objectStore('ops').getAll());
+      all.forEach((r, i) => {
+        if (!opValid(r) || r.uid !== user.uid) OUTBOX.ops.set('corrupt:' + i + ':' + ((r && r.opId) || ''), { corrupt: true, raw: r, status: 'corrupt', opId: (r && r.opId) || null, createdAt: (r && r.createdAt) || 0 });
+        else { if (r.status === 'saving') r.status = 'pending'; OUTBOX.ops.set(r.opId, r); }
+      });
+      OUTBOX.db = db; OUTBOX.available = true;
+      if (OUTBOX.ops.size) outboxPersist();
+    } catch (e) { OUTBOX.available = false; OUTBOX.why = (e && e.message) || String(e); console.warn('Pending-change storage unavailable:', OUTBOX.why); }
+    outboxFlag(); outboxListen(); outboxUi(); outboxOverlayRefresh(); outboxSchedule(0);
+    return !!OUTBOX.db;
+  })();
+  OUTBOX.opening = { uid: user.uid, p }; p.finally(() => { if (OUTBOX.opening && OUTBOX.opening.p === p) OUTBOX.opening = null; });
+  return p;
+}
+// Ask the browser to keep this site's storage (so it isn't cleared when space runs low). Asked only when something is
+// waiting on this device. A "no" changes nothing except the banner's warning; pending data can still be lost either way.
+async function outboxPersist() {
+  if (OUTBOX.persisted !== null) return OUTBOX.persisted;
+  OUTBOX.persisted = false;
+  try { if (navigator.storage && navigator.storage.persisted) OUTBOX.persisted = (await navigator.storage.persisted()) || (navigator.storage.persist ? await navigator.storage.persist() : false); } catch (e) { OUTBOX.persisted = false; }
+  outboxUi(); return OUTBOX.persisted;
+}
+async function outboxPut(op) {
+  if (!OUTBOX.db) return false;
+  try { const tx = OUTBOX.db.transaction('ops', 'readwrite', { durability: 'strict' }); tx.objectStore('ops').put(plainCopy(op));
+    await new Promise((res, rej) => { tx.oncomplete = res; tx.onerror = () => rej(tx.error); tx.onabort = () => rej(tx.error || new Error('aborted')); });
+    OUTBOX.ops.set(op.opId, op); outboxFlag(); return true;
+  } catch (e) { OUTBOX.why = (e && (e.name === 'QuotaExceededError' ? 'device storage is full' : e.message)) || String(e); console.warn('Could not store the pending change:', OUTBOX.why); return false; }
+}
+async function outboxRemove(key) {
+  const op = OUTBOX.ops.get(key); OUTBOX.ops.delete(key);
+  if (OUTBOX.db && op && op.opId && !op.corrupt) { try { const tx = OUTBOX.db.transaction('ops', 'readwrite', { durability: 'strict' }); tx.objectStore('ops').delete(op.opId); await new Promise(res => { tx.oncomplete = res; tx.onerror = res; }); } catch (e) {} }
+  if (OUTBOX.db && op && op.corrupt && op.raw && op.raw.opId) { try { const tx = OUTBOX.db.transaction('ops', 'readwrite'); tx.objectStore('ops').delete(op.raw.opId); } catch (e) {} }
+  outboxFlag();
+}
+// A name-free marker that this browser holds unsent changes for some account (shown to other accounts as a notice only).
+function outboxFlag() { try { const m = JSON.parse(localStorage.getItem('wluOutboxAccounts') || '{}'); if (OUTBOX.name) { if ([...OUTBOX.ops.values()].length) m[OUTBOX.name] = 1; else delete m[OUTBOX.name]; } localStorage.setItem('wluOutboxAccounts', JSON.stringify(m)); } catch (e) {} }
+function outboxOtherAccounts() { try { const m = JSON.parse(localStorage.getItem('wluOutboxAccounts') || '{}'); return Object.keys(m).filter(k => k !== OUTBOX.name).length; } catch (e) { return 0; } }
+function outboxListen() { if (OUTBOX.listening) return; OUTBOX.listening = true; window.addEventListener('online', () => outboxSchedule(500)); }
+function outboxSchedule(ms) {
+  if (OUTBOX.timer) clearTimeout(OUTBOX.timer);
+  const live = [...OUTBOX.ops.values()].filter(o => OUTBOX_LIVE.has(o.status));
+  if (!live.length) { OUTBOX.timer = null; return; }
+  const wait = ms != null ? ms : Math.max(500, Math.min(...live.map(o => (o.nextRetryAt || 0) - Date.now())));
+  OUTBOX.timer = setTimeout(() => { OUTBOX.timer = null; outboxDrain(); }, wait);
+}
+// Send what's pending, oldest first, one tab at a time. Stops at the first connection failure (and backs off).
+async function outboxDrain() {
+  if (OUTBOX.draining || !OUTBOX.db || isOffline()) { if (isOffline()) outboxUi(); return; }
+  const user = saveUser(); if (!user || user.uid !== OUTBOX.uid) return;
+  const work = async () => {
+    OUTBOX.draining = true;
+    try {
+      const now = Date.now(), list = [...OUTBOX.ops.values()].filter(o => o.status === 'pending' && !o.corrupt).sort((a, b) => a.createdAt - b.createdAt);
+      for (const op of list) {
+        if (now - op.createdAt > OUTBOX_MAX_AGE_MS) { op.status = 'review'; op.lastError = 'older than 7 days: check it before sending'; await outboxPut(op); continue; }
+        if ((op.nextRetryAt || 0) > Date.now()) continue;
+        const r = await outboxSend(op);
+        try { saveStatusQueued(op, r); } catch (e) { console.warn('save status', e); }
+        if (r === 'pending') break;   // still no connection: try again later
+      }
+    } finally { OUTBOX.draining = false; outboxUi(); outboxOverlayRefresh(); outboxSchedule(); }
+  };
+  if (navigator.locks && navigator.locks.request) return navigator.locks.request(OUTBOX.name, { ifAvailable: true }, lock => (lock ? work() : null));
+  return work();
+}
+// Remember an operation's outcome on this device: confirmed ones leave the queue; others stay for retry or review.
+async function outboxSettle(op, outcome, extra) {
+  Object.assign(op, extra || {});
+  if (outcome === 'ok') { await outboxRemove(op.opId); return; }
+  if (outcome === 'pending') {
+    op.status = 'pending'; op.attempts = (op.attempts || 0) + 1; op.lastTriedAt = Date.now();
+    if (op.attempts >= OUTBOX_MAX_ATTEMPTS) { op.status = 'failed'; op.lastError = `still couldn't reach the server after ${op.attempts} tries`; }
+    else op.nextRetryAt = Date.now() + Math.min(OUTBOX_MAX_BACKOFF_MS, 2000 * 2 ** Math.min(op.attempts, 12)) * (0.8 + Math.random() * 0.4);
+  } else op.status = outcome;   // 'conflict' | 'failed'
+  if (OUTBOX.db) await outboxPut(op);
+}
+// After a new entry's number moved up on the server, queued changes that refer to the old number follow it.
+async function outboxRemap(sid, kind, from, to, eid) {
+  for (const o of OUTBOX.ops.values()) {
+    if (o.corrupt || !OUTBOX_LIVE.has(o.status) || !eid) continue;
+    let touched = false;
+    if (opFrom(o) === sid && o.kind === kind && !o.isNew && Number(o.entryId) === from && eidOf(o.base) === eid) { o.entryId = to; o.base.id = to; o.next.id = to; touched = true; }
+    if (opFrom(o) === sid && kind === 'shot' && o.kind === 'poss' && o.next && Number(o.next.afterShot) === from && o.afterEid === eid) { o.next.afterShot = to; if (o.base && Number(o.base.afterShot) === from) o.base.afterShot = to; touched = true; }
+    if (touched) await outboxPut(o);
+  }
+}
+// A new entry with this identity still waiting on this device (other than the operation `except`)?
+function outboxHasNew(eid, except) {
+  return [...OUTBOX.ops.values()].some(o => o.opId !== except && !o.corrupt && OUTBOX_LIVE.has(o.status) && o.isNew && o.next && o.next.eid === eid)
+    || [...PENDING_SAVES.values()].some(p => p.opId !== except && p.op && p.op.isNew && p.op.next && p.op.next.eid === eid);
+}
+// Follow-ups of a new entry, run once the server has confirmed its number (also after a retry or a reload):
+//  fc: the Film Check clip mark that names this entry gets the confirmed number (only if it still names this identity);
+//  bf: the Backfill "reviewed" mark is written under the confirmed number (never under a number another entry has).
+// These marks are plain writes the Firestore SDK keeps until they are sent.
+async function outboxFollow(op, finalId) {
+  for (const f of op.after || []) {
+    try {
+      if (f.t === 'fc') {
+        const ref = DB.doc('app/filmcheck_' + f.key), snap = await ref.get(), cur = snap.exists ? snap.data()['st_' + f.clip] : null;
+        let o = null; try { o = cur ? JSON.parse(cur) : null; } catch (e) { o = null; }
+        if (o && o.eid && o.eid === op.next.eid && Number(o.id) !== Number(finalId)) ref.set({ ['st_' + f.clip]: JSON.stringify(Object.assign(o, { id: finalId })) }, { merge: true }).catch(e => console.error('film check mark', e));
+        if (FC.key === f.key && FC.st && FC.st[f.clip] && FC.st[f.clip].eid === op.next.eid) FC.st[f.clip].id = finalId;
+      } else if (f.t === 'bf') {
+        const k = bfKey(f.sid, op.kind, finalId);
+        DB.doc('app/backfill_' + f.season).set({ [k]: f.mark }, { merge: true }).catch(e => console.error('backfill mark', e));
+        BF.reviewed[k] = 1;
+      }
+    } catch (e) { console.error('follow-up', f && f.t, e); }
+  }
+}
+// When a shot leaves a session (moved or deleted), possessions placed after it point at the shot before it instead.
+function repairAfterShot(d, shotId, fields, refs) {
+  const shotIds = Object.keys(d).filter(k => /^s_\d+$/.test(k)).map(k => Number(k.slice(2))).filter(id => id !== shotId).sort((a, b) => a - b);
+  const prev = shotIds.filter(id => id < shotId).pop(); const to = prev === undefined ? null : prev;
+  Object.keys(d).filter(k => /^p_\d+$/.test(k)).forEach(k => {
+    const p = tupleToObj(JSON.parse(d[k]), POSS_COLS); if (Number(p.afterShot) !== shotId) return;
+    p.afterShot = to; fields[k] = JSON.stringify(objToTuple(p, POSS_COLS)); refs.push(k + ': afterShot ' + shotId + ' -> ' + to);
+  });
+}
+// The audit record of this exact operation (same coach, same content) if the server already has it, else null.
+async function outboxCommitted(op) {
+  try { const s = await DB.collection('app').doc('op_' + op.opId).get({ source: 'server' }); if (s.exists) { const o = s.data(); if (o.uid === op.uid && o.hash === op.hash) return Object.assign({ already: true }, o); } } catch (e) { /* unknown: treat as not committed */ }
+  return null;
+}
+// The server transaction for one operation. Returns 'ok' | 'conflict' | 'failed' | 'pending' (connection problem).
+async function outboxSend(op) {
+  const user = saveUser();
+  if (!user || user.uid !== op.uid) return 'skip';   // never sent under another account
+  if (isOffline()) { await outboxSettle(op, 'pending'); return 'pending'; }
+  op.status = 'saving';
+  if (op.kind === 'adj') return outboxSendAdj(op);
+  const kind = op.kind, cols = colsOf(kind), prefix = SESSION_ENTRY_PREFIX[kind], next = op.next, base = op.base, mode = op.mode || (op.isNew ? 'new' : 'edit');
+  const groups = saveGroups(cols), changed = mode === 'new' || mode === 'delete' ? [] : groups.filter(g => groupVal(next, g) !== groupVal(base, g));
+  const from = opFrom(op), ref = DB.collection('sessions').doc(from), toRef = DB.collection('sessions').doc(op.sid), opRef = DB.collection('app').doc('op_' + op.opId), st = op.stint;
+  const usedElsewhere = id => (kind === 'shot' ? allShotEntries() : POSSESSIONS).some(x => Number(x.id) === id && (x._sid || sessionIdFor(x)) !== op.sid);
+  const run0 = () => DB.runTransaction(async t => {
+    const opSnap = await t.get(opRef);
+    if (opSnap.exists) {   // already committed (a retry after a lost reply): return what happened, write nothing
+      const o = opSnap.data();
+      if (o.uid !== op.uid || o.hash !== op.hash) { const e = new Error('operation id reused for a different save'); e.code = 'op-mismatch'; throw e; }
+      return Object.assign({ already: true }, o);
     }
-  } else if (entry._sid && entry._sid !== sid) {
-    clean.stintId = null; // its stint belonged to the old session
-  }
-  fields[key] = JSON.stringify(objToTuple(clean, cols));
-  const batch = DB.batch();
-  batch.set(DB.collection('sessions').doc(sid), fields, { merge: true });
-  if (entry._sid && entry._sid !== sid) {
-    batch.set(DB.collection('sessions').doc(entry._sid), { [key]: firebase.firestore.FieldValue.delete() }, { merge: true });
-  }
-  entry.stintId = clean.stintId === undefined ? null : clean.stintId;
-  entry._sid = sid;
-  return settleWrite(batch.commit());
-}
-function persistShot(shot, lineup) { return persistSessionEntry('shot', shot, COLS, lineup); }
-function persistPossession(p, lineup) { return persistSessionEntry('poss', p, POSS_COLS, lineup); }
-// A NEW shot / possession: its number is claimed and the entry written in one transaction, so two people saving
-// at the same moment can't both take the same number (the second save would overwrite the first). Offline or
-// slow: the normal save, which queues until the connection is back.
-async function persistNewSessionEntry(kind, entry, cols, lineup) {
-  if (!DB) return 'error';
-  const sid = sessionIdFor(entry), ref = DB.collection('sessions').doc(sid), prefix = SESSION_ENTRY_PREFIX[kind];
-  const usedElsewhere = id => (kind === 'shot' ? allShotEntries() : POSSESSIONS).some(x => Number(x.id) === id && (x._sid || sessionIdFor(x)) !== sid);
-  if (typeof navigator !== 'undefined' && navigator.onLine === false) return persistSessionEntry(kind, entry, cols, lineup);   // offline: the normal save queues right away
-  const st = lineup !== undefined ? stintFor(sid, lineup) : null;
-  try {
-    await Promise.race([DB.runTransaction(async t => {
-      const snap = await t.get(ref), d = snap.exists ? snap.data() : {};
-      while (d[prefix + entry.id] !== undefined || usedElsewhere(Number(entry.id))) entry.id = Number(entry.id) + 1;
-      const clean = Object.assign({}, entry); delete clean._sid; delete clean.seed;
-      const fields = sessionMeta(entry);
-      if (st) { clean.stintId = st.id; if (st.isNew) fields[SESSION_ENTRY_PREFIX.stint + st.id] = JSON.stringify(st.stint); }
-      fields[prefix + entry.id] = JSON.stringify(objToTuple(clean, cols));
+    const snap = await t.get(ref), d = snap.exists ? snap.data() : {}, rev = (Number(d.rev) || 0) + 1;
+    const dsnap = mode === 'move' ? await t.get(toRef) : null, dd = dsnap && dsnap.exists ? dsnap.data() : {};
+    const rec = { v: 1, opId: op.opId, uid: op.uid, by: op.email || dpWho(), build: BUILD_VERSION, kind, sid: op.sid, from, hash: op.hash, mode, rev, clientAt: new Date(op.createdAt).toISOString(), at: firebase.firestore.FieldValue.serverTimestamp() };
+    const key = prefix + op.entryId;
+    if (mode === 'new') {
+      const e = Object.assign({}, next); let id = Number(op.entryId);
+      while (d[prefix + id] !== undefined || d[GONE + prefix + id] !== undefined || usedElsewhere(id)) id++;
+      e.eid = e.eid || op.opId;
+      e.id = id; delete e._sid; delete e.seed;
+      if (op.afterEid && kind === 'poss') {
+        const k = Object.keys(d).find(x => { if (!/^s_\d+$/.test(x)) return false; try { return tupleToObj(JSON.parse(d[x]), COLS).eid === op.afterEid; } catch (err) { return false; } });
+        if (k) e.afterShot = Number(k.slice(2));
+        else if (outboxHasNew(op.afterEid, op.opId)) { const w = new Error('waiting for the shot it follows to be saved'); w.code = 'unavailable'; throw w; }
+        else e.afterShot = null;
+        rec.afterShot = e.afterShot;
+      }
+      const fields = sessionMeta(next);
+      if (st) { e.stintId = st.id; if (st.isNew) fields[SESSION_ENTRY_PREFIX.stint + st.id] = JSON.stringify(st.stint); }
+      fields[prefix + id] = JSON.stringify(objToTuple(e, cols)); fields.rev = rev; fields.lastOp = op.opId;
       t.set(ref, fields, { merge: true });
-    }), new Promise((_, rej) => setTimeout(() => rej(new Error('slow')), 3500))]);
-    if (st && st.isNew && LIVE_SESSIONS[sid] && !LIVE_SESSIONS[sid].stints.some(x => x.id === st.id)) LIVE_SESSIONS[sid].stints.push(st.stint);
-    entry.stintId = st ? st.id : null; entry._sid = sid;
-    return 'ok';
-  } catch (e) { return persistSessionEntry(kind, entry, cols, lineup); }
+      Object.assign(rec, { result: 'applied', key: prefix + id, id });
+      t.set(opRef, rec); return rec;
+    }
+    const raw = d[key];
+    if (raw === undefined) { Object.assign(rec, { result: 'conflict', key, id: Number(op.entryId), conflicts: [{ group: 'entry', why: 'deleted or moved since it was opened' }] }); t.set(opRef, rec); return rec; }
+    const cur = tupleToObj(JSON.parse(raw), cols);
+    if (eidOf(cur) !== eidOf(base)) { Object.assign(rec, { result: 'conflict', key, id: Number(op.entryId), conflicts: [{ group: 'entry', why: 'deleted and replaced by a different entry since it was opened' }] }); t.set(opRef, rec); return rec; }
+    if (mode === 'delete') {   // only if nothing changed since the coach loaded it
+      const diff = groups.filter(g => groupVal(cur, g) !== groupVal(base, g));
+      Object.assign(rec, { key, id: Number(op.entryId) });
+      if (diff.length) { Object.assign(rec, { result: 'conflict', conflicts: diff.map(g => ({ group: g.join('+'), base: JSON.parse(groupVal(base, g)), theirs: JSON.parse(groupVal(cur, g)), mine: 'delete' })) }); t.set(opRef, rec); return rec; }
+      const fields = { [key]: firebase.firestore.FieldValue.delete(), [GONE + key]: JSON.stringify({ op: op.opId, eid: eidOf(cur), mode: 'delete' }), rev, lastOp: op.opId }, refs = [];
+      if (kind === 'shot') repairAfterShot(d, Number(op.entryId), fields, refs);
+      t.set(ref, fields, { merge: true });
+      Object.assign(rec, { result: 'deleted', deletedTuple: raw, refs });   // the deleted entry is kept in the audit record
+      t.set(opRef, rec); return rec;
+    }
+    const merged = Object.assign({}, cur), conflicts = [], applied = [];
+    changed.forEach(g => {
+      const b = groupVal(base, g), m = groupVal(next, g), th = groupVal(cur, g);
+      if (th === b || th === m) { g.forEach(c => { merged[c] = next[c] === undefined ? null : next[c]; }); applied.push(g.join('+')); }
+      else conflicts.push({ group: g.join('+'), base: JSON.parse(b), mine: JSON.parse(m), theirs: JSON.parse(th) });
+    });
+    Object.assign(rec, { key, id: Number(op.entryId), changed: changed.map(g => g.join('+')) });
+    if (mode === 'move' && dd[key] !== undefined) conflicts.push({ group: 'entry', why: `#${op.entryId} is already taken in ${op.sid}` });
+    // A number that a different entry left in the destination stays retired (old changes to that entry carry it).
+    // Only the same entry coming back (same identity) may take it again.
+    let goneBack = false;
+    if (mode === 'move' && dd[GONE + key] !== undefined) { let g = null; try { g = JSON.parse(dd[GONE + key]); } catch (e) {} if (g && g.eid && g.eid === eidOf(cur)) goneBack = true; else conflicts.push({ group: 'entry', why: `#${op.entryId} was used in ${op.sid} by an entry that was deleted or moved away` }); }
+    if (conflicts.length) { Object.assign(rec, { result: 'conflict', conflicts }); t.set(opRef, rec); return rec; }   // nothing of this operation is written
+    merged.id = Number(op.entryId); merged.stintId = cur.stintId === undefined ? null : cur.stintId;
+    if (mode === 'move') merged.eid = eidOf(cur) || op.opId;   // an older entry gets its identity when it first moves
+    if (mode === 'move') {   // out of the source and into the destination, in this one transaction
+      const tkey = merged.stintId ? SESSION_ENTRY_PREFIX.stint + merged.stintId : null;
+      const dfields = sessionMeta(next); dfields[key] = null;
+      if (kind === 'poss' && merged.afterShot != null) merged.afterShot = null;   // its shot is in the other session
+      if (tkey && d[tkey] !== undefined && dd[tkey] === undefined) dfields[tkey] = d[tkey];   // keep its lineup
+      else if (tkey && d[tkey] === undefined) merged.stintId = null;
+      dfields[key] = JSON.stringify(objToTuple(merged, cols)); dfields.rev = (Number(dd.rev) || 0) + 1; dfields.lastOp = op.opId;
+      if (goneBack) dfields[GONE + key] = firebase.firestore.FieldValue.delete();
+      const sfields = { [key]: firebase.firestore.FieldValue.delete(), [GONE + key]: JSON.stringify({ op: op.opId, eid: merged.eid, mode: 'move', to: op.sid }), rev, lastOp: op.opId }, refs = [];
+      if (kind === 'shot') repairAfterShot(d, Number(op.entryId), sfields, refs);
+      t.set(ref, sfields, { merge: true }); t.set(toRef, dfields, { merge: true });
+      Object.assign(rec, { result: 'moved', applied, refs, after: saveHash(dfields[key]) });
+      t.set(opRef, rec); return rec;
+    }
+    if (!applied.length && !(st && st.id !== cur.stintId)) { Object.assign(rec, { result: 'noop' }); t.set(opRef, rec); return rec; }   // nothing changed: audit record only
+    const fields = sessionMeta(next);
+    if (st) { merged.stintId = st.id; if (st.isNew) fields[SESSION_ENTRY_PREFIX.stint + st.id] = JSON.stringify(st.stint); }
+    fields[key] = JSON.stringify(objToTuple(merged, cols)); fields.rev = rev; fields.lastOp = op.opId;
+    t.set(ref, fields, { merge: true });
+    Object.assign(rec, { result: 'applied', applied, after: saveHash(fields[key]) });
+    t.set(opRef, rec); return rec;
+  });
+  const run = () => run0().catch(async e => { if (e && e.code === 'permission-denied') { const done = await outboxCommitted(op); if (done) return done; } throw e; });
+  let rec;
+  try { rec = await run(); }
+  catch (e) {
+    const code = e && e.code;
+    if (code === 'op-mismatch' || !SAVE_RETRY_CODES.has(code)) { console.error('save refused', e); await outboxSettle(op, 'failed', { lastError: code || String(e) }); LAST_SAVE = { status: 'error', why: code || String(e), opId: op.opId }; return 'failed'; }
+    // The reply may have been lost after the server committed: check (same id) before giving up for now.
+    try { rec = await run(); }
+    catch (e2) {
+      const c2 = e2 && e2.code;
+      if (c2 === 'op-mismatch' || !SAVE_RETRY_CODES.has(c2)) { console.error('save refused', e2); await outboxSettle(op, 'failed', { lastError: c2 || String(e2) }); LAST_SAVE = { status: 'error', why: c2 || String(e2), opId: op.opId }; return 'failed'; }
+      await outboxSettle(op, 'pending', { lastError: c2 || String(e2) }); LAST_SAVE = { status: 'pending', why: c2, opId: op.opId }; return 'pending';
+    }
+  }
+  if (rec.result === 'conflict') { await outboxSettle(op, 'conflict', { conflicts: rec.conflicts, lastError: null }); LAST_SAVE = { status: 'conflict', opId: op.opId, conflicts: rec.conflicts, already: !!rec.already, mode }; return 'conflict'; }
+  if (mode === 'new' && Number(rec.id) !== Number(op.entryId)) await outboxRemap(op.sid, kind, Number(op.entryId), Number(rec.id), eidOf(next));
+  op.finalId = rec.id;
+  await outboxSettle(op, 'ok');
+  if (mode === 'new' && op.after && op.after.length) outboxFollow(op, Number(rec.id));
+  if (st && st.isNew && LIVE_SESSIONS[op.sid] && !LIVE_SESSIONS[op.sid].stints.some(x => x.id === st.id)) LIVE_SESSIONS[op.sid].stints.push(st.stint);
+  LAST_SAVE = { status: 'ok', opId: op.opId, result: rec.result, already: !!rec.already, applied: rec.applied || null, id: rec.id, mode };
+  return 'ok';
 }
-const persistNewShot = (shot, lineup) => persistNewSessionEntry('shot', shot, COLS, lineup);
-const persistNewPossession = (p, lineup) => persistNewSessionEntry('poss', p, POSS_COLS, lineup);
-function deleteSessionEntry(kind, entry) {
-  if (!DB || !entry || entry.seed) return Promise.resolve('error');
-  const sid = entry._sid || sessionIdFor(entry);
-  return settleWrite(DB.collection('sessions').doc(sid).set({ [SESSION_ENTRY_PREFIX[kind] + entry.id]: firebase.firestore.FieldValue.delete() }, { merge: true }));
+// LAST_SAVE for this operation: a late answer to an earlier save can overwrite LAST_SAVE while this one is in flight.
+const ownLastSave = (op, status) => (LAST_SAVE && LAST_SAVE.opId === op.opId ? LAST_SAVE : { status, opId: op.opId, id: op.finalId === undefined ? null : op.finalId, why: op.lastError || null });
+// Queue an operation and send it. Returns 'ok' | 'pending' | 'conflict' | 'error'.
+// Every save is its own operation, even with the same content as another: two identical shots are two events. Only
+// retrySave (the coach's Retry) or the queue's own resend reuses an operation, so a retry can't add a second copy.
+// 'pending' with LAST_SAVE.slow: sent, but the server hasn't answered within 4 s. That is not a failure, only
+// unconfirmed: LAST_SAVE.late resolves with the real answer ({ result, id, why, opId }).
+async function submitOp(op, retry) {
+  const user = saveUser(), opId = op.opId;
+  const stored = retry && OUTBOX.ops.get(opId) === op ? true : await outboxPut(op);   // write-ahead: on this device before anything is sent
+  if (!stored) PENDING_SAVES.set(opId, { opId, uid: user.uid, op: plainCopy(op) });
+  if (isOffline()) {
+    if (!stored) { LAST_SAVE = { status: 'error', why: 'offline and this browser can’t store changes (' + (OUTBOX.why || 'storage unavailable') + ')' }; return 'error'; }
+    LAST_SAVE = { status: 'pending', opId }; outboxPersist(); outboxOverlayRefresh(); outboxUi(); outboxSchedule(); return 'pending';
+  }
+  // A stored operation that the server hasn't answered within 4 s is reported as pending; the send carries on in the
+  // background and the banner shows the outcome. Without device storage the coach waits for the real answer.
+  const sending = outboxSend(op);
+  const r = stored ? await Promise.race([sending, new Promise(res => setTimeout(() => res('slow'), 4000))]) : await sending;
+  if (r === 'slow') {
+    const late = sending.then(res => res, () => 'error').then(res => {
+      if (res === 'pending') outboxSchedule();   // not sent after all (no connection): the queue tries again on its own
+      outboxUi(); outboxOverlayRefresh();
+      return { result: res, id: op.finalId === undefined ? null : op.finalId, why: op.lastError || null, opId };
+    });
+    LAST_SAVE = { status: 'pending', opId, slow: true, late }; outboxPersist(); outboxOverlayRefresh(); outboxUi(); return 'pending';
+  }
+  if (r === 'ok') { PENDING_SAVES.delete(opId); LAST_SAVE = ownLastSave(op, 'ok'); outboxUi(); return 'ok'; }
+  if (r === 'conflict') { PENDING_SAVES.delete(opId); LAST_SAVE = ownLastSave(op, 'conflict'); outboxUi(); return 'conflict'; }
+  if (r === 'pending' && stored) { LAST_SAVE = Object.assign({ status: 'pending', opId }, LAST_SAVE && LAST_SAVE.opId === opId ? LAST_SAVE : {}, { status: 'pending' }); outboxPersist(); outboxOverlayRefresh(); outboxUi(); outboxSchedule(); return 'pending'; }
+  if (r === 'pending') LAST_SAVE = { status: 'error', why: 'no connection, and this browser can’t store changes (' + (OUTBOX.why || 'storage unavailable') + ')', opId };
+  else LAST_SAVE = ownLastSave(op, 'error');
+  outboxUi(); return 'error';
 }
-function deleteShotEntry(shot) { return deleteSessionEntry('shot', shot); }
-function deletePossessionEntry(p) { return deleteSessionEntry('poss', p); }
+// The coach's Retry for a save that is still unresolved: resends that same operation (same id, same content), whatever
+// the form now holds. 'gone' when it was answered meanwhile (its message already says how). Otherwise as submitOp.
+async function retrySave(opId) {
+  LAST_SAVE = null;
+  const user = saveUser(); if (!user) { LAST_SAVE = { status: 'error', why: 'not signed in' }; return 'error'; }
+  const q = OUTBOX.ops.get(opId), ps = PENDING_SAVES.get(opId);
+  const op = q && !q.corrupt && q.uid === user.uid && OUTBOX_LIVE.has(q.status) ? q : ps && ps.uid === user.uid ? Object.assign(plainCopy(ps.op), { status: 'pending' }) : null;
+  if (!op) { LAST_SAVE = { status: 'gone', opId }; return 'gone'; }
+  if (op === q) { op.nextRetryAt = 0; op.lastError = null; }
+  return submitOp(op, true);
+}
+// opts: { base } = the exact copy the editor's entry was built from (required for edits and moves); { isNew } for new entries.
+// An edit whose date / context / opponent puts it in another session is a move.
+async function saveSessionEntry(kind, entry, cols, lineup, opts) {
+  const isNew = !!(opts && opts.isNew), base = opts && opts.base;
+  LAST_SAVE = null;
+  if (!DB) return 'error';
+  if (!isNew && (!base || Number(base.id) !== Number(entry.id))) { console.error('save: an edit needs the copy it started from'); LAST_SAVE = { status: 'error', why: 'no base' }; return 'error'; }
+  const sid = sessionIdFor(entry), from = isNew ? sid : (base._sid || sessionIdFor(base)), mode = isNew ? 'new' : from !== sid ? 'move' : 'edit';
+  const user = saveUser(); if (!user) { LAST_SAVE = { status: 'error', why: 'not signed in' }; return 'error'; }
+  await outboxOpen();
+  // What the coach wants: fields the editor didn't provide keep the starting copy's value (e.g. Log Shot has no film time).
+  const next = Object.assign({}, entry); if (!isNew) cols.forEach(c => { if (next[c] === undefined && base[c] !== undefined) next[c] = base[c]; });
+  if (!isNew) next.eid = eidOf(base);
+  const groups = saveGroups(cols), changed = isNew ? [] : groups.filter(g => groupVal(next, g) !== groupVal(base, g));
+  const st = opts && opts.stint ? opts.stint : lineup !== undefined && mode !== 'move' ? stintFor(sid, lineup) : null;   // opts.stint: a reviewed change's own lineup
+  const payload = isNew ? JSON.stringify([kind, sid, cols.filter(c => c !== 'id').map(c => saveVal(next[c])), st && st.isNew ? st.stint : null])
+    : JSON.stringify([kind, mode, from, sid, Number(entry.id), changed.map(g => [g, g.map(c => saveVal(base[c])), g.map(c => saveVal(next[c]))])]);
+  const opId = (opts && opts.opId) || newOpId();   // opts.opId: a fixed id for an import, so running it again can't add a copy
+  if (isNew) { next.eid = next.eid || opId; entry.eid = next.eid; }
+  const afterEid = isNew && kind === 'poss' && next.afterShot != null ? (eidOf(((LIVE_SESSIONS[sid] || {}).shots || []).find(x => Number(x.id) === Number(next.afterShot))) || null) : null;
+  const op = { v: 1, opId, project: outboxProject(), uid: user.uid, email: user.email || null, kind, mode, isNew, sid, fromSid: from, entryId: Number(entry.id),
+    base: isNew ? null : plainCopy(Object.assign({}, base, { _sid: from })), next: plainCopy(Object.assign({}, next, { _sid: sid })),
+    stint: st && st.id ? plainCopy(st) : null, hash: saveHash(payload), status: 'pending', attempts: 0, createdAt: Date.now(), changed: changed.map(g => g.join('+')),
+    afterEid, after: opts && opts.after ? plainCopy(opts.after) : null };
+  const r = await submitOp(op);
+  if (r === 'ok') { if (isNew) { entry.id = LAST_SAVE.id; entry.eid = next.eid; } entry._sid = sid; entry.stintId = st ? st.id : (isNew ? null : (entry.stintId === undefined ? null : entry.stintId)); }
+  return r;
+}
+// Delete one entry, but only if nobody changed it since `base` (the copy the coach loaded) — else a conflict to review.
+async function deleteSessionEntry(kind, base) {
+  LAST_SAVE = null;
+  if (!DB || !base || base.seed) return 'error';
+  const user = saveUser(); if (!user) { LAST_SAVE = { status: 'error', why: 'not signed in' }; return 'error'; }
+  await outboxOpen();
+  const sid = base._sid || sessionIdFor(base), cols = colsOf(kind), copy = plainCopy(Object.assign({}, base, { _sid: sid }));
+  const payload = JSON.stringify([kind, 'delete', sid, Number(base.id), cols.map(c => saveVal(base[c]))]);
+  const op = { v: 1, opId: newOpId(), project: outboxProject(), uid: user.uid, email: user.email || null, kind, mode: 'delete', isNew: false, sid, fromSid: sid, entryId: Number(base.id),
+    base: copy, next: copy, stint: null, hash: saveHash(payload), status: 'pending', attempts: 0, createdAt: Date.now(), changed: [] };
+  return submitOp(op);
+}
+function deleteShotEntry(shot, base) { return deleteSessionEntry('shot', base && Number(base.id) === Number(shot.id) ? base : shot); }
+function deletePossessionEntry(p, base) { return deleteSessionEntry('poss', base && Number(base.id) === Number(p.id) ? base : p); }
+// Pending (unconfirmed) operations shown on top of the server data, so the coach sees their own changes while they wait.
+function outboxOverlay(sessions) {
+  const user = saveUser(); if (!user || user.uid !== OUTBOX.uid) return;
+  const ensure = (sid, n) => (sessions[sid] = sessions[sid] || { id: sid, date: n.date || null, context: n.context || null, opponent: n.opponent || null, shots: [], poss: [], stints: [], adjs: [] });
+  [...OUTBOX.ops.values()].filter(o => !o.corrupt && OUTBOX_LIVE.has(o.status)).sort((a, b) => a.createdAt - b.createdAt).forEach(o => {
+    if (o.kind === 'adj') { const s = ensure(o.sid, o.next); if (!s.adjs.some(a => a.id === o.adjKey)) s.adjs.push(Object.assign({ id: o.adjKey, _pending: true }, o.adj)); return; }
+    const cols = colsOf(o.kind), mode = o.mode || (o.isNew ? 'new' : 'edit'), id = Number(o.entryId), listOf = sid => (o.kind === 'shot' ? ensure(sid, o.next).shots : ensure(sid, o.next).poss);
+    if (mode === 'new') { const list = listOf(o.sid); if (!list.some(x => x.id === id)) list.push(Object.assign(tupleToObj(objToTuple(Object.assign({}, o.next, { id, stintId: o.stint ? o.stint.id : null }), cols), cols), { _sid: o.sid, _pending: true })); return; }
+    const src = listOf(opFrom(o)), i = src.findIndex(x => x.id === id && eidOf(x) === eidOf(o.base)); if (i < 0) return;
+    if (mode === 'delete') { src.splice(i, 1); return; }
+    const e = src[i];
+    saveGroups(cols).filter(g => (o.changed || []).includes(g.join('+'))).forEach(g => g.forEach(c => { e[c] = o.next[c] === undefined ? null : o.next[c]; }));
+    e._pending = true;
+    if (mode === 'move') { src.splice(i, 1); e._sid = o.sid; listOf(o.sid).push(e); }
+  });
+}
+let SESSIONS_RAW = null;   // the last server snapshot of every session doc, so pending changes are always laid on server data
+function outboxOverlayRefresh() { if (!window.__appReady || !SESSIONS_RAW) return; try { LIVE_SESSIONS = {}; SESSIONS_RAW.forEach(([id, d]) => { LIVE_SESSIONS[id] = parseSessionDoc(id, d); }); outboxOverlay(LIVE_SESSIONS); rebuildShots(); rerenderAfterShotsChange(); } catch (e) { console.warn('pending overlay', e); } }
+// The banner: how many changes are only on this device, and any that need the coach.
+function outboxUi() {
+  const el = document.getElementById('outboxBanner'); if (!el) return;
+  const ops = [...OUTBOX.ops.values()], pending = ops.filter(o => OUTBOX_LIVE.has(o.status)), review = ops.filter(o => !OUTBOX_LIVE.has(o.status)), others = outboxOtherAccounts();
+  const parts = [];
+  // 'saving' = sent and waiting for the server's answer (may already be saved); 'pending' = not sent or couldn't reach it.
+  const waiting = pending.filter(o => o.status === 'saving' && !isOffline()), queued = pending.filter(o => !waiting.includes(o));
+  if (waiting.length) parts.push(`<b>${waiting.length} change${waiting.length === 1 ? '' : 's'} sent, not confirmed yet.</b> Waiting for the server’s answer; check the Shot Log before entering ${waiting.length === 1 ? 'it' : 'them'} again.`);
+  if (queued.length) parts.push(`<b>${queued.length} change${queued.length === 1 ? '' : 's'} stored on this device only, not saved to the tracker yet.</b> ${isOffline() ? 'They’ll be sent when the connection is back.' : 'Sending…'} Don’t clear this browser’s data until they’re sent${OUTBOX.persisted === false ? '; this browser may also clear it on its own if storage runs low' : ''}.`);
+  if (review.length) parts.push(`<b>${review.length} change${review.length === 1 ? '' : 's'} need${review.length === 1 ? 's' : ''} your review</b> (not saved). <button type="button" class="pill" data-ob="review">Review</button>`);
+  if (OUTBOX.available === false) parts.push(`This browser can’t keep changes offline (${escapeHtml(OUTBOX.why || 'storage unavailable')}): saves need a connection.`);
+  if (others) parts.push('Unsynced changes from another account remain on this device. They’ll be sent when that account signs in here.');
+  if (pending.length && !isOffline()) parts.push('<button type="button" class="pill" data-ob="retry">Retry now</button>');
+  el.innerHTML = parts.join(' ') + (OUTBOX.reviewOpen ? outboxReviewHtml(review) : '');
+  el.style.display = parts.length ? '' : 'none';
+}
+const obVal = v => (v === null || v === undefined || v === '' ? '—' : escapeHtml(String(v)));
+const obGroupRows = rows => rows.map(r => `<tr${r.conflict ? ' class="ob-conflict"' : ''}><td>${escapeHtml(fieldLabel(r.field))}${r.conflict ? ' <b>(another coach’s change)</b>' : ''}</td><td>${obVal(r.theirs)}</td><td>${r.mine === 'delete' ? '<i>deleted</i>' : obVal(r.mine)}</td></tr>`).join('');
+function outboxReviewHtml(list) {
+  const row = o => {
+    const key = escapeHtml(o.corrupt ? [...OUTBOX.ops.entries()].find(([, v]) => v === o)[0] : o.opId), arm = OUTBOX.armDiscard === key, mode = o.mode || (o.isNew ? 'new' : 'edit');
+    const noun = o.kind === 'shot' ? 'shot' : 'possession';
+    const what = o.corrupt ? 'A stored change this tracker can’t read' : o.kind === 'adj' ? `Score fix (WLU ${escapeHtml(String(o.adj.wlu))} – ${escapeHtml(String(o.adj.opp))} Opp)` : mode === 'new' ? `New ${noun} #${escapeHtml(String(o.entryId))}` : mode === 'delete' ? `Delete ${noun} #${escapeHtml(String(o.entryId))}` : mode === 'move' ? `Move ${noun} #${escapeHtml(String(o.entryId))} to ${escapeHtml(o.sid)}` : `Change to ${noun} #${escapeHtml(String(o.entryId))}`;
+    const why = o.corrupt ? 'unreadable' : o.status === 'conflict' ? escapeHtml(conflictWords(o.conflicts))
+      : o.status === 'review' ? escapeHtml(o.lastError || 'old change') : 'not saved: ' + escapeHtml(o.lastError || 'refused');
+    const forceLabel = mode === 'delete' ? 'Delete anyway…' : mode === 'move' ? 'Move anyway…' : 'Use mine anyway…';
+    const c = OUTBOX.confirm && OUTBOX.confirm.key === key ? OUTBOX.confirm : null;
+    const confirmHtml = c ? (c.missing ? `<p class="bf-msg bad">It isn’t there any more (deleted or moved by someone else). Nothing to ${mode === 'delete' ? 'delete' : 'overwrite'}; you can discard this change.</p>`
+      : `<div class="ob-confirm"><p><b>${mode === 'delete' ? 'Deleting will remove these values, which another coach changed after you loaded it:' : c.rows.some(r => r.conflict) ? 'Rows marked “another coach’s change” will be overwritten with yours:' : 'Nothing another coach changed is affected; your changes will be applied:'}</b></p><div class="table-wrap"><table class="shotlog dense"><thead><tr><th>Field</th><th>Now on the server</th><th>${mode === 'delete' ? 'After' : 'Yours'}</th></tr></thead><tbody>${obGroupRows(c.rows)}</tbody></table></div>${c.rows.length ? '' : '<p class="n-note">Nothing on the server differs from your change now.</p>'}<div class="bf-actions"><button type="button" class="btn" data-ob="confirm" data-k="${key}">${mode === 'delete' ? 'Confirm delete' : 'Confirm overwrite'}</button><button type="button" class="pill" data-ob="cancel" data-k="${key}">Cancel</button></div></div>`) : '';
+    return `<div class="ob-row"><b>${what}</b>: ${why}${o.lastError && o.status === 'conflict' ? ` <span class="n-note">${escapeHtml(o.lastError)}</span>` : ''}<div class="bf-actions">${o.corrupt ? '' : (o.status === 'conflict' ? `<button type="button" class="pill" data-ob="force" data-k="${key}">${forceLabel}</button>` : `<button type="button" class="pill" data-ob="resend" data-k="${key}">Send again</button>`)}<button type="button" class="pill" data-ob="copy" data-k="${key}">Show details</button><button type="button" class="pill" data-ob="discard" data-k="${key}">${arm ? 'Tap again to discard' : (o.status === 'conflict' ? 'Keep theirs (discard mine)' : 'Discard')}</button></div>${confirmHtml}${OUTBOX.showKey === key ? `<pre class="ob-pre">${escapeHtml(JSON.stringify(o.corrupt ? o.raw : { mode, kind: o.kind, from: opFrom(o), to: o.sid, entryId: o.entryId, changed: o.changed, conflicts: o.conflicts, yours: o.next, startedFrom: o.base }, null, 1))}</pre>` : ''}</div>`;
+  };
+  return `<div class="ob-review">${list.length ? list.map(row).join('') : '<p class="n-note">Nothing to review.</p>'}</div>`;
+}
+// The entry as it is on the server right now (or null if it isn't in that session any more).
+async function outboxServerEntry(kind, sid, id, eid) {
+  const snap = await DB.collection('sessions').doc(sid).get({ source: 'server' }), raw = snap.exists ? snap.data()[SESSION_ENTRY_PREFIX[kind] + id] : undefined;
+  const e = raw ? Object.assign(tupleToObj(JSON.parse(raw), colsOf(kind)), { _sid: sid }) : null;
+  return e && (eid === undefined || eidOf(e) === eid) ? e : null;   // a different entry under that number counts as gone
+}
+// What a forced operation would overwrite: field, value now on the server, the coach's value.
+function outboxForceRows(op, cur) {
+  const mode = op.mode || 'edit', cols = colsOf(op.kind), rows = [];
+  const gs = mode === 'delete' ? saveGroups(cols).filter(g => groupVal(cur, g) !== groupVal(op.base, g)) : saveGroups(cols).filter(g => (op.changed || []).includes(g.join('+')));
+  gs.forEach(g => { const theirsChanged = groupVal(cur, g) !== groupVal(op.base, g);   // another coach changed this group since the coach's copy
+    g.forEach(c => { const th = saveVal(cur[c]), mi = mode === 'delete' ? 'delete' : saveVal(op.next[c]); if (mode === 'delete' || JSON.stringify(th) !== JSON.stringify(mi)) rows.push({ field: c, theirs: th, mine: mi, conflict: theirsChanged }); }); });
+  if (mode !== 'delete' && op.stint && op.stint.id && op.stint.id !== (cur.stintId || null)) rows.push({ field: 'stintId', theirs: saveVal(cur.stintId), mine: op.stint.id, conflict: false });   // the change's lineup
+  return rows.sort((a, b) => b.conflict - a.conflict);
+}
+document.addEventListener('click', async ev => {
+  const b = ev.target.closest('[data-ob]'); if (!b) return;
+  const a = b.dataset.ob, k = b.dataset.k, op = k ? OUTBOX.ops.get(k) : null;
+  if (a === 'review') OUTBOX.reviewOpen = !OUTBOX.reviewOpen;
+  if (a === 'retry') { [...OUTBOX.ops.values()].forEach(o => { if (o.status === 'pending') o.nextRetryAt = 0; }); outboxDrain(); }
+  if (a === 'copy') OUTBOX.showKey = OUTBOX.showKey === k ? null : k;
+  if (a === 'resend' && op) { if (op.status === 'review') op.createdAt = Date.now(); op.status = 'pending'; op.attempts = 0; op.nextRetryAt = 0; op.lastError = null; await outboxPut(op); outboxDrain(); }
+  if (a === 'cancel') OUTBOX.confirm = null;
+  // Step 1 of overriding a conflict: load the server's current version and show exactly what would be overwritten.
+  if ((a === 'force' || a === 'confirm') && op && op.kind === 'adj') { await outboxAdjReview(a, k, op); outboxUi(); return; }
+  if (a === 'force' && op) {
+    let cur = null; try { cur = await outboxServerEntry(op.kind, opFrom(op), op.entryId, eidOf(op.base)); } catch (e) { op.lastError = 'couldn’t load the current version (no connection?); your change is still here'; outboxUi(); return; }
+    OUTBOX.confirm = cur ? { key: k, rows: outboxForceRows(op, cur), snapshot: JSON.stringify(cur) } : { key: k, missing: true };
+  }
+  // Step 2: the coach confirmed. Check the server again; if anything moved on, stop and show the new values instead.
+  if (a === 'confirm' && op && OUTBOX.confirm && OUTBOX.confirm.key === k) {
+    let cur = null; try { cur = await outboxServerEntry(op.kind, opFrom(op), op.entryId, eidOf(op.base)); } catch (e) { op.lastError = 'couldn’t check the current version (no connection?); nothing was sent'; outboxUi(); return; }
+    if (!cur || JSON.stringify(cur) !== OUTBOX.confirm.snapshot) {
+      OUTBOX.confirm = cur ? { key: k, rows: outboxForceRows(op, cur), snapshot: JSON.stringify(cur) } : { key: k, missing: true };
+      op.lastError = 'Another coach changed it again while you were reviewing: check the new values, then confirm again.'; outboxUi(); return;
+    }
+    const mode = op.mode || 'edit'; let r;
+    if (mode === 'delete') r = await deleteSessionEntry(op.kind, cur);
+    else { const want = Object.assign({}, cur); saveGroups(colsOf(op.kind)).filter(g => (op.changed || []).includes(g.join('+'))).forEach(g => g.forEach(c => { want[c] = op.next[c]; })); r = await saveSessionEntry(op.kind, want, colsOf(op.kind), undefined, { base: Object.assign({}, cur), stint: op.stint || null }); }
+    OUTBOX.confirm = null;
+    if (r === 'ok' || r === 'pending' || r === 'conflict') await outboxRemove(op.opId);   // the new operation now carries it
+    else op.lastError = 'couldn’t send it again (' + ((LAST_SAVE && LAST_SAVE.why) || 'error') + '); your change is still here';
+    outboxOverlayRefresh();
+  }
+  if (a === 'discard' && k) { if (OUTBOX.armDiscard !== k) OUTBOX.armDiscard = k; else { OUTBOX.armDiscard = null; console.info('Pending change discarded by the coach', op && op.opId); await outboxRemove(k); outboxOverlayRefresh(); } }
+  outboxUi();
+});
+// ---- Score fixes ("at this point the real score was W-O"): one protected operation each, like an entry ----
+// The coach's fix is based on the latest fix they saw (baseAdj). If another coach saved a fix since, it's a conflict to
+// review, never a silent second answer. Written with the author, the operation id and an audit record.
+async function saveScoreFix(sid, meta, adj, baseAdj) {
+  LAST_SAVE = null;
+  if (!DB) return 'error';
+  const user = saveUser(); if (!user) { LAST_SAVE = { status: 'error', why: 'not signed in' }; return 'error'; }
+  await outboxOpen();
+  const opId = newOpId(), adjKey = 'a_' + Date.now().toString(36) + '_' + opId.slice(0, 6);
+  const rec = Object.assign({ quarter: null, clock: null }, adj, { by: dpWho(), uid: user.uid, opId });
+  const op = { v: 1, opId, project: outboxProject(), uid: user.uid, email: user.email || null, kind: 'adj', mode: 'new', isNew: true, sid, fromSid: sid, entryId: 0,
+    base: null, next: plainCopy(Object.assign(sessionMeta(meta), { _sid: sid })), adj: plainCopy(rec), adjKey, baseAdj: baseAdj || null, stint: null,
+    hash: saveHash(JSON.stringify(['adj', sid, adjKey, rec.wlu, rec.opp, rec.lw, rec.lo, rec.quarter, rec.clock, baseAdj || null])), status: 'pending', attempts: 0, createdAt: Date.now(), changed: [] };
+  return submitOp(op);
+}
+const adjLatestKey = d => Object.keys(d || {}).filter(k => /^a_/.test(k)).sort().pop() || null;
+async function outboxSendAdj(op) {
+  const ref = DB.collection('sessions').doc(op.sid), opRef = DB.collection('app').doc('op_' + op.opId);
+  const run0 = () => DB.runTransaction(async t => {
+    const opSnap = await t.get(opRef);
+    if (opSnap.exists) { const o = opSnap.data(); if (o.uid !== op.uid || o.hash !== op.hash) { const e = new Error('operation id reused for a different save'); e.code = 'op-mismatch'; throw e; } return Object.assign({ already: true }, o); }
+    const snap = await t.get(ref), d = snap.exists ? snap.data() : {}, rev = (Number(d.rev) || 0) + 1, latest = adjLatestKey(d);
+    const rec = { v: 1, opId: op.opId, uid: op.uid, by: op.adj.by, build: BUILD_VERSION, kind: 'adj', sid: op.sid, from: op.sid, hash: op.hash, mode: 'new', rev, key: op.adjKey, clientAt: new Date(op.createdAt).toISOString(), at: firebase.firestore.FieldValue.serverTimestamp() };
+    if (latest !== (op.baseAdj || null)) {
+      let th = null; try { th = JSON.parse(d[latest]); } catch (e) { th = null; }
+      Object.assign(rec, { result: 'conflict', conflicts: [{ group: 'score', base: op.baseAdj || null, theirs: th ? { key: latest, wlu: th.wlu, opp: th.opp, by: th.by || null } : null, mine: { wlu: op.adj.wlu, opp: op.adj.opp } }] });
+      t.set(opRef, rec); return rec;
+    }
+    t.set(ref, Object.assign(sessionMeta(op.next), { [op.adjKey]: JSON.stringify(op.adj), rev, lastOp: op.opId }), { merge: true });
+    Object.assign(rec, { result: 'applied' }); t.set(opRef, rec); return rec;
+  });
+  const run = () => run0().catch(async e => { if (e && e.code === 'permission-denied') { const done = await outboxCommitted(op); if (done) return done; } throw e; });
+  let rec;
+  try { rec = await run(); }
+  catch (e) {
+    const code = e && e.code;
+    if (code === 'op-mismatch' || !SAVE_RETRY_CODES.has(code)) { console.error('save refused', e); await outboxSettle(op, 'failed', { lastError: code || String(e) }); LAST_SAVE = { status: 'error', why: code || String(e), opId: op.opId }; return 'failed'; }
+    try { rec = await run(); }
+    catch (e2) {
+      const c2 = e2 && e2.code;
+      if (c2 === 'op-mismatch' || !SAVE_RETRY_CODES.has(c2)) { console.error('save refused', e2); await outboxSettle(op, 'failed', { lastError: c2 || String(e2) }); LAST_SAVE = { status: 'error', why: c2 || String(e2), opId: op.opId }; return 'failed'; }
+      await outboxSettle(op, 'pending', { lastError: c2 || String(e2) }); LAST_SAVE = { status: 'pending', why: c2, opId: op.opId }; return 'pending';
+    }
+  }
+  if (rec.result === 'conflict') { await outboxSettle(op, 'conflict', { conflicts: rec.conflicts, lastError: null }); LAST_SAVE = { status: 'conflict', opId: op.opId, conflicts: rec.conflicts, already: !!rec.already, mode: 'new' }; return 'conflict'; }
+  await outboxSettle(op, 'ok');
+  LAST_SAVE = { status: 'ok', opId: op.opId, result: rec.result, already: !!rec.already, id: null, mode: 'new', key: op.adjKey };
+  return 'ok';
+}
+// Review of a score fix that conflicted: show the fix on the server now vs the coach's; confirming re-checks it first.
+async function outboxAdjReview(a, k, op) {
+  let d = null; try { const snap = await DB.collection('sessions').doc(op.sid).get({ source: 'server' }); d = snap.exists ? snap.data() : {}; }
+  catch (e) { op.lastError = 'couldn’t load the current score fix (no connection?); ' + (a === 'force' ? 'your change is still here' : 'nothing was sent'); return; }
+  const latest = adjLatestKey(d); let th = null; try { th = latest ? JSON.parse(d[latest]) : null; } catch (e) { th = null; }
+  const rows = [{ field: 'score fix', theirs: th ? `WLU ${th.wlu} – ${th.opp} Opp${th.by ? ' (' + th.by + ')' : ''}` : null, mine: `WLU ${op.adj.wlu} – ${op.adj.opp} Opp`, conflict: true }];
+  if (a === 'force') { OUTBOX.confirm = { key: k, rows, snapshot: latest || '' }; return; }
+  if (!OUTBOX.confirm || OUTBOX.confirm.key !== k) return;
+  if ((latest || '') !== OUTBOX.confirm.snapshot) { OUTBOX.confirm = { key: k, rows, snapshot: latest || '' }; op.lastError = 'Another coach changed it again while you were reviewing: check the new values, then confirm again.'; return; }
+  const adj = { quarter: op.adj.quarter, clock: op.adj.clock, wlu: op.adj.wlu, opp: op.adj.opp, lw: op.adj.lw, lo: op.adj.lo };
+  const r = await saveScoreFix(op.sid, op.next, adj, latest);
+  OUTBOX.confirm = null;
+  if (r === 'ok' || r === 'pending' || r === 'conflict') await outboxRemove(op.opId);
+  else op.lastError = 'couldn’t send it again (' + ((LAST_SAVE && LAST_SAVE.why) || 'error') + '); your change is still here';
+  outboxOverlayRefresh();
+}
+// Field names as the forms show them (conflict messages and the review table).
+const FIELD_LABELS = { date: 'date', practiceId: 'practice', context: 'practice / scrimmage / game', opponent: 'opponent', shooterJersey: 'shooter', goalieJersey: 'goalie',
+  assistJersey: 'passer', oppShooter: 'opponent shooter', oppPasser: 'opponent passer', outcome: 'result', goal: 'goal', onGoal: 'on goal', onKeeper: 'on keeper', blocked: 'blocked',
+  shotQuality: 'shot quality', contestLevel: 'contest', defScheme: 'defense (man / zone)', transition: 'transition', offDodge: 'off the catch / dodge', rightHanded: 'shooting hand',
+  cleanSave: 'clean save', fieldX: 'shot spot', fieldY: 'shot spot', distanceYds: 'shot distance', lateralYds: 'shot spot', goalX: 'goal spot', goalY: 'goal spot', customTags: 'tags',
+  passType: 'pass type', trigger: 'offense trigger', manSituation: 'man-up / man-down', shotMechanism: 'shot type', rebound: 'rebound', bounceShot: 'bounce shot', screened: 'screened',
+  goalieSet: 'goalie set', outlet: 'outlet', possStart: 'possession start', possStartJersey: 'possession start (who)', dominoes: 'dominoes', advCreator: 'who started it',
+  advType: 'advantage type', defender: 'on-ball defender', defBeaten: 'defender beaten', beatenHow: 'how he was beaten', slideDefender: 'slide defender', offBallFault: 'off-ball breakdown',
+  screens: 'screens', pick: 'pick', pickType: 'pick type', pickSpot: 'pick spot', pickScreener: 'screener', pickUser: 'used by', pickCoverage: 'pick coverage', pickResult: 'pick result',
+  pickMismatch: 'pick mismatch', pickAction: 'pick action', pickScreenerDef: 'screener’s defender', pickUserDef: 'ball carrier’s defender', stintId: 'lineup', filmTime: 'film time',
+  afterShot: 'placed after shot', end: 'how it ended', turnoverBy: 'turnover by', causedBy: 'caused by', team: 'team' };
+const GROUP_LABELS = { outcome: 'the result', defender: 'the on-ball defender', pick: 'the pick', date: 'the date / session' };
+const fieldLabel = c => FIELD_LABELS[c] || String(c).replace(/([a-z])([A-Z])/g, '$1 $2').toLowerCase();
+const groupLabel = g => { const first = String(g).split('+')[0]; return String(g).includes('+') ? GROUP_LABELS[first] || fieldLabel(first) : fieldLabel(first); };
+// A conflict, in words a coach can act on: "it was deleted or moved …" and/or "another coach changed defender, …".
+function conflictWords(list) {
+  const c = list || [], gone = c.filter(x => x.group === 'entry'), fields = [...new Set(c.filter(x => x.group !== 'entry').map(x => groupLabel(x.group)))];
+  const parts = gone.map(x => /taken/.test(x.why || '') ? x.why : 'it was deleted or moved by someone else after it was opened');
+  if (fields.length) parts.push('another coach changed ' + fields.join(', ') + ' after it was opened');
+  return parts.join('; ') || 'another coach changed it after it was opened';
+}
+function saveConflictText(what) {
+  const verb = LAST_SAVE && LAST_SAVE.mode === 'delete' ? 'Not deleted' : LAST_SAVE && LAST_SAVE.mode === 'move' ? 'Not moved' : 'Not saved';
+  return `${verb}: ${escapeHtml(conflictWords(LAST_SAVE && LAST_SAVE.conflicts))} (this ${what}). Nothing was written. Your change is kept under “needs your review” at the top of the page.`;
+}
+// The colour of a Backfill / Film Check message: amber while a save is unresolved, red when it was refused or failed.
+function bfMsgClass(msg, badRe) {
+  const m = String(msg || '');
+  if (/(Not saved|Not deleted|Not moved):|[Ss]ave failed/.test(m)) return ' bad';
+  if (/save-choice|not confirmed yet|NOT saved to the tracker yet|retrying…|still unresolved/.test(m)) return ' warn';
+  return badRe.test(m) ? ' bad' : '';
+}
+// Film Check messages are plain text, except the save layer's own status (which carries its buttons).
+const fcMsgHtml = m => (/<span class="save-choice">/.test(m) ? m : escapeHtml(m));
+// The status line for a save result that isn't confirmed yet.
+const SAVE_PENDING_TEXT = 'Stored on this device only, NOT saved to the tracker yet. It will be sent automatically when the connection is back; keep this browser’s data until then.';
+// The pending wording for the save just made. Only a connection failure or being offline is evidence it didn't
+// reach the tracker; a slow answer alone means it isn't confirmed yet (it may well be saved).
+function savePendingText(where) {
+  if (!(LAST_SAVE && LAST_SAVE.slow)) return SAVE_PENDING_TEXT;
+  return where === null ? 'Save not confirmed yet — check it’s there before entering it again.' : `Save not confirmed yet — check the ${where || 'Shot Log'} before entering it again.`;
+}
+function persistShot(shot, lineup, opts) { return saveSessionEntry('shot', shot, COLS, lineup, opts); }
+function persistPossession(p, lineup, opts) { return saveSessionEntry('poss', p, POSS_COLS, lineup, opts); }
+const persistNewShot = (shot, lineup, opts) => saveSessionEntry('shot', shot, COLS, lineup, Object.assign({ isNew: true }, opts));
+const persistNewPossession = (p, lineup, opts) => saveSessionEntry('poss', p, POSS_COLS, lineup, Object.assign({ isNew: true }, opts));
 
 // Copies anything in the legacy app/shots_live doc into session docs.
 // Nothing is ever removed from app/shots_live: it stays in Firebase as a
@@ -3027,6 +3570,58 @@ function tupleHash(t) {
   for (let i = 0; i < str.length; i++) { const c = str.charCodeAt(i); h1 = (h1 * 33) ^ c; h2 = (h2 * 33) ^ c; }
   return (h1 >>> 0).toString(36) + (h2 >>> 0).toString(36) + ':' + str.length;
 }
+// PR 7a-1: the inbox is no longer copied automatically on load (that wrote whole session entries with no audit record,
+// from every coach's browser at once). Shots still waiting in it keep showing in every stat (rebuildShots) and a notice
+// says how many; the Data Health owner moves them with one button, through the protected save: each inbox shot is a
+// new-entry operation whose id comes from its content, so running it again, twice at once, or after a lost reply
+// can't add a second copy. The inbox itself is never changed or emptied.
+function inboxPending() {
+  const live = {}; Object.values(LIVE_SESSIONS).forEach(sess => sess.shots.forEach(x => { live[x.id] = x; }));
+  return LIVE_SHOTS_TUPLES.filter(t => {
+    if (MOVED_HASHES.has(tupleHash(t))) return false;
+    const o = tupleToObj(t), prior = live[o.id]; if (!prior) return true;
+    const a = Object.assign({}, prior); delete a._sid; delete a._pending; a.eid = null;
+    return JSON.stringify(objToTuple(a)) !== JSON.stringify(objToTuple(Object.assign({}, o, { eid: null })));   // identical: copied before hashes were kept
+  });
+}
+const inboxOpId = t => { const s = JSON.stringify(t); return (saveHash('inbox1|' + s) + saveHash('inbox2|' + s)).slice(0, 32); };
+let INBOX_MSG = '';
+function inboxNoticeUpdate() {
+  if (!window.__appReady) return;
+  let el = document.getElementById('inboxNotice');
+  if (!el) { const ob = document.getElementById('outboxBanner'); if (!ob) return; el = document.createElement('div'); el.id = 'inboxNotice'; el.className = 'msg'; ob.parentNode.insertBefore(el, ob); }
+  const n = inboxPending().length;
+  if (!n && !INBOX_MSG) { el.style.display = 'none'; el.innerHTML = ''; return; }
+  el.style.display = '';
+  el.innerHTML = (n ? `<b>${n} shot${n === 1 ? '' : 's'} from the old shot inbox ${n === 1 ? 'is' : 'are'} counted in the stats but not yet moved into ${n === 1 ? 'its practice' : 'their practices'}.</b> Nothing has been changed or removed. `
+    + (IS_DH_OWNER ? '<button type="button" class="pill" data-inbox="move">Move them into their practices</button>' : 'The Data Health owner can move them.') : '') + (INBOX_MSG ? ` <span class="n-note">${escapeHtml(INBOX_MSG)}</span>` : '');
+}
+async function inboxMoveNow() {
+  if (!IS_DH_OWNER || !DB || migratingInbox) return;
+  migratingInbox = true; INBOX_MSG = 'Moving…'; inboxNoticeUpdate();
+  let moved = 0, already = 0, waiting = 0, failed = 0;
+  try {
+    const backupRef = DB.doc('app/shots_live_backup'), bsnap = await backupRef.get({ source: 'server' });
+    let backup = [], movedList = [];
+    if (bsnap.exists) { try { backup = JSON.parse(bsnap.data().json || '[]'); } catch (e) { backup = []; } try { movedList = JSON.parse(bsnap.data().moved || '[]'); } catch (e) { movedList = []; } }
+    MOVED_HASHES = new Set(movedList);
+    const keys = new Set(backup.map(t => JSON.stringify(t))); let grew = false;
+    LIVE_SHOTS_TUPLES.forEach(t => { const k = JSON.stringify(t); if (!keys.has(k)) { backup.push(t); keys.add(k); grew = true; } });
+    if (grew || !bsnap.exists) await backupRef.set({ json: JSON.stringify(backup), moved: JSON.stringify(movedList) });   // the second copy, first
+    for (const t of inboxPending()) {
+      const o = Object.assign(tupleToObj(t), { eid: null }); delete o.seed;
+      const r = await saveSessionEntry('shot', o, COLS, undefined, { isNew: true, opId: inboxOpId(t) });
+      if (r === 'ok') { movedList.push(tupleHash(t)); if (LAST_SAVE && LAST_SAVE.already) already++; else moved++; }
+      else if (r === 'pending') waiting++;
+      else { failed++; break; }
+    }
+    if (moved || already) { await backupRef.set({ moved: JSON.stringify(movedList) }, { merge: true }); MOVED_HASHES = new Set(movedList); }
+    INBOX_MSG = `Moved ${moved}.` + (already ? ` ${already} were already in their practices (not added again).` : '') + (waiting ? ` ${waiting} are stored on this device and will be sent; press the button again after they are, to finish.` : '') + (failed ? ' One couldn’t be saved; nothing else was tried. Check the banner, then try again.' : '');
+  } catch (e) { console.error('inbox move', e); INBOX_MSG = 'Couldn’t finish (no connection?). Nothing is lost; try again.'; }
+  finally { migratingInbox = false; rebuildShots(); rerenderAfterShotsChange(); inboxNoticeUpdate(); }
+}
+document.addEventListener('click', ev => { if (ev.target.closest('[data-inbox="move"]')) inboxMoveNow(); });
+// (The old automatic copy below is kept for reference and is no longer called.)
 async function migrateShotsInbox(tuples) {
   if (!DB || migratingInbox || !tuples.length) return;
   migratingInbox = true;
@@ -3184,7 +3779,9 @@ async function loadAll() {
   rebuildShots();
   DB.collection('sessions').onSnapshot(qs => {
     LIVE_SESSIONS = {};
-    qs.docs.forEach(d => { LIVE_SESSIONS[d.id] = parseSessionDoc(d.id, d.data()); });
+    SESSIONS_RAW = qs.docs.map(d => [d.id, d.data()]);
+    SESSIONS_RAW.forEach(([id, d]) => { LIVE_SESSIONS[id] = parseSessionDoc(id, d); });
+    outboxOverlay(LIVE_SESSIONS);   // this coach's unconfirmed changes, shown on top (PR 7a-1 M2)
     rebuildShots();
     rerenderAfterShotsChange();
     if (window.__appReady) { renderRecentEntries(); refreshOpponentLists(); if (document.getElementById('backfillView').classList.contains('active')) renderBackfill(); if (document.getElementById('filmcheckView').classList.contains('active') && FC.date) renderFilmCheck(); }
@@ -3194,7 +3791,7 @@ async function loadAll() {
     try { LIVE_SHOTS_TUPLES = JSON.parse(snap.data().json); } catch (e) { LIVE_SHOTS_TUPLES = []; }
     rebuildShots();
     rerenderAfterShotsChange();
-    if (LIVE_SHOTS_TUPLES.length) migrateShotsInbox(LIVE_SHOTS_TUPLES);
+    inboxNoticeUpdate();   // no automatic copying (PR 7a-1): see inboxPending
   }, e => console.error('shots sync error', e));
 
   const faceoffsRef = DB.doc('app/faceoffs_live');
@@ -3259,26 +3856,28 @@ async function loadAll() {
 
 // Everything that reads SHOTS, redrawn after live shot data changes. Guarded
 // so a snapshot that lands before init() has built the page is harmless.
+// Pages that switchTab redraws every time they're opened are only redrawn here when they're the open page: while
+// hidden, the redraw on opening already shows the new data. (Each save used to redraw all of them, ~0.2 s on a Mac.)
 function rerenderAfterShotsChange() {
   if (!window.__appReady) return;
-  renderTable();
-  renderPlayerHeat();
+  const open = id => document.getElementById(id).classList.contains('active');
+  if (open('tableView')) renderTable();
+  if (open('playerView')) renderPlayerHeat();
   renderPlayerDeepDive();
   renderShotQualityShare();
   renderNewEfficiencyTables();
   renderGoalieSummary();
   renderShootingTrends();
   renderGoalieTrends();
-  renderGoalieHeat();
-  renderGoalieAdvanced();
+  if (open('goalieView')) { renderGoalieHeat(); renderGoalieAdvanced(); }
   renderGoalieProjections();
   renderSkaterProjections();
-  renderEfficiencyView();
-  renderShooterScore();
-  renderDefense();
-  renderDataHealth();
-  renderReports();
-  renderDepthChart();
+  if (open('efficiencyView')) renderEfficiencyView();
+  if (open('playerView')) renderShooterScore();
+  if (open('defenseView')) renderDefense();
+  if (open('healthView')) renderDataHealth();
+  if (open('reportsView')) renderReports();
+  if (open('depthView')) renderDepthChart();
   populatePlayerGoalieDropdowns();
   populatePlayerSelectForSeason(heatSeason);
   populateGoalieSelectForSeason(goalieHeatSeason);
@@ -4141,6 +4740,8 @@ function pmExit() {
   document.body.classList.remove('player-mode');
   document.querySelectorAll('.pm-off').forEach(el => el.classList.remove('pm-off'));
   pmExitArmed(false);
+  // The sweep also renamed the Log Shot and Faceoff roster lists, which pmRerenderAll doesn't rebuild.
+  if (window.__appReady) { refreshFormRosterOptions(); refreshFoRosterOptions(); }
   pmRerenderAll();
   document.getElementById('comparePlayersPanel').style.display = compareMode === 'players' ? '' : 'none';
   document.getElementById('compareSeasonsPanel').style.display = compareMode === 'seasons' ? '' : 'none';
@@ -4325,9 +4926,32 @@ function goalZoneName(gx, gy) {
 // roster automatically without a separate season picker on this tab.
 function currentLogSeason() { return seasonForDate(document.getElementById('f_date').value); }
 
+// When the coach's date change drops the goalie that was picked, say so beside the goalie list (the save would
+// otherwise go out with no goalie). Shown only for that change; goes away once a goalie is picked.
+let GOALIE_DROPPED = null;
+function goalieClearedNote(x) {
+  const sel = document.getElementById('f_goalie'); if (!sel) return;
+  let el = document.getElementById('goalieClearedNote');
+  if (!el) { el = document.createElement('div'); el.id = 'goalieClearedNote'; el.className = 'msg err'; el.setAttribute('role', 'status'); el.style.marginTop = '6px'; sel.insertAdjacentElement('afterend', el); sel.addEventListener('change', () => goalieClearedNote(null)); }
+  if (!x) { el.style.display = 'none'; el.textContent = ''; return; }
+  const name = nameFor(x.had, x.prevSeason) || '';
+  el.textContent = x.seasonChanged ? `Goalie cleared: this date is in the ${x.season} season, where #${x.had}${name ? ' (' + name + ')' : ''} may not be the same goalie. Pick the goalie again.`
+    : `Goalie cleared: #${x.had} isn’t on the ${x.season} goalie list. Pick the goalie again.`;
+  el.style.display = '';
+}
 function refreshFormRosterOptions() {
   const season = currentLogSeason();
-  populateSelect(document.getElementById('f_goalie'), rosterGoalies(season), 'Select goalie…', true);
+  // Rebuilding keeps the goalie already picked (a roster update or leaving Player View mid-entry), but not
+  // across a season change, where the same number can be a different goalie.
+  const goalieSel = document.getElementById('f_goalie');
+  const had = goalieSel.value && goalieSel.value !== '__ADD_NEW__' ? goalieSel.value : '', prevSeason = goalieSel.dataset.season || season;
+  const seasonChanged = prevSeason !== season;
+  const keepGoalie = had && (!seasonChanged || had === 'EMPTY_NET') ? had : '';   // "no goalie" means the same in any season
+  populateSelect(goalieSel, rosterGoalies(season), 'Select goalie…', true);
+  if ([...goalieSel.options].some(o => o.value === keepGoalie)) goalieSel.value = keepGoalie;
+  goalieSel.dataset.season = season;
+  GOALIE_DROPPED = had && goalieSel.value !== had ? { had, season, prevSeason, seasonChanged } : null;
+  goalieClearedNote(null);
   const shooterList = document.getElementById('shooterList');
   const assistList = document.getElementById('assistList');
   shooterList.innerHTML = assistList.innerHTML = rosterPlayers(season).map(p => `<option value="${escapeHtml(p.name)}"></option>`).join('');
@@ -4364,7 +4988,9 @@ function onSessionChanged() {
   renderRecentEntries();
   renderGameScore();
 }
-document.getElementById('f_date').addEventListener('change', () => { refreshFormRosterOptions(); onSessionChanged(); });
+// Typing a date fires a change for every part typed (e.g. years 0002, 0020, 0209 on the way to 2099); only a whole date
+// counts, so a half-typed year can't switch the session or drop the goalie.
+document.getElementById('f_date').addEventListener('change', e => { if (!/^(19|20|21)\d\d-\d\d-\d\d$/.test(e.target.value)) return; refreshFormRosterOptions(); if (GOALIE_DROPPED) goalieClearedNote(GOALIE_DROPPED); onSessionChanged(); });
 document.getElementById('f_opponent').addEventListener('change', () => { updateSessionBarUi(); onSessionChanged(); });
 // In a scrimmage, typing or clearing the opponent turns the Ball toggle on or off right away.
 document.getElementById('f_opponent').addEventListener('input', () => { if (isScrimmageSession()) { updateSessionBarUi(); applyTeamToForm(); renderLineupBar(); } });
@@ -4930,11 +5556,105 @@ function flashMsg(boxId, text, ok) {
   const box = document.getElementById(boxId);
   if (!box) return;
   clearTimeout(msgTimers[boxId]);
-  box.innerHTML = `<div class="msg ${ok?'ok':'err'}">${text}</div>`;
-  if (ok) msgTimers[boxId] = setTimeout(()=>{ box.innerHTML=''; }, 4000);
+  box.innerHTML = `<div class="msg ${msgTone(ok)}">${text}</div>`;
+  if (ok === true) msgTimers[boxId] = setTimeout(()=>{ box.innerHTML=''; }, 4000);
 }
-function showMsg(text, ok) { flashMsg('logMsg', text, ok); }
-function showTableMsg(text) { flashMsg('tableMsg', text, true); }
+// The same message also goes right above the Save button of the entry being logged: the top box is
+// off screen when the coach is down at the button (on a phone, a whole form away). That one stays until the
+// next save: a save redraws every page for seconds, which can outlast a 4 s auto-hide before it is ever shown.
+// ok: true (saved, green), false (refused or failed, red), 'warn' (not confirmed yet, amber; stays until replaced).
+const msgTone = ok => (ok === 'warn' ? 'warn' : ok ? 'ok' : 'err');
+function showMsg(text, ok) {
+  flashMsg('logMsg', text, ok);
+  const poss = document.getElementById('possEntry').style.display !== 'none';
+  const near = document.getElementById(poss ? 'possSaveMsg' : 'shotSaveMsg');
+  near.innerHTML = `<div class="msg ${msgTone(ok)}">${text}</div>`;
+  document.getElementById(poss ? 'shotSaveMsg' : 'possSaveMsg').innerHTML = '';
+  ['logMsg', 'shotSaveMsg', 'possSaveMsg'].forEach(id => { document.getElementById(id).dataset.op = ''; });
+  return near;
+}
+// ---- A save that isn't resolved yet (not confirmed, or stored on this device): its message, in one of four places ----
+// The message belongs to that save's operation id. It offers "Retry this save" (the same operation, so a retry can't add
+// a copy) and "Log another" (leave it be: it stays in the banner and keeps its own late answer). Its late answer, or a
+// retry's answer, replaces it only while that place still shows it: an older answer never overwrites a newer save's status.
+const SAVE_STATUS = {};   // place -> { opId, html, what, noun, done }
+const SAVE_PLACES = {
+  shot: { get: () => document.getElementById('shotSaveMsg').innerHTML, set: (h, ok) => saveNearMsg('shotSaveMsg', h, ok) },
+  poss: { get: () => document.getElementById('possSaveMsg').innerHTML, set: (h, ok) => saveNearMsg('possSaveMsg', h, ok) },
+  bf: { get: () => BF.msg, set: h => { BF.msg = h; renderBackfill(); } },
+  fc: { get: () => FC.msg, set: h => { FC.msg = h; renderFilmCheck(); } },
+};
+function saveNearMsg(boxId, html, ok) { document.getElementById(boxId).innerHTML = `<div class="msg ${msgTone(ok)}">${html}</div>`; }
+const saveIsShown = (place, opId) => { const st = SAVE_STATUS[place]; return !!st && st.opId === opId && SAVE_PLACES[place].get() === st.html; };
+// The message for the save just made (LAST_SAVE is 'pending'). what: "Shot #12 for #4 Smith"; noun: "shot";
+// done(id): the saved wording with the final number. Returns the HTML; bf / fc callers render it themselves.
+function saveStatusStart(place, what, noun, done) {
+  const opId = LAST_SAVE && LAST_SAVE.opId; if (!opId) return `${what}: ${savePendingText()}`;
+  const html = saveStatusHtml(place, opId, `${what}: ${savePendingText(noun === 'shot' ? 'Shot Log' : null)}`, noun);
+  SAVE_STATUS[place] = { opId, html: null, what, noun, done };
+  if (place === 'shot' || place === 'poss') { showMsg('', true); document.getElementById('logMsg').dataset.op = opId; }   // clears the other place's message
+  saveStatusShow(place, opId, html, 'warn', place === 'shot' || place === 'poss');
+  if (LAST_SAVE.slow && LAST_SAVE.late) saveStatusLate(place, opId, LAST_SAVE.late);
+  return html;
+}
+function saveStatusHtml(place, opId, text, noun) {
+  return `${text} <span class="save-choice"><button type="button" class="pill" data-save-retry="${place}" data-op="${opId}">Retry this save</button> <button type="button" class="pill" data-save-leave="${place}" data-op="${opId}">Log another ${noun}</button></span>`;
+}
+// Shows html for that save in its place. render: also draw it now (the bf / fc callers draw after their own updates).
+function saveStatusShow(place, opId, html, ok, render) {
+  const st = SAVE_STATUS[place];
+  if (render) {
+    const top = document.getElementById('logMsg');
+    if ((place === 'shot' || place === 'poss') && top.dataset.op === opId) { flashMsg('logMsg', html, ok); top.dataset.op = opId; }   // the top box only while it still shows this save
+    SAVE_PLACES[place].set(html, ok);
+  }
+  st.html = render ? SAVE_PLACES[place].get() : html;
+}
+function saveStatusLate(place, opId, late) {
+  late.then(({ result, id, why }) => {
+    if (!saveIsShown(place, opId)) return;   // that place has moved on to a newer message
+    const st = SAVE_STATUS[place], text = saveAnswerText(st, result, id, why);
+    if (text) { saveStatusShow(place, opId, text.html, text.ok, true); }
+  });
+}
+// A save the queue finished in the background (sent after reconnecting, or by Retry now / Send again): the message
+// beside that save's button (or in Backfill / Film Check) says what happened, if it is still showing that save.
+function saveStatusQueued(op, r) {
+  if (!window.__appReady || (r !== 'ok' && r !== 'conflict' && r !== 'failed')) return;
+  const id = op.finalId === undefined ? null : op.finalId;
+  Object.keys(SAVE_STATUS).forEach(place => { if (!saveIsShown(place, op.opId)) return; const t = saveAnswerText(SAVE_STATUS[place], r, id, op.lastError); if (t) saveStatusShow(place, op.opId, t.html, t.ok, true); });
+  const top = document.getElementById('logMsg');
+  if (op.kind === 'adj' && top && top.dataset.op === op.opId) flashMsg('logMsg', r === 'ok' ? `Score fix saved: WLU ${op.adj.wlu} – ${op.adj.opp} Opp.` : `Score fix NOT saved: ${escapeHtml(conflictWords(op.conflicts))}. It’s under “Review” at the top.`, r === 'ok');
+}
+function saveAnswerText(st, result, id, why) {
+  if (result === 'ok') return { html: st.done(id), ok: true };
+  if (result === 'pending') return { html: saveStatusHtml(Object.keys(SAVE_STATUS).find(k => SAVE_STATUS[k] === st), st.opId, `${st.what}: ${SAVE_PENDING_TEXT}`, st.noun), ok: 'warn' };
+  if (result === 'conflict') return { html: `${st.what}: ${saveConflictText(st.noun === 'shot' ? 'shot' : 'possession')}`, ok: false };
+  if (result === 'skip' || result === 'gone') return null;
+  return { html: `${st.what}: save failed${why ? ' (' + escapeHtml(why) + ')' : ''}, NOT saved. It’s kept under “Review” in the banner at the top.`, ok: false };
+}
+document.addEventListener('click', async ev => {
+  const b = ev.target.closest('[data-save-retry], [data-save-leave]'); if (!b) return;
+  const place = b.dataset.saveRetry || b.dataset.saveLeave, opId = b.dataset.op, st = SAVE_STATUS[place];
+  if (!st || st.opId !== opId) return;
+  if (b.dataset.saveLeave) {   // the save keeps being tracked (banner, its own late answer); the place is free for the next entry
+    saveStatusShow(place, opId, `${st.what}: still unresolved. It stays in the banner at the top; this message updates when the server answers.`, 'warn', true);
+    return;
+  }
+  b.disabled = true;
+  saveStatusShow(place, opId, `${st.what}: retrying…`, 'warn', true);
+  const r = await retrySave(opId);
+  if (!saveIsShown(place, opId)) return;
+  if (r === 'gone') { saveStatusShow(place, opId, `${st.what}: already answered. Check the Shot Log.`, true, true); return; }
+  if (r === 'pending' && LAST_SAVE && LAST_SAVE.slow) {
+    saveStatusShow(place, opId, saveStatusHtml(place, opId, `${st.what}: ${savePendingText(st.noun === 'shot' ? 'Shot Log' : null)}`, st.noun), 'warn', true);
+    saveStatusLate(place, opId, LAST_SAVE.late); return;
+  }
+  const t = r === 'ok' ? { html: LAST_SAVE && LAST_SAVE.already ? `${st.done(LAST_SAVE.id)} (It had already reached the tracker; nothing was added.)` : st.done(LAST_SAVE && LAST_SAVE.id), ok: true }
+    : saveAnswerText(st, r === 'error' ? 'failed' : r, null, LAST_SAVE && LAST_SAVE.why);
+  if (t) saveStatusShow(place, opId, t.html, t.ok, true);
+});
+function showTableMsg(text, ok) { flashMsg('tableMsg', text, ok === undefined ? true : ok); }
 
 // ---------------- Lineup bar ----------------
 // Row A / Row B. In a game, A is always WLU and B is always the opponent;
@@ -5170,6 +5890,7 @@ function refreshOpponentLists() {
 // (same id) instead of creating a new one, and the coach lands back on the
 // Shot Log when done. Historical (seed) shots aren't editable.
 let editingShotId = null;
+let editingShotBase = null;   // the shot as it was when this edit began (safe save compares against it)
 let editReturnTo = 'tableView';
 // Editing an old entry points the session bar at that entry's session.
 // What the coach had up before is remembered and put back afterwards, so
@@ -5262,12 +5983,18 @@ function exitEditMode() {
   applyTeamToForm();
 }
 
-function startEditShot(id, returnTo) {
-  const shot = allShotEntries().find(s => s.id === id);
+// An entry by its session and number. Numbers are meant to be unique across sessions, but two coaches logging offline in
+// different practices can end up with the same one; then a number alone is ambiguous and nothing is opened.
+function entryAt(kind, id, sid) {
+  const m = (kind === 'shot' ? allShotEntries() : POSSESSIONS).filter(x => x.id === id && !x.seed);
+  return sid ? (m.find(x => (x._sid || sessionIdFor(x)) === sid) || null) : (m.length === 1 ? m[0] : null);
+}
+function startEditShot(id, returnTo, sid) {
+  const shot = entryAt('shot', id, sid);
   if (!shot || shot.seed) return;
   exitPossEditMode();
   if (editingShotId === null) preEditState = captureLogState();
-  editingShotId = id;
+  editingShotId = id; editingShotBase = Object.assign({}, shot);
   editReturnTo = returnTo || 'tableView';
   pointSessionBarAt(shot);
   setSegValue('entryTypeSeg', 'shot'); showEntryType('shot');
@@ -5349,7 +6076,23 @@ function readSessionFields() {
   return { date, context, opponent: opponent || null };
 }
 
+// One save at a time; an unexpected error still ends in a message. `step` says how far it got, so the
+// message never claims a failure for a shot that was saved, or a clean failure when the save was under way.
+let SHOT_SAVING = false;
 document.getElementById('submitShotBtn').addEventListener('click', async () => {
+  if (SHOT_SAVING) return;
+  const btn = document.getElementById('submitShotBtn'), step = { at: 'check' };
+  SHOT_SAVING = true; btn.disabled = true;
+  const near = document.getElementById('shotSaveMsg'); near.innerHTML = '<div class="msg warn">Saving…</div>';
+  try { await saveShotFromForm(step); }
+  catch (e) {
+    console.error('Save Shot', step.at, e);
+    if (step.at === 'check') showMsg('Couldn’t save: something went wrong before the shot was sent. Nothing was saved; try again, and tell Bobby if it keeps happening.', false);
+    else if (step.at === 'saving') showMsg('Not sure this shot saved. Check the Shot Log (and any “stored on this device” banner) before saving it again.', false);
+    else showMsg(step.at === 'pending' ? `Shot #${step.id} isn’t confirmed yet, and the page didn’t finish refreshing. Reload, then check the Shot Log before entering it again.` : `Shot #${step.id} was saved, but the page didn’t finish refreshing. Reload before logging the next one.`, step.at !== 'pending');
+  } finally { SHOT_SAVING = false; btn.disabled = false; if (near.textContent === 'Saving…') near.innerHTML = ''; }
+});
+async function saveShotFromForm(step) {
   const sess = readSessionFields();
   if (sess.error) { showMsg(sess.error, false); return; }
   const team = currentTeam();
@@ -5449,40 +6192,49 @@ document.getElementById('submitShotBtn').addEventListener('click', async () => {
 
   let savedId, saveResult;
   if (isEdit) {
-    const original = allShotEntries().find(s => s.id === editingShotId && !s.seed);
+    const original = entryAt('shot', editingShotId, editingShotBase && editingShotBase._sid);
     if (!original) { showMsg('That shot no longer exists.', false); exitEditMode(); return; }
     savedId = editingShotId;
     const updated = Object.assign({ id: savedId, _sid: original._sid, stintId: original.stintId === undefined ? null : original.stintId }, shotData);
-    saveResult = await persistShot(updated);
-    if (saveResult === 'error') { showMsg('Save failed — please try again.', false); return; }
+    step.at = 'saving';
+    saveResult = await persistShot(updated, undefined, { base: editingShotBase && editingShotBase.id === savedId ? editingShotBase : original });
+    if (saveResult === 'error') { showMsg(saveFailedText(), false); return; }
+    if (saveResult === 'conflict') { showMsg(saveConflictText('shot'), false); return; }
   } else {
     const shot = Object.assign({ id: nextShotId() }, shotData);
+    step.at = 'saving';
     saveResult = await persistNewShot(shot, currentLineup());
     savedId = shot.id;   // may have moved up one if someone else just saved that number
-    if (saveResult === 'error') { showMsg('Save failed — please try again.', false); return; }
+    if (saveResult === 'error') { showMsg(saveFailedText(), false); return; }
+    if (saveResult === 'conflict') { showMsg(saveConflictText('shot'), false); return; }
   }
+  step.at = saveResult === 'pending' ? 'pending' : 'saved'; step.id = savedId;
 
   if (isEdit) {
     const back = editReturnTo;
     exitEditMode();
     resetShotFields();
-    if (back !== 'logView') { switchTab(back); showTableMsg(`Updated shot #${savedId}.`); }
-    else showMsg(`Updated shot #${savedId}.`, true);
+    const done = saveResult === 'pending' ? `Shot #${savedId}: ${savePendingText()}` : `Updated shot #${savedId}.`;
+    if (back !== 'logView') { switchTab(back); showTableMsg(done, saveResult === 'pending' ? 'warn' : true); }
+    else if (saveResult === 'pending') saveStatusStart('shot', `Shot #${savedId}`, 'shot', () => `Updated shot #${savedId}.`);
+    else showMsg(done, true);
     renderRecentEntries();
     return;
   }
 
   const who = opp ? (oppShooter ? 'Opp #' + escapeHtml(oppShooter) : 'opponent') : `#${escapeHtml(shooter)} ${escapeHtml(nameFor(shooter, currentLogSeason()))}`;
-  showMsg(`Saved shot #${savedId} for ${who}.` + (saveResult === 'queued' ? ' (Offline — it will sync when you reconnect.)' : ''), true);
+  const already = saveResult === 'ok' && LAST_SAVE && LAST_SAVE.already;   // the same save tried again: the server already had it
+  if (saveResult === 'pending') saveStatusStart('shot', `Shot #${savedId} for ${who}`, 'shot', id => `Saved shot #${id} for ${who}.`);
+  else showMsg(already ? `Shot #${savedId} for ${who} was already saved; not added again.` : `Saved shot #${savedId} for ${who}.`, true);
   resetShotFields();
-  renderRecentEntries();
-  populatePlayerGoalieDropdowns();
-  populatePlayerSelectForSeason(heatSeason);
-  populateGoalieSelectForSeason(goalieHeatSeason);
-});
+  renderRecentEntries();   // the dropdowns are rebuilt by the redraw the saved shot itself triggers
+}
+// The reason the save layer gave (e.g. not signed in), so a refused save says why.
+function saveFailedText() { const why = LAST_SAVE && LAST_SAVE.status === 'error' && LAST_SAVE.why; return 'Save failed' + (why ? ' (' + escapeHtml(why) + ')' : '') + ' — please try again.'; }
 
 // ---------------- No-shot possession ----------------
 let editingPossId = null;
+let editingPossBase = null;   // the possession as it was when this edit began
 function resetPossFields() {
   ['p_end','p_dominoes','p_possstart','p_advtype'].forEach(id => setPillGroupValue(id, null));
   pDomReqSync(null);
@@ -5500,12 +6252,12 @@ function exitPossEditMode() {
   document.getElementById('cancelPossEditBtn').style.display = 'none';
   document.getElementById('editingBanner').style.display = 'none';
 }
-function startEditPoss(id) {
-  const p = POSSESSIONS.find(x => x.id === id);
+function startEditPoss(id, sid) {
+  const p = entryAt('poss', id, sid);
   if (!p) return;
   exitEditMode();
   if (editingPossId === null) preEditState = captureLogState();
-  editingPossId = id;
+  editingPossId = id; editingPossBase = Object.assign({}, p);
   pointSessionBarAt(p);
   setSegValue('entryTypeSeg', 'poss'); showEntryType('poss');
   resetPossFields();
@@ -5535,7 +6287,14 @@ function startEditPoss(id) {
   window.scrollTo(0, 0);
 }
 document.getElementById('cancelPossEditBtn').addEventListener('click', () => { exitPossEditMode(); resetPossFields(); });
+// One possession save at a time (a second tap while it's being sent is ignored; the next save after it is a new entry).
+let POSS_SAVING = false;
 document.getElementById('submitPossBtn').addEventListener('click', async () => {
+  if (POSS_SAVING) return;
+  const btn = document.getElementById('submitPossBtn'); POSS_SAVING = true; btn.disabled = true;
+  try { await savePossFromForm(); } finally { POSS_SAVING = false; btn.disabled = false; }
+});
+async function savePossFromForm() {
   const sess = readSessionFields();
   if (sess.error) { showMsg(sess.error, false); return; }
   const team = currentTeam();
@@ -5573,24 +6332,27 @@ document.getElementById('submitPossBtn').addEventListener('click', async () => {
   Object.assign(data, gt.data);
   let res, id;
   if (isEdit) {
-    const original = POSSESSIONS.find(x => x.id === editingPossId);
+    const original = entryAt('poss', editingPossId, editingPossBase && editingPossBase._sid);
     if (!original) { showMsg('That possession no longer exists.', false); exitPossEditMode(); return; }
     id = editingPossId;
-    res = await persistPossession(Object.assign({ id, _sid: original._sid, stintId: original.stintId === undefined ? null : original.stintId }, data));
+    res = await persistPossession(Object.assign({ id, _sid: original._sid, stintId: original.stintId === undefined ? null : original.stintId }, data), undefined, { base: editingPossBase && editingPossBase.id === id ? editingPossBase : original });
   } else {
     const p = Object.assign({ id: nextPossId() }, data);
     res = await persistNewPossession(p, currentLineup());
     id = p.id;
   }
   if (res === 'error') { showMsg('Save failed — please try again.', false); return; }
-  showMsg(`${isEdit ? 'Updated' : 'Saved'} possession #${id} (${escapeHtml(end)}).` + (res === 'queued' ? ' (Offline — it will sync when you reconnect.)' : ''), true);
+  if (res === 'conflict') { showMsg(saveConflictText('possession'), false); return; }
+  if (res === 'pending') saveStatusStart('poss', `Possession #${id} (${escapeHtml(end)})`, 'possession', fid => `${isEdit ? 'Updated' : 'Saved'} possession #${fid == null ? id : fid} (${escapeHtml(end)}).`);
+  else showMsg(`${isEdit ? 'Updated' : 'Saved'} possession #${id} (${escapeHtml(end)}).`, true);
   exitPossEditMode();
   resetPossFields();
   renderRecentEntries();
-});
+}
 
 // ---------------- This session's entries ----------------
 let recentDeleteArmed = null; // 'shot:12' / 'poss:3'
+let recentDeleteBase = null;   // the entry as the coach saw it when they pressed Delete (a safe delete compares against it)
 function renderRecentEntries() {
   const wrap = document.getElementById('recentWrap');
   if (!wrap) return;
@@ -5613,15 +6375,18 @@ function renderRecentEntries() {
   const possRows = poss.map(p => `<tr><td><span class="recent-kind${p.team === 'OPP' ? ' opp' : ''}">${p.team === 'OPP' ? 'Opp poss.' : 'Possession'}</span></td><td>#${escapeHtml(p.id)}</td><td>${p.turnoverBy ? escapeHtml(jerseyLabel(p.turnoverBy, season)) : ''}</td><td>${escapeHtml(p.end || '')}</td><td></td><td>${p.dominoes === 'Yes' ? 'Dominoes: ' + escapeHtml(jerseyLabel(p.advCreator, season)) : ''}</td><td>${lineupText(p)}</td><td style="white-space:nowrap;">${actions('poss', p.id)}</td></tr>`);
   wrap.innerHTML = `<table class="shotlog dense"><thead><tr><th>Type</th><th>ID</th><th>Player</th><th>Result</th><th>Quality</th><th>Dominoes</th><th>Lineup</th><th></th></tr></thead><tbody>${shotRows.concat(possRows).join('')}</tbody></table>`;
   const parse = v => { const [k, i] = v.split(':'); return [k, parseInt(i, 10)]; };
-  wrap.querySelectorAll('[data-redit]').forEach(b => b.addEventListener('click', () => { const [k, i] = parse(b.dataset.redit); if (k === 'shot') startEditShot(i, 'logView'); else startEditPoss(i); }));
-  wrap.querySelectorAll('[data-rdel]').forEach(b => b.addEventListener('click', () => { recentDeleteArmed = b.dataset.rdel; renderRecentEntries(); }));
+  wrap.querySelectorAll('[data-redit]').forEach(b => b.addEventListener('click', () => { const [k, i] = parse(b.dataset.redit); if (k === 'shot') startEditShot(i, 'logView', sid); else startEditPoss(i, sid); }));
+  wrap.querySelectorAll('[data-rdel]').forEach(b => b.addEventListener('click', () => { recentDeleteArmed = b.dataset.rdel; const [k, i] = parse(b.dataset.rdel); const e = entryAt(k === 'shot' ? 'shot' : 'poss', i, sid); recentDeleteBase = e ? Object.assign({}, e) : null; renderRecentEntries(); }));
   wrap.querySelectorAll('[data-rcancel]').forEach(b => b.addEventListener('click', () => { recentDeleteArmed = null; renderRecentEntries(); }));
   wrap.querySelectorAll('[data-rconfirm]').forEach(b => b.addEventListener('click', async () => {
     const [k, i] = parse(b.dataset.rconfirm);
     recentDeleteArmed = null;
-    const target = k === 'shot' ? allShotEntries().find(s => s.id === i && !s.seed) : POSSESSIONS.find(p => p.id === i);
-    const res = target ? await (k === 'shot' ? deleteShotEntry(target) : deletePossessionEntry(target)) : 'error';
+    const target = entryAt(k === 'shot' ? 'shot' : 'poss', i, sid);
+    const res = target ? await (k === 'shot' ? deleteShotEntry(target, recentDeleteBase) : deletePossessionEntry(target, recentDeleteBase)) : 'error';
+    recentDeleteBase = null;
     if (res === 'error') showMsg('Delete failed — please try again.', false);
+    else if (res === 'conflict') showMsg(saveConflictText(k === 'shot' ? 'shot' : 'possession'), false);
+    else if (res === 'pending') showMsg(`Delete of ${k === 'shot' ? 'shot' : 'possession'} #${i}: ${savePendingText()}`, 'warn');
     renderRecentEntries();
   }));
 }
@@ -8822,18 +9587,26 @@ async function importLrData() {
 document.getElementById('lrImportBtn').addEventListener('click', importLrData);
 
 // Owner-only: one JSON file of every staff-entered Firestore collection (not the rebuildable lr* scouting records).
+// Reads every collection for Export All Data. Save audit records (app/op_*, PR 7a-1) are left out: they are read by
+// neither query (ids below 'op_' and from 'op`' up), so they cost no reads here; a separate owner-only audit export can
+// read them later.
+async function exportAllDataCollect(who) {
+  const cols = ['app', 'sessions', 'evalPlayers', 'evalRatings', 'filmTags', 'filmSessions', 'trainQueues', 'trainShots'];
+  const out = { exportedAt: new Date().toISOString(), by: who, collections: {}, excluded: 'app/op_* (save audit records)' };
+  for (const c of cols) {
+    out.collections[c] = {};
+    const add = qs => qs.forEach(d => { if (!(c === 'app' && (d.id === 'lrMeta' || d.id.startsWith('op_')))) out.collections[c][d.id] = d.data(); });
+    if (c === 'app') { const id = firebase.firestore.FieldPath.documentId(); add(await DB.collection('app').where(id, '<', 'op_').get()); add(await DB.collection('app').where(id, '>=', 'op`').get()); }
+    else add(await DB.collection(c).get());
+  }
+  return out;
+}
 async function exportAllData() {
   const log = document.getElementById('fsExportLog');
   if (!IS_DH_OWNER) { log.textContent = 'Only the Data Health owner can export.'; return; }
-  const cols = ['app', 'sessions', 'evalPlayers', 'evalRatings', 'filmTags', 'filmSessions', 'trainQueues', 'trainShots'];
-  const out = { exportedAt: new Date().toISOString(), by: firebase.auth().currentUser.email, collections: {} };
   log.textContent = 'Reading…';
   try {
-    for (const c of cols) {
-      const qs = await DB.collection(c).get();
-      out.collections[c] = {};
-      qs.forEach(d => { if (!(c === 'app' && d.id === 'lrMeta')) out.collections[c][d.id] = d.data(); });
-    }
+    const out = await exportAllDataCollect(firebase.auth().currentUser.email), cols = Object.keys(out.collections);
     const blob = new Blob([JSON.stringify(out)], { type: 'application/json' });
     const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
     a.download = `wlu_tracker_backup_${out.exportedAt.slice(0, 10)}.json`; a.click();
@@ -10735,11 +11508,14 @@ function renderGameScore() {
     const W = Math.max(0, parseInt(document.getElementById('gsFixW').value, 10) || 0), O = Math.max(0, parseInt(document.getElementById('gsFixO').value, 10) || 0);
     const sessF = readSessionFields(); if (sessF.error) { showMsg(sessF.error, false); return; }
     const rec = { quarter: document.getElementById('f_quarter').dataset.value || null, clock: document.getElementById('f_clock').value.trim() || null, wlu: W, opp: O, lw: logged.w, lo: logged.o };
-    const key = 'a_' + Date.now().toString(36);
-    const res = await settleWrite(DB.collection('sessions').doc(sid).set(Object.assign(sessionMeta(sessF), { [key]: JSON.stringify(rec) }), { merge: true }));
-    if (res === 'error') { showMsg('Score fix didn’t save — try again.', false); return; }
-    if (LIVE_SESSIONS[sid]) LIVE_SESSIONS[sid].adjs.push(Object.assign({ id: key }, rec));
-    renderGameScore();
+    // Based on the latest fix this coach has seen (not one of their own still waiting to be sent).
+    const seen = sess ? sess.adjs.filter(x => !x._pending).sort((x, y) => x.id.localeCompare(y.id)) : [];
+    const res = await saveScoreFix(sid, sessF, rec, seen.length ? seen[seen.length - 1].id : null);
+    if (res === 'error') { showMsg(saveFailedText(), false); return; }
+    if (res === 'conflict') { showMsg(saveConflictText('score fix'), false); return; }
+    showMsg(res === 'pending' ? `Score fix (WLU ${W} – ${O} Opp): ${savePendingText(null)}` : `Score fix saved: WLU ${W} – ${O} Opp.`, res === 'pending' ? 'warn' : true);
+    if (res === 'pending' && LAST_SAVE) document.getElementById('logMsg').dataset.op = LAST_SAVE.opId;
+    outboxOverlayRefresh(); renderGameScore();
   });
 }
 // Poisson scoring model: each team scores at its own rate per minute for
@@ -13404,6 +14180,7 @@ document.getElementById('gf_clear').addEventListener('click', () => { clearFilte
 
 // ---------------- Shot Log table ----------------
 let deleteShotArmed = null;
+let deleteShotBase = null;   // the shot as the coach saw it when they pressed Delete
 // Assist used to be free-text; new shots store a roster jersey. nameFor()
 // falls through to the raw value when it can't resolve a jersey, so this
 // renders old free-text assists unchanged and new ones as "#12 Name".
@@ -13450,18 +14227,18 @@ function renderTable() {
       <td>${escapeHtml(r.passType||'')}</td>
       <td>${escapeHtml(r.customTags||'')}</td>
       <td>${escapeHtml(r.trigger||'')}</td>
-      <td>${r.seed ? '<span class="sans" style="color:var(--muted); font-size:11px;">Historical</span>' : (deleteShotArmed === r.id
-        ? `<button class="btn danger" data-confirm-id="${r.id}">Confirm delete</button> <button class="btn secondary" data-cancel-id="${r.id}">Cancel</button>`
-        : `<button class="btn secondary" data-edit-id="${r.id}">Edit</button> <button class="btn danger" data-id="${r.id}">Delete</button>`)}</td>
+      <td>${r.seed ? '<span class="sans" style="color:var(--muted); font-size:11px;">Historical</span>' : (deleteShotArmed === (r._sid || sessionIdFor(r)) + ':' + r.id
+        ? `<button class="btn danger" data-confirm-id="${r.id}" data-sid="${escapeHtml(r._sid || sessionIdFor(r))}">Confirm delete</button> <button class="btn secondary" data-cancel-id="${r.id}">Cancel</button>`
+        : `<button class="btn secondary" data-edit-id="${r.id}" data-sid="${escapeHtml(r._sid || sessionIdFor(r))}">Edit</button> <button class="btn danger" data-id="${r.id}" data-sid="${escapeHtml(r._sid || sessionIdFor(r))}">Delete</button>`)}</td>
     `;
     tbody.appendChild(tr);
   });
   tbody.querySelectorAll('button[data-edit-id]').forEach(b => {
-    b.addEventListener('click', () => startEditShot(parseInt(b.dataset.editId, 10)));
+    b.addEventListener('click', () => startEditShot(parseInt(b.dataset.editId, 10), undefined, b.dataset.sid));
   });
   tbody.querySelectorAll('button[data-id]').forEach(b => {
     b.addEventListener('click', () => {
-      deleteShotArmed = parseInt(b.dataset.id, 10);
+      deleteShotArmed = b.dataset.sid + ':' + parseInt(b.dataset.id, 10); const armed = entryAt('shot', parseInt(b.dataset.id, 10), b.dataset.sid); deleteShotBase = armed ? Object.assign({}, armed) : null;
       renderTable();
     });
   });
@@ -13471,11 +14248,13 @@ function renderTable() {
   tbody.querySelectorAll('button[data-confirm-id]').forEach(b => {
     b.addEventListener('click', async () => {
       const id = parseInt(b.dataset.confirmId, 10);
-      const target = allShotEntries().find(s => s.id === id && !s.seed);
+      const target = entryAt('shot', id, b.dataset.sid);
       deleteShotArmed = null;
       if (!target) { renderTable(); return; }
-      const res = await deleteShotEntry(target);
+      const res = await deleteShotEntry(target, deleteShotBase); deleteShotBase = null;
       if (res === 'error') flashMsg('tableMsg', 'Delete failed \u2014 please try again.', false);
+      else if (res === 'conflict') flashMsg('tableMsg', saveConflictText('shot'), false);
+      else if (res === 'pending') flashMsg('tableMsg', `Delete of shot #${id}: ${savePendingText()}`, 'warn');
       renderTable();
       populatePlayerGoalieDropdowns();
       populatePlayerSelectForSeason(heatSeason);
@@ -14701,46 +15480,8 @@ function renderAllRatings() {
   wrap.innerHTML = html;
 }
 
-const resetDataBtn = document.getElementById('resetDataBtn');
-const resetConfirmPanel = document.getElementById('resetConfirmPanel');
-const resetConfirmInput = document.getElementById('resetConfirmInput');
-const resetConfirmBtn = document.getElementById('resetConfirmBtn');
-
-function closeResetConfirm() {
-  resetConfirmPanel.style.display = 'none';
-  resetConfirmInput.value = '';
-  resetConfirmBtn.disabled = true;
-}
-
-resetDataBtn.addEventListener('click', () => {
-  resetConfirmPanel.style.display = '';
-  resetConfirmInput.value = '';
-  resetConfirmBtn.disabled = true;
-  resetConfirmInput.focus();
-});
-document.getElementById('resetCancelBtn').addEventListener('click', closeResetConfirm);
-resetConfirmInput.addEventListener('input', () => {
-  resetConfirmBtn.disabled = resetConfirmInput.value.trim().toUpperCase() !== 'DELETE';
-});
-resetConfirmBtn.addEventListener('click', async () => {
-  if (resetConfirmInput.value.trim().toUpperCase() !== 'DELETE') return;
-  resetConfirmBtn.disabled = true;
-  resetConfirmBtn.textContent = 'Deleting…';
-  if (!DB) { location.reload(); return; }
-  try {
-    await DB.doc('app/roster').delete();
-    await Promise.all(SEASONS.map(s => DB.doc('app/roster_' + s).delete()));
-    await DB.doc('app/shots_live').delete();
-    const sessSnap = await DB.collection('sessions').get();
-    await Promise.all(sessSnap.docs.map(d => DB.collection('sessions').doc(d.id).delete()));
-    await DB.doc('app/faceoffs_live').delete();
-    const playersSnap = await DB.collection('evalPlayers').get();
-    await Promise.all(playersSnap.docs.map(d => DB.collection('evalPlayers').doc(d.id).delete()));
-    const ratingsSnap = await DB.collection('evalRatings').get();
-    await Promise.all(ratingsSnap.docs.map(d => DB.collection('evalRatings').doc(d.id).delete()));
-  } catch (e) { /* ignore */ }
-  location.reload();
-});
+// "Reset all data" (erase every session, roster and evaluation) is removed for this release (PR 7a-1): it was open to
+// every coach, took no backup, ignored errors, and its deletes are refused by the audit rules anyway.
 
 // ---------------- CSV export ----------------
 function toCsv(rows, headers) {
@@ -14756,7 +15497,7 @@ async function exportCsv(filename, rows, headers) {
   if (!DOWNLOADS) { alert('CSV export isn’t available in this view.'); return; }
   try { await DOWNLOADS.save({ filename, data: toCsv(rows, headers) }); } catch (e) { /* declined or unavailable */ }
 }
-document.getElementById('exportShotsBtn').addEventListener('click', () => exportCsv('shot-log.csv', allShotEntries(), COLS));
+document.getElementById('exportShotsBtn').addEventListener('click', () => exportCsv('shot-log.csv', allShotEntries(), COLS.filter(c => c !== 'eid')));
 document.getElementById('exportRecruitsBtn').addEventListener('click', () => {
   const rows = [];
   PLAYERS.forEach(p => {
@@ -16453,8 +17194,20 @@ function bfDraftFor(item) {
   const e = item.e, picksBlank = bfBlank(e.screens);
   const f = item.isNew ? { end: 'Turnover' } : {};
   if (!item.isNew) BF_ALWAYS.forEach(k => { if (!bfBlank(e[k])) f[k] = e[k]; });
-  return { kind: item.kind, isNew: !!item.isNew, after: item.after != null ? item.after : null, f, rows: [], scr: null, picksBlank };
+  // _base: the entry exactly as it was when this form opened. Saves compare against it, so another coach's change made
+  // while the form was open is a conflict (same field) or kept (other fields), never silently overwritten.
+  return { kind: item.kind, isNew: !!item.isNew, after: item.after != null ? item.after : null, f, rows: [], scr: null, picksBlank, _base: item.isNew ? null : Object.assign({}, e) };
 }
+// Fields this coach typed into a blank that another coach has since filled with something else. Filling blanks never
+// overwrites, so without this the coach's value would be dropped while the page said "Saved".
+function bfFilledMeanwhile(d, cur) {
+  if (!d || d.isNew || d.edit) return [];
+  const b = bfBase(d, cur), f = d.f || {};
+  return Object.keys(f).filter(k => !BF_ALWAYS.has(k) && !bfBlank(f[k]) && bfBlank(b[k]) && !bfBlank(cur[k]) && String(cur[k]) !== String(f[k])).map(k => ({ k, mine: f[k], theirs: cur[k] }));
+}
+function bfFilledText(list) { return `Not saved: while you had this open, another coach filled ${list.map(x => `${escapeHtml(fieldLabel(x.k))} with ${escapeHtml(String(x.theirs))} (yours: ${escapeHtml(String(x.mine))})`).join(', ')}. Nothing was written. Check it, then change it with “Correct logged data”, or Skip.`; }
+// The copy a save compares against: the one the form opened with, if it is the same entry; else the current one.
+function bfBase(d, cur) { const b = d && d._base; return b && Number(b.id) === Number(cur.id) && (b._sid || sessionIdFor(b)) === (cur._sid || sessionIdFor(cur)) && eidOf(b) === eidOf(cur) ? b : cur; }
 // What a draft writes onto the entry: only fields that were blank.
 function bfApply(e, d) {
   const out = Object.assign({}, e), f = d.f || {};
@@ -16500,7 +17253,7 @@ function bfTurnoverHtml(item, tl) {
     <section class="bf-box bf-tobox">${bfFieldHtml(['turnoverBy', 'Turnover (#)', 'joff'], e, d, item)}${bfFieldHtml(['causedBy', 'Caused by (#) — blank = unforced', 'jdef'], e, d, item)}${domToFieldsHtml(e, d, item)}</section>
     <details class="bf-logged"${BF.toMore ? ' open' : ''} data-bf-tomore="1"><summary>More (optional): how it started, man situation, how the dominoes started, screens</summary>${more}</details>
     <div class="bf-actions"><button type="button" class="btn" data-bf="save">Save turnover &rarr;</button><button type="button" class="btn secondary" data-bf="saveagain">Save + another turnover here</button><button type="button" class="btn secondary" data-bf="cancelnew">Cancel</button></div>
-    ${BF.msg ? `<p class="bf-msg${/can’t|failed|type who|pick yes/i.test(BF.msg) ? ' bad' : ''}">${BF.msg}</p>` : ''}`;
+    ${BF.msg ? `<p class="bf-msg${bfMsgClass(BF.msg, /can’t|failed|type who|pick yes/i)}">${BF.msg}</p>` : ''}`;
 }
 // The dominoes answer on a new turnover card (Backfill and Film Check), plus who started them on Yes.
 function domToFieldsHtml(e, d, item) {
@@ -16532,7 +17285,7 @@ function bfCardHtml(item, tl) {
     ${logged.length ? `<details class="bf-logged"><summary>Already logged (${logged.length}), not changed here</summary><p>${logged.join(' &middot; ')}</p></details>` : ''}
     <div class="bf-actions"><button type="button" class="btn secondary" data-bf="prev">&larr; Back</button><button type="button" class="btn" data-bf="save">${d.isNew ? 'Save possession' : 'Save &amp; next'} &rarr;</button><button type="button" class="btn secondary" data-bf="skip">Skip</button>
     ${item.kind === 'shot' ? `<button type="button" class="btn secondary" data-bf="addposs" title="Or press T">+ Turnover here</button>` : ''}${d.isNew ? `<button type="button" class="btn secondary" data-bf="cancelnew">Cancel</button>` : ''}</div>
-    ${BF.msg ? `<p class="bf-msg${/can’t|failed|pick yes/i.test(BF.msg) ? ' bad' : ''}">${BF.msg}</p>` : ''}`;
+    ${BF.msg ? `<p class="bf-msg${bfMsgClass(BF.msg, /can’t|failed|pick yes/i)}">${BF.msg}</p>` : ''}`;
 }
 // ---- Backfill: mark a defense segment, review it possession by possession (PR 6) ----
 const DS_ST_LABEL = { none: 'Not reviewed', clean: 'Clean', breakdown: 'Breakdown', cant: 'Can’t tell', reconfirm: 'Needs reconfirmation', conflict: 'Conflict', partial: 'Partial', attested: 'Attested (historical)', deleted: 'Deleted', moved: 'Moved', outside: 'Outside the segment' };
@@ -16645,7 +17398,9 @@ function renderBackfill() {
   const cur = wrap.querySelector('.bf-chip.cur'); if (cur) cur.scrollIntoView({ block: 'nearest', inline: 'center' });
   const gw = wrap.querySelector('[data-bf-goal] svg'); if (gw && BF.draft && BF.draft.f.goalX != null) { const [x, y] = goalMouthPoint(BF.draft.f.goalX, BF.draft.f.goalY); makeMarker(gw, 1.6, 0.5).place(x, y); }
 }
-async function bfSave() {
+// One Backfill save at a time: a second tap, Enter or "Save + another" while one is being sent is ignored.
+async function bfSave() { if (BF.saving) return; BF.saving = true; try { return await bfSave0(); } finally { BF.saving = false; } }
+async function bfSave0() {
   const again = BF.again; BF.again = null;   // only the save that was asked for opens another turnover
   const sess = LIVE_SESSIONS[BF.sid], tl = bfTimeline(sess);
   if (BF.newItem) tl.list.splice(tl.list.findIndex(x => x.kind === 'shot' && x.e.id === BF.newItem.after) + 1, 0, BF.newItem);
@@ -16665,18 +17420,21 @@ async function bfSave() {
   if (d.isNew && !d.f.turnoverBy) { BF.msg = 'Type who turned it over (or Cancel).'; renderBackfill(); const i = document.querySelector('[data-bf-j="turnoverBy"]'); if (i) i.focus(); return; }
   const domWhy = domTurnoverWhy(d, item.e);
   if (domWhy) { BF.msg = domWhy; renderBackfill(); const k = document.querySelector('#backfillWrap [data-bf-dom]'); if (k) k.focus(); return; }
+  const filled = bfFilledMeanwhile(d, item.e); if (filled.length) { BF.msg = bfFilledText(filled); renderBackfill(); return; }
   let res, kind = item.kind, id;
-  if (d.kind === 'shot') { const out = bfApply(item.e, d); id = out.id; res = await persistShot(out); }
+  if (d.kind === 'shot') { const out = bfApply(item.e, d); id = out.id; res = await persistShot(out, undefined, { base: bfBase(d, item.e) }); }
   else if (d.isNew) {
     const base = { id: nextPossId(), date: sess.date, context: 'Practice', opponent: null, team: 'WLU', possStart: null, possStartJersey: null, dominoes: null, advCreator: null, advType: null, manSituation: 'Even', afterShot: d.after };
-    const np = bfApply(base, d); res = await persistNewPossession(np); id = np.id;
+    const np = bfApply(base, d); res = await persistNewPossession(np, undefined, { after: [{ t: 'bf', season: bfSeason(), sid: BF.sid, mark: dpWho() + ' ' + new Date().toISOString().slice(0, 10) }] }); id = np.id;
     BF.newItem = null;
-  } else { const out = bfApply(item.e, d); id = out.id; res = await persistPossession(out); }
+  } else { const out = bfApply(item.e, d); id = out.id; res = await persistPossession(out, undefined, { base: bfBase(d, item.e) }); }
   if (res === 'error') { BF.msg = 'Save failed — please try again.'; renderBackfill(); return; }
-  try { await DB.doc('app/backfill_' + bfSeason()).set({ [bfKey(BF.sid, kind, id)]: dpWho() + ' ' + new Date().toISOString().slice(0, 10) }, { merge: true }); } catch (e) { console.error('backfill mark', e); }
-  BF.reviewed[bfKey(BF.sid, kind, id)] = 1;
+  if (res === 'conflict') { BF.msg = saveConflictText(kind === 'shot' ? 'shot' : 'possession'); renderBackfill(); return; }
+  if (!d.isNew) DB.doc('app/backfill_' + bfSeason()).set({ [bfKey(BF.sid, kind, id)]: dpWho() + ' ' + new Date().toISOString().slice(0, 10) }, { merge: true }).catch(e => console.error('backfill mark', e));   // a hint only: not awaited, so no connection can't freeze Backfill
+  if (!d.isNew || res === 'ok') BF.reviewed[bfKey(BF.sid, kind, id)] = 1;   // a new turnover's mark: outboxFollow, under its confirmed number
   const toTxt = d.isNew ? `turnover by #${d.f.turnoverBy}${d.f.causedBy ? `, caused by #${d.f.causedBy}` : ' (unforced)'}` : null;
-  BF.msg = `${d.edit ? 'Saved corrections to' : 'Saved'} ${kind === 'shot' ? 'shot ' + item.n : toTxt || 'possession'}.${res === 'queued' ? ' (Offline — it will sync.)' : ''}`;
+  const bfDone = () => `${d.edit ? 'Saved corrections to' : 'Saved'} ${kind === 'shot' ? 'shot ' + item.n : toTxt || 'possession'}.`;
+  BF.msg = res === 'pending' ? saveStatusStart('bf', kind === 'shot' ? 'Shot ' + item.n : toTxt || 'Possession', kind === 'shot' ? 'shot' : d.isNew ? 'turnover' : 'possession', bfDone) : bfDone();
   BF.idx++; BF.draft = null; BF.more = {}; BF.showAll = {};
   if (again != null) {   // "Save + another turnover here": open a fresh one after the same shot
     const after = again, tl2 = bfTimeline(LIVE_SESSIONS[BF.sid]);
@@ -16710,7 +17468,7 @@ function bfInit() {
     if (a === 'prev') { bfGo(Math.max(0, BF.idx - 1)); return; }
     if (a === 'skip') { bfGo(BF.idx + 1); return; }
     if (a === 'save') { bfSave(); return; }
-    if (a === 'saveagain') { BF.again = BF.newItem ? BF.newItem.after : null; bfSave(); return; }
+    if (a === 'saveagain') { if (BF.saving) return; BF.again = BF.newItem ? BF.newItem.after : null; bfSave(); return; }
     if (a === 'addposs') { const sess = LIVE_SESSIONS[BF.sid], tl = bfTimeline(sess), it = tl.list[BF.idx]; if (!it || it.kind !== 'shot') return; BF.newItem = { kind: 'poss', isNew: true, after: it.e.id, e: { end: 'Turnover' } }; BF.idx = BF.idx + 1; BF.draft = bfDraftFor(BF.newItem); BF.msg = ''; renderBackfill(); const i = document.querySelector('[data-bf-j="turnoverBy"]'); if (i) i.focus(); return; }
     if (a === 'cancelnew') { BF.newItem = null; bfGo(Math.max(0, BF.idx - 1)); return; }
     if (a === 'all') { BF.showAll[b.dataset.k] = true; renderBackfill(); return; }
@@ -16813,7 +17571,14 @@ function fcLogged(kind) { const s = LIVE_SESSIONS[fcSid()], opp = kind === 'opps
 // Walks the clips in film order. A clip already matched uses its shot; an open clip is offered the
 // next logged shot after the last one used, so "Not logged yet" on one clip moves the offer along.
 // Our shots and opponent shots each walk their own list.
+// A clip mark names its entry by number and (for entries that have one) identity: if the server gave the entry a
+// different number than the one this device first used, the mark still finds it.
+function fcResolveMarks() {
+  const s = LIVE_SESSIONS[fcSid()]; if (!s || !FC.st) return;
+  Object.values(FC.st).forEach(st => { if (!st || !st.eid || !['m', 'n', 't'].includes(st.s)) return; const e = (st.s === 't' ? s.poss || [] : s.shots || []).find(x => eidOf(x) === st.eid); if (e && e.id !== st.id) st.id = e.id; });
+}
 function fcPlan() {
+  fcResolveMarks();
   const lists = { shot: fcLogged('shot'), oppshot: fcLogged('oppshot') }, used = new Set(), items = [];
   Object.values(FC.st).forEach(s => { if (s.s === 'm') used.add(s.id); });
   const ptr = { shot: 0, oppshot: 0 }, cnt = { shot: 0, oppshot: 0, turnover: 0 };
@@ -17002,7 +17767,7 @@ function fcListHtml() {
   return `<div class="panel"><p class="panel-title">Film Check</p><p class="panel-sub">Each shot and turnover from practice film, with its clip from your Drive. Check or fill in each one; nothing goes into the stats until you save it. Clips play only for someone signed in to the Google account the clips are in.</p>
     ${rows ? `<div class="table-wrap"><table class="shotlog"><thead><tr><th>Session</th><th>Shot clips</th><th>Turnover clips</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>` : '<p class="n-note">No practices yet.</p>'}
     <p style="margin-top:12px;"><label class="btn secondary" style="display:inline-block;">Add practice film (filmcheck_&lt;date&gt;.json)<input type="file" accept=".json,application/json" data-fc-file="1" hidden></label></p>${pend}
-    ${FC.msg ? `<p class="bf-msg${/could|isn|n’t|failed/i.test(FC.msg) ? ' bad' : ''}">${escapeHtml(FC.msg)}</p>` : ''}</div>`;
+    ${FC.msg ? `<p class="bf-msg${bfMsgClass(FC.msg, /could|isn|n’t|failed/i)}">${fcMsgHtml(FC.msg)}</p>` : ''}</div>`;
 }
 function renderFilmCheck() {
   const wrap = document.getElementById('filmcheckWrap'); if (!wrap) return;
@@ -17022,7 +17787,7 @@ function renderFilmCheck() {
     <div class="n-note fc-legend"><span class="bf-chip part"></span>offered a logged shot <span class="bf-chip fc-new"></span>no logged shot left <span class="bf-chip fc-to"></span>turnover ${plan.nOpp ? '<span class="bf-chip fc-opp"></span>opponent shot (O) ' : ''}<span class="bf-chip done"></span>checked <span class="bf-chip fc-x"></span>not a shot</div>
     <div class="bf-strip">${strip}</div>${fcDomReviewHtml(plan)}${fcDsBarHtml(plan)}`;
   const meta = `<div class="fc-meta"><span>Clip starts at the possession start</span><span>${fcIsShot(it.d) ? 'Shot' : 'Turnover tag'} at about <b>${fcClock(it.d.inClip)}</b> of ${fcClock(it.d.len)}</span><span>Film time <b>${fcClock(it.d.t)}</b></span></div>`;
-  const body = card + (FC.msg ? `<p class="bf-msg${/can’t|failed|isn’t|type|pick|tap|already|didn’t/i.test(FC.msg) ? ' bad' : ''}">${escapeHtml(FC.msg)}</p>` : '');
+  const body = card + (FC.msg ? `<p class="bf-msg${bfMsgClass(FC.msg, /can’t|failed|isn’t|type|pick|tap|already|didn’t/i)}">${fcMsgHtml(FC.msg)}</p>` : '');
   // Tapping a pill redraws the form only; the clip player is rebuilt just when the clip changes, so it keeps playing.
   const vid = wrap.querySelector('.fc-video');
   if (vid && vid.dataset.file === it.d.fileId && wrap.querySelector('.fc-body')) {
@@ -17126,7 +17891,9 @@ function fcNewOppShot(d, film) {
   Object.assign(r.shot, { team: 'OPP', shooterJersey: null, oppShooter: f.oppShooter || null, oppPasser: null, assistJersey: null, goalieJersey: f.goalieJersey });
   return r;
 }
-async function fcSave() {
+// One Film Check save at a time, including its clip mark (FC.busy covers only the entry's own save).
+async function fcSave() { if (FC.saving) return; FC.saving = true; try { return await fcSave0(); } finally { FC.saving = false; } }
+async function fcSave0() {
   if (FC.busy) return;
   const plan = fcPlan(), it = plan.items[FC.idx], d = FC.draft;
   if (!it || !d) return;
@@ -17143,29 +17910,34 @@ async function fcSave() {
     const base = { id: nextPossId(), date: FC.date, context: FC.context, opponent: FC.opponent || null, team: 'WLU', possStart: null, possStartJersey: null, dominoes: null, advCreator: null, advType: null, manSituation: 'Even', afterShot: prev ? prev.st.id : null };
     const out = bfApply(base, d); out.filmTime = film;
     // Like Backfill: the number is claimed in a transaction and can move up if someone else just took it, so read it after.
-    FC.busy = true; res = await persistNewPossession(out); FC.busy = false;
-    val = { s: 't', id: out.id };
+    FC.busy = true; res = await persistNewPossession(out, undefined, { after: [{ t: 'fc', key: FC.key, clip: it.d.id }] }); FC.busy = false;
+    val = { s: 't', id: out.id, eid: out.eid || null };
   } else if (FC.mode === 'new') {
     const why = fcCheck(d, null); if (why) { FC.msg = why; renderFilmCheck(); return; }
     const r = it.d.kind === 'oppshot' ? fcNewOppShot(d, film) : fcNewShot(d, film); if (r.why) { FC.msg = r.why; renderFilmCheck(); return; }
-    FC.busy = true; res = await persistNewShot(r.shot); FC.busy = false;
-    val = { s: 'n', id: r.shot.id };   // read after the save: the transaction may have moved the number up
+    FC.busy = true; res = await persistNewShot(r.shot, undefined, { after: [{ t: 'fc', key: FC.key, clip: it.d.id }] }); FC.busy = false;
+    val = { s: 'n', id: r.shot.id, eid: r.shot.eid || null };   // read after the save: the transaction may have moved the number up
   } else {
     const e = fcTarget(it); if (!e) return;
     if (plan.used.has(e.id)) { FC.msg = 'That logged shot is already matched to another clip.'; renderFilmCheck(); return; }
     const why = fcCheck(d, e); if (why) { FC.msg = why; renderFilmCheck(); return; }
+    const filled = bfFilledMeanwhile(d, e); if (filled.length) { FC.msg = bfFilledText(filled); renderFilmCheck(); return; }
     const out = bfApply(e, d); out.filmTime = film;
-    FC.busy = true; res = await persistShot(out); FC.busy = false;
-    val = { s: 'm', id: e.id }; corrected = !!d.edit;
+    FC.busy = true; res = await persistShot(out, undefined, { base: bfBase(d, e) }); FC.busy = false;
+    val = { s: 'm', id: e.id, eid: eidOf(e) }; corrected = !!d.edit;
     // Backfill walks practices only, so only a practice shot gets its reviewed mark there.
-    if (FC.context === 'Practice' && it.d.kind === 'shot') try { await DB.doc('app/backfill_' + fcSeason()).set({ [bfKey(fcSid(), 'shot', e.id)]: dpWho() + ' ' + new Date().toISOString().slice(0, 10) }, { merge: true }); } catch (err) { console.error('backfill mark', err); }
+    if (FC.context === 'Practice' && it.d.kind === 'shot') DB.doc('app/backfill_' + fcSeason()).set({ [bfKey(fcSid(), 'shot', e.id)]: dpWho() + ' ' + new Date().toISOString().slice(0, 10) }, { merge: true }).catch(err => console.error('backfill mark', err));   // not awaited (see Backfill)
   }
   if (res === 'error') { FC.msg = 'Save failed — please try again.'; renderFilmCheck(); return; }
+  if (res === 'conflict') { FC.msg = saveConflictText('shot'); renderFilmCheck(); return; }
   FC.st[it.d.id] = Object.assign({ by: dpWho(), at: new Date().toISOString().slice(0, 10) }, val);   // shows right away; the snapshot confirms
   const mark = await fcStatusWrite(it.d.id, val);
   const opp = it.d.kind === 'oppshot' ? 'opponent ' : '', saved = val.s === 't' ? 'turnover' : val.s === 'n' ? `new ${opp}shot #${val.id}` : `${corrected ? 'corrections to ' : ''}logged ${opp}shot #${val.id}`;
   fcGo(FC.idx + 1);
-  FC.msg = `Saved ${saved}.${res === 'queued' || mark === 'queued' ? ' (Offline — it will sync.)' : ''}${mark === 'error' ? ' The shot saved, but the checked mark didn’t; it may show as open.' : ''}`;
+  const fcNoun = val.s === 't' ? 'turnover' : 'shot', fcWhat = saved[0].toUpperCase() + saved.slice(1);
+  const fcDone = fid => `Saved ${val.s === 'n' && fid != null ? saved.replace('#' + val.id, '#' + fid) : saved}.`;
+  FC.msg = (res === 'pending' ? saveStatusStart('fc', fcWhat, fcNoun, fcDone) : `Saved ${saved}.${mark === 'queued' ? ' (The checked mark is offline; it will sync.)' : ''}`) + `${mark === 'error' ? ' The shot saved, but the checked mark didn’t; it may show as open.' : ''}`;
+  if (res === 'pending' && SAVE_STATUS.fc) SAVE_STATUS.fc.html = FC.msg;
   renderFilmCheck();
 }
 // Corrections to a checked entry: overwrite what's on the form (the clip's checked mark stays as it was).
@@ -17173,10 +17945,11 @@ async function fcSaveEdit(it) {
   const d = FC.draft, e = fcSavedEntry(it); if (!e || FC.busy) return;
   const why = fcCheck(d, e); if (why) { FC.msg = why; renderFilmCheck(); return; }
   const out = bfApply(e, d);
-  FC.busy = true; const res = await (it.st.s === 't' ? persistPossession(out) : persistShot(out)); FC.busy = false;
+  FC.busy = true; const res = await (it.st.s === 't' ? persistPossession(out, undefined, { base: bfBase(d, e) }) : persistShot(out, undefined, { base: bfBase(d, e) })); FC.busy = false;
   if (res === 'error') { FC.msg = 'Save failed — please try again.'; renderFilmCheck(); return; }
+  if (res === 'conflict') { FC.msg = saveConflictText(it.st.s === 't' ? 'possession' : 'shot'); renderFilmCheck(); return; }
   FC.editing = null; FC.draft = null;
-  FC.msg = `Saved corrections.${res === 'queued' ? ' (Offline — it will sync.)' : ''}`; renderFilmCheck();
+  FC.msg = res === 'pending' ? saveStatusStart('fc', 'Corrections', it.st.s === 't' ? 'turnover' : 'shot', () => 'Saved corrections.') : 'Saved corrections.'; renderFilmCheck();
 }
 // A turnover added after a logged shot; then back to the clip (or another turnover after the same shot).
 async function fcSaveAddTo(again) {
@@ -17188,7 +17961,8 @@ async function fcSaveAddTo(again) {
   const out = bfApply(base, d);
   FC.busy = true; const res = await persistNewPossession(out); FC.busy = false;
   if (res === 'error') { FC.msg = 'Save failed — please try again.'; renderFilmCheck(); return; }
-  const said = `Saved turnover by #${out.turnoverBy}${out.causedBy ? `, caused by #${out.causedBy}` : ' (unforced)'}.${res === 'queued' ? ' (Offline — it will sync.)' : ''}`;
+  const toBy = `by #${out.turnoverBy}${out.causedBy ? `, caused by #${out.causedBy}` : ' (unforced)'}`;
+  const said = res === 'pending' ? saveStatusStart('fc', `Turnover ${toBy}`, 'turnover', () => `Saved turnover ${toBy}.`) : `Saved turnover ${toBy}.`;
   if (again) { FC.addTo = { after: a.after, prev: a.prev, prevMode: a.prevMode }; FC.draft = { kind: 'poss', isNew: true, f: { end: 'Turnover' }, rows: [], scr: null, picksBlank: true }; }
   else { FC.draft = a.prev; FC.mode = a.prevMode; FC.addTo = null; }
   FC.msg = said; renderFilmCheck();
@@ -18341,11 +19115,12 @@ async function init() {
   renderEfficiencyView();
   renderOpponent();
   window.__appReady = true;
+  outboxOpen();   // this account's pending changes: show them and send any that are waiting (PR 7a-1 M2)
   navBoot();
   try { chatInit(); } catch (e) { console.error('chat', e); }
   onSessionChanged();
   renderUnitsPanel();
-  if (LIVE_SHOTS_TUPLES.length) migrateShotsInbox(LIVE_SHOTS_TUPLES);
+  inboxNoticeUpdate();
 }
 // The main code is all in: start now if sign-in already finished (bootTry, in the sign-in script above).
 if (typeof bootTry === 'function') bootTry();
