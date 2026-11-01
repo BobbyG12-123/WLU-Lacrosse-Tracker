@@ -4939,12 +4939,17 @@ function currentSessionId() {
   return sessionIdFor({ date: document.getElementById('f_date').value, context: currentContext(), opponent: document.getElementById('f_opponent').value.trim() });
 }
 function lineupStorageKey(sid) { return 'wluLineup:' + sid; }
+// While a saved shot/possession is being edited the bar shows its lineup,
+// not the live one, so nothing about the live lineup is saved or reloaded.
+function isEditingEntry() { return editingShotId !== null || editingPossId !== null; }
 function saveLineupLocal() {
+  if (isEditingEntry()) return;
   try { localStorage.setItem(lineupStorageKey(currentSessionId()), JSON.stringify({ a: LINEUP.a, b: LINEUP.b, ball: segValue('lb_possession') })); } catch (e) { /* storage unavailable */ }
 }
 // When the session changes, pick up where this device left off in it, or
 // else from the session's most recent saved lineup.
 function loadLineupForSession() {
+  if (isEditingEntry()) return;
   const sid = currentSessionId();
   if (lineupLoadedFor === sid) return;
   lineupLoadedFor = sid;
@@ -4958,12 +4963,10 @@ function loadLineupForSession() {
     const sess = LIVE_SESSIONS[sid];
     const last = sess && sess.stints.length ? sess.stints[sess.stints.length - 1] : null;
     if (last) {
-      const strip = arr => arr.map(j => isOppJersey(j) ? j.slice(1) : j);
       const game = sess.context === 'Game' || !!sess.opponent;
-      const wluRow = game ? (last.offTeam === 'OPP' ? last.defense : last.offense) : last.offense;
-      const bRow = game ? (last.offTeam === 'OPP' ? last.offense : last.defense) : last.defense;
-      LINEUP = { a: clean(strip(wluRow)), b: clean(strip(bRow)) };
-      if (game) setSegValue('lb_possession', last.offTeam === 'OPP' ? 'OPP' : 'WLU');
+      const rows = lineupRowsFromStint(last, game);
+      LINEUP = { a: clean(rows.a), b: clean(rows.b) };
+      if (game) setSegValue('lb_possession', rows.ball);
     } else if (lineupContextFor !== (hasOpponentSession() ? 'Game' : 'Practice')) {
       // Practice <-> Game: WLU row carries over; row B changes meaning
       // (WLU defense vs opponent numbers), so it starts empty.
@@ -4975,6 +4978,31 @@ function loadLineupForSession() {
   lineupContextFor = hasOpponentSession() ? 'Game' : 'Practice';
   applyTeamToForm();
   renderLineupBar();
+}
+// A saved stint back into bar rows: in a game row A is WLU and row B the
+// opponent whichever side had the ball; in practice A is the offense.
+function lineupRowsFromStint(stint, game) {
+  const strip = arr => (arr || []).map(j => isOppJersey(j) ? j.slice(1) : j);
+  const oppBall = stint.offTeam === 'OPP';
+  return {
+    a: strip(game && oppBall ? stint.defense : stint.offense),
+    b: strip(game && oppBall ? stint.offense : stint.defense),
+    ball: oppBall ? 'OPP' : 'WLU',
+  };
+}
+// Fills the bar with an entry's own saved lineup for editing. Returns false
+// when the entry points at a stint this device can't find, so the save
+// keeps its stint untouched instead of overwriting it with a blank bar.
+function loadLineupForEdit(entry) {
+  const stint = stintById(entry._sid, entry.stintId);
+  if (stint) {
+    const rows = lineupRowsFromStint(stint, entry.context === 'Game' || !!entry.opponent);
+    LINEUP = { a: Array.from({ length: LINEUP_SIZE }, (_, i) => rows.a[i] || ''), b: Array.from({ length: LINEUP_SIZE }, (_, i) => rows.b[i] || '') };
+  } else {
+    LINEUP = { a: Array(LINEUP_SIZE).fill(''), b: Array(LINEUP_SIZE).fill('') };
+  }
+  renderLineupBar();
+  return !entry.stintId || !!stint;
 }
 function rowTeam(row) { return hasOpponentSession() ? (row === 'a' ? 'WLU' : 'OPP') : 'WLU'; }
 function renderLineupBar() {
@@ -5164,9 +5192,12 @@ let editReturnTo = 'tableView';
 // What the coach had up before is remembered and put back afterwards, so
 // the next clip doesn't land in last week's game.
 let preEditState = null;
+// Whether the bar holds the edited entry's real saved lineup (see loadLineupForEdit).
+let editLineupLoaded = false;
 function captureLogState() {
   return { date: document.getElementById('f_date').value, context: document.getElementById('f_context').dataset.value || 'Practice',
-    opponent: document.getElementById('f_opponent').value, ball: segValue('lb_possession'), entry: segValue('entryTypeSeg'), goalie: document.getElementById('f_goalie').value };
+    opponent: document.getElementById('f_opponent').value, ball: segValue('lb_possession'), entry: segValue('entryTypeSeg'), goalie: document.getElementById('f_goalie').value,
+    lineup: { a: LINEUP.a.slice(), b: LINEUP.b.slice() } };
 }
 function restoreLogState() {
   const st = preEditState;
@@ -5183,6 +5214,8 @@ function restoreLogState() {
   lineupLoadedFor = null;
   onSessionChanged();
   if (st.ball) { setSegValue('lb_possession', st.ball); onPossessionChanged(); }
+  // Put back exactly the bar that was up before the edit.
+  if (st.lineup) { LINEUP = { a: st.lineup.a.slice(), b: st.lineup.b.slice() }; renderLineupBar(); }
 }
 
 // Historical shots predate the `outcome` field, so editing one has to
@@ -5259,6 +5292,7 @@ function startEditShot(id, returnTo) {
   editingShotId = id;
   editReturnTo = returnTo || 'tableView';
   pointSessionBarAt(shot);
+  editLineupLoaded = loadLineupForEdit(shot);
   setSegValue('entryTypeSeg', 'shot'); showEntryType('shot');
   refreshFormRosterOptions();
   resetShotFields();
@@ -5310,7 +5344,7 @@ function startEditShot(id, returnTo) {
   document.getElementById('submitShotBtn').textContent = `Update Shot #${id}`;
   document.getElementById('cancelEditBtn').style.display = '';
   const banner = document.getElementById('editingBanner');
-  banner.textContent = `Editing shot #${id} — fix whatever's wrong and hit Update, or Cancel to leave it as-is. Its saved lineup is kept.`;
+  banner.textContent = `Editing shot #${id} — fix whatever's wrong (including the lineup bar) and hit Update, or Cancel to leave it as-is.`;
   banner.style.display = '';
   switchTab('logView');
   window.scrollTo(0, 0);
@@ -5382,7 +5416,7 @@ document.getElementById('submitShotBtn').addEventListener('click', async () => {
   if (!offFault.ok) { showMsg('Off-ball breakdown: ' + offFault.why, false); return; }
   if (offFault.value && offFault.value === defOn.value) { showMsg('The off-ball breakdown can’t be the on-ball defender.', false); return; }
   const isEdit = editingShotId !== null;
-  if (!isEdit && decorateChips().length) { showMsg('Fix the lineup bar first (marked in red), or clear it.', false); return; }
+  if (decorateChips().length) { showMsg('Fix the lineup bar first (marked in red), or clear it.', false); return; }
 
   const goalieVal = document.getElementById('f_goalie').value;
   const derived = OUTCOME_DERIVED[outcome];
@@ -5442,7 +5476,7 @@ document.getElementById('submitShotBtn').addEventListener('click', async () => {
     if (!original) { showMsg('That shot no longer exists.', false); exitEditMode(); return; }
     savedId = editingShotId;
     const updated = Object.assign({ id: savedId, _sid: original._sid, stintId: original.stintId === undefined ? null : original.stintId }, shotData);
-    saveResult = await persistShot(updated);
+    saveResult = await persistShot(updated, editLineupLoaded ? currentLineup() : undefined);
     if (saveResult === 'error') { showMsg('Save failed — please try again.', false); return; }
   } else {
     const shot = Object.assign({ id: nextShotId() }, shotData);
@@ -5496,6 +5530,7 @@ function startEditPoss(id) {
   if (editingPossId === null) preEditState = captureLogState();
   editingPossId = id;
   pointSessionBarAt(p);
+  editLineupLoaded = loadLineupForEdit(p);
   setSegValue('entryTypeSeg', 'poss'); showEntryType('poss');
   resetPossFields();
   const strip = j => j ? String(j).replace(/^o/, '') : '';
@@ -5518,7 +5553,7 @@ function startEditPoss(id) {
   document.getElementById('submitPossBtn').textContent = `Update Possession #${id}`;
   document.getElementById('cancelPossEditBtn').style.display = '';
   const banner = document.getElementById('editingBanner');
-  banner.textContent = `Editing possession #${id} — its saved lineup is kept.`;
+  banner.textContent = `Editing possession #${id} — the lineup bar shows its lineup; change it to fix who was on the field.`;
   banner.style.display = '';
   switchTab('logView');
   window.scrollTo(0, 0);
@@ -5546,7 +5581,7 @@ document.getElementById('submitPossBtn').addEventListener('click', async () => {
   if (!scr.ok) { showMsg(scr.why, false); return; }
   pk.data.screens = scr.value;
   const isEdit = editingPossId !== null;
-  if (!isEdit && decorateChips().length) { showMsg('Fix the lineup bar first (marked in red), or clear it.', false); return; }
+  if (decorateChips().length) { showMsg('Fix the lineup bar first (marked in red), or clear it.', false); return; }
   const possStart = document.getElementById('p_possstart').dataset.value || null;
   const data = {
     date: sess.date, context: sess.context, opponent: sess.opponent, team,
@@ -5565,7 +5600,7 @@ document.getElementById('submitPossBtn').addEventListener('click', async () => {
     const original = POSSESSIONS.find(x => x.id === editingPossId);
     if (!original) { showMsg('That possession no longer exists.', false); exitPossEditMode(); return; }
     id = editingPossId;
-    res = await persistPossession(Object.assign({ id, _sid: original._sid, stintId: original.stintId === undefined ? null : original.stintId }, data));
+    res = await persistPossession(Object.assign({ id, _sid: original._sid, stintId: original.stintId === undefined ? null : original.stintId }, data), editLineupLoaded ? currentLineup() : undefined);
   } else {
     const p = Object.assign({ id: nextPossId() }, data);
     res = await persistNewPossession(p, currentLineup());
