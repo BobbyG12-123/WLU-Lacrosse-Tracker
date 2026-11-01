@@ -432,6 +432,9 @@
     body { background: #fff; }
     main { max-width: 100%; padding: 0; }
     .panel { box-shadow: none; border: 1px solid #ccc; break-inside: avoid; }
+    #reportsView .panel.rpt-sec { break-inside: auto; }
+    #reportsView .rpt-block, #reportsView .rpt-area { break-inside: avoid; }
+    #reportsView .table-wrap { max-height: none !important; overflow: visible !important; }
   }
 </style>
 <style>
@@ -2296,13 +2299,21 @@
         <div class="control-group"><button type="button" class="btn secondary" id="rptPrintBtn">Print / Save as PDF</button></div>
       </div>
     </div>
-    <div class="panel pm-hide" id="rptTeam"></div>
-    <div class="panel">
+    <div class="panel pm-hide rpt-sec" id="rptFullTeam"></div>
+    <div class="panel pm-hide rpt-sec">
+      <p class="panel-title">Position Groups</p>
+      <p class="panel-sub">Pick a group to see its own stats for this session, then pick a player below for his full sheet. Positions come from the Depth Chart; a player with a second position shows in both groups.</p>
+      <div class="grade-pills" id="rptGroupPills" style="margin:8px 0 10px;"></div>
+      <div id="rptGroupBody"></div>
+    </div>
+    <div class="panel rpt-sec">
       <div class="controls-row" style="margin-bottom:10px;">
-        <div class="control-group"><label for="rptPlayerSelect">Player Report</label><select id="rptPlayerSelect"></select></div>
+        <div class="control-group"><label for="rptPlayerSelect">Player</label><select id="rptPlayerSelect"></select></div>
       </div>
+      <div id="rptSheet"></div>
       <div id="rptPlayer"></div>
     </div>
+    <div class="panel pm-hide rpt-sec" id="rptTeam"></div>
   </section>
 
   <section id="depthView" class="view">
@@ -6929,9 +6940,12 @@ function effContextOk(e) { return EFF_CONTEXT === 'All' || e.context === EFF_CON
 // everywhere else, so every other view reads the whole season.
 let EFF_FROM = null, EFF_TO = null, EFF_OPP = null;   // EFF_TO / EFF_OPP: set only by search answers
 const effFromOk = e => (!EFF_FROM || (e.date && e.date >= EFF_FROM)) && (!EFF_TO || (e.date && e.date <= EFF_TO)) && (!EFF_OPP || e.opponent === EFF_OPP) && (!PART_PAGE_ON || inPart(e, EFF_SEASON));
-function effShots() { return advShots(EFF_SEASON).filter(e => effContextOk(e) && effFromOk(e)); }
-function effOppShots() { return OPP_SHOTS.filter(s => seasonForDate(s.date) === EFF_SEASON && effContextOk(s) && effFromOk(s)); }
-function effPoss() { return POSSESSIONS.filter(p => seasonForDate(p.date) === EFF_SEASON && effContextOk(p) && effFromOk(p)); }
+// EFF_ONLY: an optional entry filter (Reports sets it to one session or week); null everywhere else.
+let EFF_ONLY = null;
+const effOnlyOk = e => !EFF_ONLY || EFF_ONLY(e);
+function effShots() { return advShots(EFF_SEASON).filter(e => effContextOk(e) && effFromOk(e) && effOnlyOk(e)); }
+function effOppShots() { return OPP_SHOTS.filter(s => seasonForDate(s.date) === EFF_SEASON && effContextOk(s) && effFromOk(s) && effOnlyOk(s)); }
+function effPoss() { return POSSESSIONS.filter(p => seasonForDate(p.date) === EFF_SEASON && effContextOk(p) && effFromOk(p) && effOnlyOk(p)); }
 const EFF_CTX_WORD = () => EFF_CONTEXT === 'All' ? 'all sessions' : EFF_CONTEXT.toLowerCase();
 
 function nameCell(v) { return `<span style="white-space:nowrap;">${escapeHtml(v || '')}</span>`; }
@@ -9142,15 +9156,17 @@ function rptAllEntries() {
   return { S: SHOTS.filter(s => adv(s) && !s.seed), O: OPP_SHOTS.filter(adv), P: POSSESSIONS.filter(adv) };
 }
 // Periods newest first: sessions (with WLU shots) or Monday-Sunday weeks.
-function rptPeriods(mode) {
+// any: also list sessions with no WLU shots (faceoffs, possessions, opponent shots only).
+function rptPeriods(mode, any) {
   const { S, O, P } = rptAllEntries();
+  const F = any ? FACEOFFS.filter(f => f.date && isAdvSeason(seasonForDate(f.date))) : [];
   const map = {};
-  S.concat(O, P).forEach(e => {
+  S.concat(O, P, F).forEach(e => {
     const k = mode === 'practice' ? sessKey(e) : rptMonday(e.date);
     const m = (map[k] = map[k] || { key: k, date: mode === 'practice' ? e.date : k, context: e.context, opponent: e.opponent, shots: 0 });
     if (S.includes(e)) m.shots++;
   });
-  return Object.values(map).filter(m => m.shots > 0).sort((a, b) => b.date.localeCompare(a.date) || b.key.localeCompare(a.key));
+  return Object.values(map).filter(m => any || m.shots > 0).sort((a, b) => b.date.localeCompare(a.date) || b.key.localeCompare(a.key));
 }
 function rptLabel(mode, p) {
   if (mode === 'week') { const end = new Date(p.date + 'T00:00:00'); end.setDate(end.getDate() + 6); const e = localDateStr(end); return `Week of ${p.date} – ${e}${e >= localDateStr() ? ' (in progress)' : ''}`; }
@@ -9245,16 +9261,20 @@ function renderReports() {
   const wrap = document.getElementById('rptTeam');
   if (!wrap) return;
   if (!document.getElementById('reportsView').classList.contains('active')) return;
-  const periods = rptPeriods(rptMode);
+  const periods = rptPeriods(rptMode, true);
   const sel = document.getElementById('rptPeriodSelect');
   sel.innerHTML = periods.length ? periods.map(p => `<option value="${escapeHtml(p.key)}">${escapeHtml(rptLabel(rptMode, p))}</option>`).join('') : '<option value="">Nothing logged yet</option>';
   if (!periods.some(p => p.key === rptKey)) rptKey = periods.length ? periods[0].key : '';
   sel.value = rptKey;
   const idx = periods.findIndex(p => p.key === rptKey);
-  if (idx < 0) { wrap.innerHTML = '<p class="sans" style="color:var(--muted); font-size:13px;">No 2027+ practices logged yet.</p>'; document.getElementById('rptPlayer').innerHTML = ''; return; }
+  if (idx < 0) { wrap.innerHTML = '<p class="sans" style="color:var(--muted); font-size:13px;">No 2027+ practices logged yet.</p>'; ['rptPlayer', 'rptSheet', 'rptFullTeam', 'rptGroupBody'].forEach(id => { document.getElementById(id).innerHTML = ''; }); return; }
   const period = periods[idx];
   const season = seasonForDate(period.date);
-  const prior = periods.slice(idx + 1).filter(p => seasonForDate(p.date) === season).slice(0, rptMode === 'practice' ? RPT_PRIOR_SESSIONS : RPT_PRIOR_WEEKS);
+  const F = rptFullStats(rptMode, [period.key], season);
+  renderRptFullTeam(F, rptLabel(rptMode, period));
+  renderRptGroup(F);
+  // The comparison below uses earlier sessions/weeks with WLU shots, as before.
+  const prior = rptPeriods(rptMode).filter(p => p.date < period.date || (p.date === period.date && p.key < period.key)).filter(p => seasonForDate(p.date) === season).slice(0, rptMode === 'practice' ? RPT_PRIOR_SESSIONS : RPT_PRIOR_WEEKS);
   const word = rptMode === 'practice' ? 'practice' : 'week';
   const priorWord = rptMode === 'practice' ? `previous ${prior.length} practice${prior.length === 1 ? '' : 's'}` : `previous ${prior.length} week${prior.length === 1 ? '' : 's'}`;
   const cur = rptSlice(rptMode, [period.key]), base = rptSlice(rptMode, prior.map(p => p.key));
@@ -9295,7 +9315,7 @@ function renderReports() {
     return `<li><b style="color:${good ? 'var(--good)' : 'var(--critical)'};">${flag === 'up' ? '▲' : '▼'} ${label}:</b> ${rptFmt(k, c.v)}${c.kind === 'rate' ? ` (${c.num} of ${c.den})` : ''} vs ${rptFmt(k, b.v)} over the ${priorWord}.</li>`;
   }).filter(Boolean);
   wrap.innerHTML = `
-    <p class="panel-title">Team Report &mdash; ${escapeHtml(rptLabel(rptMode, period))}</p>
+    <p class="panel-title">Team vs Recent ${rptMode === 'practice' ? 'Sessions' : 'Weeks'} &mdash; ${escapeHtml(rptLabel(rptMode, period))}</p>
     <p class="panel-sub">${cur.S.length} shots${cur.P.length ? `, ${cur.P.length} no-shot possessions` : ''}.${rptMode === 'week' && rptLabel('week', period).includes('in progress') ? ' This week isn&rsquo;t over yet, so its totals are partial &mdash; the percentages are the fair comparison.' : ''} Compared with the ${priorWord}${prior.length ? '' : ' (none yet &mdash; this is the first)'}. &ldquo;Up&rdquo; or &ldquo;down&rdquo; only when the change is bigger than normal ${word}-to-${word} swings for this many shots.</p>
     <div class="table-wrap" style="max-height:none;"><table class="shotlog dense"><thead><tr><th>Stat</th><th>This ${word}</th><th>${rptMode === 'practice' ? 'Recent practices' : 'Recent weeks'}</th><th>Change</th></tr></thead><tbody>${summaryRows}</tbody></table></div>
     <p class="panel-title" style="font-size:15px; margin-top:16px;">Standouts</p>
@@ -9307,13 +9327,15 @@ function renderReports() {
   cur.S.forEach(s => { js.add(s.shooterJersey); if (s.assistJersey && !isOppJersey(s.assistJersey)) js.add(s.assistJersey); });
   rptFaced(cur).forEach(s => js.add(s.goalieJersey));
   cur.P.forEach(p => { if (p.turnoverBy && !isOppJersey(p.turnoverBy)) js.add(p.turnoverBy); });
+  Object.keys(F.players).forEach(j => js.add(j));
   const psel = document.getElementById('rptPlayerSelect');
-  const players = [...js].filter(Boolean).map(j => ({ j, name: nameFor(j, season) })).sort((a, b) => a.name.localeCompare(b.name));
+  const players = [...js].filter(j => j && (!rptGroup || PLAYER_MODE || rptInGroup(season, j, rptGroup))).map(j => ({ j, name: nameFor(j, season) })).sort((a, b) => a.name.localeCompare(b.name));
   psel.innerHTML = players.length ? players.map(p => `<option value="${escapeHtml(p.j)}">#${escapeHtml(p.j)} ${escapeHtml(p.name)}</option>`).join('') : '<option value="">No players</option>';
   if (!players.some(p => p.j === rptPlayer)) rptPlayer = players.length ? players[0].j : '';
   psel.value = rptPlayer;
   if (PLAYER_MODE) rptPlayer = pmLockSelect(psel);
   renderPlayerReport(period, cur, season, prior);
+  renderRptSheet(F, rptPlayer);
 }
 function renderPlayerReport(period, cur, season, prior) {
   const box = document.getElementById('rptPlayer');
@@ -9397,10 +9419,259 @@ function rptProjectionLine(j, season) {
   const r = computeProjections(season);
   const p = r.players.find(x => x.jersey === j), g = r.goalies.find(x => x.jersey === j);
   const bits = [];
-  if (p && p.shots >= 5) bits.push(`true shooting % about <b>${pjPct(p.sh.m)}</b> (likely ${pjPct(p.sh.lo)}–${pjPct(p.sh.hi)}); over ${PJ_GAMES} games about <b>${Math.round(p.goals17.m)} goals</b> (${Math.round(p.goals17.lo)}–${Math.round(p.goals17.hi)}) and ${Math.round(p.ast17.m)} assists`);
+  // Game totals need logged games; until then only the shooting % shows.
+  if (p && p.shots >= 5 && p.sh) bits.push(`true shooting % about <b>${pjPct(p.sh.m)}</b> (likely ${pjPct(p.sh.lo)}–${pjPct(p.sh.hi)})` + (p.goals17 && p.ast17 ? `; over ${PJ_GAMES} games about <b>${Math.round(p.goals17.m)} goals</b> (${Math.round(p.goals17.lo)}–${Math.round(p.goals17.hi)}) and ${Math.round(p.ast17.m)} assists` : ''));
   if (g) bits.push(`true save % about <b>${pjPct(g.save.m)}</b> (likely ${pjPct(g.save.lo)}–${pjPct(g.save.hi)})`);
   return bits.length ? `<p class="sans" style="font-size:13px; margin-top:14px; padding:8px 10px; background:var(--card-2); border-left:3px solid var(--gold); border-radius:0 6px 6px 0;"><b>Projection:</b> ${bits.join('; ')}. <span class="n-note">(Efficiency → Projections has the details.)</span></p>` : '';
 }
+// ---- Reports: full stats for the team, a position group and a player ----
+// The same math the other pages use (Efficiency, Defense, Goaltending,
+// Faceoffs), run on just this session or week through EFF_ONLY.
+let rptGroup = '';
+const RPT_GROUPS = [{ value: 'A', label: 'Attack' }, { value: 'M', label: 'Midfield' }, { value: 'S', label: 'SSDM' }, { value: 'L', label: 'LSM' },
+  { value: 'D', label: 'Defense' }, { value: 'F', label: 'FOGO' }, { value: 'G', label: 'Goalie' }, { value: 'none', label: 'Position not set' }];
+function rptInPeriod(mode, keys) { return e => !!e.date && !e.seed && keys.includes(mode === 'practice' ? sessKey(e) : rptMonday(e.date)); }
+const rptWl = j => !!j && !isOppJersey(j);
+const rptSplit = (l, f) => { const m = l.filter(f); return { n: m.length, g: m.filter(s => s.goal === 1).length }; };
+// Offense numbers from one or more Efficiency player rows (a player, a group or the team).
+function rptOffOf(ps) {
+  const sum = k => ps.reduce((a, p) => a + (p[k] || 0), 0);
+  const m = [].concat(...ps.map(p => p.ownShots || [])), n = m.length, g = sum('goals'), xg = sum('xg'), xa = sum('xa'), potAst = sum('potAst'), to = sum('to');
+  const graded = m.filter(s => s.shotQuality), touches = n + potAst + to;
+  return { shots: n, goals: g, shPct: ratio(g, n), onCage: ratio(m.filter(s => s.onKeeper === 1).length, n), xg, gmx: n ? g - xg : null,
+    gold: ratio(graded.filter(s => s.shotQuality === '1-Gold').length, graded.length),
+    catchS: rptSplit(m, s => s.offDodge === 0), dodgeS: rptSplit(m, s => s.offDodge === 1),
+    open: rptSplit(m, s => s.contestLevel === 'Open'), light: rptSplit(m, s => s.contestLevel === 'Light'), heavy: rptSplit(m, s => s.contestLevel === 'Heavy'),
+    trig: rptSplit(m, s => !!normalizeTrigger(s.trigger)),
+    ast: sum('assists'), potAst, xa, dom: sum('dominoes'), domG: sum('domGoals'), touches, xpT: ratio(xg + xa, touches), to, gb: sum('gb'), ct: sum('ct') };
+}
+function rptBlankDef() { return { on: 0, onG: 0, onXg: 0, bl: 0, beat: 0, slide: 0, slideG: 0, offBall: 0, blown: 0, late: 0, pk: 0, pkXp: 0, pkFreed: 0, dPoss: 0, dPossG: 0, dPossXg: 0, ct: 0 }; }
+function rptBlankGk() { return { list: [] }; }
+function rptFullStats(mode, keys, season) {
+  const inK = rptInPeriod(mode, keys);
+  const o = EFF_ONLY; EFF_ONLY = inK;
+  let d; try { d = effDataFor(season); } finally { EFF_ONLY = o; }
+  const xgOf = d.xgOf, fm = facedXgModelFor(season);
+  const game = d.shots.concat(d.oppShots, d.poss).some(e => e.context === 'Game');
+  const noGame = d.shots.concat(d.oppShots, d.poss).some(e => e.context !== 'Game');
+  // Defense: on-ball, beaten and slides from every shot (as the Depth Chart reads them).
+  const DF = {}, Df = j => (DF[j] = DF[j] || rptBlankDef());
+  d.shots.concat(d.oppShots).forEach(s => {
+    const g = s.goal === 1 ? 1 : 0;
+    if (rptWl(s.defender)) { const r = Df(s.defender); r.on++; r.onG += g; r.onXg += xgOf(s); if (s.defBeaten === 'Yes' || s.defBeaten === 'No') { r.bl++; if (s.defBeaten === 'Yes') r.beat++; } }
+    if (rptWl(s.slideDefender)) { const r = Df(s.slideDefender); r.slide++; r.slideG += g; }
+  });
+  // Breakdowns (practice and scrimmage only, the Defense page's rules).
+  const B = defBreakdownsFrom(d);
+  B.rows.forEach(r => { if (!rptWl(r.jersey)) return; const x = Df(r.jersey); x.offBall = r.off; x.blown = r.blown; x.late = r.late; });
+  // Pick defense (Pick Defenders page).
+  const pickRows = pickDefenderRows(d.possList.filter(pp => pp.pick), xgOf, season);
+  pickRows.forEach(r => { const x = Df(r.jersey); x.pk = r.n; x.pkXp = r.xp; x.pkFreed = r.freed; });
+  // Defensive possessions he was on the field for (Lineups page on/off).
+  d.possList.forEach(pp => { const on = wluOnFieldRaw(pp.e); if (!on || !on.defense.length) return; on.defense.forEach(j => { if (!rptWl(j)) return; const x = Df(j); x.dPoss++; x.dPossG += pp.goal; x.dPossXg += pp.xg; }); });
+  Object.keys(d.players).forEach(j => { if (d.players[j].ct) Df(j).ct = d.players[j].ct; });
+  // Goalies: shots on cage faced (same as the goalie section of the report).
+  const faced = d.shots.filter(s => s.context === 'Practice' && rptWl(s.goalieJersey) && s.onKeeper === 1).concat(d.oppShots.filter(s => rptWl(s.goalieJersey) && s.onKeeper === 1));
+  const GK = {}; faced.forEach(s => { (GK[s.goalieJersey] = GK[s.goalieJersey] || rptBlankGk()).list.push(s); });
+  // Faceoffs (Faceoff Summary counts the logged player; head-to-head counts both sides).
+  const fos = FACEOFFS.filter(f => seasonForDate(f.date) === season && inK(f));
+  const FO = {}, Fo = j => (FO[j] = FO[j] || { n: 0, w: 0, vs: {} });
+  fos.forEach(f => {
+    if (!f.playerJersey) return;
+    const r = Fo(f.playerJersey); r.n++; if (f.won === 1) r.w++;
+    if (f.vsPlayerJersey) {
+      const a = (r.vs[f.vsPlayerJersey] = r.vs[f.vsPlayerJersey] || { w: 0, l: 0 }); if (f.won === 1) a.w++; else a.l++;
+      if (rptWl(f.vsPlayerJersey)) { const b = (Fo(f.vsPlayerJersey).vs[f.playerJersey] = Fo(f.vsPlayerJersey).vs[f.playerJersey] || { w: 0, l: 0 }); if (f.won === 1) b.l++; else b.w++; }
+    }
+  });
+  // Screens he set (Picks page: share that created an advantage).
+  const SC = {};
+  d.possList.filter(pp => pp.team === 'WLU').forEach(pp => (pp.screens || []).forEach(x => { if (!rptWl(x.s)) return; const r = (SC[x.s] = SC[x.s] || { n: 0, adv: 0 }); r.n++; if (x.adv === 'Yes') r.adv++; }));
+  const blankP = j => ({ jersey: j, shots: 0, goals: 0, assists: 0, xg: 0, potAst: 0, xa: 0, ownShots: [], gb: 0, to: 0, ct: 0, dominoes: 0, domGoals: 0 });
+  const ids = new Set([...Object.keys(d.players), ...Object.keys(DF), ...Object.keys(GK), ...Object.keys(FO)].filter(rptWl));
+  const players = {};
+  ids.forEach(j => {
+    const p = d.players[j] || blankP(j), gl = (GK[j] || rptBlankGk()).list, fo = FO[j] || { n: 0, w: 0, vs: {} };
+    players[j] = { j, off: rptOffOf([p]), def: DF[j] || rptBlankDef(), gk: rptGkOf(gl, fm), fo, scr: SC[j] || { n: 0, adv: 0 }, p };
+  });
+  const wp = d.possList.filter(pp => pp.team === 'WLU');
+  const team = {
+    off: rptOffOf(Object.values(d.players).filter(p => rptWl(p.jersey))),
+    poss: { n: wp.length, goals: wp.filter(pp => pp.goal).length, to: wp.filter(pp => pp.to).length, xg: wp.reduce((a, pp) => a + pp.xg, 0),
+      dom: wp.filter(pp => pp.dom).length, domG: wp.filter(pp => pp.dom && pp.goal).length },
+    trig: computeTriggerEfficiency(d.shots, d.model, { minReps: 1 }),
+    picks: pickPossStats(wp.filter(pp => pp.pick), xgOf), noPick: pickPossStats(wp.filter(pp => !pp.pick), xgOf),
+    def: rptSumDef(Object.values(DF)), gk: rptGkOf(faced, fm),
+    fo: { n: fos.length, w: fos.filter(f => f.won === 1).length, games: fos.filter(f => f.context === 'Game') },
+    scr: Object.values(SC).reduce((a, r) => ({ n: a.n + r.n, adv: a.adv + r.adv }), { n: 0, adv: 0 }),
+  };
+  return { d, players, team, game, noGame, season, fm };
+}
+function rptSumDef(rows) { const t = rptBlankDef(); rows.forEach(r => Object.keys(t).forEach(k => { if (k !== 'pkXp' && k !== 'pkFreed') t[k] += r[k] || 0; })); t.pkXp = null; t.pkFreed = null; return t; }
+function rptGkOf(l, fm) {
+  const n = l.length, ga = l.filter(s => s.goal === 1).length;
+  const sv = x => { const m = l.filter(x); return { n: m.length, sv: m.filter(s => s.goal !== 1).length }; };
+  const place = {}; l.forEach(s => { const h = goalHeight(s), sd = pipeSide(s); if (!h || !sd) return; const k = `${h} · ${sd.toLowerCase()}`; const r = (place[k] = place[k] || { n: 0, sv: 0 }); r.n++; if (s.goal !== 1) r.sv++; });
+  return { list: l, n, saves: n - ga, ga, svPct: ratio(n - ga, n), gsax: n ? xgSum(l, fm) - ga : null,
+    gold: sv(s => s.shotQuality === '1-Gold'), silver: sv(s => s.shotQuality === '2-Silver'), bronze: sv(s => s.shotQuality === '3-Bronze'),
+    catchS: sv(s => s.offDodge === 0), dodgeS: sv(s => s.offDodge === 1), place };
+}
+// Formatting.
+const rptGN = x => x && x.n ? `${x.g}/${x.n} <span class="n-note">(${pct(x.g / x.n)})</span>` : '—';
+const rptSvN = x => x && x.n ? `${x.sv}/${x.n} <span class="n-note">(${pct(x.sv / x.n)})</span>` : '—';
+const rptSgn = (v, dg) => v === null || v === undefined || !isFinite(v) ? '—' : (v >= 0 ? '+' : '') + v.toFixed(dg === undefined ? 1 : dg);
+const rptOf = (a, b) => b ? `${a}/${b} <span class="n-note">(${pct(a / b)})</span>` : '—';
+function rptArea(title, tiles, extra) { return `<div class="rpt-area"><p class="panel-title" style="font-size:15px; margin-top:14px;">${title}</p><div class="view-tiles trend-grid" style="margin-bottom:8px;">${tiles.join('')}</div>${extra || ''}</div>`; }
+function rptMiniTable(head, rows) { return rows.length ? `<div class="table-wrap" style="max-height:none;"><table class="shotlog dense"><thead><tr>${head.map(h => `<th>${h}</th>`).join('')}</tr></thead><tbody>${rows.map(r => `<tr>${r.map(c => `<td>${c}</td>`).join('')}</tr>`).join('')}</tbody></table></div>` : ''; }
+function rptDefNote(F) { return F.game ? `<p class="n-note" style="font-size:12.5px;">${F.noGame ? 'Off-ball breakdowns, blown pick coverage and late slides are logged for practices and scrimmages only, so the game part of this period has none.' : 'Defense isn&rsquo;t logged for games yet beyond what&rsquo;s tagged on each shot.'}</p>` : ''; }
+function renderRptFullTeam(F, label) {
+  const t = F.team, o = t.off, ps = t.poss, df = t.def, gk = t.gk;
+  const offense = rptArea('Offense', [
+    statTile('Shots', String(o.shots), `${o.goals} goals`), statTile('Shooting %', pct(o.shPct), `on cage ${pct(o.onCage)}`),
+    statTile('Expected goals', num(o.xg, 1), `goals vs expected ${rptSgn(o.gmx)}`), statTile('Gold-look share', pct(o.gold), 'of graded shots'),
+  ], rptMiniTable(['Kind of shot', 'Goals / shots'], [['Off the catch', rptGN(o.catchS)], ['Off the dodge', rptGN(o.dodgeS)], ['Open', rptGN(o.open)], ['Light contest', rptGN(o.light)], ['Heavy contest', rptGN(o.heavy)], ['Off a trigger', rptGN(o.trig)]]));
+  const possession = rptArea('Possession &amp; Passing', [
+    statTile('Possessions', String(ps.n), `${ps.goals} scored (${pct(ratio(ps.goals, ps.n))})`), statTile('Turnovers', String(ps.to), `${pct(ratio(ps.to, ps.n))} of possessions (logged)`),
+    statTile('Assists', String(o.ast), `${o.potAst} shots set up · ${num(o.xa, 1)} xA`), statTile('Dominoes', String(ps.dom), `${ps.domG} ended in a goal`),
+    statTile('Ground balls', String(o.gb), `caused turnovers ${o.ct}`),
+  ]);
+  const trig = t.trig.slice(0, 12);
+  const triggers = rptArea('Triggers &amp; Picks', [
+    statTile('Pick possessions', String(t.picks.n), t.picks.n ? `xP ${num(t.picks.xp, 2)} per pick vs ${num(t.noPick.xp, 2)} without` : 'none logged'),
+    statTile('Freed ball carrier', pct(t.picks.freed), 'of picks'), statTile('Screens with an advantage', pct(ratio(t.scr.adv, t.scr.n)), `${t.scr.adv} of ${t.scr.n} screens`),
+  ], trig.length ? rptMiniTable(['Trigger', 'Reps', 'Shooting %', 'xG per rep', 'Goals vs expected'], trig.map(r => [escapeHtml(r.label), r.reps, pct(r.shotPct), num(r.xgPerRep, 2), rptSgn(r.gMinusXg)])) : '<p class="n-note" style="font-size:12.5px;">No triggers logged.</p>');
+  const defense = rptArea('Defense', [
+    statTile('On-ball reps', String(df.on), `${df.onG} goals allowed vs ${num(df.onXg, 1)} expected`), statTile('Beaten', pct(ratio(df.beat, df.bl)), `${df.beat} of ${df.bl} with Beaten logged`),
+    statTile('Slides', String(df.slide), `${df.slideG} goals after a slide`), statTile('Breakdowns', String(df.offBall + Math.round(df.blown) + df.late), `${df.offBall} off-ball · ${num(df.blown, 0)} blown picks · ${df.late} late slides`),
+    statTile('Caused turnovers', String(df.ct), ''),
+  ], rptDefNote(F));
+  const goal = rptArea('Goaltending', [
+    statTile('Save %', pct(gk.svPct), `${gk.saves} saves on ${gk.n} on cage`), statTile('Saves vs expected', rptSgn(gk.gsax), 'from the looks faced'),
+  ], rptMiniTable(['Shot', 'Saves / on cage'], [['Gold', rptSvN(gk.gold)], ['Silver', rptSvN(gk.silver)], ['Bronze', rptSvN(gk.bronze)], ['Off the catch', rptSvN(gk.catchS)], ['Off the dodge', rptSvN(gk.dodgeS)]]));
+  const g = t.fo.games, gw = g.filter(f => f.won === 1).length;
+  const fo = rptArea('Faceoffs', [statTile('Faceoffs logged', String(t.fo.n), g.length ? `games: won ${gw} of ${g.length} (${pct(ratio(gw, g.length))})` : 'practice reps (both sides are ours)')]);
+  document.getElementById('rptFullTeam').innerHTML = `<p class="panel-title">Team Stats &mdash; ${escapeHtml(label)}</p>
+    <p class="panel-sub">Everything logged this ${rptMode === 'practice' ? 'session' : 'week'}. The same numbers as the Efficiency, Defense, Goaltending and Faceoffs pages filtered to these dates.</p>
+    ${offense}${possession}${triggers}${defense}${goal}${fo}`;
+}
+// Group tables: columns built once so a sort survives re-renders.
+const rptNameCol = { key: 'name', label: 'Name', type: 'text', value: r => r.name, format: v => nameCell(v) };
+const rptJCol = { key: 'j', label: '#', type: 'text', value: r => r.j };
+const RPT_C = {
+  sh: { key: 'sh', label: 'Sh', type: 'num', value: r => r.off.shots, group: 'Shooting' }, g: { key: 'g', label: 'G', type: 'num', value: r => r.off.goals, group: 'Shooting' },
+  shPct: { key: 'shPct', label: 'Sh%', type: 'num', value: r => r.off.shPct, format: v => pct(v), group: 'Shooting' },
+  cage: { key: 'cage', label: 'Cage%', type: 'num', value: r => r.off.onCage, format: v => pct(v), group: 'Shooting', title: 'Share of his shots on cage.' },
+  xg: { key: 'xg', label: 'xG', type: 'num', value: r => r.off.xg, format: v => num(v, 1), group: 'Shooting' },
+  gmx: { key: 'gmx', label: 'G−xG', type: 'num', value: r => r.off.gmx, format: v => rptSgn(v), group: 'Shooting', title: 'Goals minus expected goals.' },
+  gold: { key: 'gold', label: 'Gold%', type: 'num', value: r => r.off.gold, format: v => pct(v), group: 'Shooting', title: 'Share of his graded shots that were Gold looks.' },
+  cat: { key: 'cat', label: 'Catch', type: 'num', value: r => r.off.catchS.n ? r.off.catchS.g / r.off.catchS.n : null, format: (v, r) => rptGN(r.off.catchS), group: 'Shooting', title: 'Goals / shots off the catch.' },
+  dod: { key: 'dod', label: 'Dodge', type: 'num', value: r => r.off.dodgeS.n ? r.off.dodgeS.g / r.off.dodgeS.n : null, format: (v, r) => rptGN(r.off.dodgeS), group: 'Shooting', title: 'Goals / shots off the dodge.' },
+  a: { key: 'a', label: 'A', type: 'num', value: r => r.off.ast, group: 'Creating' }, feeds: { key: 'feeds', label: 'Feeds', type: 'num', value: r => r.off.potAst, group: 'Creating', title: 'Shots taken off his pass.' },
+  xa: { key: 'xa', label: 'xA', type: 'num', value: r => r.off.xa, format: v => num(v, 1), group: 'Creating' },
+  dom: { key: 'dom', label: 'Dom', type: 'num', value: r => r.off.dom, group: 'Creating', title: 'Dominoes he started.' },
+  scr: { key: 'scr', label: 'Screens adv', type: 'num', value: r => r.scr.n ? r.scr.adv / r.scr.n : null, format: (v, r) => rptOf(r.scr.adv, r.scr.n), group: 'Creating', title: 'Screens he set that created an advantage.' },
+  touch: { key: 'touch', label: 'Touches', type: 'num', value: r => r.off.touches, group: 'Per touch', title: 'Shots + shots he fed + turnovers.' },
+  xpT: { key: 'xpT', label: 'xP/T', type: 'num', value: r => r.off.xpT, format: v => num(v, 2), group: 'Per touch', title: 'Expected points (xG + xA) per touch.' },
+  to: { key: 'to', label: 'TO', type: 'num', value: r => r.off.to, group: 'Ball' }, gb: { key: 'gb', label: 'GB', type: 'num', value: r => r.off.gb, group: 'Ball' },
+  ct: { key: 'ct', label: 'CT', type: 'num', value: r => r.def.ct, group: 'Ball', title: 'Caused turnovers.' },
+  on: { key: 'on', label: 'On-ball', type: 'num', value: r => r.def.on, group: 'On-ball', title: 'Shots where he was the on-ball defender.' },
+  ga: { key: 'ga', label: 'GA', type: 'num', value: r => r.def.onG, format: (v, r) => `${v} <span class="n-note">vs ${num(r.def.onXg, 1)} exp</span>`, group: 'On-ball', title: 'Goals allowed on-ball vs expected from those looks.' },
+  beat: { key: 'beat', label: 'Beaten', type: 'num', value: r => r.def.bl ? r.def.beat / r.def.bl : null, format: (v, r) => rptOf(r.def.beat, r.def.bl), group: 'On-ball' },
+  slide: { key: 'slide', label: 'Slides', type: 'num', value: r => r.def.slide, format: (v, r) => `${v}${r.def.slide ? ` <span class="n-note">(${r.def.slideG} G)</span>` : ''}`, group: 'Team D', title: 'Slides, and goals after his slide.' },
+  offb: { key: 'offb', label: 'Off-ball', type: 'num', value: r => r.def.offBall, group: 'Breakdowns', title: 'Off-ball breakdowns (practice and scrimmage).' },
+  blown: { key: 'blown', label: 'Blown pick', type: 'num', value: r => r.def.blown, format: v => num(v, v % 1 ? 1 : 0), group: 'Breakdowns', title: 'Blown pick coverage, split between the pick defenders involved.' },
+  late: { key: 'late', label: 'Late slide', type: 'num', value: r => r.def.late, group: 'Breakdowns', title: 'Provisional: read from the contest level.' },
+  pk: { key: 'pk', label: 'Picks', type: 'num', value: r => r.def.pk, group: 'Pick D', title: 'Picks he defended (screener’s or ball carrier’s defender).' },
+  pkXp: { key: 'pkXp', label: 'xP/pick', type: 'num', value: r => r.def.pk ? r.def.pkXp : null, format: v => num(v, 2), group: 'Pick D', title: 'Expected points those picks produced (lower is better).' },
+  pkFreed: { key: 'pkFreed', label: 'Freed%', type: 'num', value: r => r.def.pk ? r.def.pkFreed : null, format: v => pct(v), group: 'Pick D', title: 'Share of those picks that freed the ball carrier.' },
+  dPoss: { key: 'dPoss', label: 'D poss', type: 'num', value: r => r.def.dPoss, group: 'On field', title: 'Defensive possessions he was on the field for (lineups logged).' },
+  dXg: { key: 'dXg', label: 'xGA/poss', type: 'num', value: r => r.def.dPoss ? r.def.dPossXg / r.def.dPoss : null, format: v => num(v, 2), group: 'On field', title: 'Expected goals allowed per possession while he was on the field.' },
+  fo: { key: 'fo', label: 'FO', type: 'num', value: r => r.fo.n, group: 'Faceoffs' }, fow: { key: 'fow', label: 'W', type: 'num', value: r => r.fo.w, group: 'Faceoffs' },
+  foPct: { key: 'foPct', label: 'Win%', type: 'num', value: r => r.fo.n ? r.fo.w / r.fo.n : null, format: v => pct(v), group: 'Faceoffs' },
+  faced: { key: 'faced', label: 'On cage', type: 'num', value: r => r.gk.n, group: 'In goal' }, saves: { key: 'saves', label: 'Saves', type: 'num', value: r => r.gk.saves, group: 'In goal' },
+  svPct: { key: 'svPct', label: 'Sv%', type: 'num', value: r => r.gk.svPct, format: v => pct(v), group: 'In goal' },
+  gsax: { key: 'gsax', label: 'vs exp', type: 'num', value: r => r.gk.gsax, format: v => rptSgn(v), group: 'In goal', title: 'Saves above expected from the looks he faced.' },
+  svG: { key: 'svG', label: 'Gold', type: 'num', value: r => r.gk.gold.n ? r.gk.gold.sv / r.gk.gold.n : null, format: (v, r) => rptSvN(r.gk.gold), group: 'Save % by look' },
+  svS: { key: 'svS', label: 'Silver', type: 'num', value: r => r.gk.silver.n ? r.gk.silver.sv / r.gk.silver.n : null, format: (v, r) => rptSvN(r.gk.silver), group: 'Save % by look' },
+  svB: { key: 'svB', label: 'Bronze', type: 'num', value: r => r.gk.bronze.n ? r.gk.bronze.sv / r.gk.bronze.n : null, format: (v, r) => rptSvN(r.gk.bronze), group: 'Save % by look' },
+};
+const rptCols = keys => [rptJCol, rptNameCol].concat(keys.map(k => RPT_C[k]));
+const RPT_OFF_KEYS = ['sh', 'g', 'shPct', 'cage', 'xg', 'gmx', 'gold', 'cat', 'dod', 'a', 'feeds', 'xa', 'dom', 'scr', 'touch', 'xpT', 'to', 'gb', 'ct'];
+const RPT_DEF_KEYS = ['on', 'ga', 'beat', 'slide', 'offb', 'blown', 'late', 'pk', 'pkXp', 'pkFreed', 'dPoss', 'dXg', 'ct', 'gb', 'to', 'sh', 'g'];
+const RPT_GROUP_COLS = {
+  off: rptCols(RPT_OFF_KEYS), ssdm: rptCols(['on', 'ga', 'beat', 'slide', 'offb', 'blown', 'late', 'pk', 'pkXp', 'pkFreed', 'dPoss', 'dXg', 'ct', 'gb', 'to', 'sh', 'g', 'shPct', 'a', 'feeds']),
+  def: rptCols(RPT_DEF_KEYS), fo: rptCols(['fo', 'fow', 'foPct', 'gb', 'to', 'ct', 'sh', 'g']),
+  gk: rptCols(['faced', 'saves', 'svPct', 'gsax', 'svG', 'svS', 'svB', 'sh', 'g']), none: rptCols(['sh', 'g', 'a', 'feeds', 'to', 'gb', 'ct', 'on', 'fo', 'faced']),
+};
+const RPT_GROUP_KIND = { A: 'off', M: 'off', S: 'ssdm', L: 'def', D: 'def', F: 'fo', G: 'gk', none: 'none' };
+function rptInGroup(season, j, g) { const p = posOfJ(season, j); return g === 'none' ? (!p || p === 'X') : posIs(season, j, g); }
+function rptRow(F, j) { return Object.assign({ name: nameFor(j, F.season) || '' }, F.players[j]); }
+function renderRptGroup(F) {
+  const box = document.getElementById('rptGroupBody');
+  if (!rptGroup) { box.innerHTML = '<p class="n-note" style="font-size:12.5px;">Pick a group above.</p>'; return; }
+  const js = Object.keys(F.players).filter(j => rptInGroup(F.season, j, rptGroup));
+  const kind = RPT_GROUP_KIND[rptGroup], gl = RPT_GROUPS.find(x => x.value === rptGroup).label;
+  const pw = rptMode === 'practice' ? 'session' : 'week';
+  if (!js.length) { box.innerHTML = `<p class="n-note" style="font-size:12.5px;">${rptGroup === 'none' ? `Everyone logged this ${pw} has a position set.` : `No ${escapeHtml(gl.toLowerCase())} logged this ${pw} (or their position isn&rsquo;t set on the Depth Chart).`}</p>`; return; }
+  const P = js.map(j => F.players[j]);
+  const o = rptOffOf(P.map(x => x.p)), df = rptSumDef(P.map(x => x.def));
+  const gk = rptGkOf([].concat(...P.map(x => x.gk.list || [])), F.fm);
+  const fo = P.reduce((a, x) => ({ n: a.n + x.fo.n, w: a.w + x.fo.w }), { n: 0, w: 0 });
+  const tiles = [];
+  const offT = () => tiles.push(statTile('Shooting', `${o.goals}/${o.shots}`, `${pct(o.shPct)} · on cage ${pct(o.onCage)}`), statTile('Goals vs expected', rptSgn(o.gmx), `${num(o.xg, 1)} xG · gold looks ${pct(o.gold)}`),
+    statTile('Creating', String(o.ast), `assists · ${o.potAst} shots set up · ${o.dom} dominoes`), statTile('Ball', `${o.to} TO`, `${o.gb} ground balls · xP per touch ${num(o.xpT, 2)}`));
+  const defT = () => tiles.push(statTile('On-ball', `${df.onG} GA`, `on ${df.on} reps vs ${num(df.onXg, 1)} expected`), statTile('Beaten', pct(ratio(df.beat, df.bl)), `${df.beat} of ${df.bl} logged`),
+    statTile('Breakdowns', String(df.offBall + Math.round(df.blown) + df.late), `${df.offBall} off-ball · ${num(df.blown, 0)} blown picks · ${df.late} late slides`), statTile('Caused turnovers', String(df.ct), `${df.slide} slides (${df.slideG} goals after)`));
+  if (kind === 'off') offT();
+  if (kind === 'ssdm' || kind === 'def') defT();
+  if (kind === 'ssdm' && o.shots) tiles.push(statTile('Shooting', `${o.goals}/${o.shots}`, pct(o.shPct)));
+  if (kind === 'fo') tiles.push(statTile('Faceoffs', `${fo.w}/${fo.n}`, pct(ratio(fo.w, fo.n))), statTile('Ground balls', String(o.gb), `${o.to} turnovers`));
+  if (kind === 'gk') tiles.push(statTile('Save %', pct(gk.svPct), `${gk.saves} of ${gk.n} on cage`), statTile('Saves vs expected', rptSgn(gk.gsax), ''));
+  if (kind === 'none') { if (o.shots || o.potAst) offT(); if (df.on || df.ct || df.offBall) defT(); }
+  if (kind !== 'off' && kind !== 'none' && kind !== 'ssdm' && o.shots) tiles.push(statTile('Shooting', `${o.goals}/${o.shots}`, pct(o.shPct)));
+  box.innerHTML = `<p class="panel-title" style="font-size:15px;">${escapeHtml(gl)} &mdash; ${js.length} player${js.length === 1 ? '' : 's'}</p>
+    <div class="view-tiles trend-grid" style="margin-bottom:8px;">${tiles.join('')}</div>
+    ${kind === 'ssdm' || kind === 'def' ? rptDefNote(F) : ''}
+    <div class="table-wrap" id="rptGroupTable"></div>`;
+  renderSortableTable('rptGroupTable', RPT_GROUP_COLS[kind], js.map(j => rptRow(F, j)), { dense: true, defaultSort: { key: { off: 'sh', ssdm: 'on', def: 'on', fo: 'fo', gk: 'faced', none: 'sh' }[kind], dir: 'desc' } });
+}
+// One player's sheet: his position's blocks, plus shooting if he shot.
+function rptBlock(title, rows) { return rows.length ? `<div class="rpt-block"><p class="sans" style="font-size:13px; margin:12px 0 4px;"><b>${title}</b></p>${rptMiniTable(['Stat', 'This ' + (rptMode === 'practice' ? 'session' : 'week')], rows)}</div>` : ''; }
+function renderRptSheet(F, j) {
+  const box = document.getElementById('rptSheet');
+  const x = F.players[j];
+  if (!x) { box.innerHTML = ''; return; }
+  const codes = [posOfJ(F.season, j), posAltJ(F.season, j)].filter(c => c && c !== 'X');
+  const o = x.off, df = x.def, gk = x.gk, fo = x.fo;
+  const k = new Set();
+  codes.forEach(c => { if (c === 'A' || c === 'M' || c === 'S') k.add('off'); if (c === 'S' || c === 'L' || c === 'D') k.add('def'); if (c === 'F') k.add('fo'); if (c === 'G') k.add('gk'); });
+  if (!codes.length) { if (o.shots || o.potAst || o.to) k.add('off'); if (df.on || df.slide || df.offBall || df.blown || df.late || df.pk || df.dPoss || df.ct) k.add('def'); if (fo.n) k.add('fo'); if (gk.n) k.add('gk'); }
+  const shootRows = [['Goals / shots', rptGN({ n: o.shots, g: o.goals })], ['On cage', pct(o.onCage)], ['Expected goals', num(o.xg, 1)], ['Goals vs expected', rptSgn(o.gmx)], ['Gold-look share', pct(o.gold)],
+    ['Off the catch', rptGN(o.catchS)], ['Off the dodge', rptGN(o.dodgeS)], ['Open / light / heavy contest', `${rptGN(o.open)} · ${rptGN(o.light)} · ${rptGN(o.heavy)}`], ['Off a trigger', rptGN(o.trig)]];
+  let html = `<p class="panel-title">${escapeHtml(jerseyLabel(j, F.season))} &mdash; Stat Sheet</p><p class="panel-sub">${codes.length ? escapeHtml(codes.map(c => DEPTH_POS_LABEL[c]).join(' / ')) : 'Position not set on the Depth Chart'}.</p>`;
+  if (k.has('off')) {
+    html += rptBlock('Shooting', o.shots ? shootRows : [['Shots', '0']]);
+    html += rptBlock('Creating &amp; ball', [['Assists / shots set up', `${o.ast} / ${o.potAst}`], ['Expected assists', num(o.xa, 1)], ['Dominoes started', `${o.dom}${o.dom ? ` (${o.domG} goals)` : ''}`],
+      ['Screens with an advantage', rptOf(x.scr.adv, x.scr.n)], ['Touches', String(o.touches)], ['Expected points per touch', num(o.xpT, 2)], ['Turnovers', String(o.to)], ['Ground balls', String(o.gb)], ['Caused turnovers', String(df.ct)]]);
+  } else if (o.shots) html += rptBlock('Shooting', shootRows);
+  if (k.has('def')) {
+    html += rptBlock('Defense', [['On-ball reps', String(df.on)], ['Goals allowed on-ball', df.on ? `${df.onG} vs ${num(df.onXg, 1)} expected` : '—'], ['Beaten', rptOf(df.beat, df.bl)],
+      ['Slides', `${df.slide}${df.slide ? ` (${df.slideG} goals after)` : ''}`], ['Off-ball breakdowns', String(df.offBall)], ['Blown pick coverage', num(df.blown, df.blown % 1 ? 1 : 0)], ['Late slides (provisional)', String(df.late)],
+      ['Picks defended', String(df.pk)], ['xP per pick defended', df.pk ? num(df.pkXp, 2) : '—'], ['Freed ball carrier', df.pk ? pct(df.pkFreed) : '—'],
+      ['Defensive possessions on the field', String(df.dPoss)], ['Expected goals allowed per possession', df.dPoss ? num(df.dPossXg / df.dPoss, 2) : '—'], ['Caused turnovers', String(df.ct)], ['Ground balls', String(o.gb)]]) + rptDefNote(F);
+  }
+  if (k.has('fo')) {
+    const vs = Object.keys(fo.vs).map(v => `${escapeHtml(rptWl(v) ? jerseyLabel(v, F.season) : (v ? '#' + v.replace(/^o/, '') + ' (opp)' : ''))} ${fo.vs[v].w}–${fo.vs[v].l}`);
+    html += rptBlock('Faceoffs', [['Won / taken', rptOf(fo.w, fo.n)], ['Head-to-head', vs.length ? vs.join('<br>') : '—'], ['Ground balls', String(o.gb)], ['Turnovers', String(o.to)]]);
+  }
+  if (k.has('gk')) {
+    const pl = Object.keys(gk.place).sort().map(p => `${escapeHtml(p)}: ${gk.place[p].sv}/${gk.place[p].n}`);
+    html += rptBlock('In goal', [['Saves / on cage', rptOf(gk.saves, gk.n)], ['Saves vs expected', rptSgn(gk.gsax)], ['Gold / silver / bronze', `${rptSvN(gk.gold)} · ${rptSvN(gk.silver)} · ${rptSvN(gk.bronze)}`],
+      ['Off the catch / dodge', `${rptSvN(gk.catchS)} · ${rptSvN(gk.dodgeS)}`], ['Saves by spot', pl.length ? pl.join('<br>') : '—']]);
+  }
+  box.innerHTML = html + '<hr style="border:none; border-top:1px solid var(--line); margin:18px 0 12px;">';
+}
+setupPillGroup('rptGroupPills', RPT_GROUPS, '', v => { rptGroup = v || ''; renderReports(); });
 setupPillGroup('rptModePills', [{ value: 'practice', label: 'Practice' }, { value: 'week', label: 'Week' }], 'practice', v => {
   rptMode = v || 'practice'; if (!v) setPillGroupValue('rptModePills', 'practice'); rptKey = ''; renderReports();
 });
