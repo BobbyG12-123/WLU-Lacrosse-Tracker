@@ -9329,7 +9329,7 @@ function renderReports() {
   cur.P.forEach(p => { if (p.turnoverBy && !isOppJersey(p.turnoverBy)) js.add(p.turnoverBy); });
   Object.keys(F.players).forEach(j => js.add(j));
   const psel = document.getElementById('rptPlayerSelect');
-  const players = [...js].filter(j => j && (!rptGroup || rptInGroup(season, j, rptGroup))).map(j => ({ j, name: nameFor(j, season) })).sort((a, b) => a.name.localeCompare(b.name));
+  const players = [...js].filter(j => j && (!rptGroup || PLAYER_MODE || rptInGroup(season, j, rptGroup))).map(j => ({ j, name: nameFor(j, season) })).sort((a, b) => a.name.localeCompare(b.name));
   psel.innerHTML = players.length ? players.map(p => `<option value="${escapeHtml(p.j)}">#${escapeHtml(p.j)} ${escapeHtml(p.name)}</option>`).join('') : '<option value="">No players</option>';
   if (!players.some(p => p.j === rptPlayer)) rptPlayer = players.length ? players[0].j : '';
   psel.value = rptPlayer;
@@ -9419,7 +9419,8 @@ function rptProjectionLine(j, season) {
   const r = computeProjections(season);
   const p = r.players.find(x => x.jersey === j), g = r.goalies.find(x => x.jersey === j);
   const bits = [];
-  if (p && p.shots >= 5) bits.push(`true shooting % about <b>${pjPct(p.sh.m)}</b> (likely ${pjPct(p.sh.lo)}–${pjPct(p.sh.hi)}); over ${PJ_GAMES} games about <b>${Math.round(p.goals17.m)} goals</b> (${Math.round(p.goals17.lo)}–${Math.round(p.goals17.hi)}) and ${Math.round(p.ast17.m)} assists`);
+  // Game totals need logged games; until then only the shooting % shows.
+  if (p && p.shots >= 5 && p.sh) bits.push(`true shooting % about <b>${pjPct(p.sh.m)}</b> (likely ${pjPct(p.sh.lo)}–${pjPct(p.sh.hi)})` + (p.goals17 && p.ast17 ? `; over ${PJ_GAMES} games about <b>${Math.round(p.goals17.m)} goals</b> (${Math.round(p.goals17.lo)}–${Math.round(p.goals17.hi)}) and ${Math.round(p.ast17.m)} assists` : ''));
   if (g) bits.push(`true save % about <b>${pjPct(g.save.m)}</b> (likely ${pjPct(g.save.lo)}–${pjPct(g.save.hi)})`);
   return bits.length ? `<p class="sans" style="font-size:13px; margin-top:14px; padding:8px 10px; background:var(--card-2); border-left:3px solid var(--gold); border-radius:0 6px 6px 0;"><b>Projection:</b> ${bits.join('; ')}. <span class="n-note">(Efficiency → Projections has the details.)</span></p>` : '';
 }
@@ -9610,7 +9611,8 @@ function renderRptGroup(F) {
   if (!rptGroup) { box.innerHTML = '<p class="n-note" style="font-size:12.5px;">Pick a group above.</p>'; return; }
   const js = Object.keys(F.players).filter(j => rptInGroup(F.season, j, rptGroup));
   const kind = RPT_GROUP_KIND[rptGroup], gl = RPT_GROUPS.find(x => x.value === rptGroup).label;
-  if (!js.length) { box.innerHTML = `<p class="n-note" style="font-size:12.5px;">No ${escapeHtml(gl.toLowerCase())} logged in this ${rptMode === 'practice' ? 'session' : 'week'}${rptGroup === 'none' ? '' : ' (or their position isn&rsquo;t set on the Depth Chart)'}.</p>`; return; }
+  const pw = rptMode === 'practice' ? 'session' : 'week';
+  if (!js.length) { box.innerHTML = `<p class="n-note" style="font-size:12.5px;">${rptGroup === 'none' ? `Everyone logged this ${pw} has a position set.` : `No ${escapeHtml(gl.toLowerCase())} logged this ${pw} (or their position isn&rsquo;t set on the Depth Chart).`}</p>`; return; }
   const P = js.map(j => F.players[j]);
   const o = rptOffOf(P.map(x => x.p)), df = rptSumDef(P.map(x => x.def));
   const gk = rptGkOf([].concat(...P.map(x => x.gk.list || [])), F.fm);
