@@ -3868,6 +3868,9 @@ async function loadAll() {
   try { const gs = await gbRef.get(); if (gs.exists) LIVE_GB_TUPLES = gbTuplesFrom(gs.data()); } catch (e) { noteDbError('ground balls', e); }
   rebuildGroundBalls();
   gbRef.onSnapshot(snap => { LIVE_GB_TUPLES = snap.exists ? gbTuplesFrom(snap.data()) : []; rebuildGroundBalls(); if (document.getElementById('gbEntry').style.display !== 'none') renderGbForm(); }, e => console.error('ground balls sync error', e));
+  const xsRef = DB.doc('app/xg_snapshots');
+  try { const xs = await xsRef.get(); XG_SNAPS = xs.exists ? xgSnapsFrom(xs.data()) : {}; } catch (e) { noteDbError('model snapshots', e); }
+  xsRef.onSnapshot(snap => { XG_SNAPS = snap.exists ? xgSnapsFrom(snap.data()) : {}; }, e => console.error('model snapshots sync error', e));
   const trRef = DB.doc('app/session_tracking');
   try { const ts = await trRef.get(); TRACKING = ts.exists ? trackingFrom(ts.data()) : {}; } catch (e) { noteDbError('session tracking', e); }
   trRef.onSnapshot(snap => { TRACKING = snap.exists ? trackingFrom(snap.data()) : {}; renderTrackingControls(); }, e => console.error('tracking sync error', e));
@@ -4155,8 +4158,11 @@ function calibration2026Shots() { return SHOTS.filter(s => seasonForDate(s.date)
 // metric, the Efficiency tab and the goalie table never disagree with each
 // other about the same shot's expected value. Every season is calibrated on
 // the 2026 prior and shifts toward its own rate as its volume grows.
-function xgModelFor(season) { return buildXgModel(calibration2026Shots(), advShots(season)); }
-function facedXgModelFor(season) { return buildFacedXgModel(calibration2026Shots(), isAdvSeason(season) ? goalieShotsForSeason(season) : []); }
+// XG_FIXED: a saved, dated model a Reports scorecard is judged with (see xgSnapshotFor). Set only while a
+// scorecard is computed; every other view (projections included) reads the latest model.
+let XG_FIXED = null;
+function xgModelFor(season) { if (XG_FIXED && XG_FIXED.season === season) return XG_FIXED.shot; return buildXgModel(calibration2026Shots(), advShots(season)); }
+function facedXgModelFor(season) { if (XG_FIXED && XG_FIXED.season === season) return XG_FIXED.faced; return buildFacedXgModel(calibration2026Shots(), isAdvSeason(season) ? goalieShotsForSeason(season) : []); }
 // The season the advanced views read when their tab's season pill is on
 // 2026 or All Seasons: the season we're in now.
 function currentAdvSeason() { return ADV_SEASONS[ADV_SEASONS.length - 1]; }
@@ -7916,7 +7922,7 @@ function buildEffData() {
   const players = {}; // jersey -> totals
   const bySession = {}; // sid -> { meta, players: { jersey: box } }
   const P = j => (players[j] = players[j] || { jersey: j, shots: 0, goals: 0, assists: 0, xg: 0, potAst: 0, xa: 0, fedShots: [], onGoal: 0, ownShots: [],
-    gb: 0, to: 0, ct: 0, foWins: 0, dominoes: 0, domShots: 0, domGood: 0, domGoals: 0, domXg: 0, sessions: new Set(), stintSessions: new Set() });
+    gb: 0, gbLog: 0, to: 0, ct: 0, foWins: 0, dominoes: 0, domShots: 0, domGood: 0, domGoals: 0, domXg: 0, sessions: new Set(), stintSessions: new Set() });
   const S = (e) => {
     const sid = sessKey(e);
     return (bySession[sid] = bySession[sid] || { sid, date: e.date, context: e.context, opponent: e.opponent, players: {}, hasStints: false });
@@ -7924,7 +7930,7 @@ function buildEffData() {
   const B = (e, j) => {
     const sess = S(e);
     P(j).sessions.add(sess.sid);
-    return (sess.players[j] = sess.players[j] || { jersey: j, g: 0, a: 0, xg: 0, xa: 0, shots: 0, potAst: 0, gb: 0, to: 0, ct: 0, dom: 0 });
+    return (sess.players[j] = sess.players[j] || { jersey: j, g: 0, a: 0, xg: 0, xa: 0, shots: 0, potAst: 0, gb: 0, gbLog: 0, to: 0, ct: 0, dom: 0 });
   };
   const markStint = e => {
     const on = wluOnField(e);
@@ -7960,6 +7966,10 @@ function buildEffData() {
     if (p.possStart === 'FO win' && p.possStartJersey && !isOppJersey(p.possStartJersey)) P(p.possStartJersey).foWins++;
     markStint(p);
   });
+  // Ground-ball totals (gbLog) come from the ground-ball log. gb stays "possessions he started with a ground ball"
+  // (Possession Started By) for possession analysis; the two are never added together.
+  GROUNDBALLS.filter(g => g.team !== 'OPP' && g.jersey && !isOppJersey(g.jersey) && seasonForDate(g.date) === EFF_SEASON && effContextOk(g) && effFromOk(g) && effOnlyOk(g))
+    .forEach(g => { P(g.jersey).gbLog++; B(g, g.jersey).gbLog++; });
   const d = { model, shots, oppShots, poss, players, bySession, xgOf };
   // Dominoes are credited once per possession (a rebound shot flagged again
   // doesn't count twice), to whoever is logged as starting them.
@@ -7979,8 +7989,8 @@ function buildEffData() {
 
 // Game Score: one number per player per session. Weights are shown in the
 // column tooltip; they reward finishing and creating, and charge turnovers.
-const GAME_SCORE_W = { g: 1.0, a: 0.75, xg: 0.5, xa: 0.35, gb: 0.3, ct: 0.5, to: -0.5, dom: 0.25 };
-const GAME_SCORE_TIP = 'Game Score = 1.0 x goals + 0.75 x assists + 0.5 x xG + 0.35 x xA + 0.3 x ground balls + 0.5 x caused turnovers + 0.25 x dominoes started - 0.5 x turnovers.';
+const GAME_SCORE_W = { g: 1.0, a: 0.75, xg: 0.5, xa: 0.35, gbLog: 0.3, ct: 0.5, to: -0.5, dom: 0.25 };
+const GAME_SCORE_TIP = 'Game Score = 1.0 x goals + 0.75 x assists + 0.5 x xG + 0.35 x xA + 0.3 x ground balls (from the ground-ball log) + 0.5 x caused turnovers + 0.25 x dominoes started - 0.5 x turnovers.';
 function gameScore(b) { return Object.keys(GAME_SCORE_W).reduce((sum, k) => sum + GAME_SCORE_W[k] * (b[k] || 0), 0); }
 function stdev(arr) {
   if (arr.length < 2) return null;
@@ -8134,14 +8144,14 @@ function renderEffPossession(d, possList) {
   const wc = clearTally(d.shots, d.poss.filter(p => p.team !== 'OPP'));
   const oc = clearTally(d.oppShots, d.poss.filter(p => p.team === 'OPP'));
   const clears = wc.ok, failed = wc.failed, oppClears = oc.ok, oppFailed = oc.failed;
-  sub.innerHTML = `Ground balls and faceoff wins come from <b>Possession Started By</b>; turnovers and caused turnovers from no-shot possessions. `
+  sub.innerHTML = `Possessions started by a ground ball (GB&rarr;poss) and faceoff wins come from <b>Possession Started By</b> (ground-ball totals are on the ground-ball log); turnovers and caused turnovers from no-shot possessions. `
     + `Clearing: ${clears + failed ? `${clears}/${clears + failed} (${pct(ratio(clears, clears + failed))})` : 'none logged'}.`
     + (EFF_CONTEXT !== 'Practice' ? ` Riding (opponent failed clears): ${oppClears + oppFailed ? `${oppFailed}/${oppClears + oppFailed} (${pct(ratio(oppFailed, oppClears + oppFailed))})` : 'none logged'}.` : '')
     + ` ${wlu.length} WLU possessions in view.`;
   const cols = [
     { key: 'jersey', label: '#', type: 'text', value: r => r.jersey },
     { key: 'name', label: 'Name', type: 'text', value: r => r.name, format: nameCell },
-    { key: 'gb', label: 'GB', type: 'num', value: r => r.gb, title: 'Ground balls that started a possession.' },
+    { key: 'gb', label: 'GB→poss', type: 'num', value: r => r.gb, title: 'Possessions he started by picking up a ground ball (Possession Started By). Not a ground-ball total: those come from the ground-ball log.' },
     { key: 'ct', label: 'Caused TO', type: 'num', value: r => r.ct },
     { key: 'to', label: 'TO', type: 'num', value: r => r.to },
     { key: 'net', label: 'GB+CT−TO', type: 'num', value: r => r.net, format: v => signed(v, 0), title: 'Possessions won minus possessions given away.' },
@@ -8238,7 +8248,7 @@ function renderEffBoxScore(d) {
     { key: 'a', label: 'A', type: 'num', value: r => r.a },
     { key: 'xg', label: 'xG', type: 'num', value: r => r.xg, format: d1 },
     { key: 'xa', label: 'xA', type: 'num', value: r => r.xa, format: d1 },
-    { key: 'gb', label: 'GB', type: 'num', value: r => r.gb },
+    { key: 'gbLog', label: 'GB', type: 'num', value: r => r.gbLog, format: (v, r) => (v || trackStatus(sess.sid, 'gb') === 'C') ? String(v) : '—', title: 'Ground balls from the ground-ball log. “—” = none logged and ground balls weren’t marked Complete for this session.' },
     { key: 'ct', label: 'CT', type: 'num', value: r => r.ct },
     { key: 'to', label: 'TO', type: 'num', value: r => r.to },
     { key: 'dom', label: 'Dominoes', type: 'num', value: r => r.dom },
@@ -9271,7 +9281,7 @@ function computeShooterScores(season, tab, from) {
       dom: { points: tDom ? gsPoints(domS, tDomS, i.apps, SS_K.sessions, SS_SCALE.perSess) : null,
         detail: tDom ? `${p.dominoes} started · ${num(domS, 2)} per session vs ${num(tDomS, 2)}` : 'no dominoes logged yet' },
       poss: { points: tPoss ? gsPoints(possS, tPossS, i.apps, SS_K.sessions, SS_SCALE.perSess) : null,
-        detail: tPoss ? `${p.gb} GB + ${p.ct} CT · ${num(possS, 2)} per session vs ${num(tPossS, 2)}` : 'no ground balls or caused TOs logged yet' },
+        detail: tPoss ? `${p.gb} GB-started possessions + ${p.ct} CT · ${num(possS, 2)} per session vs ${num(tPossS, 2)}` : 'no GB-started possessions or caused TOs logged yet' },
     };
     const used = parts.filter(pt => vals[pt.key].points !== null);
     const wSum = used.reduce((a, pt) => a + pt.weight, 0);
@@ -9519,7 +9529,7 @@ function renderDefense() {
     return { jersey: j, name: nameFor(j, season), n, g, xgPer: xg / n, gmx100: (g - xg) / n * 100,
       beat: ratio(bl.filter(s => s.defBeaten === 'Yes').length, bl.length), beatN: bl.length,
       heavy: ratio(l.filter(s => s.contestLevel === 'Heavy').length, n), open: ratio(l.filter(s => s.contestLevel === 'Open').length, n),
-      slides: (byS[j] || []).length, ct: p ? p.ct : 0, gb: p ? p.gb : 0,
+      slides: (byS[j] || []).length, ct: p ? p.ct : 0, gb: p ? p.gbLog : 0,
       beatenMost: beatenMostOf(l.filter(s => s.defBeaten === 'Yes')), offFaults: (byO[j] || []).length };
   });
   renderSortableTable('defPlayerWrap', [
@@ -9536,7 +9546,7 @@ function renderDefense() {
     { key: 'slides', label: 'Slides', type: 'num', value: r => r.slides },
     { key: 'offFaults', label: 'Off-Ball Faults', type: 'num', value: r => r.offFaults, title: 'Shots blamed on him for losing his man off the ball.' },
     { key: 'ct', label: 'Caused TO', type: 'num', value: r => r.ct },
-    { key: 'gb', label: 'GB', type: 'num', value: r => r.gb, title: 'Ground balls that started a possession.' },
+    { key: 'gb', label: 'GB', type: 'num', value: r => r.gb, format: v => (GROUNDBALLS.length ? String(v) : '—'), title: 'Ground balls from the ground-ball log (“—” until any are logged).' },
   ], rows, { dense: true, defaultSort: { key: 'n', dir: 'desc' }, emptyMsg: `No ${season} shots with an on-ball defender logged yet. Open the Defense card on the Log Shot form to add one.` });
   const slideRows = Object.keys(byS).map(j => { const l = byS[j]; return { jersey: j, name: nameFor(j, season), n: l.length, g: goalsOf(l), gPct: ratio(goalsOf(l), l.length), xgPer: xgSum(l, model) / l.length }; });
   renderSortableTable('defSlideWrap', [
@@ -10200,6 +10210,37 @@ function rptPlayerSplits(mine, team) {
   return out;
 }
 function rptSplitSentence(x) { return `<b>${escapeHtml(x.label)}</b> (${escapeHtml(x.group.toLowerCase())}): ${x.g} of ${x.n} go in (${pct(x.his)}) &mdash; the team scores ${pct(x.tm)} on these.`; }
+// ---------------- Fixed (as-of) models for session scorecards (Nov 2026) ----------------
+// A scorecard is judged with a model built from 2026 plus this season's shots dated BEFORE the session's date (the
+// whole day is left out, so the session can't move its own baseline, and film entered afterwards for earlier days
+// still counts if it's there when the model is first saved). The model is saved once per season and cutoff date in
+// app/xg_snapshots (one field per cutoff) and reused from then on, so later backfills never silently change an old
+// report; the report says when a rebuild today would differ.
+let XG_SNAPS = {};
+function xgSnapsFrom(data) { const o = {}; Object.keys(data || {}).filter(k => /^xg_/.test(k)).forEach(k => { try { o[k] = JSON.parse(data[k]); } catch (e) { /* skip */ } }); return o; }
+function xgHash(str) { let h = 2166136261; for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 16777619); } return ('00000000' + (h >>> 0).toString(16)).slice(-8).slice(0, 6); }
+const xgFixedModel = rate => ({ rate, reliable: () => false, subjectTotals: {}, subjectN: 0, subjectGoals: 0 });
+function xgBuildAsOf(season, cutoff) {
+  const cal = calibration2026Shots(), sub = advShots(season).filter(s => s.date && s.date < cutoff);
+  const faced = goalieShotsForSeason(season).filter(s => s.date && s.date < cutoff);
+  const shot = buildXgModel(cal, sub), fm = buildFacedXgModel(cal, faced);
+  const counts = l => { const t = tierRatesByContext(l); return { Practice: t.Practice, Game: t.Game }; };
+  const rec = { v: 1, season, cutoff, shotRate: shot.rate, facedRate: fm.rate, shotN: sub.length, facedN: faced.filter(s => s.onKeeper === 1).length,
+    shotCounts: counts(sub), facedCounts: counts(faced.filter(s => s.onKeeper === 1)) };
+  rec.ver = 'xg-' + cutoff + '-' + xgHash(JSON.stringify([rec.shotRate, rec.facedRate]));
+  return rec;
+}
+// The saved model for a cutoff, saving it the first time a coach opens that report (never in Player View).
+function xgSnapshotFor(season, cutoff) {
+  const key = 'xg_' + season + '_' + cutoff, fresh = xgBuildAsOf(season, cutoff);
+  let snap = XG_SNAPS[key], saved = !!snap;
+  if (!snap) {
+    snap = Object.assign({ builtAt: new Date().toISOString() }, fresh);
+    if (DB && !PLAYER_MODE) { XG_SNAPS[key] = snap; settleWrite(DB.doc('app/xg_snapshots').set({ [key]: JSON.stringify(snap) }, { merge: true })).then(r => { if (r === 'error') { delete XG_SNAPS[key]; } }); saved = true; }
+  }
+  return { snap, saved, drift: fresh.ver !== snap.ver ? fresh : null };
+}
+
 // ---------------- Session tracking completeness (Nov 2026) ----------------
 // Per session and stat category: Complete (everything that happened was logged), Partial (some was), or Not
 // tracked. Saved as one field per session in app/session_tracking. Nothing is certified automatically: the last
@@ -10442,6 +10483,15 @@ function rptCurKeys(period) {
   const pr = all.filter(k => rptSessKind(k) === 'practice');
   return pr.length ? pr : all;
 }
+// Standouts (team, staff only), judged with the scorecard's fixed model.
+function rptStandoutsHtml(cur, season) {
+  const { fin, gk, cr } = rptStandouts(cur, season);
+  const whoL = j => escapeHtml(jerseyLabel(j, season));
+  return `<p class="panel-title" style="font-size:15px;">Standouts</p><ul class="sans" style="font-size:13px; line-height:1.7; margin:4px 0 0; padding-left:18px;">${[
+    fin ? `<li><b>Top finisher:</b> ${whoL(fin.j)} &mdash; ${fin.g} goals on ${fin.n} shots, ${rptSgn(fin.d)} vs expected (${rptSgn(100 * fin.d / fin.n)} per 100 shots).</li>` : '<li class="n-note">Top finisher: nobody had 5+ shots.</li>',
+    gk ? `<li><b>Best goalie:</b> ${whoL(gk.j)} &mdash; ${gk.sv} saves on ${gk.n} shots on cage, ${rptSgn(gk.d)} saves above expected (${rptSgn(100 * gk.d / gk.n)} per 100).</li>` : '<li class="n-note">Best goalie: nobody faced 8+ shots on cage.</li>',
+    cr ? `<li><b>Best creator:</b> ${whoL(cr.j)} &mdash; ${cr.n} shots set up (${cr.a} assists), ${cr.xa.toFixed(1)} expected assists.</li>` : '<li class="n-note">Best creator: nobody had 3+ potential assists.</li>'].join('')}</ul>`;
+}
 // Builds the scorecard for one scope and period.
 function rptScorecard(period, season, scope) {
   const curKeys = rptCurKeys(period);
@@ -10516,35 +10566,29 @@ function rptScorecard(period, season, scope) {
     <p class="panel-sub">Session type: ${escapeHtml(kind === 'mixed' ? 'mixed (practices and games/scrimmages)' : RPT_KIND_WORD[kind])}${rptMode === 'week' ? ` &mdash; ${curKeys.length} session${curKeys.length === 1 ? '' : 's'} this week${allWeek > curKeys.length ? ` (${allWeek - curKeys.length} game/scrimmage session${allWeek - curKeys.length === 1 ? '' : 's'} left out; see them one at a time in Practice mode)` : ''}` : ''}. Benchmarks come only from earlier sessions of the same type. &ldquo;Within chance&rdquo; means the gap is smaller than 1.5 standard errors at this sample size; rows under ${RPT_MIN_N} are marked small sample.</p>
     <div class="table-wrap" style="max-height:none;"><table class="shotlog dense rpt-score"><thead><tr><th>Stat</th><th>This ${rptMode === 'practice' ? 'session' : 'week'}</th><th>Benchmark</th><th>Difference</th><th>Read</th>${secHead}</tr></thead><tbody>${body}</tbody></table></div>`;
 }
-// How the expected numbers are built, with sample sizes, and how much this period's own shots move them.
-function rptModelDetails(period, season) {
-  const curKeys = rptCurKeys(period);
-  const cal = calibration2026Shots(), sub = advShots(season);
-  const tbl = (calS, subS, prior) => {
-    const c = tierRatesByContext(calS), s = tierRatesByContext(subS);
-    const rows = [];
+// How the expected numbers are built: the saved model's version, cutoff, samples and rates by grade.
+function rptModelDetails(period, season, X) {
+  const snap = X.snap, cal = calibration2026Shots();
+  const tbl = (calS, counts, rates) => {
+    const c = tierRatesByContext(calS), rows = [];
     ['Practice', 'Game'].forEach(ctx => TIER_KEYS.forEach(t => {
-      const cc = c[ctx][t] || { n: 0, g: 0 }, ss = s[ctx][t] || { n: 0, g: 0 };
-      const pr = t === '__ungraded__' ? (cc.n ? cc.g / cc.n : null) : (cc.n ? cc.g / cc.n : prior[t]);
-      if (pr === null && !ss.n) return;
-      const rate = ((ss.g) + XG_PRIOR_WEIGHT * (pr || 0)) / (ss.n + XG_PRIOR_WEIGHT);
-      rows.push([`${ctx === 'Game' ? 'Game' : 'Practice / scrimmage'} · ${t === '__ungraded__' ? 'Ungraded' : t.slice(2)}`, cc.n ? `${cc.g} of ${cc.n} (${pct(cc.g / cc.n)})` : `none (prior ${pct(pr)})`, ss.n ? `${ss.g} of ${ss.n} (${pct(ss.g / ss.n)})` : 'none yet', `<b>${pct(rate)}</b>`]);
+      const cc = c[ctx][t] || { n: 0, g: 0 }, ss = (counts[ctx] || {})[t] || { n: 0, g: 0 }, r = (rates[ctx] || {})[t];
+      if (!cc.n && !ss.n) return;
+      rows.push([`${ctx === 'Game' ? 'Game' : 'Practice / scrimmage'} · ${t === '__ungraded__' ? 'Ungraded' : t.slice(2)}`, cc.n ? `${cc.g} of ${cc.n} (${pct(cc.g / cc.n)})` : 'none', ss.n ? `${ss.g} of ${ss.n} (${pct(ss.g / ss.n)})` : 'none', r === undefined ? '—' : `<b>${pct(r)}</b>`]);
     }));
-    return rptMiniTable(['Grade', '2026 (prior)', season + ' so far', 'Rate used'], rows);
+    return rptMiniTable(['Grade', '2026 (prior)', `${season} before ${escapeHtml(snap.cutoff)}`, 'Rate used'], rows);
   };
-  const faced = goalieShotsForSeason(season).filter(s => s.onKeeper === 1);
-  // In-sample check: expected goals for this period's shots from the current model vs a model that only knows
-  // shots logged before this period.
-  const start = curKeys.slice().sort()[0], startP = rptPeriods('practice', true).find(p => p.key === start);
-  const before = sub.filter(s => s.date < startP.date || (s.date === startP.date && sessKey(s) < start));
-  const asOf = buildXgModel(cal, before), now = xgModelFor(season);
-  const curShots = sub.filter(s => curKeys.includes(sessKey(s)));
-  const xNow = xgSum(curShots, now), xAsOf = xgSum(curShots, asOf);
+  let drift = '';
+  if (X.drift) {
+    const curKeys = rptCurKeys(period), shots = advShots(season).filter(s => curKeys.includes(sessKey(s)));
+    drift = `<p style="margin:10px 0 4px; color:var(--gold-ink);"><b>Changed since saved:</b> shots dated before ${escapeHtml(snap.cutoff)} have been added or edited since this model was saved (backfilled film, corrections). This report keeps the saved model; a rebuild today (${escapeHtml(X.drift.ver)}) would give <b>${num(xgSum(shots, xgFixedModel(X.drift.shotRate)), 2)}</b> expected goals for this period instead of <b>${num(xgSum(shots, xgFixedModel(snap.shotRate)), 2)}</b>.</p>`;
+  }
   return `<div class="sans" style="font-size:12.5px; line-height:1.6;">
+    <p style="margin:6px 0;"><b>Model ${escapeHtml(snap.ver)}</b> &mdash; ${X.saved ? `fixed for this report, saved ${escapeHtml((snap.builtAt || '').slice(0, 10))}` : 'not saved yet (it is saved the first time a coach opens this report)'}. Built from 2026 plus ${season} shots dated <b>before ${escapeHtml(snap.cutoff)}</b> (${snap.shotN} shots; ${snap.facedN} shots on cage for the goalie model). This period&rsquo;s own shots are never in it, and later backfills don&rsquo;t change it. Player projections and the other pages use the latest model.</p>
     <p style="margin:6px 0;"><b>Finishing and on-ball defense</b> use the all-shot model: the chance a shot of that grade goes in, counting every shot (misses, saves and blocks too). <b>Goaltending</b> uses the faced model: the chance a shot <i>on cage</i> of that grade goes in. Each rate blends 2026 with this season: (${season} goals + ${XG_PRIOR_WEIGHT} &times; 2026 rate) &divide; (${season} shots + ${XG_PRIOR_WEIGHT}), so 2026 counts like ${XG_PRIOR_WEIGHT} shots and this season takes over as it grows. Scrimmages use the practice rates.</p>
-    <p style="margin:10px 0 4px;"><b>All-shot model</b></p>${tbl(cal, sub, XG_PRIOR)}
-    <p style="margin:10px 0 4px;"><b>Faced model (shots on cage)</b></p>${tbl(cal.filter(s => s.onKeeper === 1), faced, XG_PRIOR)}
-    <p style="margin:10px 0 4px;"><b>Does this period count toward its own expected value?</b> Yes, today: the model is rebuilt from every ${season} shot, including this period&rsquo;s and any logged after it, so an old report&rsquo;s expected numbers drift a little as the season goes on. For this period: <b>${num(xNow, 2)}</b> expected goals with the current model vs <b>${num(xAsOf, 2)}</b> from a model that only knows shots before it (${curShots.length} shots). Not changed yet &mdash; proposed fix: build each report&rsquo;s model only from shots before the period starts, so a report reads the same later.</p>
+    ${drift}
+    <p style="margin:10px 0 4px;"><b>All-shot model</b></p>${tbl(cal, snap.shotCounts || {}, snap.shotRate)}
+    <p style="margin:10px 0 4px;"><b>Faced model (shots on cage)</b></p>${tbl(cal.filter(x => x.onKeeper === 1), snap.facedCounts || {}, snap.facedRate)}
   </div>`;
 }
 function renderReports() {
@@ -10572,21 +10616,23 @@ function renderReports() {
   if (PLAYER_MODE) rptPlayer = pmLockSelect(psel);
   const scope = rptPlayer && rptPlayer !== '__NONE__' ? { kind: 'player', j: rptPlayer } : rptGroup ? { kind: 'group', g: rptGroup } : { kind: 'team' };
   if (PLAYER_MODE && scope.kind !== 'player') { box.innerHTML = `<p class="sans" style="color:var(--muted); font-size:13px;">${escapeHtml(PLAYER_MODE.name)} wasn’t logged in this ${rptMode === 'practice' ? 'session' : 'week'}.</p>`; clear.forEach(id => { document.getElementById(id).innerHTML = ''; }); return; }
-  box.innerHTML = rptScorecard(period, season, scope);
-  document.getElementById('rptModel').innerHTML = rptModelDetails(period, season);
+  // The scorecard and standouts are judged with the saved model for this period's start date.
+  const cutoff = rptMode === 'practice' ? period.date : (rptPeriods('practice', true).filter(p => rptCurKeys(period).includes(p.key)).map(p => p.date).sort()[0] || period.key);
+  const X = xgSnapshotFor(season, cutoff);
+  XG_FIXED = { season, shot: xgFixedModel(X.snap.shotRate), faced: xgFixedModel(X.snap.facedRate) };
+  let standHtml = '';
+  try {
+    box.innerHTML = rptScorecard(period, season, scope) + `<p class="n-note" style="font-size:12px; margin-top:6px;">Expected values: model ${escapeHtml(X.snap.ver)} (fixed; shots before ${escapeHtml(cutoff)})${X.drift ? ' &mdash; changed since saved, see below' : ''}.</p>`;
+    standHtml = rptStandoutsHtml(rptSlice(rptMode, [period.key]), season);
+  } finally { XG_FIXED = null; }
+  document.getElementById('rptModel').innerHTML = rptModelDetails(period, season, X);
   // Details (collapsed): the full tables from before.
   renderRptFullTeam(F, rptLabel(rptMode, period));
   renderRptGroup(F);
   const cur = rptSlice(rptMode, [period.key]);
   rptPlayer && rptPlayer !== '__NONE__' ? renderPlayerReport(period, cur, season, []) : (document.getElementById('rptPlayer').innerHTML = '');
   renderRptSheet(F, rptPlayer);
-  // Standouts (team, staff only).
-  const { fin, gk, cr } = rptStandouts(cur, season);
-  const whoL = j => escapeHtml(jerseyLabel(j, season));
-  document.getElementById('rptTeam').innerHTML = `<p class="panel-title" style="font-size:15px;">Standouts</p><ul class="sans" style="font-size:13px; line-height:1.7; margin:4px 0 0; padding-left:18px;">${[
-    fin ? `<li><b>Top finisher:</b> ${whoL(fin.j)} &mdash; ${fin.g} goals on ${fin.n} shots, ${rptSgn(fin.d)} vs expected (${rptSgn(100 * fin.d / fin.n)} per 100 shots).</li>` : '<li class="n-note">Top finisher: nobody had 5+ shots.</li>',
-    gk ? `<li><b>Best goalie:</b> ${whoL(gk.j)} &mdash; ${gk.sv} saves on ${gk.n} shots on cage, ${rptSgn(gk.d)} saves above expected (${rptSgn(100 * gk.d / gk.n)} per 100).</li>` : '<li class="n-note">Best goalie: nobody faced 8+ shots on cage.</li>',
-    cr ? `<li><b>Best creator:</b> ${whoL(cr.j)} &mdash; ${cr.n} shots set up (${cr.a} assists), ${cr.xa.toFixed(1)} expected assists.</li>` : '<li class="n-note">Best creator: nobody had 3+ potential assists.</li>'].join('')}</ul>`;
+  document.getElementById('rptTeam').innerHTML = standHtml;
 }
 
 function renderPlayerReport(period, cur, season, prior) {
@@ -16377,7 +16423,7 @@ const SA_CATALOG = [
   { id: 'slides', label: 'Slides', words: 'slides, slide, sliding, slider, slides the most, help defense', page: 'defense', fmt: SA_NUM(0), f: d => saDefBy(d, 'slideDefender', l => ({ v: l.length, n: l.length })) },
   { id: 'offFault', label: 'Off-ball breakdowns', dir: 'low', badCount: true, words: 'off-ball breakdowns, off ball breakdowns, breakdowns, breakdown, off-ball mistakes, loses his man off ball, off ball defense, off-ball defense', page: 'defense', fmt: SA_NUM(0), f: d => saDefBy(d, 'offBallFault', l => ({ v: l.length, n: l.length })) },
   { id: 'pickFreed', label: 'Pick defense: ball carrier freed', words: 'pick defense, defending picks, defends picks, pick defender, guarding picks, switches', dir: 'low', min: 5, page: 'pickdef', fmt: SA_PCT, f: d => { const m = {}; try { pickDefenderRows(d.possList.filter(pp => pp.pick), d.xgOf, EFF_SEASON).forEach(r => { if (r.n) m[r.jersey] = { v: r.freed, n: r.n, extra: `${r.n} picks` }; }); } catch (e) { /* not ready */ } return m; } },
-  { id: 'gb', label: 'Ground balls', words: 'ground balls, ground ball, gbs, gb, scrappy', page: 'eff', fmt: SA_NUM(0), f: d => saMap(d, p => p.gb ? { v: p.gb, n: p.gb } : null) },
+  { id: 'gb', label: 'Ground balls', words: 'ground balls, ground ball, gbs, gb, scrappy', page: 'eff', fmt: SA_NUM(0), f: d => saMap(d, p => p.gbLog ? { v: p.gbLog, n: p.gbLog } : null) },
   { id: 'ct', label: 'Caused turnovers', words: 'caused turnovers, takeaways, takeaway, steals, forced turnovers, causes turnovers, causes the most turnovers, cause turnovers, causing turnovers, forces turnovers, forcing turnovers, causes, forces', page: 'eff', fmt: SA_NUM(0), f: d => saMap(d, p => p.ct ? { v: p.ct, n: p.ct } : null) },
   { off: true, id: 'dom', label: 'Dominoes started', words: 'dominoes, starts the dominoes, initiator, initiates, breaks down, dodger, dodgers, dodging, draws slides', page: 'dominoes', fmt: SA_NUM(0), f: d => saMap(d, p => p.dominoes ? { v: p.dominoes, n: p.dominoes } : null) },
   { off: true, id: 'advCreated', label: 'Screen advantages created', not: 'defender, defense, defensive, breakdown, breakdowns', words: 'screen advantages, advantages created, screens, screen, screener, screeners, picks, pick setter', page: 'picks', fmt: SA_NUM(0), f: d => { const s = saScreens(d); const m = {}; Object.keys(s.set).forEach(j => { m[j] = { v: s.adv[j] || 0, n: s.set[j], extra: `${s.adv[j] || 0} of ${s.set[j]} screens` }; }); return m; } },
