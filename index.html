@@ -10213,9 +10213,10 @@ function rptSplitSentence(x) { return `<b>${escapeHtml(x.label)}</b> (${escapeHt
 // ---------------- Fixed (as-of) models for session scorecards (Nov 2026) ----------------
 // A scorecard is judged with a model built from 2026 plus this season's shots dated BEFORE the session's date (the
 // whole day is left out, so the session can't move its own baseline, and film entered afterwards for earlier days
-// still counts if it's there when the model is first saved). The model is saved once per season and cutoff date in
-// app/xg_snapshots (one field per cutoff) and reused from then on, so later backfills never silently change an old
-// report; the report says when a rebuild today would differ.
+// still counts if it's there when the model is saved). The model is saved once per season and cutoff date in
+// app/xg_snapshots (one field per cutoff) when a coach confirms that session's tracking (the "everything is logged"
+// signal) and reused from then on, so later backfills never silently change an old report; the report says when a
+// rebuild today would differ. Until then the report uses a provisional as-of model built the same way.
 let XG_SNAPS = {};
 function xgSnapsFrom(data) { const o = {}; Object.keys(data || {}).filter(k => /^xg_/.test(k)).forEach(k => { try { o[k] = JSON.parse(data[k]); } catch (e) { /* skip */ } }); return o; }
 function xgHash(str) { let h = 2166136261; for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 16777619); } return ('00000000' + (h >>> 0).toString(16)).slice(-8).slice(0, 6); }
@@ -10230,15 +10231,15 @@ function xgBuildAsOf(season, cutoff) {
   rec.ver = 'xg-' + cutoff + '-' + xgHash(JSON.stringify([rec.shotRate, rec.facedRate]));
   return rec;
 }
-// The saved model for a cutoff, saving it the first time a coach opens that report (never in Player View).
-function xgSnapshotFor(season, cutoff) {
+// The saved model for a cutoff, or a provisional one. save = true (tracking just confirmed) saves it if none exists.
+function xgSnapshotFor(season, cutoff, save) {
   const key = 'xg_' + season + '_' + cutoff, fresh = xgBuildAsOf(season, cutoff);
   let snap = XG_SNAPS[key], saved = !!snap;
   if (!snap) {
     snap = Object.assign({ builtAt: new Date().toISOString() }, fresh);
-    if (DB && !PLAYER_MODE) { XG_SNAPS[key] = snap; settleWrite(DB.doc('app/xg_snapshots').set({ [key]: JSON.stringify(snap) }, { merge: true })).then(r => { if (r === 'error') { delete XG_SNAPS[key]; } }); saved = true; }
+    if (save && DB && !PLAYER_MODE) { XG_SNAPS[key] = snap; settleWrite(DB.doc('app/xg_snapshots').set({ [key]: JSON.stringify(snap) }, { merge: true })).then(r => { if (r === 'error') { delete XG_SNAPS[key]; } }); saved = true; }
   }
-  return { snap, saved, drift: fresh.ver !== snap.ver ? fresh : null };
+  return { snap, saved, drift: saved && fresh.ver !== snap.ver ? fresh : null };
 }
 
 // ---------------- Session tracking completeness (Nov 2026) ----------------
@@ -10303,6 +10304,8 @@ function renderTrackingControls() {
       const rec2 = { cats: full, confirmed: true, at: new Date().toISOString() };
       if (!(await persistTracking(sid, rec2))) { msg.textContent = 'Save failed — please try again.'; msg.style.color = 'var(--critical)'; return; }
       TRACKING[sid] = rec2; delete TRACK_DRAFT[sid];
+      // Confirming tracking fixes this session's scorecard model (dated before the session's day).
+      const sd = sid.slice(0, 10); if (/^\d{4}-\d{2}-\d{2}$/.test(sd) && isAdvSeason(seasonForDate(sd))) xgSnapshotFor(seasonForDate(sd), sd, true);
       renderTrackingControls();
       if (document.getElementById('reportsView').classList.contains('active')) renderReports();
     });
@@ -10584,7 +10587,7 @@ function rptModelDetails(period, season, X) {
     drift = `<p style="margin:10px 0 4px; color:var(--gold-ink);"><b>Changed since saved:</b> shots dated before ${escapeHtml(snap.cutoff)} have been added or edited since this model was saved (backfilled film, corrections). This report keeps the saved model; a rebuild today (${escapeHtml(X.drift.ver)}) would give <b>${num(xgSum(shots, xgFixedModel(X.drift.shotRate)), 2)}</b> expected goals for this period instead of <b>${num(xgSum(shots, xgFixedModel(snap.shotRate)), 2)}</b>.</p>`;
   }
   return `<div class="sans" style="font-size:12.5px; line-height:1.6;">
-    <p style="margin:6px 0;"><b>Model ${escapeHtml(snap.ver)}</b> &mdash; ${X.saved ? `fixed for this report, saved ${escapeHtml((snap.builtAt || '').slice(0, 10))}` : 'not saved yet (it is saved the first time a coach opens this report)'}. Built from 2026 plus ${season} shots dated <b>before ${escapeHtml(snap.cutoff)}</b> (${snap.shotN} shots; ${snap.facedN} shots on cage for the goalie model). This period&rsquo;s own shots are never in it, and later backfills don&rsquo;t change it. Player projections and the other pages use the latest model.</p>
+    <p style="margin:6px 0;"><b>Model ${escapeHtml(snap.ver)}</b> &mdash; ${X.saved ? `fixed for this report, saved ${escapeHtml((snap.builtAt || '').slice(0, 10))}` : '<b>provisional</b>: it is saved (fixed) when a coach confirms this session&rsquo;s tracking, so film backfilled for earlier days before then still counts'}. Built from 2026 plus ${season} shots dated <b>before ${escapeHtml(snap.cutoff)}</b> (${snap.shotN} shots; ${snap.facedN} shots on cage for the goalie model). This period&rsquo;s own shots are never in it, and later backfills don&rsquo;t change it. Player projections and the other pages use the latest model.</p>
     <p style="margin:6px 0;"><b>Finishing and on-ball defense</b> use the all-shot model: the chance a shot of that grade goes in, counting every shot (misses, saves and blocks too). <b>Goaltending</b> uses the faced model: the chance a shot <i>on cage</i> of that grade goes in. Each rate blends 2026 with this season: (${season} goals + ${XG_PRIOR_WEIGHT} &times; 2026 rate) &divide; (${season} shots + ${XG_PRIOR_WEIGHT}), so 2026 counts like ${XG_PRIOR_WEIGHT} shots and this season takes over as it grows. Scrimmages use the practice rates.</p>
     ${drift}
     <p style="margin:10px 0 4px;"><b>All-shot model</b></p>${tbl(cal, snap.shotCounts || {}, snap.shotRate)}
@@ -10622,7 +10625,7 @@ function renderReports() {
   XG_FIXED = { season, shot: xgFixedModel(X.snap.shotRate), faced: xgFixedModel(X.snap.facedRate) };
   let standHtml = '';
   try {
-    box.innerHTML = rptScorecard(period, season, scope) + `<p class="n-note" style="font-size:12px; margin-top:6px;">Expected values: model ${escapeHtml(X.snap.ver)} (fixed; shots before ${escapeHtml(cutoff)})${X.drift ? ' &mdash; changed since saved, see below' : ''}.</p>`;
+    box.innerHTML = rptScorecard(period, season, scope) + `<p class="n-note" style="font-size:12px; margin-top:6px;">Expected values: model ${escapeHtml(X.snap.ver)} (${X.saved ? 'fixed' : 'provisional until tracking is confirmed'}; shots before ${escapeHtml(cutoff)})${X.drift ? ' &mdash; changed since saved, see below' : ''}.</p>`;
     standHtml = rptStandoutsHtml(rptSlice(rptMode, [period.key]), season);
   } finally { XG_FIXED = null; }
   document.getElementById('rptModel').innerHTML = rptModelDetails(period, season, X);
