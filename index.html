@@ -10434,9 +10434,18 @@ function rptRead(row, r, nums, b, bn) {
   const good = (diff > 0) === (row.better > 0);
   return `<b style="color:${good ? 'var(--good)' : 'var(--critical)'};">${good ? '▲ better' : '▼ worse'}</b>`;
 }
+// The sessions a report covers. A week keeps practice and competition apart: its practices if it has any,
+// otherwise its games / scrimmages (those are still reported one by one in Practice mode).
+function rptCurKeys(period) {
+  if (rptMode === 'practice') return [period.key];
+  const all = rptPeriods('practice', true).filter(p => rptMonday(p.date) === period.key).map(p => p.key);
+  const pr = all.filter(k => rptSessKind(k) === 'practice');
+  return pr.length ? pr : all;
+}
 // Builds the scorecard for one scope and period.
 function rptScorecard(period, season, scope) {
-  const curKeys = rptMode === 'practice' ? [period.key] : rptPeriods('practice', true).filter(p => rptMonday(p.date) === period.key).map(p => p.key);
+  const curKeys = rptCurKeys(period);
+  const allWeek = rptMode === 'week' ? rptPeriods('practice', true).filter(p => rptMonday(p.date) === period.key).length : 1;
   if (!curKeys.length) return '<p class="n-note">Nothing logged in this period.</p>';
   const sorted = curKeys.slice().sort(), first = rptPeriods('practice', true).find(p => p.key === sorted[0]);
   const kinds = new Set(curKeys.map(rptSessKind)), kind = kinds.size === 1 ? [...kinds][0] : 'mixed';
@@ -10504,12 +10513,12 @@ function rptScorecard(period, season, scope) {
   const body = trs.map(t => { const head = t.area !== lastArea ? `<tr><td colspan="${secA ? 6 : 5}" style="background:var(--card-2); font-weight:700; font-size:12px; letter-spacing:.04em; text-transform:uppercase;">${escapeHtml(t.area)}</td></tr>` : ''; lastArea = t.area; return head + `<tr>${t.html}</tr>`; }).join('');
   const title = scope.kind === 'team' ? 'Team' : scope.kind === 'group' ? RPT_GROUPS.find(x => x.value === scope.g).label + ` (${A.js.length} player${A.js.length === 1 ? '' : 's'})` : jerseyLabel(scope.j, season);
   return `<p class="panel-title" style="font-size:16px;">${escapeHtml(title)} &mdash; ${escapeHtml(rptLabel(rptMode, period))}</p>
-    <p class="panel-sub">Session type: ${escapeHtml(kind === 'mixed' ? 'mixed (practices and games/scrimmages)' : RPT_KIND_WORD[kind])}. Benchmarks come only from earlier sessions of the same type. &ldquo;Within chance&rdquo; means the gap is smaller than 1.5 standard errors at this sample size; rows under ${RPT_MIN_N} are marked small sample.</p>
+    <p class="panel-sub">Session type: ${escapeHtml(kind === 'mixed' ? 'mixed (practices and games/scrimmages)' : RPT_KIND_WORD[kind])}${rptMode === 'week' ? ` &mdash; ${curKeys.length} session${curKeys.length === 1 ? '' : 's'} this week${allWeek > curKeys.length ? ` (${allWeek - curKeys.length} game/scrimmage session${allWeek - curKeys.length === 1 ? '' : 's'} left out; see them one at a time in Practice mode)` : ''}` : ''}. Benchmarks come only from earlier sessions of the same type. &ldquo;Within chance&rdquo; means the gap is smaller than 1.5 standard errors at this sample size; rows under ${RPT_MIN_N} are marked small sample.</p>
     <div class="table-wrap" style="max-height:none;"><table class="shotlog dense rpt-score"><thead><tr><th>Stat</th><th>This ${rptMode === 'practice' ? 'session' : 'week'}</th><th>Benchmark</th><th>Difference</th><th>Read</th>${secHead}</tr></thead><tbody>${body}</tbody></table></div>`;
 }
 // How the expected numbers are built, with sample sizes, and how much this period's own shots move them.
 function rptModelDetails(period, season) {
-  const curKeys = rptMode === 'practice' ? [period.key] : rptPeriods('practice', true).filter(p => rptMonday(p.date) === period.key).map(p => p.key);
+  const curKeys = rptCurKeys(period);
   const cal = calibration2026Shots(), sub = advShots(season);
   const tbl = (calS, subS, prior) => {
     const c = tierRatesByContext(calS), s = tierRatesByContext(subS);
