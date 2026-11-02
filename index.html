@@ -900,6 +900,7 @@
             <button type="button" data-value="shot" class="active">Shot</button>
             <button type="button" data-value="poss">No-shot possession</button>
             <button type="button" data-value="fo">Faceoff</button>
+            <button type="button" data-value="gb">Ground ball</button>
           </div>
         </div>
       </div>
@@ -1160,6 +1161,15 @@
               <input type="text" id="f_slide_defender" inputmode="numeric" maxlength="3" placeholder="Jersey # (blank = no slide)" style="margin-top:6px; max-width:200px;">
               <div class="readout" id="slideResolve"></div>
             </div>
+            <div class="span-2">
+              <label>Slide Timing <span class="n-note">optional &mdash; blank means not judged</span></label>
+              <div class="pill-row" id="f_slide_timing"></div>
+              <div id="slideShouldWrap" style="display:none; margin-top:6px;">
+                <label for="f_slide_should">Who Should Have Slid? (#, optional)</label>
+                <input type="text" id="f_slide_should" inputmode="numeric" maxlength="3" placeholder="Jersey #" style="max-width:200px;">
+                <div class="readout" id="slideShouldResolve"></div>
+              </div>
+            </div>
             <div>
               <label>Was He Beaten?</label>
               <div class="pill-row" id="f_defbeaten"></div>
@@ -1341,18 +1351,23 @@
             <select id="fo_context"><option>Practice</option><option>Scrimmage</option><option>Game</option></select>
             <div id="foOpponentFieldWrap"><input type="text" id="fo_opponent"></div>
           </div>
+          <div style="display:none;"><select id="fo_player"></select><select id="fo_vsplayer"></select><select id="fo_won"></select></div>
           <div class="field-grid">
             <div>
-              <label for="fo_player">Faceoff Taker</label>
-              <select id="fo_player"></select>
+              <label for="fo_a" id="fo_a_label">Faceoff Man (#)</label>
+              <div class="pill-row" id="fo_a_pills"></div>
+              <input type="text" id="fo_a" inputmode="numeric" maxlength="30" placeholder="# or name" autocomplete="off" style="margin-top:6px; max-width:150px;">
+              <div class="readout" id="fo_a_res"></div>
             </div>
             <div>
-              <label for="fo_vsplayer">Faceoff Opponent (optional)</label>
-              <select id="fo_vsplayer"></select>
+              <label for="fo_b" id="fo_b_label">Other Faceoff Man (#)</label>
+              <div class="pill-row" id="fo_b_pills"></div>
+              <input type="text" id="fo_b" inputmode="numeric" maxlength="30" placeholder="# or name" autocomplete="off" style="margin-top:6px; max-width:150px;">
+              <div class="readout" id="fo_b_res"></div>
             </div>
-            <div>
-              <label for="fo_won">Result</label>
-              <select id="fo_won"><option value="">Select&hellip;</option><option value="Yes">Won</option><option value="No">Lost</option></select>
+            <div class="span-2">
+              <label id="fo_result_label">Who Won?</label>
+              <div class="pill-row" id="fo_result"></div>
             </div>
             <div>
               <label for="fo_notes">Notes (optional)</label>
@@ -1371,6 +1386,36 @@
         </div>
       </div>
     </div>
+
+    <div class="log-layout" id="gbEntry" style="display:none;">
+      <div class="log-form">
+        <div class="log-card">
+          <div class="log-card-head"><span class="step">1</span> Ground Ball</div>
+          <div id="gbMsg"></div>
+          <div class="field-grid">
+            <div id="gbTeamWrap" style="display:none;">
+              <label>Whose Ground Ball?</label>
+              <div class="seg" id="gbTeamSeg"><button type="button" data-value="WLU" class="active">Us</button><button type="button" data-value="OPP">Them</button></div>
+            </div>
+            <div>
+              <label for="gb_jersey" id="gb_jersey_label">Picked Up By (#)</label>
+              <input type="text" id="gb_jersey" inputmode="numeric" maxlength="30" placeholder="# then Enter" autocomplete="off" style="max-width:150px;">
+              <div class="readout" id="gb_res"></div>
+            </div>
+          </div>
+          <p class="sans n-note" style="font-size:12px; margin:8px 0 0;" id="gbSessionLine"></p>
+        </div>
+        <div class="save-bar">
+          <button class="btn" id="submitGbBtn">Save Ground Ball</button>
+          <button class="btn secondary" id="undoGbBtn" type="button">Undo last</button>
+        </div>
+      </div>
+    </div>
+
+    <details class="panel collapsible" id="trackPanel">
+      <summary><span class="panel-title">What we tracked this session</span> <span class="panel-sub">Complete / Partial / Not tracked, per category &mdash; Reports uses it to tell a real zero from a gap</span></summary>
+      <div id="trackLog" style="margin-top:10px;"></div>
+    </details>
 
     <details class="panel collapsible" id="recentPanel" open>
       <summary><span class="panel-title">This session&rsquo;s entries</span> <span class="panel-sub" id="recentSub"></span></summary>
@@ -2300,21 +2345,27 @@
         <div class="control-group"><button type="button" class="btn secondary" id="rptPrintBtn">Print / Save as PDF</button></div>
       </div>
     </div>
-    <div class="panel pm-hide rpt-sec" id="rptFullTeam"></div>
-    <div class="panel pm-hide rpt-sec">
-      <p class="panel-title">Position Groups</p>
-      <p class="panel-sub">Pick a group to see its own stats for this session, then pick a player below for his full sheet. Positions come from the Depth Chart; a player with a second position shows in both groups.</p>
-      <div class="grade-pills" id="rptGroupPills" style="margin:8px 0 10px;"></div>
-      <div id="rptGroupBody"></div>
-    </div>
+    <div class="panel pm-hide rpt-sec" id="rptTrackPanel"><div id="rptTrack"></div></div>
     <div class="panel rpt-sec">
+      <p class="panel-title">Scorecard</p>
+      <p class="panel-sub pm-hide">Whole team by default. Pick a position group, then a player, to narrow it.</p>
+      <div class="grade-pills pm-hide" id="rptGroupPills" style="margin:8px 0 10px;"></div>
       <div class="controls-row" style="margin-bottom:10px;">
         <div class="control-group"><label for="rptPlayerSelect">Player</label><select id="rptPlayerSelect"></select></div>
       </div>
-      <div id="rptSheet"></div>
-      <div id="rptPlayer"></div>
+      <div id="rptScore"></div>
+      <details class="collapsible" style="margin-top:12px;"><summary><span class="panel-title" style="font-size:14px;">How &ldquo;expected&rdquo; is calculated</span></summary><div id="rptModel"></div></details>
     </div>
-    <div class="panel pm-hide rpt-sec" id="rptTeam"></div>
+    <div class="panel rpt-sec">
+      <div id="rptPlayer"></div>
+      <div class="pm-hide" id="rptTeam"></div>
+    </div>
+    <details class="panel collapsible rpt-sec">
+      <summary><span class="panel-title">Details: full tables</span> <span class="panel-sub">team, group and player stat sheets for this period</span></summary>
+      <div class="pm-hide" id="rptFullTeam"></div>
+      <div class="pm-hide" id="rptGroupBody" style="margin-top:14px;"></div>
+      <div id="rptSheet" style="margin-top:14px;"></div>
+    </details>
   </section>
 
   <section id="depthView" class="view">
@@ -2650,7 +2701,11 @@ const COLS =["id","date","practiceId","context","shooterJersey","goalieJersey","
   // Identity (PR 7a-1): set once when the entry is created (the id of the operation that created it), kept through
   // edits and moves, never reused. A change made to an entry can't land on a different entry that later got the same
   // number. Entries created before this have none (null).
-  "eid"];
+  "eid",
+  // Slide timing (Nov 2026): what the slide looked like when it was logged, and (optional) who should have
+  // slid when it didn't come. null = not logged; nothing is inferred from a blank slide defender.
+  "slideTiming","slideShould"];
+const SLIDE_TIMING_OPTIONS = ['On time', 'Late', "Didn't come", 'Not needed', 'Unknown'];
 // team: 'OPP' marks an opponent shot on a WLU goalie (games). Those never go
 // into SHOTS (every shooting stat assumes a WLU shooter); they live in
 // OPP_SHOTS and feed only the goalie views. Opponent jerseys are stored as
@@ -2731,7 +2786,11 @@ document.getElementById('pf_trigger').insertAdjacentHTML('beforeend', TRIGGER_TE
 // Faceoffs are a separate event type from shots (a FO win doesn't always
 // produce a shot), so they get their own small collection rather than being
 // squeezed into the shot schema.
-const FACEOFF_COLS = ["id","date","context","opponent","playerJersey","won","notes","vsPlayerJersey"];
+// both (Nov 2026): 1 = a two-sided rep logged with both faceoff men and the winner (playerJersey won
+// when won = 1). Older practice records without an opponent were logged from the winner's side only.
+const FACEOFF_COLS = ["id","date","context","opponent","playerJersey","won","notes","vsPlayerJersey","both"];
+// Ground balls (Nov 2026): one event per ground ball. team 'WLU' or 'OPP'; an opponent's jersey is 'o' + number.
+const GB_COLS = ["id","date","context","opponent","team","jersey"];
 // Season roster docs: app/roster_2026, app/roster_2027, ... The list runs
 // from 2026 through the season we're in now (fall counts toward next
 // spring), so a new season appears on its own and its roster doc is seeded
@@ -3805,6 +3864,16 @@ async function loadAll() {
     rebuildFaceoffs();
     renderFaceoffs();
   }, e => console.error('faceoffs sync error', e));
+  const gbRef = DB.doc('app/groundballs_live');
+  try { const gs = await gbRef.get(); if (gs.exists) LIVE_GB_TUPLES = gbTuplesFrom(gs.data()); } catch (e) { noteDbError('ground balls', e); }
+  rebuildGroundBalls();
+  gbRef.onSnapshot(snap => { LIVE_GB_TUPLES = snap.exists ? gbTuplesFrom(snap.data()) : []; rebuildGroundBalls(); if (document.getElementById('gbEntry').style.display !== 'none') renderGbForm(); }, e => console.error('ground balls sync error', e));
+  const xsRef = DB.doc('app/xg_snapshots');
+  try { const xs = await xsRef.get(); XG_SNAPS = xs.exists ? xgSnapsFrom(xs.data()) : {}; } catch (e) { noteDbError('model snapshots', e); }
+  xsRef.onSnapshot(snap => { XG_SNAPS = snap.exists ? xgSnapsFrom(snap.data()) : {}; }, e => console.error('model snapshots sync error', e));
+  const trRef = DB.doc('app/session_tracking');
+  try { const ts = await trRef.get(); TRACKING = ts.exists ? trackingFrom(ts.data()) : {}; } catch (e) { noteDbError('session tracking', e); }
+  trRef.onSnapshot(snap => { TRACKING = snap.exists ? trackingFrom(snap.data()) : {}; renderTrackingControls(); }, e => console.error('tracking sync error', e));
   // Official prior-season stats (for projections) and the coach's roles.
   ADV_SEASONS.forEach(season => {
     const prev = String(Number(season) - 1);
@@ -4089,8 +4158,11 @@ function calibration2026Shots() { return SHOTS.filter(s => seasonForDate(s.date)
 // metric, the Efficiency tab and the goalie table never disagree with each
 // other about the same shot's expected value. Every season is calibrated on
 // the 2026 prior and shifts toward its own rate as its volume grows.
-function xgModelFor(season) { return buildXgModel(calibration2026Shots(), advShots(season)); }
-function facedXgModelFor(season) { return buildFacedXgModel(calibration2026Shots(), isAdvSeason(season) ? goalieShotsForSeason(season) : []); }
+// XG_FIXED: a saved, dated model a Reports scorecard is judged with (see xgSnapshotFor). Set only while a
+// scorecard is computed; every other view (projections included) reads the latest model.
+let XG_FIXED = null;
+function xgModelFor(season) { if (XG_FIXED && XG_FIXED.season === season) return XG_FIXED.shot; return buildXgModel(calibration2026Shots(), advShots(season)); }
+function facedXgModelFor(season) { if (XG_FIXED && XG_FIXED.season === season) return XG_FIXED.faced; return buildFacedXgModel(calibration2026Shots(), isAdvSeason(season) ? goalieShotsForSeason(season) : []); }
 // The season the advanced views read when their tab's season pill is on
 // 2026 or All Seasons: the season we're in now.
 function currentAdvSeason() { return ADV_SEASONS[ADV_SEASONS.length - 1]; }
@@ -4987,6 +5059,7 @@ function onSessionChanged() {
   applyTeamToForm();
   renderRecentEntries();
   renderGameScore();
+  renderFoForm(); renderGbForm(); renderTrackingControls();
 }
 // Typing a date fires a change for every part typed (e.g. years 0002, 0020, 0209 on the way to 2099); only a whole date
 // counts, so a half-typed year can't switch the session or drop the goalie.
@@ -5095,36 +5168,119 @@ document.getElementById('fo_player').addEventListener('change', () => refreshFoR
 
 function showFoMsg(text, ok) { flashMsg('foMsg', text, ok); }
 
+// Faceoff entry (Nov 2026). Practice: both of our faceoff men and who won, stored as ONE two-sided
+// event (both = 1). Game / scrimmage with an opponent: our man, their man's number (optional), won/lost.
+let foResult = null;
+const foOppSide = () => hasOpponentSession();
+function renderFoForm() {
+  const opp = foOppSide(), season = currentLogSeason();
+  document.getElementById('fo_a_label').textContent = opp ? 'Our Faceoff Man (#)' : 'Faceoff Man (#)';
+  document.getElementById('fo_b_label').textContent = opp ? 'Their Faceoff Man (#, optional)' : 'Other Faceoff Man (#)';
+  const a = readJerseyField('fo_a', 'WLU'), b = readJerseyField('fo_b', opp ? 'OPP' : 'WLU');
+  const lab = r => r.ok && r.value ? jerseyLabel(r.value, season) : null;
+  const opts = opp ? [['A', 'Won'], ['B', 'Lost']] : [['A', (lab(a) || 'First man') + ' won'], ['B', (lab(b) || 'Other man') + ' won']];
+  const box = document.getElementById('fo_result');
+  box.innerHTML = opts.map(([v, l]) => `<button type="button" class="pill${foResult === v ? ' active' : ''}" data-v="${v}">${escapeHtml(l)}</button>`).join('');
+  box.querySelectorAll('button').forEach(btn => btn.addEventListener('click', () => { foResult = foResult === btn.dataset.v ? null : btn.dataset.v; renderFoForm(); }));
+  const pills = (wrapId, inputId) => {
+    const w = document.getElementById(wrapId), cur = normJerseyText(document.getElementById(inputId).value);
+    w.innerHTML = fogoRoster(season).map(r => `<button type="button" class="pill${cur === r.jersey ? ' active' : ''}" data-j="${escapeHtml(r.jersey)}">#${escapeHtml(r.jersey)} ${escapeHtml(lastNameOf(r.name))}</button>`).join('');
+    w.querySelectorAll('button').forEach(btn => btn.addEventListener('click', () => { const i = document.getElementById(inputId); i.value = normJerseyText(i.value) === btn.dataset.j ? '' : btn.dataset.j; i.dispatchEvent(new Event('input')); }));
+  };
+  pills('fo_a_pills', 'fo_a');
+  if (opp) document.getElementById('fo_b_pills').innerHTML = ''; else pills('fo_b_pills', 'fo_b');
+}
+bindJerseyReadout('fo_a', 'fo_a_res', () => 'WLU');
+bindJerseyReadout('fo_b', 'fo_b_res', () => (foOppSide() ? 'OPP' : 'WLU'));
+['fo_a', 'fo_b'].forEach(id => document.getElementById(id).addEventListener('input', renderFoForm));
 document.getElementById('submitFaceoffBtn').addEventListener('click', async () => {
   const sess = readSessionFields();
   if (sess.error) { showFoMsg(escapeHtml(sess.error), false); return; }
   document.getElementById('fo_date').value = sess.date;
   document.getElementById('fo_context').value = sess.context;
   document.getElementById('fo_opponent').value = sess.opponent || '';
-  const player = document.getElementById('fo_player').value;
-  const won = document.getElementById('fo_won').value;
-  if (!player) { showFoMsg('Pick who took the faceoff.', false); return; }
-  if (!won) { showFoMsg('Pick the result.', false); return; }
-
-  const maxId = FACEOFFS.reduce((m,f)=>Math.max(m, f.id||0), 0);
+  const opp = foOppSide();
+  const a = readJerseyField('fo_a', 'WLU'), b = readJerseyField('fo_b', opp ? 'OPP' : 'WLU');
+  if (!a.ok) { showFoMsg(escapeHtml(a.why), false); return; }
+  if (!b.ok) { showFoMsg(escapeHtml(b.why), false); return; }
+  if (!a.value) { showFoMsg(opp ? 'Type our faceoff man’s number.' : 'Type the first faceoff man’s number.', false); return; }
+  if (!opp && !b.value) { showFoMsg('Type the other faceoff man’s number (both are ours in practice).', false); return; }
+  if (!opp && a.value === b.value) { showFoMsg('The two faceoff men must be different players.', false); return; }
+  if (!foResult) { showFoMsg(opp ? 'Pick Won or Lost.' : 'Pick who won.', false); return; }
+  const maxId = FACEOFFS.reduce((m, f) => Math.max(m, f.id || 0), 0);
   const faceoff = {
-    id: maxId + 1,
-    date: sess.date,
-    context: sess.context,
-    opponent: sess.opponent,
-    playerJersey: player,
-    won: won === 'Yes' ? 1 : 0,
+    id: maxId + 1, date: sess.date, context: sess.context, opponent: sess.opponent,
+    playerJersey: a.value, won: foResult === 'A' ? 1 : 0,
     notes: cleanText(document.getElementById('fo_notes').value).trim().slice(0, 120) || null,
-    vsPlayerJersey: document.getElementById('fo_vsplayer').value || null,
+    vsPlayerJersey: b.value || null, both: opp ? null : 1,
   };
   FACEOFFS.push(faceoff);
   const okSave = await persistFaceoff(faceoff);
   if (!okSave) { FACEOFFS.pop(); showFoMsg('Save failed — please try again.', false); return; }
-
-  showFoMsg(`Saved faceoff #${faceoff.id} for #${escapeHtml(player)} ${escapeHtml(nameFor(player, currentFoSeason()))}.`, true);
-  document.getElementById('fo_won').value = '';
+  const season = currentFoSeason(), winner = foResult === 'A' ? a.value : b.value;
+  showFoMsg(`Saved faceoff #${faceoff.id}: ${escapeHtml(jerseyLabel(a.value, season))} vs ${b.value ? escapeHtml(jerseyLabel(b.value, season)) : 'their man'} — ${winner ? escapeHtml(jerseyLabel(winner, season)) + ' won' : 'lost'}.`, true);
+  foResult = null;
   document.getElementById('fo_notes').value = '';
-  document.getElementById('fo_vsplayer').value = '';
+  renderFoForm();
+});
+
+// ---------------- Ground balls (Nov 2026) ----------------
+// One tap-and-type event per ground ball. Saved like faceoffs: one field per event in app/groundballs_live.
+let GROUNDBALLS = [], LIVE_GB_TUPLES = [];
+const gbKeyNew = () => 'gb_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+function gbTuplesFrom(data) {
+  const out = [];
+  Object.keys(data || {}).filter(k => /^gb_/.test(k)).sort().forEach(k => { try { const t = JSON.parse(data[k]); t.__key = k; out.push(t); } catch (e) { /* skip a bad entry */ } });
+  return out;
+}
+function rebuildGroundBalls() { GROUNDBALLS = LIVE_GB_TUPLES.map(t => Object.assign(tupleToObj(t, GB_COLS), { _key: t.__key })); }
+async function persistGroundBall(g) {
+  if (!DB) return false;
+  g._key = g._key || gbKeyNew();
+  return settleWrite(DB.doc('app/groundballs_live').set({ [g._key]: JSON.stringify(objToTuple(g, GB_COLS)) }, { merge: true })).then(r => r !== 'error');
+}
+async function deleteGroundBall(g) {
+  if (!DB || !g._key) return false;
+  return settleWrite(DB.doc('app/groundballs_live').update({ [g._key]: firebase.firestore.FieldValue.delete() })).then(r => r !== 'error');
+}
+function showGbMsg(text, ok) { flashMsg('gbMsg', text, ok); }
+const gbTeam = () => (foOppSide() ? (segValue('gbTeamSeg') || 'WLU') : 'WLU');
+function renderGbForm() {
+  const opp = foOppSide();
+  document.getElementById('gbTeamWrap').style.display = opp ? '' : 'none';
+  if (!opp) setSegValue('gbTeamSeg', 'WLU');
+  document.getElementById('gb_jersey_label').textContent = gbTeam() === 'OPP' ? 'Their Player (#)' : 'Picked Up By (#)';
+  const sess = readSessionFields();
+  const mine = sess.error ? [] : GROUNDBALLS.filter(g => g.date === sess.date && sessionIdFor(g) === sessionIdFor(sess));
+  const us = mine.filter(g => g.team !== 'OPP').length, them = mine.length - us;
+  document.getElementById('gbSessionLine').textContent = sess.error ? '' : `This session: ${mine.length} ground ball${mine.length === 1 ? '' : 's'} logged${opp ? ` (us ${us}, them ${them})` : ''}.`;
+}
+setupSeg('gbTeamSeg', () => { renderGbForm(); document.getElementById('gb_jersey').dispatchEvent(new Event('input')); document.getElementById('gb_jersey').focus(); });
+bindJerseyReadout('gb_jersey', 'gb_res', gbTeam);
+async function submitGroundBall() {
+  const sess = readSessionFields();
+  if (sess.error) { showGbMsg(escapeHtml(sess.error), false); return; }
+  const team = gbTeam(), r = readJerseyField('gb_jersey', team);
+  if (!r.ok) { showGbMsg(escapeHtml(r.why), false); return; }
+  if (!r.value) { showGbMsg('Type the number of who picked it up.', false); return; }
+  const g = { id: GROUNDBALLS.reduce((m, x) => Math.max(m, x.id || 0), 0) + 1, date: sess.date, context: sess.context, opponent: sess.opponent || null, team, jersey: r.value };
+  GROUNDBALLS.push(g);
+  if (!(await persistGroundBall(g))) { GROUNDBALLS = GROUNDBALLS.filter(x => x !== g); showGbMsg('Save failed — please try again.', false); return; }
+  showGbMsg(`Saved ground ball: ${escapeHtml(jerseyLabel(r.value, currentLogSeason()))}.`, true);
+  const i = document.getElementById('gb_jersey'); i.value = ''; i.dispatchEvent(new Event('input')); i.focus();
+  renderGbForm();
+}
+document.getElementById('submitGbBtn').addEventListener('click', submitGroundBall);
+document.getElementById('gb_jersey').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); submitGroundBall(); } });
+document.getElementById('undoGbBtn').addEventListener('click', async () => {
+  const sess = readSessionFields();
+  if (sess.error) { showGbMsg(escapeHtml(sess.error), false); return; }
+  const last = GROUNDBALLS.filter(g => sessionIdFor(g) === sessionIdFor(sess)).sort((x, y) => (y.id || 0) - (x.id || 0))[0];
+  if (!last) { showGbMsg('No ground ball logged in this session yet.', false); return; }
+  if (!(await deleteGroundBall(last))) { showGbMsg('Undo failed — please try again.', false); return; }
+  GROUNDBALLS = GROUNDBALLS.filter(g => g !== last);
+  showGbMsg(`Removed the last ground ball (${escapeHtml(jerseyLabel(last.jersey, currentLogSeason()))}).`, true);
+  renderGbForm();
 });
 
 let pendingNewPlayer = null; // { role, onResolved(jersey, name), onCancel() }
@@ -5393,7 +5549,10 @@ function showEntryType(kind) {
   document.getElementById('shotEntry').style.display = kind === 'shot' ? '' : 'none';
   document.getElementById('possEntry').style.display = kind === 'poss' ? '' : 'none';
   document.getElementById('foEntry').style.display = kind === 'fo' ? '' : 'none';
-  document.getElementById('lineupBar').style.display = kind === 'fo' ? 'none' : '';
+  document.getElementById('gbEntry').style.display = kind === 'gb' ? '' : 'none';
+  document.getElementById('lineupBar').style.display = kind === 'fo' || kind === 'gb' ? 'none' : '';
+  if (kind === 'fo') renderFoForm();
+  if (kind === 'gb') renderGbForm();
 }
 
 function isGameSession() { return document.getElementById('f_context').dataset.value === 'Game'; }
@@ -5476,6 +5635,13 @@ bindJerseyReadout('p_caused_by', 'pCausedResolve', () => otherTeam(currentTeam()
 // Defenders belong to the team without the ball (in practice, WLU).
 bindJerseyReadout('f_defender', 'defenderResolve', () => otherTeam(currentTeam()));
 bindJerseyReadout('f_slide_defender', 'slideResolve', () => otherTeam(currentTeam()));
+bindJerseyReadout('f_slide_should', 'slideShouldResolve', () => otherTeam(currentTeam()));
+function updateSlideShould() {
+  const on = document.getElementById('f_slide_timing').dataset.value === "Didn't come";
+  document.getElementById('slideShouldWrap').style.display = on ? '' : 'none';
+  if (!on) { document.getElementById('f_slide_should').value = ''; document.getElementById('slideShouldResolve').innerHTML = ''; }
+}
+setupPillGroup('f_slide_timing', SLIDE_TIMING_OPTIONS, null, updateSlideShould);
 // One-tap defender pills from the defense row of the lineup bar; the typed
 // box stays for anyone not in the bar.
 function renderDefenderPills() {
@@ -5510,7 +5676,7 @@ bindJerseyReadout('f_offball_fault', 'offBallResolve', () => otherTeam(currentTe
 function refreshJerseyReadouts() {
   renderDefenderPills();
   ['f_adv_creator','f_possstart_jersey','p_adv_creator','p_possstart_jersey','p_turnover_by','p_caused_by',
-   'f_pick_screener','f_pick_user','p_pick_screener','p_pick_user','f_defender','f_slide_defender','f_offball_fault',
+   'f_pick_screener','f_pick_user','p_pick_screener','p_pick_user','f_defender','f_slide_defender','f_offball_fault','f_slide_should',
    'f_pick_screener_def','f_pick_user_def','p_pick_screener_def','p_pick_user_def'].forEach(id => {
     const el = document.getElementById(id); if (el.__updateReadout) el.__updateReadout();
   });
@@ -5945,8 +6111,8 @@ function pointSessionBarAt(entry) {
 }
 function resetShotFields() {
   ['f_outcome','f_cleansave','f_screened','f_goalieset','f_outlet','f_catchdodge','f_quality','f_contest','f_defscheme','f_handedness',
-   'f_transitiontype','f_shotmechanism','f_rebound','f_bounceshot','f_dominoes','f_advtype','f_possstart','f_defbeaten','f_beatenhow'].forEach(id => setPillGroupValue(id, null));
-  updateBeatenHow();
+   'f_transitiontype','f_shotmechanism','f_rebound','f_bounceshot','f_dominoes','f_advtype','f_possstart','f_defbeaten','f_beatenhow','f_slide_timing'].forEach(id => setPillGroupValue(id, null));
+  updateBeatenHow(); updateSlideShould();
   setPillGroupValue('f_mansituation', 'Even');
   ['f_shooter_name','f_assist_name','f_opp_shooter','f_opp_passer','f_trigger','f_adv_creator','f_possstart_jersey','f_defender','f_slide_defender','f_offball_fault'].forEach(id => { document.getElementById(id).value = ''; });
   resolvedShooterJersey = null;
@@ -6042,6 +6208,9 @@ function startEditShot(id, returnTo, sid) {
   updateBeatenHow();
   setPillGroupValue('f_beatenhow', shot.beatenHow || null);
   document.getElementById('f_offball_fault').value = shot.offBallFault ? shot.offBallFault.replace(/^o/, '') : '';
+  setPillGroupValue('f_slide_timing', shot.slideTiming || null);
+  updateSlideShould();
+  document.getElementById('f_slide_should').value = shot.slideShould ? shot.slideShould.replace(/^o/, '') : '';
   refreshJerseyReadouts();
   buildFieldClickWidget({ distanceYds: shot.distanceYds, lateralYds: shot.lateralYds });
   buildGoalClickWidget({ goalX: shot.goalX, goalY: shot.goalY });
@@ -6135,6 +6304,11 @@ async function saveShotFromForm(step) {
   const offFault = readJerseyField('f_offball_fault', otherTeam(team));
   if (!offFault.ok) { showMsg('Off-ball breakdown: ' + offFault.why, false); return; }
   if (offFault.value && offFault.value === defOn.value) { showMsg('The off-ball breakdown can’t be the on-ball defender.', false); return; }
+  const slideTiming = document.getElementById('f_slide_timing').dataset.value || null;
+  const slideShould = readJerseyField('f_slide_should', otherTeam(team));
+  if (!slideShould.ok) { showMsg('Who should have slid: ' + slideShould.why, false); return; }
+  if ((slideTiming === "Didn't come" || slideTiming === 'Not needed') && defSlide.value) { showMsg(`Slide timing says “${slideTiming}”, but a slide defender is filled in. Clear one of them.`, false); return; }
+  if ((slideTiming === 'On time' || slideTiming === 'Late') && !defSlide.value) { showMsg(`Slide timing says “${slideTiming}”: type who slid.`, false); return; }
   const isEdit = editingShotId !== null;
   if (!isEdit && decorateChips().length) { showMsg('Fix the lineup bar first (marked in red), or clear it.', false); return; }
 
@@ -6184,6 +6358,8 @@ async function saveShotFromForm(step) {
     defBeaten: document.getElementById('f_defbeaten').dataset.value || null,
     beatenHow: document.getElementById('f_defbeaten').dataset.value === 'Yes' ? (document.getElementById('f_beatenhow').dataset.value || null) : null,
     offBallFault: offFault.value,
+    slideTiming,
+    slideShould: slideTiming === "Didn't come" ? slideShould.value : null,
   };
   Object.assign(shotData, pk.data);
   const gt = readGameTime(sess.context);
@@ -7746,7 +7922,7 @@ function buildEffData() {
   const players = {}; // jersey -> totals
   const bySession = {}; // sid -> { meta, players: { jersey: box } }
   const P = j => (players[j] = players[j] || { jersey: j, shots: 0, goals: 0, assists: 0, xg: 0, potAst: 0, xa: 0, fedShots: [], onGoal: 0, ownShots: [],
-    gb: 0, to: 0, ct: 0, foWins: 0, dominoes: 0, domShots: 0, domGood: 0, domGoals: 0, domXg: 0, sessions: new Set(), stintSessions: new Set() });
+    gb: 0, gbLog: 0, to: 0, ct: 0, foWins: 0, dominoes: 0, domShots: 0, domGood: 0, domGoals: 0, domXg: 0, sessions: new Set(), stintSessions: new Set() });
   const S = (e) => {
     const sid = sessKey(e);
     return (bySession[sid] = bySession[sid] || { sid, date: e.date, context: e.context, opponent: e.opponent, players: {}, hasStints: false });
@@ -7754,7 +7930,7 @@ function buildEffData() {
   const B = (e, j) => {
     const sess = S(e);
     P(j).sessions.add(sess.sid);
-    return (sess.players[j] = sess.players[j] || { jersey: j, g: 0, a: 0, xg: 0, xa: 0, shots: 0, potAst: 0, gb: 0, to: 0, ct: 0, dom: 0 });
+    return (sess.players[j] = sess.players[j] || { jersey: j, g: 0, a: 0, xg: 0, xa: 0, shots: 0, potAst: 0, gb: 0, gbLog: 0, to: 0, ct: 0, dom: 0 });
   };
   const markStint = e => {
     const on = wluOnField(e);
@@ -7790,6 +7966,10 @@ function buildEffData() {
     if (p.possStart === 'FO win' && p.possStartJersey && !isOppJersey(p.possStartJersey)) P(p.possStartJersey).foWins++;
     markStint(p);
   });
+  // Ground-ball totals (gbLog) come from the ground-ball log. gb stays "possessions he started with a ground ball"
+  // (Possession Started By) for possession analysis; the two are never added together.
+  GROUNDBALLS.filter(g => g.team !== 'OPP' && g.jersey && !isOppJersey(g.jersey) && seasonForDate(g.date) === EFF_SEASON && effContextOk(g) && effFromOk(g) && effOnlyOk(g))
+    .forEach(g => { P(g.jersey).gbLog++; B(g, g.jersey).gbLog++; });
   const d = { model, shots, oppShots, poss, players, bySession, xgOf };
   // Dominoes are credited once per possession (a rebound shot flagged again
   // doesn't count twice), to whoever is logged as starting them.
@@ -7809,9 +7989,25 @@ function buildEffData() {
 
 // Game Score: one number per player per session. Weights are shown in the
 // column tooltip; they reward finishing and creating, and charge turnovers.
-const GAME_SCORE_W = { g: 1.0, a: 0.75, xg: 0.5, xa: 0.35, gb: 0.3, ct: 0.5, to: -0.5, dom: 0.25 };
-const GAME_SCORE_TIP = 'Game Score = 1.0 x goals + 0.75 x assists + 0.5 x xG + 0.35 x xA + 0.3 x ground balls + 0.5 x caused turnovers + 0.25 x dominoes started - 0.5 x turnovers.';
+const GAME_SCORE_W = { g: 1.0, a: 0.75, xg: 0.5, xa: 0.35, gbLog: 0.3, ct: 0.5, to: -0.5, dom: 0.25 };
+const GAME_SCORE_TIP = 'Game Score = 1.0 x goals + 0.75 x assists + 0.5 x xG + 0.35 x xA + 0.3 x ground balls (from the ground-ball log) + 0.5 x caused turnovers + 0.25 x dominoes started - 0.5 x turnovers.';
 function gameScore(b) { return Object.keys(GAME_SCORE_W).reduce((sum, k) => sum + GAME_SCORE_W[k] * (b[k] || 0), 0); }
+// Game Score is only complete for a session whose ground balls were marked Complete; otherwise unlogged ground
+// balls are missing from it (not zero), so it is shown as provisional and isn't comparable with complete ones.
+const gsComplete = sid => trackStatus(sid, 'gb') === 'C';
+// Ground-ball coverage of a set of sessions: 'C' every session marked Complete; 'N' none tracked (marked Not tracked,
+// or never confirmed with nothing logged); otherwise 'P' (partial: some sessions, partial tracking, or logged without
+// confirming). Displays: N -> "Not tracked" / "—", C -> the count (0 is a real zero), P -> the count labeled partial.
+function gbCoverage(keys) {
+  const logged = new Set(GROUNDBALLS.map(g => sessKey(g)));
+  const st = keys.map(k => { const t = trackStatus(k, 'gb'); return t === 'C' || t === 'N' || t === 'P' ? t : (logged.has(k) ? 'P' : 'N'); });
+  if (!st.length || st.every(x => x === 'N')) return 'N';
+  return st.every(x => x === 'C') ? 'C' : 'P';
+}
+// One cell: "—" when not tracked (or a partial zero, which isn't a measured zero), the count when complete, else "n partial".
+const gbCell = (v, cov) => cov === 'N' || (cov === 'P' && !v) ? '—' : cov === 'C' ? String(v || 0) : `${v} <span class="n-note">partial</span>`;
+const GS_PROV_TIP = 'Provisional: ground balls weren’t marked Complete for this session, so ground balls that weren’t logged are missing from the score (not counted as zero). Not comparable with fully tracked sessions. Earlier versions added 0.3 for each ground ball tagged as starting a possession; a possession tag isn’t a ground-ball count, so that is no longer included.';
+const gsCell = (v, inc, tip) => v === null || v === undefined ? '—' : `${num(v, 2)}${inc ? `<span title="${escapeHtml(tip || GS_PROV_TIP)}" style="color:var(--gold-ink); cursor:help;">*</span>` : ''}`;
 function stdev(arr) {
   if (arr.length < 2) return null;
   const m = arr.reduce((a, b) => a + b, 0) / arr.length;
@@ -7964,17 +8160,17 @@ function renderEffPossession(d, possList) {
   const wc = clearTally(d.shots, d.poss.filter(p => p.team !== 'OPP'));
   const oc = clearTally(d.oppShots, d.poss.filter(p => p.team === 'OPP'));
   const clears = wc.ok, failed = wc.failed, oppClears = oc.ok, oppFailed = oc.failed;
-  sub.innerHTML = `Ground balls and faceoff wins come from <b>Possession Started By</b>; turnovers and caused turnovers from no-shot possessions. `
+  sub.innerHTML = `Possessions started by a ground ball (GB&rarr;poss) and faceoff wins come from <b>Possession Started By</b> (ground-ball totals are on the ground-ball log); turnovers and caused turnovers from no-shot possessions. `
     + `Clearing: ${clears + failed ? `${clears}/${clears + failed} (${pct(ratio(clears, clears + failed))})` : 'none logged'}.`
     + (EFF_CONTEXT !== 'Practice' ? ` Riding (opponent failed clears): ${oppClears + oppFailed ? `${oppFailed}/${oppClears + oppFailed} (${pct(ratio(oppFailed, oppClears + oppFailed))})` : 'none logged'}.` : '')
     + ` ${wlu.length} WLU possessions in view.`;
   const cols = [
     { key: 'jersey', label: '#', type: 'text', value: r => r.jersey },
     { key: 'name', label: 'Name', type: 'text', value: r => r.name, format: nameCell },
-    { key: 'gb', label: 'GB', type: 'num', value: r => r.gb, title: 'Ground balls that started a possession.' },
+    { key: 'gb', label: 'GB→poss', type: 'num', value: r => r.gb, title: 'Possessions he started by picking up a ground ball (Possession Started By). Not a ground-ball total: those come from the ground-ball log.' },
     { key: 'ct', label: 'Caused TO', type: 'num', value: r => r.ct },
     { key: 'to', label: 'TO', type: 'num', value: r => r.to },
-    { key: 'net', label: 'GB+CT−TO', type: 'num', value: r => r.net, format: v => signed(v, 0), title: 'Possessions won minus possessions given away.' },
+    { key: 'net', label: 'Poss +/−', type: 'num', value: r => r.net, format: v => signed(v, 0), title: 'Possessions won (GB-started possessions + caused turnovers) minus turnovers. Uses the possession tags, not ground-ball totals.' },
     { key: 'foWins', label: 'FO Wins', type: 'num', value: r => r.foWins, title: 'Faceoff wins tagged as the start of a logged possession (the Faceoffs tab has full faceoff records).' },
     { key: 'dominoes', label: 'Dominoes', type: 'num', value: r => r.dominoes },
   ];
@@ -8025,12 +8221,13 @@ function renderEffRates(d) {
       jersey: p.jersey, name: nameFor(p.jersey, EFF_SEASON), apps, fromStints,
       gPer: g / apps, aPer: a / apps, pPer: (g + a) / apps, xgPer: xg / apps, xaPer: xa / apps, xpPer: (xg + xa) / apps,
       gs: boxes.reduce((acc, b) => acc + gameScore(b), 0) / apps,
+      gsInc: sessions.filter(s => !gsComplete(s.sid)).length,
       consistency: stdev(boxes.map(b => b.xg + b.xa)),
     });
   });
   const withStints = Object.values(d.bySession).filter(s => s.hasStints).length;
   const totalSess = Object.keys(d.bySession).length;
-  sub.textContent = `${EFF_SEASON} ${EFF_CTX_WORD()}, per ${EFF_CONTEXT === 'All' ? 'session (practice, scrimmage or game)' : EFF_CONTEXT.toLowerCase()} played. An appearance is any session a player was in a logged lineup; in sessions without lineups (${totalSess - withStints} of ${totalSess}) it falls back to sessions where he shot, passed or was tagged — which misses sessions he played quietly. Apps marked * include fallback sessions.`;
+  sub.textContent = `${EFF_SEASON} ${EFF_CTX_WORD()}, per ${EFF_CONTEXT === 'All' ? 'session (practice, scrimmage or game)' : EFF_CONTEXT.toLowerCase()} played. An appearance is any session a player was in a logged lineup; in sessions without lineups (${totalSess - withStints} of ${totalSess}) it falls back to sessions where he shot, passed or was tagged — which misses sessions he played quietly. Apps marked * include fallback sessions.` + (rows.some(r => r.gsInc) ? ' Game Score * = provisional: ground balls weren’t tracked completely in some of his sessions, so it isn’t comparable with fully tracked ones.' : '');
   const d2 = v => num(v, 2);
   const cols = [
     { key: 'jersey', label: '#', type: 'text', value: r => r.jersey },
@@ -8042,7 +8239,7 @@ function renderEffRates(d) {
     { key: 'xgPer', label: 'xG', type: 'num', value: r => r.xgPer, format: d2, group: 'Expected per session' },
     { key: 'xaPer', label: 'xA', type: 'num', value: r => r.xaPer, format: d2, group: 'Expected per session' },
     { key: 'xpPer', label: 'xP', type: 'num', value: r => r.xpPer, format: d2, group: 'Expected per session', title: 'Expected points per session (xG + xA). The best single read of a player’s output rate, since it doesn’t swing on finishing luck.' },
-    { key: 'gs', label: 'Game Score', type: 'num', value: r => r.gs, format: d2, title: GAME_SCORE_TIP + ' Averaged per session.' },
+    { key: 'gs', label: 'Game Score', type: 'num', value: r => r.gs, format: (v, r) => gsCell(v, r.gsInc > 0, `Provisional: ${r.gsInc} of ${r.apps} sessions didn’t have ground balls marked Complete. ` + GS_PROV_TIP.replace(/^Provisional: [^.]*\. /, '')), title: GAME_SCORE_TIP + ' Averaged per session. * = provisional (ground balls not tracked completely in some sessions).' },
     { key: 'consistency', label: 'Swing', type: 'num', value: r => r.consistency, format: d2, title: 'Consistency: how much his per-session xP moves around (standard deviation). Lower = steadier. Needs 2+ sessions.' },
   ];
   renderSortableTable('effRateWrap', cols, rows, { dense: true, defaultSort: { key: 'xpPer', dir: 'desc' }, emptyMsg: 'No ' + EFF_SEASON + ' sessions logged yet.' });
@@ -8058,7 +8255,8 @@ function renderEffBoxScore(d) {
   const sub = document.getElementById('effBoxSub');
   if (!sess) { sub.textContent = ''; document.getElementById('effBoxWrap').innerHTML = ''; return; }
   const rows = Object.values(sess.players).map(b => Object.assign({ name: nameFor(b.jersey, EFF_SEASON), p: b.g + b.a, gs: gameScore(b) }, b));
-  sub.textContent = `${rows.length} player(s) with a logged lineup or involvement.` + (sess.hasStints ? '' : ' No lineups logged for this session.');
+  const gsInc = !gsComplete(sess.sid), gbCov = gbCoverage([sess.sid]);
+  sub.textContent = `${rows.length} player(s) with a logged lineup or involvement.` + (sess.hasStints ? '' : ' No lineups logged for this session.') + (gsInc ? ' Game Scores are provisional (*): ground balls weren’t marked Complete for this session.' : '');
   const d1 = v => num(v, 1);
   const cols = [
     { key: 'jersey', label: '#', type: 'text', value: r => r.jersey },
@@ -8068,11 +8266,11 @@ function renderEffBoxScore(d) {
     { key: 'a', label: 'A', type: 'num', value: r => r.a },
     { key: 'xg', label: 'xG', type: 'num', value: r => r.xg, format: d1 },
     { key: 'xa', label: 'xA', type: 'num', value: r => r.xa, format: d1 },
-    { key: 'gb', label: 'GB', type: 'num', value: r => r.gb },
+    { key: 'gbLog', label: 'GB', type: 'num', value: r => r.gbLog, format: v => gbCell(v, gbCov), title: 'Ground balls from the ground-ball log. “—” = not tracked; 0 = tracked completely, none picked up; “partial” = only partly tracked.' },
     { key: 'ct', label: 'CT', type: 'num', value: r => r.ct },
     { key: 'to', label: 'TO', type: 'num', value: r => r.to },
     { key: 'dom', label: 'Dominoes', type: 'num', value: r => r.dom },
-    { key: 'gs', label: 'Game Score', type: 'num', value: r => r.gs, format: v => num(v, 2), title: GAME_SCORE_TIP },
+    { key: 'gs', label: 'Game Score', type: 'num', value: r => r.gs, format: v => gsCell(v, gsInc), title: GAME_SCORE_TIP + (gsInc ? ' * = provisional: ground balls weren’t marked Complete for this session.' : '') },
   ];
   renderSortableTable('effBoxWrap', cols, rows, { dense: true, defaultSort: { key: 'gs', dir: 'desc' } });
 }
@@ -9101,7 +9299,7 @@ function computeShooterScores(season, tab, from) {
       dom: { points: tDom ? gsPoints(domS, tDomS, i.apps, SS_K.sessions, SS_SCALE.perSess) : null,
         detail: tDom ? `${p.dominoes} started · ${num(domS, 2)} per session vs ${num(tDomS, 2)}` : 'no dominoes logged yet' },
       poss: { points: tPoss ? gsPoints(possS, tPossS, i.apps, SS_K.sessions, SS_SCALE.perSess) : null,
-        detail: tPoss ? `${p.gb} GB + ${p.ct} CT · ${num(possS, 2)} per session vs ${num(tPossS, 2)}` : 'no ground balls or caused TOs logged yet' },
+        detail: tPoss ? `${p.gb} GB-started possessions + ${p.ct} CT · ${num(possS, 2)} per session vs ${num(tPossS, 2)}` : 'no GB-started possessions or caused TOs logged yet' },
     };
     const used = parts.filter(pt => vals[pt.key].points !== null);
     const wSum = used.reduce((a, pt) => a + pt.weight, 0);
@@ -9337,6 +9535,7 @@ function renderDefense() {
   ].join('') : '';
   document.getElementById('defSub').textContent = `${season} ${defContext === 'All' ? 'practice + game' : defContext.toLowerCase()} shots with a WLU on-ball defender logged (${logged.length} of ${shots.length}). In games these are opponent shots. xG allowed is the expected-goal value of the looks he gave up; G−xG /100 is goals allowed above (+, worse) or below (−, better) what those looks predict. Gray italic rows have fewer than 5 shots.`;
   const eff = effDataFor(season);
+  const defGbCov = gbCoverage(Object.keys(eff.bySession));
   const byD = {}, byS = {};
   const byO = {};
   logged.forEach(s => { (byD[s.defender] = byD[s.defender] || []).push(s); });
@@ -9349,7 +9548,7 @@ function renderDefense() {
     return { jersey: j, name: nameFor(j, season), n, g, xgPer: xg / n, gmx100: (g - xg) / n * 100,
       beat: ratio(bl.filter(s => s.defBeaten === 'Yes').length, bl.length), beatN: bl.length,
       heavy: ratio(l.filter(s => s.contestLevel === 'Heavy').length, n), open: ratio(l.filter(s => s.contestLevel === 'Open').length, n),
-      slides: (byS[j] || []).length, ct: p ? p.ct : 0, gb: p ? p.gb : 0,
+      slides: (byS[j] || []).length, ct: p ? p.ct : 0, gb: p ? p.gbLog : 0,
       beatenMost: beatenMostOf(l.filter(s => s.defBeaten === 'Yes')), offFaults: (byO[j] || []).length };
   });
   renderSortableTable('defPlayerWrap', [
@@ -9366,7 +9565,7 @@ function renderDefense() {
     { key: 'slides', label: 'Slides', type: 'num', value: r => r.slides },
     { key: 'offFaults', label: 'Off-Ball Faults', type: 'num', value: r => r.offFaults, title: 'Shots blamed on him for losing his man off the ball.' },
     { key: 'ct', label: 'Caused TO', type: 'num', value: r => r.ct },
-    { key: 'gb', label: 'GB', type: 'num', value: r => r.gb, title: 'Ground balls that started a possession.' },
+    { key: 'gb', label: 'GB', type: 'num', value: r => r.gb, format: v => gbCell(v, defGbCov), title: 'Ground balls from the ground-ball log, this season. “—” = not tracked; 0 = tracked completely, none picked up; “partial” = only some sessions tracked completely.' },
   ], rows, { dense: true, defaultSort: { key: 'n', dir: 'desc' }, emptyMsg: `No ${season} shots with an on-ball defender logged yet. Open the Defense card on the Log Shot form to add one.` });
   const slideRows = Object.keys(byS).map(j => { const l = byS[j]; return { jersey: j, name: nameFor(j, season), n: l.length, g: goalsOf(l), gPct: ratio(goalsOf(l), l.length), xgPer: xgSum(l, model) / l.length }; });
   renderSortableTable('defSlideWrap', [
@@ -10030,86 +10229,511 @@ function rptPlayerSplits(mine, team) {
   return out;
 }
 function rptSplitSentence(x) { return `<b>${escapeHtml(x.label)}</b> (${escapeHtml(x.group.toLowerCase())}): ${x.g} of ${x.n} go in (${pct(x.his)}) &mdash; the team scores ${pct(x.tm)} on these.`; }
+// ---------------- Fixed (as-of) models for session scorecards (Nov 2026) ----------------
+// A scorecard is judged with a model built from 2026 plus this season's shots dated BEFORE the session's date (the
+// whole day is left out, so the session can't move its own baseline, and film entered afterwards for earlier days
+// still counts if it's there when the model is saved). The model is saved once per season and cutoff date in
+// app/xg_snapshots (one field per cutoff) when a coach confirms that session's tracking (the "everything is logged"
+// signal) and reused from then on, so later backfills never silently change an old report; the report says when a
+// rebuild today would differ. Until then the report uses a provisional as-of model built the same way.
+// Fields: xg_<season>_<cutoff> = the current saved model; xgh_<season>_<cutoff>_<version> = a version it replaced.
+let XG_SNAPS = {}, XG_SNAP_HIST = {};
+function xgSnapsFrom(data) {
+  const o = {}, h = {};
+  Object.keys(data || {}).forEach(k => {
+    let v; try { v = JSON.parse(data[k]); } catch (e) { return; }
+    if (/^xg_/.test(k)) o[k] = v;
+    else if (/^xgh_/.test(k)) { const base = 'xg_' + k.slice(4).replace(/_xg-.*$/, ''); (h[base] = h[base] || []).push(v); }
+  });
+  Object.values(h).forEach(l => l.sort((a, b) => (b.replacedAt || '').localeCompare(a.replacedAt || '')));
+  XG_SNAP_HIST = h;
+  return o;
+}
+function xgHash(str) { let h = 2166136261; for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 16777619); } return ('00000000' + (h >>> 0).toString(16)).slice(-8).slice(0, 6); }
+const xgFixedModel = rate => ({ rate, reliable: () => false, subjectTotals: {}, subjectN: 0, subjectGoals: 0 });
+function xgBuildAsOf(season, cutoff) {
+  const cal = calibration2026Shots(), sub = advShots(season).filter(s => s.date && s.date < cutoff);
+  const faced = goalieShotsForSeason(season).filter(s => s.date && s.date < cutoff);
+  const shot = buildXgModel(cal, sub), fm = buildFacedXgModel(cal, faced);
+  const counts = l => { const t = tierRatesByContext(l); return { Practice: t.Practice, Game: t.Game }; };
+  const rec = { v: 1, season, cutoff, shotRate: shot.rate, facedRate: fm.rate, shotN: sub.length, facedN: faced.filter(s => s.onKeeper === 1).length,
+    shotCounts: counts(sub), facedCounts: counts(faced.filter(s => s.onKeeper === 1)) };
+  rec.ver = 'xg-' + cutoff + '-' + xgHash(JSON.stringify([rec.shotRate, rec.facedRate]));
+  return rec;
+}
+// The saved model for a cutoff, or (until tracking is confirmed) a provisional one built the same way.
+function xgSnapshotFor(season, cutoff) {
+  const key = 'xg_' + season + '_' + cutoff, fresh = xgBuildAsOf(season, cutoff), snap = XG_SNAPS[key];
+  return snap ? { key, snap, saved: true, drift: fresh.ver !== snap.ver ? fresh : null } : { key, snap: Object.assign({ builtAt: new Date().toISOString() }, fresh), saved: false, drift: null };
+}
+// Confirming tracking and fixing the session's model are one transaction. It refuses (and shows the other coach's
+// version) when the confirmation changed since this coach loaded it; an existing saved model is never replaced here.
+async function confirmTrackingTx(sid, rec, baseAt) {
+  if (!DB) return { ok: false, why: 'Not connected.' };
+  const tRef = DB.doc('app/session_tracking'), xRef = DB.doc('app/xg_snapshots');
+  const sd = sid.slice(0, 10), season = /^\d{4}-\d{2}-\d{2}$/.test(sd) ? seasonForDate(sd) : null;
+  const snapKey = season && isAdvSeason(season) ? 'xg_' + season + '_' + sd : null;
+  const snap = snapKey ? Object.assign({ builtAt: rec.at }, xgBuildAsOf(season, sd)) : null;
+  try {
+    return await DB.runTransaction(async tx => {
+      const ts = await tx.get(tRef), xs = snapKey ? await tx.get(xRef) : null;
+      let cur = null; try { const raw = ts.exists ? ts.data()['trk_' + sid] : null; cur = raw ? JSON.parse(raw) : null; } catch (e) { cur = null; }
+      if ((cur ? cur.at : null) !== (baseAt || null)) return { ok: false, conflict: cur };
+      tx.set(tRef, { ['trk_' + sid]: JSON.stringify(rec) }, { merge: true });
+      const have = xs && xs.exists && xs.data()[snapKey];
+      if (snapKey && !have) tx.set(xRef, { [snapKey]: JSON.stringify(snap) }, { merge: true });
+      return { ok: true, snapKey, snap: snapKey && !have ? snap : null };
+    });
+  } catch (e) { console.error('tracking confirm failed', e); return { ok: false, why: 'Save failed — please try again.' }; }
+}
+// Rebuilding a saved model is an explicit action: the replaced version is kept (xgh_ field), and the rebuild is
+// refused if someone else changed the saved model since this coach saw it.
+async function rebuildSnapshotTx(key, seenVer, fresh) {
+  if (!DB || PLAYER_MODE) return { ok: false, why: 'Not available.' };
+  const xRef = DB.doc('app/xg_snapshots'), now = new Date().toISOString();
+  try {
+    return await DB.runTransaction(async tx => {
+      const xs = await tx.get(xRef);
+      let cur = null; try { cur = xs.exists && xs.data()[key] ? JSON.parse(xs.data()[key]) : null; } catch (e) { cur = null; }
+      if (!cur || cur.ver !== seenVer) return { ok: false, why: 'The saved model changed since this page loaded; reopen the report and try again.' };
+      const next = Object.assign({}, fresh, { builtAt: now, replaces: cur.ver });
+      tx.set(xRef, { ['xgh_' + key.slice(3) + '_' + cur.ver]: JSON.stringify(Object.assign({}, cur, { replacedAt: now, replacedBy: next.ver })), [key]: JSON.stringify(next) }, { merge: true });
+      return { ok: true, next };
+    });
+  } catch (e) { console.error('model rebuild failed', e); return { ok: false, why: 'Rebuild failed — please try again.' }; }
+}
+
+// ---------------- Session tracking completeness (Nov 2026) ----------------
+// Per session and stat category: Complete (everything that happened was logged), Partial (some was), or Not
+// tracked. Saved as one field per session in app/session_tracking. Nothing is certified automatically: the last
+// confirmed session of the same kind is offered as a suggestion until a coach confirms. Sessions without a
+// confirmed record (every session before this existed) read as "tracking not confirmed".
+const TRACK_CATS = [['shots', 'Shots'], ['poss', 'No-shot possessions'], ['fo', 'Faceoffs'], ['gb', 'Ground balls'], ['def', 'On-ball defense'],
+  ['slide', 'Slide timing'], ['brk', 'Off-ball breakdowns'], ['pick', 'Picks & screens'], ['lineup', 'Lineups']];
+const TRACK_LABEL = { C: 'Complete', P: 'Partial', N: 'Not tracked' };
+const TRACK_NEXT = { C: 'P', P: 'N', N: 'C' };
+let TRACKING = {}, TRACK_DRAFT = {}, TRACK_BASE = {};
+function trackingFrom(data) {
+  const o = {};
+  Object.keys(data || {}).filter(k => /^trk_/.test(k)).forEach(k => { try { const r = JSON.parse(data[k]); if (r && r.cats) o[k.slice(4)] = r; } catch (e) { /* skip a bad record */ } });
+  return o;
+}
+// Comparable session kinds: a game or a scrimmage against an opponent ("competition") vs practice (incl. intra-squad).
+const rptSessKind = key => (/_game_|_scrimmage_./.test(key) ? 'comp' : 'practice');
+const RPT_KIND_WORD = { comp: 'games / scrimmages vs an opponent', practice: 'practices' };
+function trackStatus(sid, cat) { const r = TRACKING[sid]; return r && r.confirmed && r.cats ? (r.cats[cat] || null) : null; }
+function trackSuggest(sid) {
+  const k = rptSessKind(sid), prev = Object.keys(TRACKING).filter(x => x < sid && rptSessKind(x) === k && TRACKING[x].confirmed).sort().pop();
+  return prev ? { from: prev, cats: TRACKING[prev].cats } : null;
+}
+// The status of a category over several sessions (a week): C only if every session is Complete, N if none tracked it,
+// U if none is confirmed, otherwise P.
+function trackSetStatus(keys, cat) {
+  const st = keys.map(k => trackStatus(k, cat));
+  if (!st.length) return 'U';
+  if (st.every(x => x === 'C')) return 'C';
+  if (st.every(x => x === 'N')) return 'N';
+  if (st.every(x => x === null)) return 'U';
+  return 'P';
+}
+function trackLogSid() { const s = readSessionFields(); return s.error ? null : sessionIdFor(s); }
+function trackRptSid() { return rptMode === 'practice' && rptKey ? rptKey : null; }
+function renderTrackingControls() {
+  [['trackLog', trackLogSid()], ['rptTrack', trackRptSid()]].forEach(([id, sid]) => {
+    const box = document.getElementById(id);
+    if (!box) return;
+    if (!sid) { box.innerHTML = id === 'rptTrack' ? '<p class="n-note" style="font-size:12.5px;">Tracking is set per session; pick a single session to see or change it.</p>' : ''; return; }
+    const rec = TRACKING[sid], draft = TRACK_DRAFT[sid], sug = !rec ? trackSuggest(sid) : null;
+    const cats = draft || (rec && rec.cats) || (sug && sug.cats) || {};
+    const state = draft ? 'Not saved yet' : rec ? `Confirmed ${escapeHtml((rec.at || '').slice(0, 10))}` : sug ? `Suggested from ${escapeHtml(sug.from.slice(0, 10))} &mdash; not confirmed` : 'Not set &mdash; counts as not confirmed';
+    box.innerHTML = `<p class="sans" style="font-size:13px; margin:0 0 6px;"><b>What was tracked this session</b> <span class="n-note">(${state}). Tap a category to change it: Complete &rarr; Partial &rarr; Not tracked.</span></p>
+      <div class="pill-row">${TRACK_CATS.map(([c, l]) => { const v = cats[c] || null; return `<button type="button" class="pill${v === 'C' ? ' active' : ''}" data-trk="${c}" style="${!rec && !draft ? 'border-style:dashed;' : ''}${v === 'N' ? 'opacity:.6;' : ''}">${escapeHtml(l)}: ${v ? TRACK_LABEL[v] : '?'}</button>`; }).join('')}</div>
+      <div style="margin-top:8px;"><button type="button" class="btn secondary" data-trk-save>${rec && !draft ? 'Re-confirm' : 'Confirm tracking'}</button> <span class="n-note" data-trk-msg></span></div>`;
+    box.querySelectorAll('[data-trk]').forEach(b => b.addEventListener('click', () => {
+      const base = Object.assign({}, cats); const c = b.dataset.trk;
+      base[c] = base[c] ? TRACK_NEXT[base[c]] : 'C';
+      if (!TRACK_DRAFT[sid]) TRACK_BASE[sid] = rec ? rec.at || null : null;
+      TRACK_DRAFT[sid] = base; renderTrackingControls();
+    }));
+    box.querySelector('[data-trk-save]').addEventListener('click', async () => {
+      const full = {}; TRACK_CATS.forEach(([c]) => { if (cats[c]) full[c] = cats[c]; });
+      const msg = box.querySelector('[data-trk-msg]');
+      if (Object.keys(full).length !== TRACK_CATS.length) { msg.textContent = 'Set every category first (tap the ? ones).'; msg.style.color = 'var(--critical)'; return; }
+      const rec2 = { cats: full, confirmed: true, at: new Date().toISOString() };
+      const baseAt = TRACK_DRAFT[sid] ? (TRACK_BASE[sid] || null) : (rec ? rec.at || null : null);
+      msg.textContent = 'Saving…'; msg.style.color = '';
+      const r = await confirmTrackingTx(sid, rec2, baseAt);
+      if (!r.ok) {
+        if (r.conflict !== undefined) {
+          if (r.conflict) TRACKING[sid] = r.conflict; else delete TRACKING[sid];
+          delete TRACK_DRAFT[sid]; delete TRACK_BASE[sid]; renderTrackingControls();
+          const m2 = document.querySelector(`#${id} [data-trk-msg]`);
+          if (m2) { m2.textContent = `Not saved: another coach changed this session’s tracking${r.conflict ? ' (' + (r.conflict.at || '').slice(0, 16).replace('T', ' ') + ')' : ''} after you opened it. Their version is shown; change it and confirm again if needed.`; m2.style.color = 'var(--critical)'; }
+          return;
+        }
+        msg.textContent = r.why; msg.style.color = 'var(--critical)'; return;
+      }
+      TRACKING[sid] = rec2; delete TRACK_DRAFT[sid]; delete TRACK_BASE[sid];
+      if (r.snap) XG_SNAPS[r.snapKey] = r.snap;
+      renderTrackingControls();
+      if (document.getElementById('reportsView').classList.contains('active')) renderReports();
+    });
+  });
+}
+
+// ---------------- Reports scorecard (Nov 2026) ----------------
+// Every row says what it measures, its sample size, the benchmark it is judged against (named, with its value and
+// sample) and a read that only calls a change when it is bigger than chance at this sample size (1.5 standard errors).
+// Caches live for one render only (renderReports clears them), so an edited entry is never read stale.
+let rptScoreCache = { F: {} }, rptWhoCache = null;
+function rptF(keys, season) {
+  const k = season + '|' + keys.slice().sort().join(',');
+  return rptScoreCache.F[k] || (rptScoreCache.F[k] = rptFullStats('practice', keys, season));
+}
+// Which of our players each session mentions (any role), for picking a player's or group's previous sessions.
+function rptWhoBySession() {
+  if (rptWhoCache) return rptWhoCache;
+  const m = {}, add = (e, js) => { const k = sessKey(e); const set = (m[k] = m[k] || new Set()); js.forEach(j => { if (rptWl(j)) set.add(j); }); };
+  SHOTS.forEach(s => add(s, [s.shooterJersey, s.assistJersey, s.goalieJersey, s.defender, s.slideDefender, s.offBallFault, s.pickScreenerDef, s.pickUserDef, s.slideShould]));
+  OPP_SHOTS.forEach(s => add(s, [s.goalieJersey, s.defender, s.slideDefender, s.offBallFault, s.slideShould]));
+  POSSESSIONS.forEach(p => add(p, [p.turnoverBy, p.causedBy, p.pickScreenerDef, p.pickUserDef]));
+  FACEOFFS.forEach(f => add(f, [f.playerJersey, f.vsPlayerJersey]));
+  GROUNDBALLS.forEach(g => add(g, [g.jersey]));
+  rptWhoCache = m;
+  return m;
+}
+// Whether a session has any logged event of a category whose zero can't be told from a gap (per render).
+let rptEvCache = null;
+function rptHasEvents(key, cat) {
+  if (!rptEvCache) {
+    const m = { gb: new Set(), brk: new Set(), ct: new Set() };
+    GROUNDBALLS.forEach(g => m.gb.add(sessKey(g)));
+    SHOTS.concat(OPP_SHOTS).forEach(s => { if (s.offBallFault || s.pickCoverage) m.brk.add(sessKey(s)); });
+    POSSESSIONS.forEach(p => { if (p.causedBy) m.ct.add(sessKey(p)); });
+    rptEvCache = m;
+  }
+  return !rptEvCache[cat] || rptEvCache[cat].has(key);
+}
+// Sessions (newest first) of one kind in a season that end before `start` (the first session of the period).
+function rptEarlierSessions(curKeys, season, kind, start) {
+  return rptPeriods('practice', true).filter(p => seasonForDate(p.date) === season && !curKeys.includes(p.key) && (!kind || rptSessKind(p.key) === kind)
+    && (p.date < start.date || (p.date === start.date && p.key < start.key)));
+}
+// Scope members: the team (everyone), a position group, or one player.
+function rptScopeMembers(F, scope) {
+  if (scope.kind === 'player') return [scope.j];
+  if (scope.kind === 'group') return Object.keys(F.players).filter(j => rptInGroup(F.season, j, scope.g));
+  return Object.keys(F.players);
+}
+function rptAgg(F, scope) {
+  const js = rptScopeMembers(F, scope).filter(j => F.players[j]), P = js.map(j => F.players[j]);
+  const team = scope.kind === 'team';
+  const shots = team ? F.d.shots : [].concat(...P.map(x => x.p.ownShots || []));
+  const faced = team ? F.team.gk.list : [].concat(...P.map(x => x.gk.list || []));
+  const def = team ? F.team.def : rptSumDef(P.map(x => x.def));
+  const off = team ? F.team.off : rptOffOf(P.map(x => x.p));
+  const fo = P.reduce((a, x) => ({ n: a.n + x.fo.n, w: a.w + x.fo.w, legacyW: a.legacyW + x.fo.legacyW }), { n: 0, w: 0, legacyW: 0 });
+  const scr = team ? F.team.scr : P.reduce((a, x) => ({ n: a.n + x.scr.n, adv: a.adv + x.scr.adv }), { n: 0, adv: 0 });
+  const gb = team ? F.team.gb.us : P.reduce((a, x) => a + x.gb, 0);
+  return { js, shots, faced, def, off, fo, scr, gb, F };
+}
+// Row values. Each returns { type, ... } or null when the row doesn't apply.
+//   model: { n, act, exp, v } (v = variance of the expected total)   rate: { num, den }   mean: { sum, ss, n }   count: { c, k } (k sessions)
+const rptModel = (list, p) => { let act = 0, exp = 0, v = 0; list.forEach(s => { const q = p(s); exp += q; v += q * (1 - q); if (s.goal === 1) act++; }); return { type: 'model', n: list.length, act, exp, v }; };
+const RPT_ROWS = [
+  { id: 'fin', area: 'Shooting', label: 'Finishing: goals vs expected goals', cat: 'shots', unit: 'shots', better: 1, who: 'shoot',
+    val: A => rptModel(A.shots, s => xgForShot(s, A.F.d.model)), latest: (A, L) => rptModel(A.shots, s => xgForShot(s, L.shot)), note: 'Expected goals use every shot, misses included (all-shot model).' },
+  { id: 'sh', area: 'Shooting', label: 'Shooting %', cat: 'shots', better: 1, who: 'shoot', val: A => ({ type: 'rate', num: A.shots.filter(s => s.goal === 1).length, den: A.shots.length, unit: 'shots' }) },
+  { id: 'cage', area: 'Shooting', label: 'On cage %', cat: 'shots', better: 1, who: 'shoot', val: A => ({ type: 'rate', num: A.shots.filter(s => s.onKeeper === 1).length, den: A.shots.length, unit: 'shots' }) },
+  { id: 'xgps', area: 'Shooting', label: 'Shot quality: expected goals per shot', cat: 'shots', better: 1, who: 'shoot',
+    val: A => { const x = A.shots.map(s => xgForShot(s, A.F.d.model)); return { type: 'mean', sum: x.reduce((a, b) => a + b, 0), ss: x.reduce((a, b) => a + b * b, 0), n: x.length, unit: 'shots' }; } },
+  { id: 'gold', area: 'Shooting', label: 'Gold-look share', cat: 'shots', better: 1, who: 'shoot', val: A => { const g = A.shots.filter(s => s.shotQuality); return { type: 'rate', num: g.filter(s => s.shotQuality === '1-Gold').length, den: g.length, unit: 'graded shots' }; } },
+  { id: 'ast', area: 'Offense', label: 'Assisted goals', cat: 'shots', better: 1, who: 'off', val: A => { const g = A.shots.filter(s => s.goal === 1); return { type: 'rate', num: g.filter(s => s.assistJersey).length, den: g.length, unit: 'goals' }; } },
+  { id: 'score', area: 'Offense', label: 'Scoring rate', cat: 'poss', better: 1, who: 'team', val: A => ({ type: 'rate', num: A.F.team.poss.goals, den: A.F.team.poss.n, unit: 'our possessions' }) },
+  { id: 'dom', area: 'Offense', label: 'Possessions with a domino', cat: 'poss', better: 1, who: 'team', val: A => ({ type: 'rate', num: A.F.team.poss.dom, den: A.F.team.poss.n, unit: 'our possessions' }) },
+  { id: 'to', area: 'Offense', label: 'Turnover rate', cat: 'poss', better: -1, who: 'off',
+    val: (A, sc) => sc.kind === 'team' ? { type: 'rate', num: A.F.team.poss.to, den: A.F.team.poss.n, unit: 'our possessions' } : { type: 'rate', num: A.off.to, den: A.off.touches, unit: 'touches (shots + feeds + turnovers)' } },
+  { id: 'pick', area: 'Offense', label: 'Picks that freed the ball carrier', cat: 'pick', better: 1, who: 'team', val: A => ({ type: 'rate', num: Math.round((A.F.team.picks.freed || 0) * A.F.team.picks.n), den: A.F.team.picks.n, unit: 'pick possessions' }) },
+  { id: 'scr', area: 'Offense', label: 'Screens that created an advantage', cat: 'pick', better: 1, who: 'off', val: A => ({ type: 'rate', num: A.scr.adv, den: A.scr.n, unit: 'screens' }) },
+  { id: 'gb', area: 'Ball', label: 'Ground balls', cat: 'gb', better: 1, who: 'all', zeroIsGap: true,
+    val: (A, sc, ctx) => sc.kind === 'team' ? (ctx.kind === 'comp' ? { type: 'rate', num: A.F.team.gb.us, den: A.F.team.gb.us + A.F.team.gb.them, unit: 'ground balls (ours of both teams)' } : { type: 'rate', num: A.F.team.gb.us, den: A.F.team.poss.n, unit: 'our possessions', per: 10 }) : { type: 'count', c: A.gb, k: ctx.k, unit: 'sessions' } },
+  { id: 'fo', area: 'Ball', label: 'Faceoff win %', cat: 'fo', better: 1, who: 'fo',
+    val: (A, sc, ctx) => sc.kind === 'team' ? (ctx.kind === 'comp' ? { type: 'rate', num: A.F.team.fo.comp.filter(f => f.won === 1).length, den: A.F.team.fo.comp.length, unit: 'faceoffs' } : null) : { type: 'rate', num: A.fo.w, den: A.fo.n, unit: 'two-sided reps' } },
+  { id: 'onb', area: 'Defense', label: 'On-ball goals vs expected (supporting context)', cat: 'def', better: -1, who: 'def', unit: 'shots defended',
+    val: A => { const r = { type: 'model', n: A.def.on, act: A.def.onG, exp: A.def.onXg, v: A.def.onVar }; return r; },
+    latest: (A, L, sc) => rptModel(A.F.d.shots.concat(A.F.d.oppShots).filter(s => rptWl(s.defender) && (sc.kind === 'team' || A.js.includes(s.defender))), s => xgForShot(s, L.shot)),
+    note: 'Shared responsibility: a goal on his man can come from a slide, a pick or an off-ball breakdown. Read it next to the breakdown tags, not as a defender rating.' },
+  { id: 'beat', area: 'Defense', label: 'Beaten on-ball', cat: 'def', better: -1, who: 'def', val: A => ({ type: 'rate', num: A.def.beat, den: A.def.bl, unit: 'on-ball reps with Beaten logged' }) },
+  { id: 'brk', area: 'Defense', label: 'Off-ball breakdowns + blown pick coverage', cat: 'brk', better: -1, who: 'def', compOff: true, zeroIsGap: true,
+    val: (A, sc, ctx) => sc.kind === 'team' ? { type: 'rate', num: A.def.offBall + A.def.blown, den: A.F.team.defPoss, unit: 'defensive possessions' } : { type: 'count', c: A.def.offBall + A.def.blown, k: ctx.k, unit: 'sessions' } },
+  { id: 'slide', area: 'Defense', label: 'Late slides (timing logged)', cat: 'slide', better: -1, who: 'def',
+    val: A => ({ type: 'rate', num: A.def.lateC, den: A.def.timed, unit: 'slides with timing logged', extra: (A.def.missed ? `${A.def.missed} slide${A.def.missed === 1 ? '' : 's'} that didn’t come (charged to who should have slid)` : '') + (A.def.late ? `${A.def.missed ? '; ' : ''}${A.def.late} provisional late (from contest level, not observed)` : '') }) },
+  { id: 'ct', area: 'Defense', label: 'Caused turnovers', cat: 'poss', better: 1, who: 'def', zeroIsGap: true,
+    val: (A, sc, ctx) => sc.kind === 'team' ? { type: 'rate', num: A.def.ct, den: A.F.team.defPoss, unit: 'defensive possessions' } : { type: 'count', c: A.def.ct, k: ctx.k, unit: 'sessions' } },
+  { id: 'sv', area: 'Goaltending', label: 'Save %', cat: 'shots', better: 1, who: 'gk', val: A => ({ type: 'rate', num: A.faced.filter(s => s.goal !== 1).length, den: A.faced.length, unit: 'shots on cage faced' }) },
+  { id: 'sax', area: 'Goaltending', label: 'Saves above expected', cat: 'shots', better: -1, who: 'gk', unit: 'shots on cage faced', flipSign: true,
+    val: A => rptModel(A.faced, s => xgForShot(s, A.F.fm)), latest: (A, L) => rptModel(A.faced, s => xgForShot(s, L.faced)), note: 'Expected goals allowed use probabilities built from shots on cage only (faced model). Saves above expected = expected goals allowed − goals allowed.' },
+];
+// Which rows a scope shows. Positions follow the Depth Chart; anyone who shot gets the shooting rows.
+function rptRowApplies(row, sc, A) {
+  if (sc.kind === 'team') return true;
+  const codes = sc.kind === 'group' ? [sc.g] : [posOfJ(A.F.season, sc.j), posAltJ(A.F.season, sc.j)].filter(c => c && c !== 'X');
+  const has = c => codes.includes(c), none = !codes.length || sc.g === 'none';
+  const off = has('A') || has('M') || has('S'), def = has('S') || has('L') || has('D');
+  switch (row.who) {
+    case 'team': return false;
+    case 'shoot': return off || A.shots.length > 0 || (none && A.shots.length > 0);
+    case 'off': return off || (none && (A.off.touches > 0 || A.scr.n > 0));
+    case 'def': return def || (none && (A.def.on > 0 || A.def.bl > 0 || A.def.ct > 0 || A.def.offBall > 0));
+    case 'fo': return has('F') || A.fo.n > 0;
+    case 'gk': return has('G') || A.faced.length > 0;
+    case 'all': return true;
+  }
+  return false;
+}
+// Value, sample, and the number used for the read.
+function rptRowNums(r) {
+  if (!r) return null;
+  if (r.type === 'model') return { n: r.n, total: r.n ? r.act - r.exp : null, per100: r.n ? 100 * (r.act - r.exp) / r.n : null };
+  if (r.type === 'rate') return { n: r.den, v: r.den ? r.num / r.den : null };
+  if (r.type === 'mean') return { n: r.n, v: r.n ? r.sum / r.n : null, sd: r.n > 1 ? Math.sqrt(Math.max(0, (r.ss - r.sum * r.sum / r.n) / (r.n - 1))) : null };
+  if (r.type === 'count') return { n: r.k, v: r.k ? r.c / r.k : null };
+  return null;
+}
+function rptFmtRow(row, r, nums) {
+  if (!r || !nums) return '—';
+  const sgn = v => rptSgn(row.flipSign ? -v : v, 1);
+  if (r.type === 'model') {
+    if (!r.n) return '—';
+    if (row.id === 'sax') { const ga = r.act, n = r.n; return `<b>${sgn(nums.total)}</b> <span class="n-note">(${sgn(nums.per100)} per 100 ${row.unit}; ${(n - ga)} saves vs ${(n - r.exp).toFixed(1)} expected; n = ${n})</span>`; }
+    return `<b>${sgn(nums.total)}</b> <span class="n-note">(${sgn(nums.per100)} per 100 ${row.unit}; ${r.act} actual vs ${r.exp.toFixed(1)} expected; n = ${r.n})</span>`;
+  }
+  if (r.type === 'rate') {
+    if (!r.den) return '—';
+    if (row.id === 'sv') return `<b>${pct(nums.v)}</b> <span class="n-note">(${r.num} saves, ${r.den - r.num} goals allowed, ${r.den} shots on cage faced)</span>`;
+    if (r.per) return `<b>${num(nums.v * r.per, 1)}</b> per ${r.per} ${r.unit} <span class="n-note">(${r.num} in ${r.den})</span>`;
+    return `<b>${pct(nums.v)}</b> <span class="n-note">(${r.num} of ${r.den} ${r.unit})</span>`;
+  }
+  if (r.type === 'mean') return r.n ? `<b>${num(nums.v, 3)}</b> <span class="n-note">(n = ${r.n} ${r.unit})</span>` : '—';
+  if (r.type === 'count') return r.k ? `<b>${r.c}</b>${r.k > 1 ? ` <span class="n-note">(${num(nums.v, 1)} per session over ${r.k})</span>` : ''}` : '—';
+  return '—';
+}
+function rptFmtBench(row, b, bn) {
+  if (!b || !bn || !bn.n) return null;
+  if (b.type === 'model') return `${rptSgn(row.flipSign ? -bn.per100 : bn.per100, 1)} per 100 ${row.unit} <span class="n-note">(n = ${bn.n})</span>`;
+  if (b.type === 'rate') return b.per ? `${num(bn.v * b.per, 1)} per ${b.per} ${b.unit} <span class="n-note">(${b.num} in ${b.den})</span>` : `${pct(bn.v)} <span class="n-note">(${b.num} of ${b.den})</span>`;
+  if (b.type === 'mean') return `${num(bn.v, 3)} <span class="n-note">(n = ${bn.n})</span>`;
+  if (b.type === 'count') return `${num(bn.v, 1)} per session <span class="n-note">(${b.c} over ${b.k})</span>`;
+  return null;
+}
+// The read: better / worse only beyond 1.5 standard errors of this sample; otherwise "within chance".
+function rptRead(row, r, nums, b, bn) {
+  const few = n => `<span class="n-note">small sample (n = ${n})</span>`;
+  if (!r || !nums || !nums.n) return '<span class="n-note">—</span>';
+  let diff, se;
+  if (r.type === 'model') {
+    if (nums.n < RPT_MIN_N) return few(nums.n);
+    diff = nums.total; se = Math.sqrt(Math.max(r.v, 1e-9));
+  } else {
+    if (!b || !bn || !bn.n) return '<span class="n-note">no benchmark yet</span>';
+    if (r.type === 'count') { const m = bn.v * r.k; diff = r.c - m; se = Math.sqrt(Math.max(m, 0.5)); }
+    else {
+      if (nums.n < RPT_MIN_N) return few(nums.n);
+      diff = nums.v - bn.v;
+      se = r.type === 'mean' ? (bn.sd ? bn.sd / Math.sqrt(nums.n) : null) : Math.sqrt(Math.max(bn.v * (1 - bn.v), 0.01) / nums.n);
+      if (!se) return '<span class="n-note">no benchmark spread yet</span>';
+    }
+  }
+  if (Math.abs(diff) <= RPT_Z * se) return '<span class="n-note">within chance</span>';
+  const good = (diff > 0) === (row.better > 0);
+  return `<b style="color:${good ? 'var(--good)' : 'var(--critical)'};">${good ? '▲ better' : '▼ worse'}</b>`;
+}
+// The sessions a report covers. A week keeps practice and competition apart: its practices if it has any,
+// otherwise its games / scrimmages (those are still reported one by one in Practice mode).
+function rptCurKeys(period) {
+  if (rptMode === 'practice') return [period.key];
+  const all = rptPeriods('practice', true).filter(p => rptMonday(p.date) === period.key).map(p => p.key);
+  const pr = all.filter(k => rptSessKind(k) === 'practice');
+  return pr.length ? pr : all;
+}
+// Standouts (team, staff only), judged with the scorecard's fixed model.
+function rptStandoutsHtml(cur, season) {
+  const { fin, gk, cr } = rptStandouts(cur, season);
+  const whoL = j => escapeHtml(jerseyLabel(j, season));
+  return `<p class="panel-title" style="font-size:15px;">Standouts</p><ul class="sans" style="font-size:13px; line-height:1.7; margin:4px 0 0; padding-left:18px;">${[
+    fin ? `<li><b>Top finisher:</b> ${whoL(fin.j)} &mdash; ${fin.g} goals on ${fin.n} shots, ${rptSgn(fin.d)} vs expected (${rptSgn(100 * fin.d / fin.n)} per 100 shots).</li>` : '<li class="n-note">Top finisher: nobody had 5+ shots.</li>',
+    gk ? `<li><b>Best goalie:</b> ${whoL(gk.j)} &mdash; ${gk.sv} saves on ${gk.n} shots on cage, ${rptSgn(gk.d)} saves above expected (${rptSgn(100 * gk.d / gk.n)} per 100).</li>` : '<li class="n-note">Best goalie: nobody faced 8+ shots on cage.</li>',
+    cr ? `<li><b>Best creator:</b> ${whoL(cr.j)} &mdash; ${cr.n} shots set up (${cr.a} assists), ${cr.xa.toFixed(1)} expected assists.</li>` : '<li class="n-note">Best creator: nobody had 3+ potential assists.</li>'].join('')}</ul>`;
+}
+// Builds the scorecard for one scope and period.
+function rptScorecard(period, season, scope) {
+  const curKeys = rptCurKeys(period);
+  const allWeek = rptMode === 'week' ? rptPeriods('practice', true).filter(p => rptMonday(p.date) === period.key).length : 1;
+  if (!curKeys.length) return '<p class="n-note">Nothing logged in this period.</p>';
+  const sorted = curKeys.slice().sort(), first = rptPeriods('practice', true).find(p => p.key === sorted[0]);
+  const kinds = new Set(curKeys.map(rptSessKind)), kind = kinds.size === 1 ? [...kinds][0] : 'mixed';
+  const F = rptF(curKeys, season), A = rptAgg(F, scope);
+  // Benchmarks, always earlier than the first session of the period, same kind of session.
+  const who = rptWhoBySession();
+  const members = new Set(A.js);
+  const earlier = rptEarlierSessions(curKeys, season, kind === 'mixed' ? null : kind, first);
+  const pool = scope.kind === 'team' ? earlier : earlier.filter(p => [...(who[p.key] || [])].some(j => members.has(j)));
+  const kWord = kind === 'mixed' ? 'sessions' : RPT_KIND_WORD[kind];
+  const who2 = scope.kind === 'team' ? 'Team' : scope.kind === 'group' ? RPT_GROUPS.find(x => x.value === scope.g).label : 'His';
+  const benchFor = (row) => {
+    // A goalie's rows: his season to date before this period. Everything else: the previous five. Sessions
+    // marked Not tracked for the row's category are left out.
+    // A session that didn't track the category, or (when a zero can't be told from a gap) didn't confirm it and
+    // logged none of it, is left out.
+    const ok = pool.filter(p => { const st = trackStatus(p.key, row.cat); if (st === 'N') return false; return !row.zeroIsGap || st === 'C' || rptHasEvents(p.key, row.id === 'ct' ? 'ct' : row.id); });
+    const use = row.who === 'gk' && scope.kind === 'player' ? ok : ok.slice(0, 5);
+    if (!use.length) return { name: `${who2} previous ${kWord}`, keys: [] };
+    const name = row.who === 'gk' && scope.kind === 'player' ? `His season before this ${rptMode === 'practice' ? 'session' : 'week'} (${kWord}, ${use.length} session${use.length === 1 ? '' : 's'})`
+      : `${who2} previous ${use.length} ${kWord}${use.length < 5 ? ' (all available)' : ''}`;
+    const unconf = use.filter(p => trackStatus(p.key, row.cat) !== 'C').length;
+    return { name, keys: use.map(p => p.key), unconf };
+  };
+  // Secondary reference: the player's position group this period (player), the team this period (group).
+  const secScope = scope.kind === 'player' ? (() => { const g = posOfJ(season, scope.j); return g && g !== 'X' ? { kind: 'group', g } : null; })() : scope.kind === 'group' ? { kind: 'team' } : null;
+  const secA = secScope ? rptAgg(F, secScope) : null;
+  const ctx = { kind: kind === 'mixed' ? 'practice' : kind, k: curKeys.length };
+  const rows = RPT_ROWS.filter(row => rptRowApplies(row, scope, A));
+  let lastArea = '';
+  const trs = rows.map(row => {
+    const st = trackSetStatus(curKeys, row.cat);
+    if (row.compOff && kind === 'comp') return { area: row.area, html: `<td>${escapeHtml(row.label)}</td><td colspan="${secA ? 5 : 4}"><span class="n-note">Not logged for games or scrimmages yet.</span></td>` };
+    const r = row.val(A, scope, ctx);
+    if (!r) return null;
+    const nums = rptRowNums(r);
+    const events = r.type === 'rate' ? r.num : r.type === 'model' ? r.n : r.type === 'count' ? r.c : r.n;
+    // Tracking: Not tracked = "—"; Partial / not confirmed with nothing logged = "—"; Complete with nothing logged = 0.
+    let cur, tag = '';
+    if (st === 'N') cur = '— <span class="n-note">(not tracked)</span>';
+    else if ((st === 'P' || st === 'U') && !events && (row.zeroIsGap || r.type === 'count' || (r.type === 'rate' && !r.den) || (r.type === 'model' && !r.n))) cur = `— <span class="n-note">(none logged; tracking ${st === 'P' ? 'partial' : 'not confirmed'})</span>`;
+    else { cur = st === 'C' && r.type === 'count' && !r.c ? '<b>0</b>' : rptFmtRow(row, r, nums); if (st === 'P' || (st === 'U' && row.cat === 'gb')) tag = ` <span class="n-note" style="color:var(--gold-ink);">partial${st === 'U' ? ' (tracking not confirmed)' : ' tracking'}</span>`; else if (st === 'U') tag = ' <span class="n-note">tracking not confirmed</span>'; }
+    const bm = benchFor(row);
+    const bF = bm.keys.length ? rptF(bm.keys, season) : null;
+    const bA = bF ? rptAgg(bF, scope.kind === 'player' ? scope : scope.kind === 'group' ? scope : { kind: 'team' }) : null;
+    const b = bA ? row.val(bA, scope, { kind: ctx.kind, k: bm.keys.length }) : null, bn = rptRowNums(b);
+    const bTxt = rptFmtBench(row, b, bn);
+    const benchCell = row.id === 'fin' || row.id === 'onb' || row.id === 'sax'
+      ? `The model: what these looks usually produce${bTxt ? `<br><span class="n-note">${escapeHtml(bm.name)}: ${bTxt}</span>` : ''}`
+      : (bTxt ? `${escapeHtml(bm.name)}: ${bTxt}${bm.unconf ? ` <span class="n-note">(${bm.unconf} with tracking not confirmed)</span>` : ''}` : `<span class="n-note">${escapeHtml(bm.name)}: none yet</span>`);
+    let diff = '—';
+    if (st !== 'N' && nums && nums.n) {
+      if (r.type === 'model') diff = '';
+      else if (bn && bn.n && nums.v !== null && bn.v !== null) diff = r.type === 'rate' && !r.per ? rptSgn(100 * (nums.v - bn.v), 1) + ' pts' : r.per ? rptSgn(r.per * (nums.v - bn.v), 1) : r.type === 'count' ? rptSgn(r.c - bn.v * r.k, 1) : rptSgn(nums.v - bn.v, 3);
+    }
+    const gap = st === 'N' || ((st === 'P' || st === 'U') && !events && (row.zeroIsGap || r.type === 'count'));
+    if (gap) diff = '—';
+    const read = gap ? '<span class="n-note">—</span>' : rptRead(row, r, nums, b, bn);
+    let sec = '';
+    if (secA) { const sr = row.val(secA, secScope, ctx), sn = rptRowNums(sr); sec = `<td>${sr && sn && sn.n ? rptFmtRow(row, sr, sn) : '—'}</td>`; }
+    let modelNote = '';
+    if (r.type === 'model' && row.latest && RPT_LATEST && nums && nums.n && st !== 'N') {
+      const ln = rptRowNums(row.latest(A, RPT_LATEST, scope));
+      if (ln && ln.total !== null && Math.abs(ln.total - nums.total) >= 0.05) modelNote = `<br><span class="n-note" style="color:var(--gold-ink);">Benchmark change, not performance: today&rsquo;s model, which includes this session, would read ${rptSgn(row.flipSign ? -ln.total : ln.total)}. The gap comes from the expected-goals model, not from what the players did.</span>`;
+    }
+    const extra = (r.extra ? `<br><span class="n-note">${escapeHtml(r.extra)}</span>` : '') + (row.note ? `<br><span class="n-note">${escapeHtml(row.note)}</span>` : '');
+    return { area: row.area, html: `<td>${escapeHtml(row.label)}${extra}</td><td>${cur}${tag}${modelNote}</td><td>${benchCell}</td><td>${diff}</td><td>${read}</td>${sec}` };
+  }).filter(Boolean);
+  const secHead = secA ? `<th>${secScope.kind === 'team' ? 'Team' : escapeHtml(RPT_GROUPS.find(x => x.value === secScope.g).label + ' group')} this ${rptMode === 'practice' ? 'session' : 'week'}</th>` : '';
+  const body = trs.map(t => { const head = t.area !== lastArea ? `<tr><td colspan="${secA ? 6 : 5}" style="background:var(--card-2); font-weight:700; font-size:12px; letter-spacing:.04em; text-transform:uppercase;">${escapeHtml(t.area)}</td></tr>` : ''; lastArea = t.area; return head + `<tr>${t.html}</tr>`; }).join('');
+  const title = scope.kind === 'team' ? 'Team' : scope.kind === 'group' ? RPT_GROUPS.find(x => x.value === scope.g).label + ` (${A.js.length} player${A.js.length === 1 ? '' : 's'})` : jerseyLabel(scope.j, season);
+  return `<p class="panel-title" style="font-size:16px;">${escapeHtml(title)} &mdash; ${escapeHtml(rptLabel(rptMode, period))}</p>
+    <p class="panel-sub">Session type: ${escapeHtml(kind === 'mixed' ? 'mixed (practices and games/scrimmages)' : RPT_KIND_WORD[kind])}${rptMode === 'week' ? ` &mdash; ${curKeys.length} session${curKeys.length === 1 ? '' : 's'} this week${allWeek > curKeys.length ? ` (${allWeek - curKeys.length} game/scrimmage session${allWeek - curKeys.length === 1 ? '' : 's'} left out; see them one at a time in Practice mode)` : ''}` : ''}. Benchmarks come only from earlier sessions of the same type. &ldquo;Within chance&rdquo; means the gap is smaller than 1.5 standard errors at this sample size; rows under ${RPT_MIN_N} are marked small sample.</p>
+    <div class="table-wrap" style="max-height:none;"><table class="shotlog dense rpt-score"><thead><tr><th>Stat</th><th>This ${rptMode === 'practice' ? 'session' : 'week'}</th><th>Benchmark</th><th>Difference</th><th>Read</th>${secHead}</tr></thead><tbody>${body}</tbody></table></div>`;
+}
+let RPT_LATEST = null, RPT_X = null;
+// "Rebuild with today's data": two steps, staff only, keeps the replaced version.
+function rptWireRebuild(X) {
+  const b = document.querySelector('#rptModel [data-xg-rebuild]'); if (!b) return;
+  const box = document.querySelector('#rptModel [data-xg-confirm]');
+  b.addEventListener('click', () => { box.style.display = ''; b.style.display = 'none'; });
+  box.querySelector('[data-xg-cancel]').addEventListener('click', () => { box.style.display = 'none'; b.style.display = ''; });
+  box.querySelector('[data-xg-yes]').addEventListener('click', async () => {
+    const m = box.querySelector('[data-xg-msg]'); m.textContent = 'Saving…';
+    const r = await rebuildSnapshotTx(X.key, X.snap.ver, X.drift);
+    if (!r.ok) { m.textContent = r.why; m.style.color = 'var(--critical)'; return; }
+    (XG_SNAP_HIST[X.key] = XG_SNAP_HIST[X.key] || []).unshift(Object.assign({}, X.snap, { replacedAt: r.next.builtAt, replacedBy: r.next.ver }));
+    XG_SNAPS[X.key] = r.next; renderReports();
+  });
+}
+// How the expected numbers are built: the saved model's version, cutoff, samples and rates by grade.
+function rptModelDetails(period, season, X) {
+  const snap = X.snap, cal = calibration2026Shots();
+  const tbl = (calS, counts, rates) => {
+    const c = tierRatesByContext(calS), rows = [];
+    ['Practice', 'Game'].forEach(ctx => TIER_KEYS.forEach(t => {
+      const cc = c[ctx][t] || { n: 0, g: 0 }, ss = (counts[ctx] || {})[t] || { n: 0, g: 0 }, r = (rates[ctx] || {})[t];
+      if (!cc.n && !ss.n) return;
+      rows.push([`${ctx === 'Game' ? 'Game' : 'Practice / scrimmage'} · ${t === '__ungraded__' ? 'Ungraded' : t.slice(2)}`, cc.n ? `${cc.g} of ${cc.n} (${pct(cc.g / cc.n)})` : 'none', ss.n ? `${ss.g} of ${ss.n} (${pct(ss.g / ss.n)})` : 'none', r === undefined ? '—' : `<b>${pct(r)}</b>`]);
+    }));
+    return rptMiniTable(['Grade', '2026 (prior)', `${season} before ${escapeHtml(snap.cutoff)}`, 'Rate used'], rows);
+  };
+  let drift = '';
+  if (X.drift) {
+    const curKeys = rptCurKeys(period), shots = advShots(season).filter(s => curKeys.includes(sessKey(s)));
+    drift = `<p style="margin:10px 0 4px; color:var(--gold-ink);"><b>Changed since saved:</b> shots dated before ${escapeHtml(snap.cutoff)} have been added or edited since this model was saved (backfilled film, corrections). This report keeps the saved model; a rebuild today (${escapeHtml(X.drift.ver)}) would give <b>${num(xgSum(shots, xgFixedModel(X.drift.shotRate)), 2)}</b> expected goals for this period instead of <b>${num(xgSum(shots, xgFixedModel(snap.shotRate)), 2)}</b>.</p>`
+      + (PLAYER_MODE ? '' : `<p style="margin:4px 0;"><button type="button" class="btn secondary" data-xg-rebuild>Rebuild with today&rsquo;s data&hellip;</button></p>
+      <div data-xg-confirm style="display:none; margin:4px 0; padding:8px 10px; border:1px solid var(--line); border-radius:8px;">This replaces model ${escapeHtml(snap.ver)} with ${escapeHtml(X.drift.ver)} for this report and every report on ${escapeHtml(snap.cutoff)}. The old version is kept and listed below. <button type="button" class="btn" data-xg-yes>Yes, rebuild</button> <button type="button" class="btn secondary" data-xg-cancel>Cancel</button> <span class="n-note" data-xg-msg></span></div>`);
+  }
+  return `<div class="sans" style="font-size:12.5px; line-height:1.6;">
+    <p style="margin:6px 0;"><b>Model ${escapeHtml(snap.ver)}</b> &mdash; ${X.saved ? `fixed for this report, saved ${escapeHtml((snap.builtAt || '').slice(0, 10))}` : '<b>provisional</b>: it is saved (fixed) when a coach confirms this session&rsquo;s tracking, so film backfilled for earlier days before then still counts'}. Built from 2026 plus ${season} shots dated <b>before ${escapeHtml(snap.cutoff)}</b> (${snap.shotN} shots; ${snap.facedN} shots on cage for the goalie model). This period&rsquo;s own shots are never in it, and later backfills don&rsquo;t change it. Player projections and the other pages use the latest model.</p>
+    <p style="margin:6px 0;"><b>Finishing and on-ball defense</b> use the all-shot model: the chance a shot of that grade goes in, counting every shot (misses, saves and blocks too). <b>Goaltending</b> uses the faced model: the chance a shot <i>on cage</i> of that grade goes in. Each rate blends 2026 with this season: (${season} goals + ${XG_PRIOR_WEIGHT} &times; 2026 rate) &divide; (${season} shots + ${XG_PRIOR_WEIGHT}), so 2026 counts like ${XG_PRIOR_WEIGHT} shots and this season takes over as it grows. Scrimmages use the practice rates.</p>
+    ${drift}
+    ${(XG_SNAP_HIST[X.key] || []).length ? `<p style="margin:6px 0;"><b>Earlier versions:</b> ${XG_SNAP_HIST[X.key].map(h => `${escapeHtml(h.ver)} (saved ${escapeHtml((h.builtAt || '').slice(0, 10))}, replaced ${escapeHtml((h.replacedAt || '').slice(0, 10))})`).join('; ')}.</p>` : ''}
+    <p style="margin:10px 0 4px;"><b>All-shot model</b></p>${tbl(cal, snap.shotCounts || {}, snap.shotRate)}
+    <p style="margin:10px 0 4px;"><b>Faced model (shots on cage)</b></p>${tbl(cal.filter(x => x.onKeeper === 1), snap.facedCounts || {}, snap.facedRate)}
+  </div>`;
+}
 function renderReports() {
-  const wrap = document.getElementById('rptTeam');
-  if (!wrap) return;
+  const box = document.getElementById('rptScore');
+  if (!box) return;
   if (!document.getElementById('reportsView').classList.contains('active')) return;
+  rptScoreCache = { F: {} }; rptWhoCache = null; rptEvCache = null;
   const periods = rptPeriods(rptMode, true);
   const sel = document.getElementById('rptPeriodSelect');
   sel.innerHTML = periods.length ? periods.map(p => `<option value="${escapeHtml(p.key)}">${escapeHtml(rptLabel(rptMode, p))}</option>`).join('') : '<option value="">Nothing logged yet</option>';
   if (!periods.some(p => p.key === rptKey)) rptKey = periods.length ? periods[0].key : '';
   sel.value = rptKey;
-  const idx = periods.findIndex(p => p.key === rptKey);
-  if (idx < 0) { wrap.innerHTML = '<p class="sans" style="color:var(--muted); font-size:13px;">No 2027+ practices logged yet.</p>'; ['rptPlayer', 'rptSheet', 'rptFullTeam', 'rptGroupBody'].forEach(id => { document.getElementById(id).innerHTML = ''; }); return; }
-  const period = periods[idx];
+  renderTrackingControls();
+  const period = periods.find(p => p.key === rptKey);
+  const clear = ['rptPlayer', 'rptSheet', 'rptFullTeam', 'rptGroupBody', 'rptTeam', 'rptModel'];
+  if (!period) { box.innerHTML = '<p class="sans" style="color:var(--muted); font-size:13px;">No 2027+ sessions logged yet.</p>'; clear.forEach(id => { document.getElementById(id).innerHTML = ''; }); return; }
   const season = seasonForDate(period.date);
   const F = rptFullStats(rptMode, [period.key], season);
-  renderRptFullTeam(F, rptLabel(rptMode, period));
-  renderRptGroup(F);
-  // The comparison below uses earlier sessions/weeks with WLU shots, as before.
-  const prior = rptPeriods(rptMode).filter(p => p.date < period.date || (p.date === period.date && p.key < period.key)).filter(p => seasonForDate(p.date) === season).slice(0, rptMode === 'practice' ? RPT_PRIOR_SESSIONS : RPT_PRIOR_WEEKS);
-  const word = rptMode === 'practice' ? 'practice' : 'week';
-  const priorWord = rptMode === 'practice' ? `previous ${prior.length} practice${prior.length === 1 ? '' : 's'}` : `previous ${prior.length} week${prior.length === 1 ? '' : 's'}`;
-  const cur = rptSlice(rptMode, [period.key]), base = rptSlice(rptMode, prior.map(p => p.key));
-  const cm = rptTeamMetrics(cur, season), bm = prior.length ? rptTeamMetrics(base, season) : null;
-  // Turnovers come only from logged no-shot possessions, so they're compared
-  // only with earlier practices/weeks where any were logged.
-  if (bm) {
-    const withPoss = prior.filter(p => rptSlice(rptMode, [p.key]).P.length > 0);
-    bm.toRate = withPoss.length ? rptTeamMetrics(rptSlice(rptMode, withPoss.map(p => p.key)), season).toRate : { v: null, kind: 'rate', num: 0, den: 0 };
-    if (!cur.P.length) cm.toRate = { v: null, kind: 'rate', num: 0, den: 0 };
-  }
-  // Counts compare against the per-period average.
-  const perPeriod = v => prior.length ? v / prior.length : null;
-  // Counts (shots, goals) are flagged when they're outside the range of every one of the previous periods.
-  const priorCounts = {}; if (bm) prior.forEach(p => { const m = rptTeamMetrics(rptSlice(rptMode, [p.key]), season); Object.keys(m).forEach(k => { if (m[k] && m[k].kind === 'count') (priorCounts[k] = priorCounts[k] || []).push(m[k].v); }); });
-  const summaryRows = RPT_SUMMARY.map(([k, label]) => {
-    const c = cm[k], b = bm ? bm[k] : null;
-    const bv = !b ? null : (b.kind === 'count' ? perPeriod(b.v) : b.v);
-    const pc = priorCounts[k] || [];
-    const flag = !b ? null : c.kind === 'count' ? (pc.length >= 3 && c.v !== null ? (c.v > Math.max(...pc) ? 'up' : c.v < Math.min(...pc) ? 'down' : null) : null) : rptFlag(c, b);
-    const few = !flag && ((c.kind === 'rate' && c.den < RPT_MIN_N) || (c.kind === 'mean' && c.n < RPT_MIN_N));
-    const good = flag && ((flag === 'up') !== !!RPT_LOWER_BETTER[k]);
-    return `<tr><td>${label}</td><td><b>${rptFmt(k, c.v)}</b>${c.kind === 'rate' && c.den ? ` <span class="n-note">(${c.num}/${c.den})</span>` : ''}</td><td>${b && b.kind === 'count' ? (bv === null ? '—' : num(bv, 1)) : rptFmt(k, bv)}</td><td>${flag ? `<b style="color:${good ? 'var(--good)' : 'var(--critical)'};">${flag === 'up' ? '▲ up' : '▼ down'}</b>` : `<span class="n-note">${few ? 'too few to tell' : 'normal range'}</span>`}</td></tr>`;
-  }).join('');
-  // Standouts.
-  const { fin, gk, cr } = rptStandouts(cur, season);
-  const who = j => escapeHtml(jerseyLabel(j, season));
-  const stand = [
-    fin ? `<li><b>Top finisher:</b> ${who(fin.j)} &mdash; ${fin.g} goals on ${fin.n} shots, ${fin.d >= 0 ? '+' : ''}${fin.d.toFixed(1)} vs what those looks usually produce.</li>` : `<li class="n-note">Top finisher: nobody had 5+ shots.</li>`,
-    gk ? `<li><b>Best goalie:</b> ${who(gk.j)} &mdash; ${gk.sv} saves on ${gk.n} shots on cage, ${gk.d >= 0 ? '+' : ''}${gk.d.toFixed(1)} saves vs expected.</li>` : `<li class="n-note">Best goalie: nobody faced 8+ shots on cage.</li>`,
-    cr ? `<li><b>Best creator:</b> ${who(cr.j)} &mdash; ${cr.n} shots set up (${cr.a} assists), ${cr.xa.toFixed(1)} expected assists.</li>` : `<li class="n-note">Best creator: nobody had 3+ potential assists.</li>`,
-  ].join('');
-  // Trends beyond noise.
-  const trends = !bm ? [] : RPT_TREND.map(([k, label]) => {
-    const c = cm[k], b = bm[k], flag = rptFlag(c, b);
-    if (!flag) return null;
-    const good = (flag === 'up') !== !!RPT_LOWER_BETTER[k];
-    return `<li><b style="color:${good ? 'var(--good)' : 'var(--critical)'};">${flag === 'up' ? '▲' : '▼'} ${label}:</b> ${rptFmt(k, c.v)}${c.kind === 'rate' ? ` (${c.num} of ${c.den})` : ''} vs ${rptFmt(k, b.v)} over the ${priorWord}.</li>`;
-  }).filter(Boolean);
-  wrap.innerHTML = `
-    <p class="panel-title">Team vs Recent ${rptMode === 'practice' ? 'Sessions' : 'Weeks'} &mdash; ${escapeHtml(rptLabel(rptMode, period))}</p>
-    <p class="panel-sub">${cur.S.length} shots${cur.P.length ? `, ${cur.P.length} no-shot possessions` : ''}.${rptMode === 'week' && rptLabel('week', period).includes('in progress') ? ' This week isn&rsquo;t over yet, so its totals are partial &mdash; the percentages are the fair comparison.' : ''} Compared with the ${priorWord}${prior.length ? '' : ' (none yet &mdash; this is the first)'}. &ldquo;Up&rdquo; or &ldquo;down&rdquo; only when the change is bigger than normal ${word}-to-${word} swings for this many shots.</p>
-    <div class="table-wrap" style="max-height:none;"><table class="shotlog dense"><thead><tr><th>Stat</th><th>This ${word}</th><th>${rptMode === 'practice' ? 'Recent practices' : 'Recent weeks'}</th><th>Change</th></tr></thead><tbody>${summaryRows}</tbody></table></div>
-    <p class="panel-title" style="font-size:15px; margin-top:16px;">Standouts</p>
-    <ul class="sans" style="font-size:13px; line-height:1.7; margin:4px 0 0; padding-left:18px;">${stand}</ul>
-    <p class="panel-title" style="font-size:15px; margin-top:16px;">Trends</p>
-    ${trends.length ? `<ul class="sans" style="font-size:13px; line-height:1.7; margin:4px 0 0; padding-left:18px;">${trends.join('')}</ul>` : `<p class="sans" style="font-size:13px; color:var(--muted);">${bm ? `Nothing moved beyond normal ${word}-to-${word} swings.` : 'Trends start once there&rsquo;s an earlier ' + word + ' to compare with.'}</p>`}`;
-  // Player picker: anyone involved in the period.
-  const js = new Set();
-  cur.S.forEach(s => { js.add(s.shooterJersey); if (s.assistJersey && !isOppJersey(s.assistJersey)) js.add(s.assistJersey); });
-  rptFaced(cur).forEach(s => js.add(s.goalieJersey));
-  cur.P.forEach(p => { if (p.turnoverBy && !isOppJersey(p.turnoverBy)) js.add(p.turnoverBy); });
-  Object.keys(F.players).forEach(j => js.add(j));
+  // Player picker: everyone involved, narrowed to the selected group (staff only).
   const psel = document.getElementById('rptPlayerSelect');
-  const players = [...js].filter(j => j && (!rptGroup || PLAYER_MODE || rptInGroup(season, j, rptGroup))).map(j => ({ j, name: nameFor(j, season) })).sort((a, b) => a.name.localeCompare(b.name));
-  psel.innerHTML = players.length ? players.map(p => `<option value="${escapeHtml(p.j)}">#${escapeHtml(p.j)} ${escapeHtml(p.name)}</option>`).join('') : '<option value="">No players</option>';
-  if (!players.some(p => p.j === rptPlayer)) rptPlayer = players.length ? players[0].j : '';
+  const players = Object.keys(F.players).filter(j => !rptGroup || PLAYER_MODE || rptInGroup(season, j, rptGroup)).map(j => ({ j, name: nameFor(j, season) || '' })).sort((a, b) => a.name.localeCompare(b.name));
+  psel.innerHTML = `<option value="">${rptGroup ? escapeHtml(RPT_GROUPS.find(x => x.value === rptGroup).label) + ' group' : 'Whole team'}</option>` + players.map(p => `<option value="${escapeHtml(p.j)}">#${escapeHtml(p.j)} ${escapeHtml(p.name)}</option>`).join('');
+  if (rptPlayer && !players.some(p => p.j === rptPlayer)) rptPlayer = '';
   psel.value = rptPlayer;
   if (PLAYER_MODE) rptPlayer = pmLockSelect(psel);
-  renderPlayerReport(period, cur, season, prior);
+  const scope = rptPlayer && rptPlayer !== '__NONE__' ? { kind: 'player', j: rptPlayer } : rptGroup ? { kind: 'group', g: rptGroup } : { kind: 'team' };
+  if (PLAYER_MODE && scope.kind !== 'player') { box.innerHTML = `<p class="sans" style="color:var(--muted); font-size:13px;">${escapeHtml(PLAYER_MODE.name)} wasn’t logged in this ${rptMode === 'practice' ? 'session' : 'week'}.</p>`; clear.forEach(id => { document.getElementById(id).innerHTML = ''; }); return; }
+  // The scorecard and standouts are judged with the saved model for this period's start date.
+  const cutoff = rptMode === 'practice' ? period.date : (rptPeriods('practice', true).filter(p => rptCurKeys(period).includes(p.key)).map(p => p.date).sort()[0] || period.key);
+  const X = xgSnapshotFor(season, cutoff);
+  RPT_X = X;
+  RPT_LATEST = { shot: xgModelFor(season), faced: facedXgModelFor(season) };
+  XG_FIXED = { season, shot: xgFixedModel(X.snap.shotRate), faced: xgFixedModel(X.snap.facedRate) };
+  let standHtml = '';
+  try {
+    box.innerHTML = rptScorecard(period, season, scope) + `<p class="n-note" style="font-size:12px; margin-top:6px;">Expected values: model ${escapeHtml(X.snap.ver)} (${X.saved ? 'fixed' : 'provisional until tracking is confirmed'}; shots before ${escapeHtml(cutoff)})${X.drift ? ' &mdash; changed since saved, see below' : ''}.</p>`;
+    standHtml = rptStandoutsHtml(rptSlice(rptMode, [period.key]), season);
+  } finally { XG_FIXED = null; RPT_LATEST = null; }
+  document.getElementById('rptModel').innerHTML = rptModelDetails(period, season, X);
+  rptWireRebuild(X);
+  // Details (collapsed): the full tables from before.
+  renderRptFullTeam(F, rptLabel(rptMode, period));
+  renderRptGroup(F);
+  const cur = rptSlice(rptMode, [period.key]);
+  rptPlayer && rptPlayer !== '__NONE__' ? renderPlayerReport(period, cur, season, []) : (document.getElementById('rptPlayer').innerHTML = '');
   renderRptSheet(F, rptPlayer);
+  document.getElementById('rptTeam').innerHTML = standHtml;
 }
+
 function renderPlayerReport(period, cur, season, prior) {
   const box = document.getElementById('rptPlayer');
   const j = rptPlayer;
@@ -10178,7 +10802,6 @@ function renderPlayerReport(period, cur, season, prior) {
   box.innerHTML = `
     <p class="panel-title">${escapeHtml(jerseyLabel(j, season))} &mdash; ${escapeHtml(rptLabel(rptMode, period))}</p>
     <p class="sans" style="font-size:13.5px; line-height:1.6;">${lead}</p>
-    ${rows.length ? `<div class="table-wrap" style="max-height:none;"><table class="shotlog dense"><thead><tr><th>Stat</th><th>This ${word}</th><th>His season before this ${word}${rptMode === 'practice' ? ' (per practice for counts)' : ' (per week for counts)'}</th><th>Team this ${word}</th></tr></thead><tbody>${rows.map(r => `<tr><td>${r[0]}</td><td><b>${r[1]}</b></td><td>${r[2]}</td><td>${r[3]}</td></tr>`).join('')}</tbody></table></div>` : ''}
     <p class="panel-sub" style="margin-top:12px;">The two lists below use his whole season through this ${word} (one ${word} is too few shots), each with ${RPT_SPLIT_MIN}+ shots, compared with the team on the same kind of shot.</p>
     <p class="sans" style="font-size:13px; margin:6px 0 2px;"><b style="color:var(--good);">What&rsquo;s working</b></p>
     ${goodS.length ? `<ul class="sans" style="font-size:13px; line-height:1.7; margin:0; padding-left:18px;">${goodS.map(x => `<li>${rptSplitSentence(x)}</li>`).join('')}</ul>` : '<p class="sans n-note" style="font-size:12.5px;">Nothing stands out above the team yet with enough shots.</p>'}
@@ -10218,7 +10841,12 @@ function rptOffOf(ps) {
     trig: rptSplit(m, s => !!normalizeTrigger(s.trigger)),
     ast: sum('assists'), potAst, xa, dom: sum('dominoes'), domG: sum('domGoals'), touches, xpT: ratio(xg + xa, touches), to, gb: sum('gb'), ct: sum('ct') };
 }
-function rptBlankDef() { return { on: 0, onG: 0, onXg: 0, bl: 0, beat: 0, slide: 0, slideG: 0, offBall: 0, blown: 0, late: 0, pk: 0, pkXp: 0, pkFreed: 0, dPoss: 0, dPossG: 0, dPossXg: 0, ct: 0 }; }
+function rptBlankDef() { return { on: 0, onG: 0, onXg: 0, onVar: 0, bl: 0, beat: 0, slide: 0, slideG: 0, timed: 0, lateC: 0, missed: 0, offBall: 0, blown: 0, late: 0, pk: 0, pkXp: 0, pkFreed: 0, dPoss: 0, dPossG: 0, dPossXg: 0, ct: 0 }; }
+// A faceoff rep counts toward win % when both sides are known: every game / scrimmage rep (us vs them), and a
+// practice rep logged with both of our faceoff men. Practice reps logged from the winner's side only stay as
+// historical logged wins.
+const foIsComp = f => f.context === 'Game' || (f.context === 'Scrimmage' && !!f.opponent);
+const foTwoSided = f => foIsComp(f) || f.both === 1 || (!!f.vsPlayerJersey && !isOppJersey(f.vsPlayerJersey));
 function rptBlankGk() { return { list: [] }; }
 function rptFullStats(mode, keys, season) {
   const inK = rptInPeriod(mode, keys);
@@ -10231,12 +10859,12 @@ function rptFullStats(mode, keys, season) {
   const DF = {}, Df = j => (DF[j] = DF[j] || rptBlankDef());
   d.shots.concat(d.oppShots).forEach(s => {
     const g = s.goal === 1 ? 1 : 0;
-    if (rptWl(s.defender)) { const r = Df(s.defender); r.on++; r.onG += g; r.onXg += xgOf(s); if (s.defBeaten === 'Yes' || s.defBeaten === 'No') { r.bl++; if (s.defBeaten === 'Yes') r.beat++; } }
-    if (rptWl(s.slideDefender)) { const r = Df(s.slideDefender); r.slide++; r.slideG += g; }
+    if (rptWl(s.defender)) { const r = Df(s.defender), p = xgOf(s); r.on++; r.onG += g; r.onXg += p; r.onVar += p * (1 - p); if (s.defBeaten === 'Yes' || s.defBeaten === 'No') { r.bl++; if (s.defBeaten === 'Yes') r.beat++; } }
+    if (rptWl(s.slideDefender)) { const r = Df(s.slideDefender); r.slide++; r.slideG += g; if (s.slideTiming && s.slideTiming !== 'Unknown') r.timed++; }
   });
   // Breakdowns (practice and scrimmage only, the Defense page's rules).
   const B = defBreakdownsFrom(d);
-  B.rows.forEach(r => { if (!rptWl(r.jersey)) return; const x = Df(r.jersey); x.offBall = r.off; x.blown = r.blown; x.late = r.late; });
+  B.rows.forEach(r => { if (!rptWl(r.jersey)) return; const x = Df(r.jersey); x.offBall = r.off; x.blown = r.blown; x.late = r.late; x.lateC = r.lateC; x.missed = r.missed; });
   // Pick defense (Pick Defenders page).
   const pickRows = pickDefenderRows(d.possList.filter(pp => pp.pick), xgOf, season);
   pickRows.forEach(r => { const x = Df(r.jersey); x.pk = r.n; x.pkXp = r.xp; x.pkFreed = r.freed; });
@@ -10246,26 +10874,31 @@ function rptFullStats(mode, keys, season) {
   // Goalies: shots on cage faced (same as the goalie section of the report).
   const faced = d.shots.filter(s => s.context === 'Practice' && rptWl(s.goalieJersey) && s.onKeeper === 1).concat(d.oppShots.filter(s => rptWl(s.goalieJersey) && s.onKeeper === 1));
   const GK = {}; faced.forEach(s => { (GK[s.goalieJersey] = GK[s.goalieJersey] || rptBlankGk()).list.push(s); });
-  // Faceoffs (Faceoff Summary counts the logged player; head-to-head counts both sides).
+  // Faceoffs: one event per rep; each side's result is derived from it (see foTwoSided).
   const fos = FACEOFFS.filter(f => seasonForDate(f.date) === season && inK(f));
-  const FO = {}, Fo = j => (FO[j] = FO[j] || { n: 0, w: 0, vs: {} });
+  const FO = {}, Fo = j => (FO[j] = FO[j] || { n: 0, w: 0, legacyW: 0, vs: {} });
   fos.forEach(f => {
-    if (!f.playerJersey) return;
-    const r = Fo(f.playerJersey); r.n++; if (f.won === 1) r.w++;
+    if (!rptWl(f.playerJersey)) return;
+    const r = Fo(f.playerJersey);
+    if (!foTwoSided(f)) { if (f.won === 1) r.legacyW++; return; }
+    r.n++; if (f.won === 1) r.w++;
     if (f.vsPlayerJersey) {
       const a = (r.vs[f.vsPlayerJersey] = r.vs[f.vsPlayerJersey] || { w: 0, l: 0 }); if (f.won === 1) a.w++; else a.l++;
-      if (rptWl(f.vsPlayerJersey)) { const b = (Fo(f.vsPlayerJersey).vs[f.playerJersey] = Fo(f.vsPlayerJersey).vs[f.playerJersey] || { w: 0, l: 0 }); if (f.won === 1) b.l++; else b.w++; }
+      if (rptWl(f.vsPlayerJersey)) { const o = Fo(f.vsPlayerJersey); o.n++; if (f.won !== 1) o.w++; const b = (o.vs[f.playerJersey] = o.vs[f.playerJersey] || { w: 0, l: 0 }); if (f.won === 1) b.l++; else b.w++; }
     }
   });
+  // Ground balls from the ground-ball log only (the old "possession started by: ground ball" isn't counted).
+  const gbs = GROUNDBALLS.filter(g => seasonForDate(g.date) === season && inK(g));
+  const GB = {}; gbs.forEach(g => { if (g.team !== 'OPP' && rptWl(g.jersey)) GB[g.jersey] = (GB[g.jersey] || 0) + 1; });
   // Screens he set (Picks page: share that created an advantage).
   const SC = {};
   d.possList.filter(pp => pp.team === 'WLU').forEach(pp => (pp.screens || []).forEach(x => { if (!rptWl(x.s)) return; const r = (SC[x.s] = SC[x.s] || { n: 0, adv: 0 }); r.n++; if (x.adv === 'Yes') r.adv++; }));
   const blankP = j => ({ jersey: j, shots: 0, goals: 0, assists: 0, xg: 0, potAst: 0, xa: 0, ownShots: [], gb: 0, to: 0, ct: 0, dominoes: 0, domGoals: 0 });
-  const ids = new Set([...Object.keys(d.players), ...Object.keys(DF), ...Object.keys(GK), ...Object.keys(FO)].filter(rptWl));
+  const ids = new Set([...Object.keys(d.players), ...Object.keys(DF), ...Object.keys(GK), ...Object.keys(FO), ...Object.keys(GB)].filter(rptWl));
   const players = {};
   ids.forEach(j => {
-    const p = d.players[j] || blankP(j), gl = (GK[j] || rptBlankGk()).list, fo = FO[j] || { n: 0, w: 0, vs: {} };
-    players[j] = { j, off: rptOffOf([p]), def: DF[j] || rptBlankDef(), gk: rptGkOf(gl, fm), fo, scr: SC[j] || { n: 0, adv: 0 }, p };
+    const p = d.players[j] || blankP(j), gl = (GK[j] || rptBlankGk()).list, fo = FO[j] || { n: 0, w: 0, legacyW: 0, vs: {} };
+    players[j] = { j, off: rptOffOf([p]), def: DF[j] || rptBlankDef(), gk: rptGkOf(gl, fm), fo, gb: GB[j] || 0, scr: SC[j] || { n: 0, adv: 0 }, p };
   });
   const wp = d.possList.filter(pp => pp.team === 'WLU');
   const team = {
@@ -10275,7 +10908,10 @@ function rptFullStats(mode, keys, season) {
     trig: computeTriggerEfficiency(d.shots, d.model, { minReps: 1 }),
     picks: pickPossStats(wp.filter(pp => pp.pick), xgOf), noPick: pickPossStats(wp.filter(pp => !pp.pick), xgOf),
     def: rptSumDef(Object.values(DF)), gk: rptGkOf(faced, fm),
-    fo: { n: fos.length, w: fos.filter(f => f.won === 1).length, games: fos.filter(f => f.context === 'Game') },
+    fo: { n: fos.length, w: fos.filter(f => f.won === 1).length, games: fos.filter(f => f.context === 'Game'), comp: fos.filter(foIsComp) },
+    gb: { us: gbs.filter(g => g.team !== 'OPP').length, them: gbs.filter(g => g.team === 'OPP').length },
+    // Defensive possessions: in practice our defense faces our offense (WLU possessions); against an opponent, theirs.
+    defPoss: d.possList.filter(pp => (pp.e.context === 'Game' || (pp.e.context === 'Scrimmage' && pp.e.opponent)) ? pp.team === 'OPP' : pp.team === 'WLU').length,
     scr: Object.values(SC).reduce((a, r) => ({ n: a.n + r.n, adv: a.adv + r.adv }), { n: 0, adv: 0 }),
   };
   return { d, players, team, game, noGame, season, fm };
@@ -10306,7 +10942,6 @@ function renderRptFullTeam(F, label) {
   const possession = rptArea('Possession &amp; Passing', [
     statTile('Possessions', String(ps.n), `${ps.goals} scored (${pct(ratio(ps.goals, ps.n))})`), statTile('Turnovers', String(ps.to), `${pct(ratio(ps.to, ps.n))} of possessions (logged)`),
     statTile('Assists', String(o.ast), `${o.potAst} shots set up · ${num(o.xa, 1)} xA`), statTile('Dominoes', String(ps.dom), `${ps.domG} ended in a goal`),
-    statTile('Ground balls', String(o.gb), `caused turnovers ${o.ct}`),
   ]);
   const trig = t.trig.slice(0, 12);
   const triggers = rptArea('Triggers &amp; Picks', [
@@ -10369,12 +11004,12 @@ const RPT_C = {
   svB: { key: 'svB', label: 'Bronze', type: 'num', value: r => r.gk.bronze.n ? r.gk.bronze.sv / r.gk.bronze.n : null, format: (v, r) => rptSvN(r.gk.bronze), group: 'Save % by look' },
 };
 const rptCols = keys => [rptJCol, rptNameCol].concat(keys.map(k => RPT_C[k]));
-const RPT_OFF_KEYS = ['sh', 'g', 'shPct', 'cage', 'xg', 'gmx', 'gold', 'cat', 'dod', 'a', 'feeds', 'xa', 'dom', 'scr', 'touch', 'xpT', 'to', 'gb', 'ct'];
-const RPT_DEF_KEYS = ['on', 'ga', 'beat', 'slide', 'offb', 'blown', 'late', 'pk', 'pkXp', 'pkFreed', 'dPoss', 'dXg', 'ct', 'gb', 'to', 'sh', 'g'];
+const RPT_OFF_KEYS = ['sh', 'g', 'shPct', 'cage', 'xg', 'gmx', 'gold', 'cat', 'dod', 'a', 'feeds', 'xa', 'dom', 'scr', 'touch', 'xpT', 'to', 'ct'];
+const RPT_DEF_KEYS = ['on', 'ga', 'beat', 'slide', 'offb', 'blown', 'late', 'pk', 'pkXp', 'pkFreed', 'dPoss', 'dXg', 'ct', 'to', 'sh', 'g'];
 const RPT_GROUP_COLS = {
-  off: rptCols(RPT_OFF_KEYS), ssdm: rptCols(['on', 'ga', 'beat', 'slide', 'offb', 'blown', 'late', 'pk', 'pkXp', 'pkFreed', 'dPoss', 'dXg', 'ct', 'gb', 'to', 'sh', 'g', 'shPct', 'a', 'feeds']),
-  def: rptCols(RPT_DEF_KEYS), fo: rptCols(['fo', 'fow', 'foPct', 'gb', 'to', 'ct', 'sh', 'g']),
-  gk: rptCols(['faced', 'saves', 'svPct', 'gsax', 'svG', 'svS', 'svB', 'sh', 'g']), none: rptCols(['sh', 'g', 'a', 'feeds', 'to', 'gb', 'ct', 'on', 'fo', 'faced']),
+  off: rptCols(RPT_OFF_KEYS), ssdm: rptCols(['on', 'ga', 'beat', 'slide', 'offb', 'blown', 'late', 'pk', 'pkXp', 'pkFreed', 'dPoss', 'dXg', 'ct', 'to', 'sh', 'g', 'shPct', 'a', 'feeds']),
+  def: rptCols(RPT_DEF_KEYS), fo: rptCols(['fo', 'fow', 'foPct', 'to', 'ct', 'sh', 'g']),
+  gk: rptCols(['faced', 'saves', 'svPct', 'gsax', 'svG', 'svS', 'svB', 'sh', 'g']), none: rptCols(['sh', 'g', 'a', 'feeds', 'to', 'ct', 'on', 'fo', 'faced']),
 };
 const RPT_GROUP_KIND = { A: 'off', M: 'off', S: 'ssdm', L: 'def', D: 'def', F: 'fo', G: 'gk', none: 'none' };
 function rptInGroup(season, j, g) { const p = posOfJ(season, j); return g === 'none' ? (!p || p === 'X') : posIs(season, j, g); }
@@ -10392,13 +11027,13 @@ function renderRptGroup(F) {
   const fo = P.reduce((a, x) => ({ n: a.n + x.fo.n, w: a.w + x.fo.w }), { n: 0, w: 0 });
   const tiles = [];
   const offT = () => tiles.push(statTile('Shooting', `${o.goals}/${o.shots}`, `${pct(o.shPct)} · on cage ${pct(o.onCage)}`), statTile('Goals vs expected', rptSgn(o.gmx), `${num(o.xg, 1)} xG · gold looks ${pct(o.gold)}`),
-    statTile('Creating', String(o.ast), `assists · ${o.potAst} shots set up · ${o.dom} dominoes`), statTile('Ball', `${o.to} TO`, `${o.gb} ground balls · xP per touch ${num(o.xpT, 2)}`));
+    statTile('Creating', String(o.ast), `assists · ${o.potAst} shots set up · ${o.dom} dominoes`), statTile('Ball', `${o.to} TO`, `xP per touch ${num(o.xpT, 2)}`));
   const defT = () => tiles.push(statTile('On-ball', `${df.onG} GA`, `on ${df.on} reps vs ${num(df.onXg, 1)} expected`), statTile('Beaten', pct(ratio(df.beat, df.bl)), `${df.beat} of ${df.bl} logged`),
     statTile('Breakdowns', String(df.offBall + Math.round(df.blown) + df.late), `${df.offBall} off-ball · ${num(df.blown, 0)} blown picks · ${df.late} late slides`), statTile('Caused turnovers', String(df.ct), `${df.slide} slides (${df.slideG} goals after)`));
   if (kind === 'off') offT();
   if (kind === 'ssdm' || kind === 'def') defT();
   if (kind === 'ssdm' && o.shots) tiles.push(statTile('Shooting', `${o.goals}/${o.shots}`, pct(o.shPct)));
-  if (kind === 'fo') tiles.push(statTile('Faceoffs', `${fo.w}/${fo.n}`, pct(ratio(fo.w, fo.n))), statTile('Ground balls', String(o.gb), `${o.to} turnovers`));
+  if (kind === 'fo') tiles.push(statTile('Faceoffs', fo.n ? `${fo.w}/${fo.n}` : '—', fo.n ? pct(ratio(fo.w, fo.n)) : 'no two-sided reps'));
   if (kind === 'gk') tiles.push(statTile('Save %', pct(gk.svPct), `${gk.saves} of ${gk.n} on cage`), statTile('Saves vs expected', rptSgn(gk.gsax), ''));
   if (kind === 'none') { if (o.shots || o.potAst) offT(); if (df.on || df.ct || df.offBall) defT(); }
   if (kind !== 'off' && kind !== 'none' && kind !== 'ssdm' && o.shots) tiles.push(statTile('Shooting', `${o.goals}/${o.shots}`, pct(o.shPct)));
@@ -10425,17 +11060,17 @@ function renderRptSheet(F, j) {
   if (k.has('off')) {
     html += rptBlock('Shooting', o.shots ? shootRows : [['Shots', '0']]);
     html += rptBlock('Creating &amp; ball', [['Assists / shots set up', `${o.ast} / ${o.potAst}`], ['Expected assists', num(o.xa, 1)], ['Dominoes started', `${o.dom}${o.dom ? ` (${o.domG} goals)` : ''}`],
-      ['Screens with an advantage', rptOf(x.scr.adv, x.scr.n)], ['Touches', String(o.touches)], ['Expected points per touch', num(o.xpT, 2)], ['Turnovers', String(o.to)], ['Ground balls', String(o.gb)], ['Caused turnovers', String(df.ct)]]);
+      ['Screens with an advantage', rptOf(x.scr.adv, x.scr.n)], ['Touches', String(o.touches)], ['Expected points per touch', num(o.xpT, 2)], ['Turnovers', String(o.to)], ['Caused turnovers', String(df.ct)]]);
   } else if (o.shots) html += rptBlock('Shooting', shootRows);
   if (k.has('def')) {
     html += rptBlock('Defense', [['On-ball reps', String(df.on)], ['Goals allowed on-ball', df.on ? `${df.onG} vs ${num(df.onXg, 1)} expected` : '—'], ['Beaten', rptOf(df.beat, df.bl)],
       ['Slides', `${df.slide}${df.slide ? ` (${df.slideG} goals after)` : ''}`], ['Off-ball breakdowns', String(df.offBall)], ['Blown pick coverage', num(df.blown, df.blown % 1 ? 1 : 0)], ['Late slides (provisional)', String(df.late)],
       ['Picks defended', String(df.pk)], ['xP per pick defended', df.pk ? num(df.pkXp, 2) : '—'], ['Freed ball carrier', df.pk ? pct(df.pkFreed) : '—'],
-      ['Defensive possessions on the field', String(df.dPoss)], ['Expected goals allowed per possession', df.dPoss ? num(df.dPossXg / df.dPoss, 2) : '—'], ['Caused turnovers', String(df.ct)], ['Ground balls', String(o.gb)]]) + rptDefNote(F);
+      ['Defensive possessions on the field', String(df.dPoss)], ['Expected goals allowed per possession', df.dPoss ? num(df.dPossXg / df.dPoss, 2) : '—'], ['Caused turnovers', String(df.ct)]]) + rptDefNote(F);
   }
   if (k.has('fo')) {
     const vs = Object.keys(fo.vs).map(v => `${escapeHtml(rptWl(v) ? jerseyLabel(v, F.season) : (v ? '#' + v.replace(/^o/, '') + ' (opp)' : ''))} ${fo.vs[v].w}–${fo.vs[v].l}`);
-    html += rptBlock('Faceoffs', [['Won / taken', rptOf(fo.w, fo.n)], ['Head-to-head', vs.length ? vs.join('<br>') : '—'], ['Ground balls', String(o.gb)], ['Turnovers', String(o.to)]]);
+    html += rptBlock('Faceoffs', [['Won / taken', rptOf(fo.w, fo.n)], ['Head-to-head', vs.length ? vs.join('<br>') : '—'], ['Turnovers', String(o.to)]]);
   }
   if (k.has('gk')) {
     const pl = Object.keys(gk.place).sort().map(p => `${escapeHtml(p)}: ${gk.place[p].sv}/${gk.place[p].n}`);
@@ -10444,7 +11079,7 @@ function renderRptSheet(F, j) {
   }
   box.innerHTML = html + '<hr style="border:none; border-top:1px solid var(--line); margin:18px 0 12px;">';
 }
-setupPillGroup('rptGroupPills', RPT_GROUPS, '', v => { rptGroup = v || ''; renderReports(); });
+setupPillGroup('rptGroupPills', RPT_GROUPS, '', v => { rptGroup = v || ''; rptPlayer = ''; renderReports(); });
 setupPillGroup('rptModePills', [{ value: 'practice', label: 'Practice' }, { value: 'week', label: 'Week' }], 'practice', v => {
   rptMode = v || 'practice'; if (!v) setPillGroupValue('rptModePills', 'practice'); rptKey = ''; renderReports();
 });
@@ -11997,7 +12632,7 @@ function defensePartsFrom(d) {
 //   duplicate is listed for correction in Backfill, never rewritten.
 function defBreakdownsFrom(d) {
   const W = j => j && !isOppJersey(j), xgOf = d.xgOf;
-  const P = {}, row = j => (P[j] = P[j] || { jersey: j, off: 0, beat: 0, blown: 0, blownW: 0, late: 0, shots: [], dates: new Set() });
+  const P = {}, row = j => (P[j] = P[j] || { jersey: j, off: 0, beat: 0, blown: 0, blownW: 0, late: 0, lateC: 0, missed: 0, shots: [], dates: new Set() });
   const types = {}; DEF_BREAK_TYPES.forEach(([k]) => { types[k] = []; }); const clean = [];
   const rec = {}, R = (tag, counted, reason) => { const r = (rec[tag] = rec[tag] || { logged: 0, counted: 0, excluded: {} }); r.logged++; if (counted) r.counted++; else r.excluded[reason] = (r.excluded[reason] || 0) + 1; };
   const errors = [], tagDates = new Set(), seen = {};
@@ -12019,17 +12654,25 @@ function defBreakdownsFrom(d) {
       if (O) { if (O === D) { R('Off-ball breakdown', false, 'same player as the on-ball defender (correct in Backfill)'); errors.push({ date: s.date, id: s.id, jersey: O, issue: 'Off-ball breakdown is the same player as the on-ball defender' }); }
         else { add(O, 'off', s); R('Off-ball breakdown', true); } }
       if (Sl) { if (Sl === D) { R('Slide defender', false, 'same player as the on-ball defender (correct in Backfill)'); errors.push({ date: s.date, id: s.id, jersey: Sl, issue: 'Slide defender is the same player as the on-ball defender' }); }
+        // Slide timing logged on the shot (Nov 2026) is a confirmed observation and replaces the
+        // provisional contest-level rule; it is counted apart from the provisional "late".
+        else if (s.slideTiming === 'Late') { const r = row(Sl); r.lateC++; r.dates.add(s.date); R('Slide defender', true); }
+        else if (s.slideTiming === 'On time' || s.slideTiming === 'Not needed') R('Slide defender', false, 'slide timing logged: ' + s.slideTiming.toLowerCase());
         else if (beaten && s.contestLevel === 'Open') { add(Sl, 'late', s); R('Slide defender', true); }
         else R('Slide defender', false, beaten ? 'contested shot: slide counted as on time (provisional)' : D ? (s.defBeaten === 'No' ? 'his man’s defender held: no slide breakdown' : 'beaten not logged: slide not judged') : 'no on-ball defender logged: slide not judged'); }
       if (picks.length) { const blown = s.pickCoverage === 'Blown'; picks.forEach(j => { if (blown) { add(j, 'blown', s, 1 / picks.length); R('Pick defender', true); } else R('Pick defender', false, s.pickCoverage ? 'coverage executed: not a breakdown' : 'coverage not logged'); }); }
-      const any = (O && O !== D) || beaten || (picks.length && s.pickCoverage === 'Blown') || (Sl && Sl !== D && beaten && s.contestLevel === 'Open');
+      // A slide that didn't come is charged to whoever should have slid, only when someone was named.
+      const Sh = s.slideTiming === "Didn't come" && W(s.slideShould) ? s.slideShould : null;
+      if (Sh) { const r = row(Sh); r.missed++; r.dates.add(s.date); }
+      const timed = s.slideTiming === 'Late' || s.slideTiming === 'On time' || s.slideTiming === 'Not needed';
+      const any = (O && O !== D) || beaten || (picks.length && s.pickCoverage === 'Blown') || (Sl && Sl !== D && (s.slideTiming === 'Late' || (!timed && beaten && s.contestLevel === 'Open'))) || !!Sh;
       if (!any && ((D && s.defBeaten === 'No') || (picks.length && s.pickCoverage && s.pickCoverage !== 'Blown'))) clean.push(s);
     });
   });
   const stat = list => { const n = list.length, c = t => list.filter(s => s.shotQuality === t).length;
     return { n, xg: n ? list.reduce((a, s) => a + xgOf(s), 0) / n : null, gold: n ? c('1-Gold') / n : null, silver: n ? c('2-Silver') / n : null, bronze: n ? c('3-Bronze') / n : null, goal: n ? list.filter(s => s.goal === 1).length / n : null }; };
-  const rows = Object.values(P).map(r => { const tagApps = [...(seen[r.jersey] || [])].filter(dt => tagDates.has(dt)).length, total = r.off + r.beat + r.blown + r.late;
-    return Object.assign({ jersey: r.jersey, off: r.off, beat: r.beat, blown: r.blown, blownW: r.blownW, late: r.late, total, tagApps, perTagged: tagApps ? total / tagApps : null, nDates: r.dates.size }, { after: stat(r.shots) }); });
+  const rows = Object.values(P).map(r => { const tagApps = [...(seen[r.jersey] || [])].filter(dt => tagDates.has(dt)).length, total = r.off + r.beat + r.blown + r.late + r.lateC + r.missed;
+    return Object.assign({ jersey: r.jersey, off: r.off, beat: r.beat, blown: r.blown, blownW: r.blownW, late: r.late, lateC: r.lateC, missed: r.missed, total, tagApps, perTagged: tagApps ? total / tagApps : null, nDates: r.dates.size }, { after: stat(r.shots) }); });
   return { rows, types: Object.fromEntries(DEF_BREAK_TYPES.map(([k]) => [k, stat(types[k])])), clean: stat(clean), rec, errors, tagDates: tagDates.size };
 }
 // One season and context (the Defense page's filters), all practice dates.
@@ -12088,7 +12731,12 @@ const DS_MATERIAL_POSS = ['end', 'turnoverBy', 'causedBy', 'pick', 'pickType', '
 const DS_FINAL = ['clean', 'breakdown', 'cant'];
 const dsKey = (kind, id) => (kind === 'shot' ? 's' : 'p') + id;
 const dsParse = (v, d) => { try { return typeof v === 'string' ? JSON.parse(v) : d; } catch (e) { return d; } };
-function dsFp(kind, e) { return JSON.stringify((kind === 'shot' ? DS_MATERIAL_SHOT : DS_MATERIAL_POSS).map(k => (e[k] === undefined || e[k] === '' ? null : e[k]))); }
+function dsFp(kind, e) {
+  const a = (kind === 'shot' ? DS_MATERIAL_SHOT : DS_MATERIAL_POSS).map(k => (e[k] === undefined || e[k] === '' ? null : e[k]));
+  // Slide timing joins the fingerprint only once it's set, so reviews saved before it existed stay current.
+  if (kind === 'shot' && (e.slideTiming || e.slideShould)) a.push(e.slideTiming || null, e.slideShould || null);
+  return JSON.stringify(a);
+}
 // Which defensive fields changed since a review (names, for the reconfirm note).
 function dsFpDiff(kind, oldFp, e) { const names = kind === 'shot' ? DS_MATERIAL_SHOT : DS_MATERIAL_POSS, a = dsParse(oldFp, []), b = dsParse(dsFp(kind, e), []); return names.filter((n, i) => JSON.stringify(a[i] === undefined ? null : a[i]) !== JSON.stringify(b[i])); }
 // The lineup behind an entry: its stint and the defensive row of that stint.
@@ -12105,7 +12753,8 @@ function dsProposed(kind, e) {
   const picks = e.pick === 'Yes' ? [...new Set([e.pickScreenerDef, e.pickUserDef].filter(W))] : [], beaten = !!(D && e.defBeaten === 'Yes');
   if (D) (beaten ? bd : ev).push({ t: beaten ? 'beat' : e.defBeaten === 'No' ? 'held' : 'onBallLogged', j: D });
   if (O && O !== D) bd.push({ t: 'off', j: O });
-  if (Sl && Sl !== D) { if (beaten && e.contestLevel === 'Open') lateSlide = Sl; else ev.push({ t: beaten ? 'slideOnTime' : 'slideLogged', j: Sl }); }
+  // Slide timing logged on the shot (Nov 2026) is already a judgment; only an unjudged slide is provisional.
+  if (Sl && Sl !== D) { if (e.slideTiming === 'Late') bd.push({ t: 'late', j: Sl }); else if (e.slideTiming === 'On time') ev.push({ t: 'slideOnTime', j: Sl }); else if (e.slideTiming !== 'Not needed' && beaten && e.contestLevel === 'Open') lateSlide = Sl; else ev.push({ t: beaten ? 'slideOnTime' : 'slideLogged', j: Sl }); }
   picks.forEach(j => (e.pickCoverage === 'Blown' ? bd.push({ t: 'blown', j }) : ev.push({ t: e.pickCoverage ? 'pickExecuted' : 'pickLogged', j })));
   return { bd, ev, lateSlide };
 }
@@ -14279,6 +14928,8 @@ function faceoffsForSeason(season) {
 function computeFaceoffSummary(faceoffs) {
   const byJersey = {};
   faceoffs.forEach(f => { if (f.playerJersey) (byJersey[f.playerJersey] = byJersey[f.playerJersey] || []).push(f); });
+  // A two-sided practice rep (Nov 2026) is one event that also counts for the other faceoff man, from his side.
+  faceoffs.forEach(f => { if (f.both === 1 && f.vsPlayerJersey && !isOppJersey(f.vsPlayerJersey)) (byJersey[f.vsPlayerJersey] = byJersey[f.vsPlayerJersey] || []).push({ won: f.won === 1 ? 0 : 1, _side: 'b' }); });
   return Object.keys(byJersey).map(j => {
     const list = byJersey[j];
     const taken = list.length;
@@ -15871,7 +16522,8 @@ const SA_CATALOG = [
   { id: 'slides', label: 'Slides', words: 'slides, slide, sliding, slider, slides the most, help defense', page: 'defense', fmt: SA_NUM(0), f: d => saDefBy(d, 'slideDefender', l => ({ v: l.length, n: l.length })) },
   { id: 'offFault', label: 'Off-ball breakdowns', dir: 'low', badCount: true, words: 'off-ball breakdowns, off ball breakdowns, breakdowns, breakdown, off-ball mistakes, loses his man off ball, off ball defense, off-ball defense', page: 'defense', fmt: SA_NUM(0), f: d => saDefBy(d, 'offBallFault', l => ({ v: l.length, n: l.length })) },
   { id: 'pickFreed', label: 'Pick defense: ball carrier freed', words: 'pick defense, defending picks, defends picks, pick defender, guarding picks, switches', dir: 'low', min: 5, page: 'pickdef', fmt: SA_PCT, f: d => { const m = {}; try { pickDefenderRows(d.possList.filter(pp => pp.pick), d.xgOf, EFF_SEASON).forEach(r => { if (r.n) m[r.jersey] = { v: r.freed, n: r.n, extra: `${r.n} picks` }; }); } catch (e) { /* not ready */ } return m; } },
-  { id: 'gb', label: 'Ground balls', words: 'ground balls, ground ball, gbs, gb, scrappy', page: 'eff', fmt: SA_NUM(0), f: d => saMap(d, p => p.gb ? { v: p.gb, n: p.gb } : null) },
+  { id: 'gb', label: 'Ground balls', words: 'ground balls, ground ball, gbs, gb, scrappy', page: 'eff', fmt: SA_NUM(0), f: d => { const cov = gbCoverage(Object.keys(d.bySession || {})); return cov === 'N' ? {} : saMap(d, p => (p.gbLog || cov === 'C') ? Object.assign({ v: p.gbLog, n: p.gbLog }, cov === 'P' ? { extra: 'partial' } : {}) : null); },
+    coverage: d => gbCoverage(Object.keys(d.bySession || {})) },
   { id: 'ct', label: 'Caused turnovers', words: 'caused turnovers, takeaways, takeaway, steals, forced turnovers, causes turnovers, causes the most turnovers, cause turnovers, causing turnovers, forces turnovers, forcing turnovers, causes, forces', page: 'eff', fmt: SA_NUM(0), f: d => saMap(d, p => p.ct ? { v: p.ct, n: p.ct } : null) },
   { off: true, id: 'dom', label: 'Dominoes started', words: 'dominoes, starts the dominoes, initiator, initiates, breaks down, dodger, dodgers, dodging, draws slides', page: 'dominoes', fmt: SA_NUM(0), f: d => saMap(d, p => p.dominoes ? { v: p.dominoes, n: p.dominoes } : null) },
   { off: true, id: 'advCreated', label: 'Screen advantages created', not: 'defender, defense, defensive, breakdown, breakdowns', words: 'screen advantages, advantages created, screens, screen, screener, screeners, picks, pick setter', page: 'picks', fmt: SA_NUM(0), f: d => { const s = saScreens(d); const m = {}; Object.keys(s.set).forEach(j => { m[j] = { v: s.adv[j] || 0, n: s.set[j], extra: `${s.adv[j] || 0} of ${s.set[j]} screens` }; }); return m; } },
@@ -18467,6 +19119,7 @@ function saRun(plan) {
     const out = { title: meta.label, filt, fmt, page: meta.page, minNote: min ? `min ${min} ${isC ? 'actions' : 'attempts'}` : '', total: rows.length };
     if (out0.note) out.note = out0.note;
     if (empty) out.note = empty;
+    if (meta.coverage) { const cov = meta.coverage(d); if (cov === 'N') { out.rows = []; out.note = 'Not tracked: no ground balls were logged or marked Complete for these sessions.'; return out; } if (cov === 'P') out.note = 'Partial: ground balls were only partly tracked in these sessions, so these totals are partial (players with none logged aren’t listed).'; }
     if (meta.seasonOnly && (f.ctx || f.from || f.opp)) out.note = `${meta.label} is built from the whole ${season} season, so the other filters weren’t applied.`;
     if (plan.type === 'player') out.rows = rows.filter(r => plan.players.includes(r.jersey)), out.missing = plan.players.filter(j => !rows.some(r => r.jersey === j)).map(j => nameFor(j, season) || '#' + j);
     else out.rows = rows.slice(0, Math.min(10, plan.n)), out.dir = plan.dir;
