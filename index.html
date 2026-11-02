@@ -8154,7 +8154,7 @@ function renderEffPossession(d, possList) {
     { key: 'gb', label: 'GB→poss', type: 'num', value: r => r.gb, title: 'Possessions he started by picking up a ground ball (Possession Started By). Not a ground-ball total: those come from the ground-ball log.' },
     { key: 'ct', label: 'Caused TO', type: 'num', value: r => r.ct },
     { key: 'to', label: 'TO', type: 'num', value: r => r.to },
-    { key: 'net', label: 'GB+CT−TO', type: 'num', value: r => r.net, format: v => signed(v, 0), title: 'Possessions won minus possessions given away.' },
+    { key: 'net', label: 'Poss +/−', type: 'num', value: r => r.net, format: v => signed(v, 0), title: 'Possessions won (GB-started possessions + caused turnovers) minus turnovers. Uses the possession tags, not ground-ball totals.' },
     { key: 'foWins', label: 'FO Wins', type: 'num', value: r => r.foWins, title: 'Faceoff wins tagged as the start of a logged possession (the Faceoffs tab has full faceoff records).' },
     { key: 'dominoes', label: 'Dominoes', type: 'num', value: r => r.dominoes },
   ];
