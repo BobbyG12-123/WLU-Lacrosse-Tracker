@@ -10289,6 +10289,18 @@ function rptWhoBySession() {
   rptWhoCache = m;
   return m;
 }
+// Whether a session has any logged event of a category whose zero can't be told from a gap (per render).
+let rptEvCache = null;
+function rptHasEvents(key, cat) {
+  if (!rptEvCache) {
+    const m = { gb: new Set(), brk: new Set(), ct: new Set() };
+    GROUNDBALLS.forEach(g => m.gb.add(sessKey(g)));
+    SHOTS.concat(OPP_SHOTS).forEach(s => { if (s.offBallFault || s.pickCoverage) m.brk.add(sessKey(s)); });
+    POSSESSIONS.forEach(p => { if (p.causedBy) m.ct.add(sessKey(p)); });
+    rptEvCache = m;
+  }
+  return !rptEvCache[cat] || rptEvCache[cat].has(key);
+}
 // Sessions (newest first) of one kind in a season that end before `start` (the first session of the period).
 function rptEarlierSessions(curKeys, season, kind, start) {
   return rptPeriods('practice', true).filter(p => seasonForDate(p.date) === season && !curKeys.includes(p.key) && (!kind || rptSessKind(p.key) === kind)
@@ -10439,7 +10451,9 @@ function rptScorecard(period, season, scope) {
   const benchFor = (row) => {
     // A goalie's rows: his season to date before this period. Everything else: the previous five. Sessions
     // marked Not tracked for the row's category are left out.
-    const ok = pool.filter(p => trackStatus(p.key, row.cat) !== 'N');
+    // A session that didn't track the category, or (when a zero can't be told from a gap) didn't confirm it and
+    // logged none of it, is left out.
+    const ok = pool.filter(p => { const st = trackStatus(p.key, row.cat); if (st === 'N') return false; return !row.zeroIsGap || st === 'C' || rptHasEvents(p.key, row.id === 'ct' ? 'ct' : row.id); });
     const use = row.who === 'gk' && scope.kind === 'player' ? ok : ok.slice(0, 5);
     if (!use.length) return { name: `${who2} previous ${kWord}`, keys: [] };
     const name = row.who === 'gk' && scope.kind === 'player' ? `His season before this ${rptMode === 'practice' ? 'session' : 'week'} (${kWord}, ${use.length} session${use.length === 1 ? '' : 's'})`
@@ -10528,7 +10542,7 @@ function renderReports() {
   const box = document.getElementById('rptScore');
   if (!box) return;
   if (!document.getElementById('reportsView').classList.contains('active')) return;
-  rptScoreCache = { F: {} }; rptWhoCache = null;
+  rptScoreCache = { F: {} }; rptWhoCache = null; rptEvCache = null;
   const periods = rptPeriods(rptMode, true);
   const sel = document.getElementById('rptPeriodSelect');
   sel.innerHTML = periods.length ? periods.map(p => `<option value="${escapeHtml(p.key)}">${escapeHtml(rptLabel(rptMode, p))}</option>`).join('') : '<option value="">Nothing logged yet</option>';
