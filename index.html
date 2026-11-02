@@ -6301,6 +6301,8 @@ async function saveShotFromForm(step) {
   const slideTiming = document.getElementById('f_slide_timing').dataset.value || null;
   const slideShould = readJerseyField('f_slide_should', otherTeam(team));
   if (!slideShould.ok) { showMsg('Who should have slid: ' + slideShould.why, false); return; }
+  if ((slideTiming === "Didn't come" || slideTiming === 'Not needed') && defSlide.value) { showMsg(`Slide timing says “${slideTiming}”, but a slide defender is filled in. Clear one of them.`, false); return; }
+  if ((slideTiming === 'On time' || slideTiming === 'Late') && !defSlide.value) { showMsg(`Slide timing says “${slideTiming}”: type who slid.`, false); return; }
   const isEdit = editingShotId !== null;
   if (!isEdit && decorateChips().length) { showMsg('Fix the lineup bar first (marked in red), or clear it.', false); return; }
 
@@ -10328,7 +10330,7 @@ const RPT_ROWS = [
     val: (A, sc) => sc.kind === 'team' ? { type: 'rate', num: A.F.team.poss.to, den: A.F.team.poss.n, unit: 'our possessions' } : { type: 'rate', num: A.off.to, den: A.off.touches, unit: 'touches (shots + feeds + turnovers)' } },
   { id: 'pick', area: 'Offense', label: 'Picks that freed the ball carrier', cat: 'pick', better: 1, who: 'team', val: A => ({ type: 'rate', num: Math.round((A.F.team.picks.freed || 0) * A.F.team.picks.n), den: A.F.team.picks.n, unit: 'pick possessions' }) },
   { id: 'scr', area: 'Offense', label: 'Screens that created an advantage', cat: 'pick', better: 1, who: 'off', val: A => ({ type: 'rate', num: A.scr.adv, den: A.scr.n, unit: 'screens' }) },
-  { id: 'gb', area: 'Ball', label: 'Ground balls', cat: 'gb', better: 1, who: 'all',
+  { id: 'gb', area: 'Ball', label: 'Ground balls', cat: 'gb', better: 1, who: 'all', zeroIsGap: true,
     val: (A, sc, ctx) => sc.kind === 'team' ? (ctx.kind === 'comp' ? { type: 'rate', num: A.F.team.gb.us, den: A.F.team.gb.us + A.F.team.gb.them, unit: 'ground balls (ours of both teams)' } : { type: 'rate', num: A.F.team.gb.us, den: A.F.team.poss.n, unit: 'our possessions', per: 10 }) : { type: 'count', c: A.gb, k: ctx.k, unit: 'sessions' } },
   { id: 'fo', area: 'Ball', label: 'Faceoff win %', cat: 'fo', better: 1, who: 'fo',
     val: (A, sc, ctx) => sc.kind === 'team' ? (ctx.kind === 'comp' ? { type: 'rate', num: A.F.team.fo.comp.filter(f => f.won === 1).length, den: A.F.team.fo.comp.length, unit: 'faceoffs' } : null) : { type: 'rate', num: A.fo.w, den: A.fo.n, unit: 'two-sided reps' } },
@@ -10336,11 +10338,11 @@ const RPT_ROWS = [
     val: A => { const r = { type: 'model', n: A.def.on, act: A.def.onG, exp: A.def.onXg, v: A.def.onVar }; return r; },
     note: 'Shared responsibility: a goal on his man can come from a slide, a pick or an off-ball breakdown. Read it next to the breakdown tags, not as a defender rating.' },
   { id: 'beat', area: 'Defense', label: 'Beaten on-ball', cat: 'def', better: -1, who: 'def', val: A => ({ type: 'rate', num: A.def.beat, den: A.def.bl, unit: 'on-ball reps with Beaten logged' }) },
-  { id: 'brk', area: 'Defense', label: 'Off-ball breakdowns + blown pick coverage', cat: 'brk', better: -1, who: 'def', compOff: true,
+  { id: 'brk', area: 'Defense', label: 'Off-ball breakdowns + blown pick coverage', cat: 'brk', better: -1, who: 'def', compOff: true, zeroIsGap: true,
     val: (A, sc, ctx) => sc.kind === 'team' ? { type: 'rate', num: A.def.offBall + A.def.blown, den: A.F.team.defPoss, unit: 'defensive possessions' } : { type: 'count', c: A.def.offBall + A.def.blown, k: ctx.k, unit: 'sessions' } },
   { id: 'slide', area: 'Defense', label: 'Late slides (timing logged)', cat: 'slide', better: -1, who: 'def',
     val: A => ({ type: 'rate', num: A.def.lateC, den: A.def.timed, unit: 'slides with timing logged', extra: (A.def.missed ? `${A.def.missed} slide${A.def.missed === 1 ? '' : 's'} that didn’t come (charged to who should have slid)` : '') + (A.def.late ? `${A.def.missed ? '; ' : ''}${A.def.late} provisional late (from contest level, not observed)` : '') }) },
-  { id: 'ct', area: 'Defense', label: 'Caused turnovers', cat: 'poss', better: 1, who: 'def',
+  { id: 'ct', area: 'Defense', label: 'Caused turnovers', cat: 'poss', better: 1, who: 'def', zeroIsGap: true,
     val: (A, sc, ctx) => sc.kind === 'team' ? { type: 'rate', num: A.def.ct, den: A.F.team.defPoss, unit: 'defensive possessions' } : { type: 'count', c: A.def.ct, k: ctx.k, unit: 'sessions' } },
   { id: 'sv', area: 'Goaltending', label: 'Save %', cat: 'shots', better: 1, who: 'gk', val: A => ({ type: 'rate', num: A.faced.filter(s => s.goal !== 1).length, den: A.faced.length, unit: 'shots on cage faced' }) },
   { id: 'sax', area: 'Goaltending', label: 'Saves above expected', cat: 'shots', better: -1, who: 'gk', unit: 'shots on cage faced', flipSign: true,
@@ -10461,7 +10463,7 @@ function rptScorecard(period, season, scope) {
     // Tracking: Not tracked = "—"; Partial / not confirmed with nothing logged = "—"; Complete with nothing logged = 0.
     let cur, tag = '';
     if (st === 'N') cur = '— <span class="n-note">(not tracked)</span>';
-    else if ((st === 'P' || st === 'U') && !events && (r.type === 'count' || (r.type === 'rate' && !r.den) || (r.type === 'model' && !r.n))) cur = `— <span class="n-note">(none logged; tracking ${st === 'P' ? 'partial' : 'not confirmed'})</span>`;
+    else if ((st === 'P' || st === 'U') && !events && (row.zeroIsGap || r.type === 'count' || (r.type === 'rate' && !r.den) || (r.type === 'model' && !r.n))) cur = `— <span class="n-note">(none logged; tracking ${st === 'P' ? 'partial' : 'not confirmed'})</span>`;
     else { cur = st === 'C' && r.type === 'count' && !r.c ? '<b>0</b>' : rptFmtRow(row, r, nums); if (st === 'P') tag = ' <span class="n-note" style="color:var(--gold-ink);">partial tracking</span>'; else if (st === 'U') tag = ' <span class="n-note">tracking not confirmed</span>'; }
     const bm = benchFor(row);
     const bF = bm.keys.length ? rptF(bm.keys, season) : null;
@@ -10476,7 +10478,9 @@ function rptScorecard(period, season, scope) {
       if (r.type === 'model') diff = '';
       else if (bn && bn.n && nums.v !== null && bn.v !== null) diff = r.type === 'rate' && !r.per ? rptSgn(100 * (nums.v - bn.v), 1) + ' pts' : r.per ? rptSgn(r.per * (nums.v - bn.v), 1) : r.type === 'count' ? rptSgn(r.c - bn.v * r.k, 1) : rptSgn(nums.v - bn.v, 3);
     }
-    const read = st === 'N' ? '<span class="n-note">—</span>' : rptRead(row, r, nums, b, bn);
+    const gap = st === 'N' || ((st === 'P' || st === 'U') && !events && (row.zeroIsGap || r.type === 'count'));
+    if (gap) diff = '—';
+    const read = gap ? '<span class="n-note">—</span>' : rptRead(row, r, nums, b, bn);
     let sec = '';
     if (secA) { const sr = row.val(secA, secScope, ctx), sn = rptRowNums(sr); sec = `<td>${sr && sn && sn.n ? rptFmtRow(row, sr, sn) : '—'}</td>`; }
     const extra = (r.extra ? `<br><span class="n-note">${escapeHtml(r.extra)}</span>` : '') + (row.note ? `<br><span class="n-note">${escapeHtml(row.note)}</span>` : '');
