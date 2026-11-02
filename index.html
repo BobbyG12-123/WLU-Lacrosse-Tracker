@@ -7995,6 +7995,17 @@ function gameScore(b) { return Object.keys(GAME_SCORE_W).reduce((sum, k) => sum 
 // Game Score is only complete for a session whose ground balls were marked Complete; otherwise unlogged ground
 // balls are missing from it (not zero), so it is shown as provisional and isn't comparable with complete ones.
 const gsComplete = sid => trackStatus(sid, 'gb') === 'C';
+// Ground-ball coverage of a set of sessions: 'C' every session marked Complete; 'N' none tracked (marked Not tracked,
+// or never confirmed with nothing logged); otherwise 'P' (partial: some sessions, partial tracking, or logged without
+// confirming). Displays: N -> "Not tracked" / "—", C -> the count (0 is a real zero), P -> the count labeled partial.
+function gbCoverage(keys) {
+  const logged = new Set(GROUNDBALLS.map(g => sessKey(g)));
+  const st = keys.map(k => { const t = trackStatus(k, 'gb'); return t === 'C' || t === 'N' || t === 'P' ? t : (logged.has(k) ? 'P' : 'N'); });
+  if (!st.length || st.every(x => x === 'N')) return 'N';
+  return st.every(x => x === 'C') ? 'C' : 'P';
+}
+// One cell: "—" when not tracked (or a partial zero, which isn't a measured zero), the count when complete, else "n partial".
+const gbCell = (v, cov) => cov === 'N' || (cov === 'P' && !v) ? '—' : cov === 'C' ? String(v || 0) : `${v} <span class="n-note">partial</span>`;
 const GS_PROV_TIP = 'Provisional: ground balls weren’t marked Complete for this session, so ground balls that weren’t logged are missing from the score (not counted as zero). Not comparable with fully tracked sessions. Earlier versions added 0.3 for each ground ball tagged as starting a possession; a possession tag isn’t a ground-ball count, so that is no longer included.';
 const gsCell = (v, inc, tip) => v === null || v === undefined ? '—' : `${num(v, 2)}${inc ? `<span title="${escapeHtml(tip || GS_PROV_TIP)}" style="color:var(--gold-ink); cursor:help;">*</span>` : ''}`;
 function stdev(arr) {
@@ -8244,7 +8255,7 @@ function renderEffBoxScore(d) {
   const sub = document.getElementById('effBoxSub');
   if (!sess) { sub.textContent = ''; document.getElementById('effBoxWrap').innerHTML = ''; return; }
   const rows = Object.values(sess.players).map(b => Object.assign({ name: nameFor(b.jersey, EFF_SEASON), p: b.g + b.a, gs: gameScore(b) }, b));
-  const gsInc = !gsComplete(sess.sid);
+  const gsInc = !gsComplete(sess.sid), gbCov = gbCoverage([sess.sid]);
   sub.textContent = `${rows.length} player(s) with a logged lineup or involvement.` + (sess.hasStints ? '' : ' No lineups logged for this session.') + (gsInc ? ' Game Scores are provisional (*): ground balls weren’t marked Complete for this session.' : '');
   const d1 = v => num(v, 1);
   const cols = [
@@ -8255,7 +8266,7 @@ function renderEffBoxScore(d) {
     { key: 'a', label: 'A', type: 'num', value: r => r.a },
     { key: 'xg', label: 'xG', type: 'num', value: r => r.xg, format: d1 },
     { key: 'xa', label: 'xA', type: 'num', value: r => r.xa, format: d1 },
-    { key: 'gbLog', label: 'GB', type: 'num', value: r => r.gbLog, format: (v, r) => (v || trackStatus(sess.sid, 'gb') === 'C') ? String(v) : '—', title: 'Ground balls from the ground-ball log. “—” = none logged and ground balls weren’t marked Complete for this session.' },
+    { key: 'gbLog', label: 'GB', type: 'num', value: r => r.gbLog, format: v => gbCell(v, gbCov), title: 'Ground balls from the ground-ball log. “—” = not tracked; 0 = tracked completely, none picked up; “partial” = only partly tracked.' },
     { key: 'ct', label: 'CT', type: 'num', value: r => r.ct },
     { key: 'to', label: 'TO', type: 'num', value: r => r.to },
     { key: 'dom', label: 'Dominoes', type: 'num', value: r => r.dom },
@@ -9524,6 +9535,7 @@ function renderDefense() {
   ].join('') : '';
   document.getElementById('defSub').textContent = `${season} ${defContext === 'All' ? 'practice + game' : defContext.toLowerCase()} shots with a WLU on-ball defender logged (${logged.length} of ${shots.length}). In games these are opponent shots. xG allowed is the expected-goal value of the looks he gave up; G−xG /100 is goals allowed above (+, worse) or below (−, better) what those looks predict. Gray italic rows have fewer than 5 shots.`;
   const eff = effDataFor(season);
+  const defGbCov = gbCoverage(Object.keys(eff.bySession));
   const byD = {}, byS = {};
   const byO = {};
   logged.forEach(s => { (byD[s.defender] = byD[s.defender] || []).push(s); });
@@ -9553,7 +9565,7 @@ function renderDefense() {
     { key: 'slides', label: 'Slides', type: 'num', value: r => r.slides },
     { key: 'offFaults', label: 'Off-Ball Faults', type: 'num', value: r => r.offFaults, title: 'Shots blamed on him for losing his man off the ball.' },
     { key: 'ct', label: 'Caused TO', type: 'num', value: r => r.ct },
-    { key: 'gb', label: 'GB', type: 'num', value: r => r.gb, format: v => (GROUNDBALLS.length ? String(v) : '—'), title: 'Ground balls from the ground-ball log (“—” until any are logged).' },
+    { key: 'gb', label: 'GB', type: 'num', value: r => r.gb, format: v => gbCell(v, defGbCov), title: 'Ground balls from the ground-ball log, this season. “—” = not tracked; 0 = tracked completely, none picked up; “partial” = only some sessions tracked completely.' },
   ], rows, { dense: true, defaultSort: { key: 'n', dir: 'desc' }, emptyMsg: `No ${season} shots with an on-ball defender logged yet. Open the Defense card on the Log Shot form to add one.` });
   const slideRows = Object.keys(byS).map(j => { const l = byS[j]; return { jersey: j, name: nameFor(j, season), n: l.length, g: goalsOf(l), gPct: ratio(goalsOf(l), l.length), xgPer: xgSum(l, model) / l.length }; });
   renderSortableTable('defSlideWrap', [
@@ -10598,7 +10610,7 @@ function rptScorecard(period, season, scope) {
     let cur, tag = '';
     if (st === 'N') cur = '— <span class="n-note">(not tracked)</span>';
     else if ((st === 'P' || st === 'U') && !events && (row.zeroIsGap || r.type === 'count' || (r.type === 'rate' && !r.den) || (r.type === 'model' && !r.n))) cur = `— <span class="n-note">(none logged; tracking ${st === 'P' ? 'partial' : 'not confirmed'})</span>`;
-    else { cur = st === 'C' && r.type === 'count' && !r.c ? '<b>0</b>' : rptFmtRow(row, r, nums); if (st === 'P') tag = ' <span class="n-note" style="color:var(--gold-ink);">partial tracking</span>'; else if (st === 'U') tag = ' <span class="n-note">tracking not confirmed</span>'; }
+    else { cur = st === 'C' && r.type === 'count' && !r.c ? '<b>0</b>' : rptFmtRow(row, r, nums); if (st === 'P' || (st === 'U' && row.cat === 'gb')) tag = ` <span class="n-note" style="color:var(--gold-ink);">partial${st === 'U' ? ' (tracking not confirmed)' : ' tracking'}</span>`; else if (st === 'U') tag = ' <span class="n-note">tracking not confirmed</span>'; }
     const bm = benchFor(row);
     const bF = bm.keys.length ? rptF(bm.keys, season) : null;
     const bA = bF ? rptAgg(bF, scope.kind === 'player' ? scope : scope.kind === 'group' ? scope : { kind: 'team' }) : null;
@@ -16510,7 +16522,8 @@ const SA_CATALOG = [
   { id: 'slides', label: 'Slides', words: 'slides, slide, sliding, slider, slides the most, help defense', page: 'defense', fmt: SA_NUM(0), f: d => saDefBy(d, 'slideDefender', l => ({ v: l.length, n: l.length })) },
   { id: 'offFault', label: 'Off-ball breakdowns', dir: 'low', badCount: true, words: 'off-ball breakdowns, off ball breakdowns, breakdowns, breakdown, off-ball mistakes, loses his man off ball, off ball defense, off-ball defense', page: 'defense', fmt: SA_NUM(0), f: d => saDefBy(d, 'offBallFault', l => ({ v: l.length, n: l.length })) },
   { id: 'pickFreed', label: 'Pick defense: ball carrier freed', words: 'pick defense, defending picks, defends picks, pick defender, guarding picks, switches', dir: 'low', min: 5, page: 'pickdef', fmt: SA_PCT, f: d => { const m = {}; try { pickDefenderRows(d.possList.filter(pp => pp.pick), d.xgOf, EFF_SEASON).forEach(r => { if (r.n) m[r.jersey] = { v: r.freed, n: r.n, extra: `${r.n} picks` }; }); } catch (e) { /* not ready */ } return m; } },
-  { id: 'gb', label: 'Ground balls', words: 'ground balls, ground ball, gbs, gb, scrappy', page: 'eff', fmt: SA_NUM(0), f: d => saMap(d, p => p.gbLog ? { v: p.gbLog, n: p.gbLog } : null) },
+  { id: 'gb', label: 'Ground balls', words: 'ground balls, ground ball, gbs, gb, scrappy', page: 'eff', fmt: SA_NUM(0), f: d => { const cov = gbCoverage(Object.keys(d.bySession || {})); return cov === 'N' ? {} : saMap(d, p => (p.gbLog || cov === 'C') ? Object.assign({ v: p.gbLog, n: p.gbLog }, cov === 'P' ? { extra: 'partial' } : {}) : null); },
+    coverage: d => gbCoverage(Object.keys(d.bySession || {})) },
   { id: 'ct', label: 'Caused turnovers', words: 'caused turnovers, takeaways, takeaway, steals, forced turnovers, causes turnovers, causes the most turnovers, cause turnovers, causing turnovers, forces turnovers, forcing turnovers, causes, forces', page: 'eff', fmt: SA_NUM(0), f: d => saMap(d, p => p.ct ? { v: p.ct, n: p.ct } : null) },
   { off: true, id: 'dom', label: 'Dominoes started', words: 'dominoes, starts the dominoes, initiator, initiates, breaks down, dodger, dodgers, dodging, draws slides', page: 'dominoes', fmt: SA_NUM(0), f: d => saMap(d, p => p.dominoes ? { v: p.dominoes, n: p.dominoes } : null) },
   { off: true, id: 'advCreated', label: 'Screen advantages created', not: 'defender, defense, defensive, breakdown, breakdowns', words: 'screen advantages, advantages created, screens, screen, screener, screeners, picks, pick setter', page: 'picks', fmt: SA_NUM(0), f: d => { const s = saScreens(d); const m = {}; Object.keys(s.set).forEach(j => { m[j] = { v: s.adv[j] || 0, n: s.set[j], extra: `${s.adv[j] || 0} of ${s.set[j]} screens` }; }); return m; } },
@@ -19106,6 +19119,7 @@ function saRun(plan) {
     const out = { title: meta.label, filt, fmt, page: meta.page, minNote: min ? `min ${min} ${isC ? 'actions' : 'attempts'}` : '', total: rows.length };
     if (out0.note) out.note = out0.note;
     if (empty) out.note = empty;
+    if (meta.coverage) { const cov = meta.coverage(d); if (cov === 'N') { out.rows = []; out.note = 'Not tracked: no ground balls were logged or marked Complete for these sessions.'; return out; } if (cov === 'P') out.note = 'Partial: ground balls were only partly tracked in these sessions, so these totals are partial (players with none logged aren’t listed).'; }
     if (meta.seasonOnly && (f.ctx || f.from || f.opp)) out.note = `${meta.label} is built from the whole ${season} season, so the other filters weren’t applied.`;
     if (plan.type === 'player') out.rows = rows.filter(r => plan.players.includes(r.jersey)), out.missing = plan.players.filter(j => !rows.some(r => r.jersey === j)).map(j => nameFor(j, season) || '#' + j);
     else out.rows = rows.slice(0, Math.min(10, plan.n)), out.dir = plan.dir;
