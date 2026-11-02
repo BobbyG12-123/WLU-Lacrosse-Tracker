@@ -3191,7 +3191,7 @@ async function outboxFollow(op, finalId) {
       if (f.t === 'fc') {
         const ref = DB.doc('app/filmcheck_' + f.key), snap = await ref.get(), cur = snap.exists ? snap.data()['st_' + f.clip] : null;
         let o = null; try { o = cur ? JSON.parse(cur) : null; } catch (e) { o = null; }
-        if (o && o.eid && o.eid === op.next.eid && Number(o.id) !== Number(finalId)) ref.set({ ['st_' + f.clip]: JSON.stringify(Object.assign(o, { id: finalId })) }, { merge: true }).catch(e => console.error('film check mark', e));
+        if (o && o.eid && o.eid === op.next.eid && Number(o.id) !== Number(finalId)) { if (typeof devClipsInvalidate === 'function') devClipsInvalidate(); ref.set({ ['st_' + f.clip]: JSON.stringify(Object.assign(o, { id: finalId })) }, { merge: true }).catch(e => console.error('film check mark', e)); }
         if (FC.key === f.key && FC.st && FC.st[f.clip] && FC.st[f.clip].eid === op.next.eid) FC.st[f.clip].id = finalId;
       } else if (f.t === 'bf') {
         const k = bfKey(f.sid, op.kind, finalId);
@@ -4676,6 +4676,7 @@ function switchTab(viewId) {
   if (viewId === 'playerView') { renderPlayerHeat(); renderShooterScore(); }
   if (viewId === 'defenseView') renderDefense();
   if (viewId === 'healthView') renderDataHealth();
+  if ((viewId === 'reportsView' || viewId === 'develView') && typeof devClipsInvalidate === 'function') devClipsInvalidate();   // read Film Check fresh
   if (viewId === 'reportsView') renderReports();
   if (viewId === 'develView') renderDevelop();
   if (viewId === 'depthView') renderDepthChart();
@@ -18265,7 +18266,8 @@ function fcPlan() {
 }
 function fcStatusWrite(id, val) {
   const v = val === null ? firebase.firestore.FieldValue.delete() : JSON.stringify(Object.assign({ by: dpWho(), at: new Date().toISOString().slice(0, 10) }, val));
-  return settleWrite(DB.doc('app/filmcheck_' + FC.key).set({ ['st_' + id]: v }, { merge: true }));
+  devClipsInvalidate();   // Player Development re-reads the corrected match
+  return settleWrite(DB.doc('app/filmcheck_' + FC.key).set({ ['st_' + id]: v }, { merge: true })).then(r => { devClipsInvalidate(); return r; });
 }
 function fcOpen(key) {
   if (!FC_KEY.test(key || '')) return;
@@ -18273,6 +18275,7 @@ function fcOpen(key) {
   const k = fcKeyInfo(key);
   Object.assign(FC, { key, date: k.date, context: k.context, opponent: k.oppSlug, drafts: null, account: null, st: {}, idx: 0, draft: null, mode: null, pick: null, msg: '', choosing: false, editing: null, addTo: null, dsMark: null });
   FC.unsub = DB.doc('app/filmcheck_' + key).onSnapshot(snap => {
+    devClipsInvalidate();   // any change here (this coach or another) can change a clip match
     const d = snap.exists ? snap.data() : {};
     let list = null; try { list = fcValidDrafts(JSON.parse(d.drafts || 'null')); } catch (e) { list = null; }
     const st = {};
@@ -18661,6 +18664,7 @@ async function fcImport() {
   batch.set(DB.doc('app/filmcheck_' + p.key), { drafts: JSON.stringify(drafts), account: p.account, film: p.film, opponent: p.opponent, by: dpWho(), at: new Date().toISOString() }, { merge: true });
   batch.set(DB.doc('app/filmcheck_index'), { ['p_' + p.key]: JSON.stringify({ shots: p.list.filter(d => d.kind === 'shot').length, opps: p.list.filter(d => d.kind === 'oppshot').length, tos: p.list.filter(d => d.kind === 'turnover').length, opp: p.opponent }) }, { merge: true });
   const res = await settleWrite(batch.commit());
+  devClipsInvalidate();
   if (res === 'error') { FC.msg = 'Could not add it — please try again.'; renderFilmCheck(); return; }
   FC.pending = null; FC.msg = `Added the ${p.label}.`;
   renderFilmCheck();
@@ -19689,7 +19693,7 @@ const DEV_CAT_LONG = { practice: 'Practice', intra: 'Intra-squad scrimmage', opp
 const DEV_CAT_NOTE = 'Session type is read from how each session was logged: a game, or a scrimmage logged with an opponent’s name = Opponent; a scrimmage logged with no opponent = Intra-squad; a practice = Practice. The tracker can’t check it beyond that.';
 const DEV_NONE = '__none__';
 const DEV_MIN_SESS = 6, DEV_MIN_SHOTS = 80, DEV_CELL_MIN = 25, DEV_Z = 2, DEV_MIN_R = 3, DEV_SMALL = 8;
-const DEV = { j: '', season: null, range: 'Full', cat: 'All', f: {}, by: 'zone', excl: new Set(), only: null, onlyLabel: '', wi: {},
+const DEV = { clipGen: 0, j: '', season: null, range: 'Full', cat: 'All', f: {}, by: 'zone', excl: new Set(), only: null, onlyLabel: '', wi: {},
   clips: null, clipsBusy: false, notes: {}, notesSeason: null, notesUnsub: null, notesErr: '', edit: null, msg: '', delArm: null };
 function devCatKey(k) { k = String(k || ''); return /_game(_|$)/.test(k) || /_scrimmage_./.test(k) ? 'opp' : /_scrimmage$/.test(k) ? 'intra' : /_practice$/.test(k) ? 'practice' : null; }
 const devCat = e => devCatKey(sessKey(e));
@@ -19725,8 +19729,22 @@ const devSg = (v, d) => v === null || v === undefined || !isFinite(v) ? '—' : 
 // app/filmcheck_<key> st_<clip id> = { s: 'm' (matched to a logged shot) | 'n' (logged from this clip), id, eid }.
 // The match is looked up only inside that Film Check entry's own session: by entry id when the mark has one, else
 // by shot number in that session (how Film Check itself shows it). A shot claimed by two clips gets no clip.
+// The matches are read fresh each time the page (or Reports) is opened, and dropped whenever Film Check saves or sees a
+// change, so a corrected match never shows stale. A load that was overtaken by a change is thrown away.
+function devClipsInvalidate() {
+  DEV.clips = null; DEV.clipGen++;
+  // If the page (or a Player review) is on screen, re-read now so what it shows doesn't go stale.
+  if (DEV.clipsTick) return;
+  DEV.clipsTick = setTimeout(() => {
+    DEV.clipsTick = null;
+    const dv = document.getElementById('develView'), rv = document.getElementById('reportsView');
+    if (dv && dv.classList.contains('active') && DEV.season && DEV.j) devEnsureClips(DEV.season, () => { if (dv.classList.contains('active')) devRenderRecords(devSelected(devScope(DEV.season, DEV.range, DEV.cat).filter(s => s.shooterJersey === DEV.j)), xgModelFor(DEV.season), DEV.season); });
+    else if (rv && rv.classList.contains('active') && rptMode === 'review' && document.getElementById('rptDevRec')) renderReports();
+  }, 50);
+}
 async function devLoadClips(season) {
   if (DEV.clips && DEV.clips.season === season) return DEV.clips;
+  const gen = DEV.clipGen;
   const out = { season, map: new Map(), amb: new Set(), sids: new Map(), unresolved: 0, err: '' };
   if (!DB) { out.err = 'Film Check isn’t available offline.'; DEV.clips = out; return out; }
   try {
@@ -19757,8 +19775,18 @@ async function devLoadClips(season) {
     });
     claims.forEach((l, key) => { if (l.length === 1) out.map.set(key, l[0]); else out.amb.add(key); });
   } catch (e) { console.error('dev clips', e); out.err = 'Couldn’t read Film Check.'; }
+  if (gen !== DEV.clipGen) return null;   // Film Check changed while this was loading
   DEV.clips = out;
   return out;
+}
+// Loads the matches if needed, then calls done(); reloads if Film Check changed during the load.
+function devEnsureClips(season, done) {
+  if (DEV.clips && DEV.clips.season === season) return;
+  (DEV.clipsWait = DEV.clipsWait || []).push(done);
+  if (DEV.clipsBusy) return;
+  DEV.clipsBusy = true;
+  const go = () => devLoadClips(season).then(r => { if (!r) return go(); DEV.clipsBusy = false; const w = DEV.clipsWait; DEV.clipsWait = []; w.forEach(f => { try { f(); } catch (e) { console.error(e); } }); });
+  go();
 }
 function devClipCell(s) {
   const C = DEV.clips, key = devKey(s);
@@ -19880,7 +19908,9 @@ function devScenario(R, all, sel, wi) {
     return { k, from: [...from], to: [...to], cf, ct, ok: cf.ok && ct.ok, his: { n: his.length, g: his.filter(s => s.goal === 1).length, e: his.reduce((a, s) => a + R.oof.get(s), 0) } };
   });
   const joint = used.length > 1 ? devCell(R, s => { const p = xg2Profile(s); return checks.every(c => c.to.includes(devLeverVal(c.k, p))); }) : null;
-  const status = !R.ok ? 'model' : !ch.length ? 'none' : checks.some(c => !c.ok) || (joint && joint.n >= DEV_CELL_MIN && !joint.ok) ? 'support' : 'pass';
+  // Every change must pass the screen on its own, and with two or more changes, so must the combination: enough team
+  // shots that had all of them at once (DEV_CELL_MIN) and held-out predictions within DEV_Z standard errors there.
+  const status = !R.ok ? 'model' : !ch.length ? 'none' : checks.some(c => !c.ok) || (joint && !joint.ok) ? 'support' : 'pass';
   return { rows, ch, n: rows.length, nSel: rows.filter(r => r.inSel).length, base, scen, d: scen - base, dSel: selOnly - base, dSk: skOnly - base, selBase, se, did, miss, checks, joint, status };
 }
 // ---- Page ----
@@ -19956,9 +19986,7 @@ function renderDevelop() {
   devRenderAudit(R);
   devRenderWhatIf(R, mine, sel);
   devRenderNotes(season, j, sel, xm);
-  if (!DEV.clips || DEV.clips.season !== season) {
-    if (!DEV.clipsBusy) { DEV.clipsBusy = true; devLoadClips(season).then(() => { DEV.clipsBusy = false; if (document.getElementById('develView').classList.contains('active')) devRenderRecords(devSelected(devScope(season, DEV.range, DEV.cat).filter(s => s.shooterJersey === DEV.j)), xgModelFor(season), season); }); }
-  }
+  devEnsureClips(season, () => { if (document.getElementById('develView').classList.contains('active') && DEV.season === season) devRenderRecords(devSelected(devScope(season, DEV.range, DEV.cat).filter(s => s.shooterJersey === DEV.j)), xgModelFor(season), season); });
 }
 function devRenderBy(mine, rest, xm) {
   const d = devDim(DEV.by) || DEV_DIMS[0], f = Object.assign({}, DEV.f); delete f[d.k];
@@ -19980,7 +20008,7 @@ function devRenderBy(mine, rest, xm) {
 }
 function devRenderRecords(sel, xm, season) {
   const C = DEV.clips, note = document.getElementById('devClipNote');
-  if (note) note.textContent = !C || C.season !== season ? 'checking Film Check…' : C.err ? C.err : `${sel.filter(s => C.map.has(devKey(s))).length} of ${sel.length} have a clip confirmed in Film Check.`;
+  if (note) note.innerHTML = !C || C.season !== season ? 'checking Film Check…' : C.err ? escapeHtml(C.err) : `${sel.filter(s => C.map.has(devKey(s))).length} of ${sel.length} have a clip confirmed in Film Check. <button type="button" class="lnk print-hide" data-dev-act="clips-recheck">Re-check</button>`;
   const rows = sel.slice().sort((a, b) => (a.date || '').localeCompare(b.date || '') || a.id - b.id);
   const d1 = v => v === null || v === undefined ? '—' : escapeHtml(v);
   renderSortableTable('devRecWrap', [
@@ -20004,7 +20032,7 @@ function devRenderRecords(sel, xm, season) {
 function devRenderAudit(R) {
   const sum = document.getElementById('devAuditSum'), w = document.getElementById('devAuditWrap'); if (!w) return;
   if (!R.model) { sum.textContent = 'not enough data yet'; w.innerHTML = `<p class="sans" style="font-size:13px;">${escapeHtml(R.why || '')}</p>`; return; }
-  sum.textContent = R.ok ? `passed: ${(R.skill * 100).toFixed(1)}% better than the base rate on ${R.sids.length} held-out sessions` : 'failed: what-ifs are switched off';
+  sum.textContent = R.ok ? `passes the screen: ${(R.skill * 100).toFixed(1)}% better than the base rate on ${R.sids.length} held-out sessions` : 'doesn’t pass: what-ifs are switched off';
   const rows = [['Objective model (no grade) — used for what-ifs', R.skill, R.brModel], ['Grade only (Gold / Silver / Bronze, + practice vs game)', R.skillGrade, R.brGrade], ['Team base rate (from the other sessions)', 0, R.brBase]];
   w.innerHTML = `<div class="sans" style="font-size:13px; line-height:1.6;">
     <p>Each of the ${R.sids.length} ${escapeHtml(R.season)} sessions is left out in turn; the model is fit on the other sessions and scores that session&rsquo;s ${'shots'} cold. ${R.shots.length} located shots, ${R.goals} goals. Skill = how much better than predicting the team&rsquo;s base rate (log loss); 0% = no better.</p>
@@ -20012,7 +20040,7 @@ function devRenderAudit(R) {
     <p>The objective model beat the base rate in <b>${R.sessWins} of ${R.sids.length}</b> held-out sessions.${R.skillGrade > R.skill ? ` <b>The grade alone predicts better</b> (${(R.skillGrade * 100).toFixed(1)}% vs ${(R.skill * 100).toFixed(1)}%): a coach&rsquo;s grade takes in parts of a look the logged facts don&rsquo;t (the goalie, the stick, the moment). A what-if can only change logged facts, so it reflects only the part of a look those facts explain.` : ''}</p>
     <p style="margin:10px 0 4px;"><b>Calibration on held-out sessions</b></p>
     ${rptMiniTable(['Predicted chance', 'Shots', 'Predicted', 'Went in'], R.calib.filter(c => c.n).map(c => [`${Math.round(c.lo * 100)}–${Math.min(100, Math.round(c.hi * 100))}%`, String(c.n), pct(c.pred), pct(c.act)]))}
-    <p class="n-note" style="font-size:12px;">${R.ok ? 'Passing this check lets what-ifs run; each what-if is still checked on the situations it moves shots from and to.' : escapeHtml(R.why || '')} The xG Model page&rsquo;s own test mixes shots from one session into both its training and test folds, so its skill number can read higher than this one.</p></div>`;
+    <p class="n-note" style="font-size:12px;">${R.ok ? 'Passing this check lets what-ifs run; each what-if is still screened on the situations it moves shots from and to. Passing is a minimum standard, not proof a change will help a player.' : escapeHtml(R.why || '')} The xG Model page&rsquo;s own test mixes shots from one session into both its training and test folds, so its skill number can read higher than this one.</p></div>`;
 }
 function devCellTxt(c) { return c.n ? `${c.g} goals on ${c.n} team shots vs ${num(c.e, 1)} predicted${c.z === null ? '' : ` (${c.z >= 0 ? '+' : '−'}${Math.abs(c.z).toFixed(1)} SE)`}` : 'no team shots'; }
 function devCheckWhy(c) { return c.n < DEV_CELL_MIN ? `only ${c.n} team shot${c.n === 1 ? '' : 's'} (needs ${DEV_CELL_MIN}+ to check)` : !c.ok ? 'held-out predictions miss here by more than 2 standard errors' : 'checks out'; }
@@ -20031,12 +20059,12 @@ function devRenderWhatIf(R, mine, sel) {
     `${escapeHtml(c.from.map(v => devLeverShow(c.k, v)).join(', ') || '—')}<br><span class="n-note">${devCellTxt(c.cf)}</span>`,
     `${escapeHtml(c.to.map(v => devLeverShow(c.k, v)).join(', ') || '—')}<br><span class="n-note">${devCellTxt(c.ct)}</span>`,
     c.his.n ? `${c.his.g} of ${c.his.n} <span class="n-note">(${pct(c.his.g / c.his.n)}; held-out model ${num(c.his.e, 1)})</span>` : '<span class="n-note">none &mdash; he hasn&rsquo;t shot from there</span>',
-    c.ok ? '<b style="color:var(--good);">Supported</b>' : `<b style="color:var(--critical);">Not supported</b><br><span class="n-note">${escapeHtml(!c.cf.ok ? 'from: ' + devCheckWhy(c.cf) : 'to: ' + devCheckWhy(c.ct))}</span>`])) : '';
-  const jointTxt = S.joint ? (S.joint.n < DEV_CELL_MIN ? `<p class="n-note" style="font-size:12px;">The changes together: only ${S.joint.n} team shot${S.joint.n === 1 ? '' : 's'} had all of them at once, too few to check the combination directly; the model adds up their separate effects.</p>` : `<p class="n-note" style="font-size:12px;">The changes together: ${devCellTxt(S.joint)} &mdash; ${S.joint.ok ? 'checks out' : 'held-out predictions miss here'}.</p>`) : '';
+    c.ok ? '<b style="color:var(--good);">Passes the screen</b>' : `<b style="color:var(--critical);">Doesn&rsquo;t pass</b><br><span class="n-note">${escapeHtml(!c.cf.ok ? 'from: ' + devCheckWhy(c.cf) : 'to: ' + devCheckWhy(c.ct))}</span>`])) : '';
+  const jointTxt = S.joint ? `<p class="n-note" style="font-size:12px;">All the changes together: ${devCellTxt(S.joint)} &mdash; ${S.joint.ok ? 'passes the screen' : `<b>doesn&rsquo;t pass</b>: ${escapeHtml(devCheckWhy(S.joint))}`}.</p>` : '';
   const notChanged = Object.keys(S.miss).map(k => `${S.miss[k]} not changed for ${lname(k)} (not logged)`);
   const cover = `<p class="n-note" style="font-size:12px;">${S.ch.length} of ${S.nSel} selected attempt${S.nSel === 1 ? '' : 's'} change${S.ch.length === 1 ? 's' : ''}${notChanged.length ? '; ' + notChanged.join('; ') : ''}. ${S.nSel - S.ch.length - Object.values(S.miss).reduce((a, v) => a + v, 0) > 0 ? 'The rest are already that way. ' : ''}${unloc ? `${unloc} of his attempts have no location, so the model can&rsquo;t replay them; they count the same either way and aren&rsquo;t in these totals.` : ''}</p>`;
   if (S.status === 'none') { out.innerHTML = `<div class="dev-status warn">None of the selected attempts change with these settings.</div>${cover}`; return; }
-  if (S.status === 'support') { out.innerHTML = `<div class="dev-status fail"><b>Not shown: this change isn&rsquo;t supported by our data yet.</b> On sessions the model never saw, its predictions don&rsquo;t hold up (or there are too few team shots to check) in a situation this change moves shots from or to. A number here would be a guess.</div>${support}${jointTxt}${cover}`; return; }
+  if (S.status === 'support') { out.innerHTML = `<div class="dev-status fail"><b>No estimate: this change doesn&rsquo;t pass the data screen.</b> For a situation it moves shots from or to${S.joint ? ', or for all the changes together' : ''}, there are too few team shots to check the model, or its predictions on sessions it never saw miss there. A number here would be a guess.</div>${support}${jointTxt}${cover}`; return; }
   const n = S.n, m = S.ch.length, goals = all.filter(s => s.goal === 1).length, lo = S.d - 1.96 * S.se, hi = S.d + 1.96 * S.se;
   const zeroIn = S.se !== null && lo <= 0 && hi >= 0;
   DEV_LAST_SC = { wi: Object.assign({}, DEV.wi), label: devWiSummary(DEV.wi), n, m, d: S.d, se: S.se, base: S.base, scen: S.scen };
@@ -20047,7 +20075,7 @@ function devRenderWhatIf(R, mine, sel) {
   ]);
   const split = DEV_LEVERS.some(l => DEV.wi[l.k] && l.kind === 'selection') && DEV_LEVERS.some(l => DEV.wi[l.k] && l.kind === 'skill')
     ? `<p class="sans" style="font-size:12.5px;">Split: selection changes alone ${devSg(S.dSel, 2)}, skill changes alone ${devSg(S.dSk, 2)}, together ${devSg(S.d, 2)} expected goals (the parts don&rsquo;t simply add, because each change matters more or less depending on the others).</p>` : '';
-  out.innerHTML = `<div class="dev-status pass"><b>${devSg(S.d, 2)} expected goals over his ${n} attempts</b> (${devSg(100 * S.d / n, 1)} per 100), ${devSg(m ? S.d / m : null, 3)} per attempt that changes. 95% range from refitting without each session: ${devSg(lo, 2)} to ${devSg(hi, 2)}.${zeroIn ? ' <b>That range includes zero</b>, so with this many sessions the change can&rsquo;t be told apart from no change.' : ''}</div>
+  out.innerHTML = `<div class="dev-status pass"><span class="n-note" style="font-style:normal; display:block; margin-bottom:3px;">Passes the data screen &mdash; an estimate to explore, not proof the change will help him.</span><b>${devSg(S.d, 2)} expected goals over his ${n} attempts</b> (${devSg(100 * S.d / n, 1)} per 100), ${devSg(m ? S.d / m : null, 3)} per attempt that changes. 95% range from refitting without each session: ${devSg(lo, 2)} to ${devSg(hi, 2)}.${zeroIn ? ' <b>That range includes zero</b>, so with this many sessions the change can&rsquo;t be told apart from no change.' : ''}</div>
     ${tbl}${split}
     <p class="sans" style="font-size:12.5px; line-height:1.6;"><b>Recorded:</b> ${goals} goals on these ${n} attempts; the objective model expected ${num(S.base, 1)} (finishing ${devSg(goals - S.base, 1)}, ${devSg(100 * (goals - S.base) / n, 1)} per 100). That finishing is his own and isn&rsquo;t carried into the scenario.<br>
     <b>Opportunity held fixed:</b> the same ${n} attempts. This doesn&rsquo;t add attempts, minutes, touches or a bigger role, and it isn&rsquo;t a forecast.</p>
@@ -20055,6 +20083,7 @@ function devRenderWhatIf(R, mine, sel) {
     <details class="collapsible"><summary class="sans" style="font-size:12.5px;"><b>Why it&rsquo;s shown, and the limits</b></summary>
     ${support}${jointTxt}
     <ul class="sans" style="font-size:12px; line-height:1.6; margin:6px 0; padding-left:18px;">
+      <li><b>The screen is a minimum, not a proof.</b> Passing means: the model beats the team&rsquo;s base rate on sessions it never saw; ${DEV_CELL_MIN}+ team shots in each situation the change moves shots from and to${S.joint ? ', and in the combination' : ''}; and held-out predictions there within ${DEV_Z} standard errors of the goals scored. It says the model isn&rsquo;t contradicted by our data in these situations. It can&rsquo;t show that he can make the change or that it will raise his scoring. Use it to choose what to work on, then check his next sessions.</li>
       <li>Model: Efficiency &rsaquo; xG Model (objective, never sees the Gold/Silver/Bronze grade), fit on every located ${escapeHtml(R.season)} shot by the team. A grade is a coach&rsquo;s read of the whole look, so it can&rsquo;t be held fixed while the look changes, and changing it would be a guess.</li>
       <li>It estimates what the average shooter on our team scores from the new situation; it can&rsquo;t say whether he can get there, or how defenses would react.</li>
       <li>Other parts of each attempt (transition, man-up, rebound, bounce, practice vs game) stay as logged. A location move keeps the stick plane; a zone move uses the team&rsquo;s most typical spot in that zone.</li>
@@ -20063,15 +20092,39 @@ function devRenderWhatIf(R, mine, sel) {
 function devLeverShow(k, v) { if (k === 'dodge') return v === '1' ? 'Off the dodge' : 'Off the catch'; if (k === 'hand') return v === 'Right' ? 'Righty' : 'Lefty'; return String(v); }
 // ---- Coaching conclusions (app/devnotes_<season>; field n_<id> = JSON) ----
 const DEV_AREAS = [['selection', 'Shot selection'], ['skill', 'Skill'], ['opportunity', 'Opportunity'], ['other', 'Other']];
-const DEV_NOTE_ID = /^[A-Za-z0-9_-]{4,60}$/, DEV_KEY_RE = /^[A-Za-z0-9_-]{1,80}#\d{1,9}$/;
+const DEV_NOTE_ID = /^[A-Za-z0-9_-]{4,60}$/, DEV_KEY_RE = /^[A-Za-z0-9_-]{1,80}#\d{1,9}$/, DEV_EID_RE = /^[A-Za-z0-9_:.-]{1,80}$/, DEV_REC_MAX = 5000;
+// One saved record: [session#shot, entry id ('' for shots saved before entry ids), fingerprint of the logged fields].
+// The fingerprint lets a conclusion show that a shot behind it was edited after it was written.
+function devRecHash(s) { return xgHash(['date', 'shooterJersey', 'goal', 'outcome', 'onKeeper', 'blocked', 'lateralYds', 'distanceYds', 'offDodge', 'rightHanded', 'shotMechanism', 'contestLevel', 'shotQuality', 'trigger', 'context', 'opponent', 'goalieJersey', 'assistJersey', 'transition', 'manSituation', 'rebound', 'bounceShot'].map(k => s[k] === undefined || s[k] === null ? '' : String(s[k])).join('|')); }
+const devRecOf = s => [devKey(s), eidOf(s) || '', devRecHash(s)];
+// Finds each saved record in today's log: by entry id first (follows a shot that was renumbered), else by
+// session#shot (only if that number still holds the same entry). Counts edits, renumbers and deletions.
+function devResolveRecs(recs, season) {
+  const all = devTeamShots(season), byKey = new Map(all.map(s => [devKey(s), s])), byEid = new Map(all.filter(eidOf).map(s => [eidOf(s), s]));
+  const found = [], R = { found, edited: 0, renumbered: 0, gone: 0, unchecked: 0 };
+  recs.forEach(([k, e, h]) => {
+    let s = e ? byEid.get(e) || null : null;
+    if (!s) { const c = byKey.get(k) || null; s = c && (!e || !eidOf(c)) ? c : null; }
+    if (!s) { R.gone++; return; }
+    found.push(s);
+    if (devKey(s) !== k) R.renumbered++;
+    if (!h) R.unchecked++; else if (devRecHash(s) !== h) R.edited++;
+  });
+  return R;
+}
 function devNoteClean(raw) {
   const o = cleanDeep(raw); if (!o || typeof o !== 'object' || typeof o.text !== 'string' || typeof o.j !== 'string') return null;
   const ev = o.ev && typeof o.ev === 'object' ? o.ev : {};
   const f = {}; if (ev.f && typeof ev.f === 'object') DEV_DIMS.forEach(d => { if (typeof ev.f[d.k] === 'string') f[d.k] = ev.f[d.k].slice(0, 60); });
   const sc = o.sc && typeof o.sc === 'object' && typeof o.sc.label === 'string' && isFinite(o.sc.d) ? { label: o.sc.label.slice(0, 200), d: Number(o.sc.d), se: isFinite(o.sc.se) ? Number(o.sc.se) : null, n: Number(o.sc.n) || 0, m: Number(o.sc.m) || 0 } : null;
   return { j: o.j.slice(0, 4), text: o.text.slice(0, 1200), area: DEV_AREAS.some(a => a[0] === o.area) ? o.area : 'other', shared: o.shared === true, by: String(o.by || '').slice(0, 60), at: String(o.at || '').slice(0, 30), ed: String(o.ed || '').slice(0, 30),
-    ev: { range: ['Full', 'Fall', 'Spring'].includes(ev.range) ? ev.range : 'Full', cat: ['All', 'practice', 'intra', 'opp'].includes(ev.cat) ? ev.cat : 'All', f, keys: Array.isArray(ev.keys) ? ev.keys.filter(k => typeof k === 'string' && DEV_KEY_RE.test(k)).slice(0, 400) : [],
+    ev: { range: ['Full', 'Fall', 'Spring'].includes(ev.range) ? ev.range : 'Full', cat: ['All', 'practice', 'intra', 'opp'].includes(ev.cat) ? ev.cat : 'All', f, recs: devCleanRecs(ev),
       n: Number(ev.n) || 0, g: Number(ev.g) || 0, xg: isFinite(ev.xg) ? Number(ev.xg) : null }, sc };
+}
+function devCleanRecs(ev) {
+  const ok = r => Array.isArray(r) && typeof r[0] === 'string' && DEV_KEY_RE.test(r[0]) && (r[1] === '' || (typeof r[1] === 'string' && DEV_EID_RE.test(r[1]))) && (r[2] === '' || (typeof r[2] === 'string' && /^[0-9a-f]{1,12}$/.test(r[2])));
+  if (Array.isArray(ev.recs)) return ev.recs.filter(ok).slice(0, DEV_REC_MAX).map(r => [r[0], r[1], r[2]]);
+  return Array.isArray(ev.keys) ? ev.keys.filter(k => typeof k === 'string' && DEV_KEY_RE.test(k)).slice(0, DEV_REC_MAX).map(k => [k, '', '']) : [];   // early format: numbers only, nothing to compare
 }
 function devNotesListen(season) {
   if (DEV.notesSeason === season || !DB) return;
@@ -20087,12 +20140,12 @@ function devNotesListen(season) {
 }
 function devCurrentSel() { const season = DEV.season; if (!season || !DEV.j) return null; const mine = devScope(season, DEV.range, DEV.cat).filter(s => s.shooterJersey === DEV.j); return { mine, sel: devSelected(mine) }; }
 // Evidence for a note: the explorer's current view and the records in it (plus the what-if, if one is showing).
-function devEvidence(sel, xm) { return { range: DEV.range, cat: DEV.cat, f: DEV.only ? {} : Object.assign({}, DEV.f), keys: sel.map(devKey).slice(0, 400), n: sel.length, g: sel.filter(s => s.goal === 1).length, xg: Math.round(xgSum(sel, xm) * 100) / 100 }; }
+function devEvidence(sel, xm) { return { range: DEV.range, cat: DEV.cat, f: DEV.only ? {} : Object.assign({}, DEV.f), recs: sel.map(devRecOf), n: sel.length, g: sel.filter(s => s.goal === 1).length, xg: Math.round(xgSum(sel, xm) * 100) / 100 }; }
 function devEvidenceLine(n, season) {
-  const ev = n.ev, xm = xgModelFor(season), byKey = new Map(devTeamShots(season).map(s => [devKey(s), s]));
-  const now = ev.keys.map(k => byKey.get(k)).filter(Boolean), gone = ev.keys.length - now.length, ng = now.filter(s => s.goal === 1).length;
+  const ev = n.ev, R = devResolveRecs(ev.recs, season), ng = R.found.filter(s => s.goal === 1).length;
   const where = `${devRangeLabel(ev.range)}, ${ev.cat === 'All' ? 'all sessions' : DEV_CAT_LONG[ev.cat].toLowerCase()}, ${devFilterLabel(ev.f)}`;
-  const changed = gone || ng !== ev.g ? ` <b style="color:var(--gold-ink);">Today:</b> ${now.length} of those records are in the log${gone ? ` (${gone} deleted or moved)` : ''}, ${ng} goals.` : '';
+  const bits = [R.edited ? `${R.edited} edited` : '', R.renumbered ? `${R.renumbered} renumbered` : '', R.gone ? `${R.gone} deleted or moved out` : '', ev.recs.length !== ev.n ? `${ev.n - ev.recs.length} not saved with it` : ''].filter(Boolean);
+  const changed = bits.length || ng !== ev.g ? ` <b style="color:var(--gold-ink);">Changed since it was written:</b> ${bits.join(', ') || 'results differ'}; today ${R.found.length} of ${ev.n} records, ${ng} goals. Re-check the conclusion.` : (R.unchecked ? ` <span class="n-note">(${R.unchecked} saved before edit tracking; edits to those can&rsquo;t be detected)</span>` : ` All ${ev.n} records unchanged.`);
   return `Evidence: ${ev.n} attempt${ev.n === 1 ? '' : 's'} (${escapeHtml(where)}) &mdash; ${ev.g} goals, ${num(ev.xg, 1)} expected when saved.${changed}${n.sc ? `<br>What-if saved with it: ${escapeHtml(n.sc.label)} &rarr; ${devSg(n.sc.d, 2)} expected goals over ${n.sc.n} attempts${n.sc.se !== null ? ` (95% range ${devSg(n.sc.d - 1.96 * n.sc.se, 2)} to ${devSg(n.sc.d + 1.96 * n.sc.se, 2)})` : ''}.` : ''}`;
 }
 function devNotesFor(j, staffAll) { return Object.entries(DEV.notes).filter(([, n]) => n.j === j && (staffAll || n.shared)).sort((a, b) => (b[1].at || '').localeCompare(a[1].at || '')); }
@@ -20162,6 +20215,7 @@ document.addEventListener('click', ev => {
   if (a === 'clear') { DEV.f = {}; DEV.only = null; return renderDevelop(); }
   if (a === 'only-clear') { DEV.only = null; return renderDevelop(); }
   if (a === 'wi-clear') { DEV.wi = {}; return renderDevelop(); }
+  if (a === 'clips-recheck') { ev.preventDefault(); devClipsInvalidate(); return renderDevelop(); }
   if (a === 'note-new' || a === 'note-ev') {
     const S = devCurrentSel(); if (!S) return;
     const ev = devEvidence(S.sel, xgModelFor(DEV.season));
@@ -20173,7 +20227,8 @@ document.addEventListener('click', ev => {
   if (a === 'note-save') return devSaveNote();
   if (a === 'note-del') { if (DEV.delArm === id) return devDeleteNote(id); DEV.delArm = id; return devRefreshNotes(); }
   if (a === 'note-show' && DEV.notes[id]) {
-    const n = DEV.notes[id]; DEV.j = n.j; DEV.range = n.ev.range; DEV.cat = n.ev.cat; DEV.f = Object.assign({}, n.ev.f); DEV.only = new Set(n.ev.keys); DEV.onlyLabel = n.text.slice(0, 60) + (n.text.length > 60 ? '…' : '');
+    const n = DEV.notes[id], R = devResolveRecs(n.ev.recs, DEV.season || briefSeason()); DEV.j = n.j; DEV.range = n.ev.range; DEV.cat = n.ev.cat; DEV.f = Object.assign({}, n.ev.f); DEV.only = new Set(R.found.map(devKey));
+    DEV.onlyLabel = n.text.slice(0, 60) + (n.text.length > 60 ? '…' : '') + (R.gone || R.edited ? ` — ${[R.edited ? R.edited + ' edited since' : '', R.gone ? R.gone + ' no longer in the log' : ''].filter(Boolean).join(', ')}` : '');
     if (NAV_ST.cur !== 'develop') goNav('develop'); else renderDevelop();
     return;
   }
@@ -20253,7 +20308,7 @@ function renderPlayerReview() {
   document.getElementById('rptPlayer').innerHTML = `<p class="panel-title">Coaching conclusions</p>${notes.length ? notes.map(([, n]) => `<div class="dev-note rpt-block"><span class="tier-chip ungraded">${escapeHtml((DEV_AREAS.find(a => a[0] === n.area) || DEV_AREAS[3])[1])}</span>${PLAYER_MODE ? '' : ` <span class="n-note">${n.shared ? 'shared' : 'staff only'}</span>`}<p class="sans" style="font-size:13.5px; margin:6px 0; white-space:pre-wrap;">${escapeHtml(n.text)}</p><p class="n-note" style="font-size:12px; font-style:normal;">${devEvidenceLine(n, season)}</p><p class="n-note">${escapeHtml(n.by)} &middot; ${escapeHtml(n.at.slice(0, 10))}${n.ed ? ' &middot; edited ' + escapeHtml(n.ed.slice(0, 10)) : ''}</p></div>`).join('') : `<p class="n-note">${PLAYER_MODE ? 'None shared yet.' : 'None yet. Write them on Player Development, from the attempts that support them.'}</p>`}
     <details class="collapsible" open style="margin-top:14px;"><summary><span class="panel-title" style="font-size:15px;">The attempts behind these numbers</span> <span class="n-note" id="rptDevRecNote"></span></summary><div id="rptDevRec"></div></details>`;
   rptReviewRecords(season, period, j);
-  if (!DEV.clips || DEV.clips.season !== season) devLoadClips(season).then(() => { if (rptMode === 'review' && rptPlayer === j && document.getElementById('rptDevRec')) rptReviewRecords(season, period, j); });
+  devEnsureClips(season, () => { if (rptMode === 'review' && rptPlayer === j && document.getElementById('rptDevRec')) rptReviewRecords(season, period, j); });
   renderRptSheet(F, j);
 }
 function rptReviewRecords(season, period, j) {
