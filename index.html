@@ -440,6 +440,15 @@
     #reportsView .rpt-block, #reportsView .rpt-area { break-inside: avoid; }
     #reportsView .table-wrap { max-height: none !important; overflow: visible !important; }
   }
+  /* Player Development (Nov 2026) */
+  .dev-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin-top: 8px; } .dev-bar .cap { font: 700 10.5px var(--text); letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
+  .dev-pills { gap: 5px; } .dev-pills .pill { padding: 4px 10px; font-size: 12px; }
+  .dev-filters { display: grid; grid-template-columns: 120px 1fr; gap: 6px 10px; align-items: center; margin-top: 8px; } .dev-filters select { min-width: 200px; }
+  .dev-flab { font: 600 12.5px var(--text); } .dev-dim { opacity: .45; }
+  @media (max-width: 640px) { .dev-filters { grid-template-columns: 1fr; } .dev-flab { margin-top: 6px; } }
+  .dev-status { font: 13px/1.55 var(--text); padding: 9px 12px; border-radius: 0 6px 6px 0; border-left: 3px solid var(--line); background: var(--card-2, #F8F9FB); margin-bottom: 10px; }
+  .dev-status.pass { border-left-color: var(--good); } .dev-status.warn { border-left-color: var(--gold); } .dev-status.fail { border-left-color: var(--critical); }
+  .dev-note { border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; margin: 10px 0; } .dev-edit { border-color: var(--navy-3); }
   #outboxBanner .ob-conflict td { background: rgba(200, 40, 40, .12); } #outboxBanner .ob-row { margin: 6px 0; } #outboxBanner .ob-pre { white-space: pre-wrap; font-size: 11px; max-height: 200px; overflow: auto; }
 </style>
 <style>
@@ -2347,8 +2356,8 @@
     </div>
     <div class="panel pm-hide rpt-sec" id="rptTrackPanel"><div id="rptTrack"></div></div>
     <div class="panel rpt-sec">
-      <p class="panel-title">Scorecard</p>
-      <p class="panel-sub pm-hide">Whole team by default. Pick a position group, then a player, to narrow it.</p>
+      <p class="panel-title" id="rptScoreTitle">Scorecard</p>
+      <p class="panel-sub pm-hide" id="rptScoreSub">Whole team by default. Pick a position group, then a player, to narrow it.</p>
       <div class="grade-pills pm-hide" id="rptGroupPills" style="margin:8px 0 10px;"></div>
       <div class="controls-row" style="margin-bottom:10px;">
         <div class="control-group"><label for="rptPlayerSelect">Player</label><select id="rptPlayerSelect"></select></div>
@@ -2557,6 +2566,10 @@
 
   <section id="briefView" class="view"><div id="briefWrap"></div></section>
   <section id="profileView" class="view"><div id="profileWrap"></div></section>
+  <section id="develView" class="view">
+    <p class="view-intro">One player&rsquo;s own attempts: the situations behind his results, a change worth exploring and what it could mean over his actual attempts, and the records and film behind each conclusion.</p>
+    <div id="devWrap"></div>
+  </section>
   <section id="scrimView" class="view pm-off">
     <p class="view-intro">Lineups for the scrimmages under our rules, simulated possession by possession.</p>
     <div id="scrimWrap"></div>
@@ -4664,6 +4677,7 @@ function switchTab(viewId) {
   if (viewId === 'defenseView') renderDefense();
   if (viewId === 'healthView') renderDataHealth();
   if (viewId === 'reportsView') renderReports();
+  if (viewId === 'develView') renderDevelop();
   if (viewId === 'depthView') renderDepthChart();
   if (viewId === 'backfillView') { bfInit(); renderBackfill(); }
   if (viewId === 'filmcheckView') { fcInit(); renderFilmCheck(); }
@@ -4849,7 +4863,7 @@ function pmScheduleSweep() {
 }
 // Lists already narrowed to his own shots or faceoffs: a "Teammate" there is
 // the shooter he faced or the passer who fed him, so those rows stay.
-const PM_KEEP = '.zone-drilldown, #shotTableBody, #faceoffTableBody, #saShotWrap, #saBreakWrap, #goalieSitWrap, #goalieProfileWrap, #effShotTypeWrap, #ang3dInfo, #ang3dMoves';
+const PM_KEEP = '.zone-drilldown, #shotTableBody, #faceoffTableBody, #saShotWrap, #saBreakWrap, #goalieSitWrap, #goalieProfileWrap, #effShotTypeWrap, #ang3dInfo, #ang3dMoves, #devRecWrap, #rptDevRec';
 function pmSweep() {
   if (!PLAYER_MODE) return;
   if (PM_OBSERVER) PM_OBSERVER.disconnect();
@@ -10692,6 +10706,8 @@ function renderReports() {
   if (!box) return;
   if (!document.getElementById('reportsView').classList.contains('active')) return;
   rptScoreCache = { F: {} }; rptWhoCache = null; rptEvCache = null;
+  if (rptMode === 'review') return renderPlayerReview();
+  rptReviewShow(false);
   const periods = rptPeriods(rptMode, true);
   const sel = document.getElementById('rptPeriodSelect');
   sel.innerHTML = periods.length ? periods.map(p => `<option value="${escapeHtml(p.key)}">${escapeHtml(rptLabel(rptMode, p))}</option>`).join('') : '<option value="">Nothing logged yet</option>';
@@ -11044,7 +11060,7 @@ function renderRptGroup(F) {
   renderSortableTable('rptGroupTable', RPT_GROUP_COLS[kind], js.map(j => rptRow(F, j)), { dense: true, defaultSort: { key: { off: 'sh', ssdm: 'on', def: 'on', fo: 'fo', gk: 'faced', none: 'sh' }[kind], dir: 'desc' } });
 }
 // One player's sheet: his position's blocks, plus shooting if he shot.
-function rptBlock(title, rows) { return rows.length ? `<div class="rpt-block"><p class="sans" style="font-size:13px; margin:12px 0 4px;"><b>${title}</b></p>${rptMiniTable(['Stat', 'This ' + (rptMode === 'practice' ? 'session' : 'week')], rows)}</div>` : ''; }
+function rptBlock(title, rows) { return rows.length ? `<div class="rpt-block"><p class="sans" style="font-size:13px; margin:12px 0 4px;"><b>${title}</b></p>${rptMiniTable(['Stat', rptMode === 'review' ? 'This period' : 'This ' + (rptMode === 'practice' ? 'session' : 'week')], rows)}</div>` : ''; }
 function renderRptSheet(F, j) {
   const box = document.getElementById('rptSheet');
   const x = F.players[j];
@@ -11080,7 +11096,7 @@ function renderRptSheet(F, j) {
   box.innerHTML = html + '<hr style="border:none; border-top:1px solid var(--line); margin:18px 0 12px;">';
 }
 setupPillGroup('rptGroupPills', RPT_GROUPS, '', v => { rptGroup = v || ''; rptPlayer = ''; renderReports(); });
-setupPillGroup('rptModePills', [{ value: 'practice', label: 'Practice' }, { value: 'week', label: 'Week' }], 'practice', v => {
+setupPillGroup('rptModePills', [{ value: 'practice', label: 'Practice' }, { value: 'week', label: 'Week' }, { value: 'review', label: 'Player review' }], 'practice', v => {
   rptMode = v || 'practice'; if (!v) setPillGroupValue('rptModePills', 'practice'); rptKey = ''; renderReports();
 });
 document.getElementById('rptPeriodSelect').addEventListener('change', e => { rptKey = e.target.value; renderReports(); });
@@ -16173,7 +16189,7 @@ document.getElementById('exportRecruitsBtn').addEventListener('click', () => {
 // remembered sub-tabs keep working. Sections follow phase of play.
 // [id, page name, view, sub-tab label, panel title to scroll to]
 const NAV = [
-  { id: 'cc', name: 'Command Center', pages: [['brief', 'Head Coach Brief', 'briefView'], ['reports', 'Reports', 'reportsView'], ['flags', 'Development Flags', 'efficiencyView', 'Flags']] },
+  { id: 'cc', name: 'Command Center', pages: [['brief', 'Head Coach Brief', 'briefView'], ['reports', 'Reports', 'reportsView'], ['develop', 'Player Development', 'develView'], ['flags', 'Development Flags', 'efficiencyView', 'Flags']] },
   { id: 'log', name: 'Log', pages: [['logshot', 'Log Shot', 'logView'], ['backfill', 'Backfill', 'backfillView'], ['filmcheck', 'Film Check', 'filmcheckView']] },
   { id: 'off', name: 'Offense', pages: [
     ['shooter', 'Shooter Score', 'playerView', 'Shooter Score'], ['heat', 'Heat Map', 'playerView', 'Heat Map'], ['quality', 'Shot Quality', 'playerView', 'Shot Quality'],
@@ -16318,7 +16334,8 @@ const NAV_KW = {
   brief: 'head coach brief home dashboard summary overview one page this week vitals hot cold leaders standouts what matters three things',
   profile: 'player profile card one player individual goals added breakdown present to player',
   methods: 'methods how built how it works explain explanation one pager bayesian true level research',
-  reports: 'report practice report week weekly recap session summary print pdf standouts', flags: 'flags development alerts concerns slumping needs work warning',
+  reports: 'report practice report week weekly recap session summary print pdf standouts player review season review', develop: 'player development explore explorer attempts what if what-if scenario simulate improve change conclusions notes film clips evidence records',
+  flags: 'flags development alerts concerns slumping needs work warning',
   logshot: 'log enter record input shot possession faceoff sideline lineup units entry add',
   filmcheck: 'film check clips video practice film drive clip review shots tagged scorebreak match unlogged missing shots turnovers',
   backfill: 'backfill back fill go back old shots past practice film review add picks defense defender screens turnovers missing fill in catch up', shooter: 'best shooter shooting score scorer finishing sniper rank shooters leaderboard composite',
@@ -18232,7 +18249,8 @@ function fcResolveMarks() {
 function fcPlan() {
   fcResolveMarks();
   const lists = { shot: fcLogged('shot'), oppshot: fcLogged('oppshot') }, used = new Set(), items = [];
-  Object.values(FC.st).forEach(s => { if (s.s === 'm') used.add(s.id); });
+  // A shot matched to a clip ('m') or logged from one ('n') is taken: it's never offered to another clip.
+  Object.values(FC.st).forEach(s => { if (s.s === 'm' || s.s === 'n') used.add(s.id); });
   const ptr = { shot: 0, oppshot: 0 }, cnt = { shot: 0, oppshot: 0, turnover: 0 };
   FC.drafts.forEach(d => {
     const st = FC.st[d.id] || null, it = { d, st, n: ++cnt[d.kind] };
@@ -19652,6 +19670,614 @@ function renderProfile() {
     <div class="b-row21"><div class="panel"><p class="panel-title">Goals Added, broken down</p><p class="panel-sub">Goals created (+) or cost (−) vs an average possession, ${escapeHtml(season)}. How it works: <button type="button" class="lnk" data-npage="methods" data-nmethod="ga">Methods &rsaquo;</button></p>${tree}</div>
     <div class="panel"><p class="panel-title">Where he ranks</p><p class="panel-sub">Team percentile; 50 = middle of the team.</p>${rankHtml}</div></div>`;
 }
+
+// ---------------- Player Development (Nov 2026) ----------------
+// One player's own shots, for a development conversation with him:
+//  1. Explorer: filter his actual attempts (location, angle, catch / dodge, pressure, hand, release, grade, trigger).
+//     Benchmark = the rest of the team on the same filters, sessions and dates. Clips only where Film Check has a
+//     confirmed match for that exact shot (session + shot number / entry id); nothing is matched by shot order.
+//  2. What-if: replays his selected attempts with changes applied together; every other attempt and the number of
+//     attempts stay as logged. Uses the objective xG model (Efficiency > xG Model), which never sees the
+//     Gold/Silver/Bronze grade: a grade is a coach's read of the whole look, so moving a shot while holding its grade
+//     fixed contradicts itself, and re-grading it would be a guess. Shown only after the model passes a check on
+//     sessions it never saw, overall and for the situations the change moves shots from and to.
+//  3. Coaching conclusions: editable notes saved with the records behind them (app/devnotes_<season>).
+// Session type comes only from how the session was logged (its id): a game or a scrimmage logged with an opponent =
+// Opponent; a scrimmage with no opponent = Intra-squad; a practice = Practice.
+const DEV_CATS = [['practice', 'Practice'], ['intra', 'Intra-squad'], ['opp', 'Opponent']];
+const DEV_CAT_LONG = { practice: 'Practice', intra: 'Intra-squad scrimmage', opp: 'Opponent (game or scrimmage)' };
+const DEV_CAT_NOTE = 'Session type is read from how each session was logged: a game, or a scrimmage logged with an opponent’s name = Opponent; a scrimmage logged with no opponent = Intra-squad; a practice = Practice. The tracker can’t check it beyond that.';
+const DEV_NONE = '__none__';
+const DEV_MIN_SESS = 6, DEV_MIN_SHOTS = 80, DEV_CELL_MIN = 25, DEV_Z = 2, DEV_MIN_R = 3, DEV_SMALL = 8;
+const DEV = { j: '', season: null, range: 'Full', cat: 'All', f: {}, by: 'zone', excl: new Set(), only: null, onlyLabel: '', wi: {},
+  clips: null, clipsBusy: false, notes: {}, notesSeason: null, notesUnsub: null, notesErr: '', edit: null, msg: '', delArm: null };
+function devCatKey(k) { k = String(k || ''); return /_game(_|$)/.test(k) || /_scrimmage_./.test(k) ? 'opp' : /_scrimmage$/.test(k) ? 'intra' : /_practice$/.test(k) ? 'practice' : null; }
+const devCat = e => devCatKey(sessKey(e));
+const devKey = s => sessKey(s) + '#' + s.id;
+const devCatOk = (s, cat) => cat === 'All' || devCat(s) === cat;
+// This season's WLU shots with a shooter (no opponent shots).
+function devTeamShots(season) { return advShots(season).filter(s => !s.seed && s.shooterJersey && !isOppJersey(s.shooterJersey) && s.team !== 'OPP'); }
+function devScope(season, range, cat) { return devTeamShots(season).filter(s => inPart(s, season, range) && devCatOk(s, cat)); }
+const devRangeLabel = r => r === 'Full' ? 'Full season' : r;
+// ---- Filters ----
+const DEV_DIMS = [
+  { k: 'zone', label: 'Location', of: s => shotZone(s), opts: () => ZONE_ORDER, sel: true },
+  { k: 'angle', label: 'Angle', of: s => angleBand(s), opts: () => ANGLE_BANDS.map(b => b[0]) },
+  { k: 'dodge', label: 'Catch / dodge', of: s => s.offDodge === 1 ? 'Off the dodge' : s.offDodge === 0 ? 'Off the catch' : null, opts: () => ['Off the catch', 'Off the dodge'] },
+  { k: 'pressure', label: 'Pressure', of: s => ['Open', 'Light', 'Heavy'].includes(s.contestLevel) ? s.contestLevel : null, opts: () => ['Open', 'Light', 'Heavy'] },
+  { k: 'hand', label: 'Hand', of: s => getHandedness(s), opts: () => ['Right', 'Left'], show: v => v === 'Right' ? 'Righty' : 'Lefty' },
+  { k: 'release', label: 'Release', of: s => SHOT_MECHANISM_OPTIONS.includes(s.shotMechanism) ? s.shotMechanism : null, opts: () => SHOT_MECHANISM_OPTIONS },
+  { k: 'grade', label: 'Grade', of: s => SA_TIERS.includes(s.shotQuality) ? s.shotQuality : null, opts: () => SA_TIERS, show: v => v.replace(/^\d-/, '') },
+  { k: 'trigger', label: 'Trigger', of: s => normalizeTrigger(s.trigger), opts: list => [...new Set(list.map(s => normalizeTrigger(s.trigger)).filter(Boolean))].sort(), sel: true },
+];
+const devDim = k => DEV_DIMS.find(d => d.k === k);
+const devShow = (d, v) => v === DEV_NONE ? 'Not logged' : d.show ? d.show(v) : v;
+function devMatch(s, f) { return DEV_DIMS.every(d => { const v = f[d.k]; if (!v) return true; const x = d.of(s); return v === DEV_NONE ? !x : x === v; }); }
+function devFilterLabel(f) { const p = DEV_DIMS.filter(d => f && f[d.k]).map(d => `${d.label}: ${devShow(d, f[d.k])}`); return p.length ? p.join(' · ') : 'no filters'; }
+// ---- Numbers (the tracker's standard grade-based xG, xgModelFor) ----
+function devStat(list, xm) {
+  const n = list.length, g = list.filter(s => s.goal === 1).length, oc = list.filter(s => s.onKeeper === 1).length, xg = xgSum(list, xm);
+  return { n, g, oc, xg, gp: ratio(g, n), ocp: ratio(oc, n), gmx: n ? g - xg : null, p100: n ? 100 * (g - xg) / n : null };
+}
+const devGN = st => st && st.n ? `${st.g}/${st.n} <span class="n-note">(${pct(st.gp)})</span>` : '—';
+const devSg = (v, d) => v === null || v === undefined || !isFinite(v) ? '—' : (v >= 0 ? '+' : '−') + Math.abs(v).toFixed(d === undefined ? 1 : d);
+// ---- Film Check clips: only confirmed matches ----
+// app/filmcheck_<key> st_<clip id> = { s: 'm' (matched to a logged shot) | 'n' (logged from this clip), id, eid }.
+// The match is looked up only inside that Film Check entry's own session: by entry id when the mark has one, else
+// by shot number in that session (how Film Check itself shows it). A shot claimed by two clips gets no clip.
+async function devLoadClips(season) {
+  if (DEV.clips && DEV.clips.season === season) return DEV.clips;
+  const out = { season, map: new Map(), amb: new Set(), sids: new Map(), unresolved: 0, err: '' };
+  if (!DB) { out.err = 'Film Check isn’t available offline.'; DEV.clips = out; return out; }
+  try {
+    const idx = await DB.doc('app/filmcheck_index').get(), id = idx.exists ? idx.data() : {};
+    const keys = Object.keys(id).filter(k => k.startsWith('p_')).map(k => k.slice(2)).filter(k => FC_KEY.test(k) && seasonForDate(k.slice(0, 10)) === season);
+    const docs = await Promise.all(keys.map(k => DB.doc('app/filmcheck_' + k).get().then(sn => [k, sn.exists ? sn.data() : null], () => [k, null])));
+    const claims = new Map();
+    docs.forEach(([k, d]) => {
+      if (!d) return;
+      const info = fcKeyInfo(k), sid = `${info.date}_${info.context === 'Scrimmage' ? 'scrimmage' : 'practice'}${info.oppSlug ? '_' + info.oppSlug : ''}`;
+      out.sids.set(sid, k);
+      let drafts = null; try { drafts = fcValidDrafts(JSON.parse(d.drafts || 'null')); } catch (e) { drafts = null; }
+      if (!drafts) return;
+      const byId = new Map(drafts.map(x => [x.id, x])), sess = LIVE_SESSIONS[sid], ours = sess ? (sess.shots || []).filter(x => x.team !== 'OPP') : [];
+      const account = typeof d.account === 'string' && /^[^@\s]+@[^@\s]+$/.test(d.account) ? d.account : null;
+      Object.keys(d).forEach(f => {
+        if (!f.startsWith('st_') || typeof d[f] !== 'string') return;
+        let o = null; try { o = cleanDeep(JSON.parse(d[f])); } catch (e) { return; }
+        if (!o || (o.s !== 'm' && o.s !== 'n')) return;
+        const clip = byId.get(f.slice(3)); if (!clip || clip.kind !== 'shot') return;
+        let shot = null, how = '';
+        if (o.eid) { shot = ours.find(x => eidOf(x) === o.eid) || null; how = 'entry id'; }
+        else if (Number.isInteger(o.id)) { const c = ours.filter(x => x.id === o.id); shot = c.length === 1 ? c[0] : null; how = 'shot number in this session'; }
+        if (!shot) { out.unresolved++; return; }
+        const key = sid + '#' + shot.id;
+        (claims.get(key) || claims.set(key, []).get(key)).push({ fileId: clip.fileId, account, inClip: clip.inClip, fcKey: k, how, by: o.by || '', at: o.at || '' });
+      });
+    });
+    claims.forEach((l, key) => { if (l.length === 1) out.map.set(key, l[0]); else out.amb.add(key); });
+  } catch (e) { console.error('dev clips', e); out.err = 'Couldn’t read Film Check.'; }
+  DEV.clips = out;
+  return out;
+}
+function devClipCell(s) {
+  const C = DEV.clips, key = devKey(s);
+  if (!C || C.season !== seasonForDate(s.date)) return '<span class="n-note">loading…</span>';
+  const c = C.map.get(key);
+  if (c) return `<a class="lnk" href="https://drive.google.com/file/d/${encodeURIComponent(c.fileId)}/view${c.account ? '?authuser=' + encodeURIComponent(c.account) : ''}" target="_blank" rel="noopener" title="Confirmed in Film Check (${escapeHtml(c.how)}${c.by ? ', ' + escapeHtml(c.by) : ''}${c.at ? ', ' + escapeHtml(c.at) : ''}). The shot is about ${fcClock(c.inClip)} into the clip.">Clip &#9656;</a>`;
+  if (C.amb.has(key)) return '<span class="n-note" title="Two Film Check clips are marked as this shot, so neither is shown. Fix it in Film Check.">2 clips claim it</span>';
+  return `<span class="n-note" title="${C.sids.has(sessKey(s)) ? 'This session is in Film Check, but no clip has been confirmed as this shot.' : 'This session isn’t in Film Check.'}">${C.sids.has(sessKey(s)) ? 'not confirmed' : 'no film'}</span>`;
+}
+// ---- The objective model, checked on held-out sessions ----
+// Same model and same shots as Efficiency > xG Model (fitXg2 on this season's located shots). That page tests it with
+// 5 interleaved folds, which put shots from one session on both sides; here each session is held out whole, so the
+// check is on days the model never saw. The grade-only model and the base rate are held out the same way.
+let DEV_MODEL = null;
+function devSig(shots) { return xgHash(shots.map(s => [sessKey(s), s.id, s.goal, s.lateralYds, s.distanceYds, s.offDodge, s.rightHanded, s.shotMechanism, s.contestLevel, s.shotQuality, s.transition, s.manSituation, s.rebound, s.bounceShot, s.context].join(',')).join(';')) + ':' + shots.length; }
+const devMedian = a => { const b = a.slice().sort((x, y) => x - y), m = b.length >> 1; return b.length % 2 ? b[m] : (b[m - 1] + b[m]) / 2; };
+function devModel(season) {
+  const shots = advShots(season).filter(s => s.shooterJersey && xg2Usable(s)).sort((a, b) => a.id - b.id);
+  const sig = season + ':' + devSig(shots);
+  if (DEV_MODEL && DEV_MODEL.sig === sig) return DEV_MODEL;
+  const sids = [...new Set(shots.map(sessKey))].sort();
+  const R = { sig, season, shots, sids, ok: false, zoneSpot: {} };
+  if (shots.length < DEV_MIN_SHOTS || sids.length < DEV_MIN_SESS) { R.why = `The check needs ${DEV_MIN_SESS}+ sessions and ${DEV_MIN_SHOTS}+ located shots; ${season} has ${sids.length} session${sids.length === 1 ? '' : 's'} and ${shots.length} shots.`; return (DEV_MODEL = R); }
+  R.model = fitXg2(shots);
+  const oof = new Map(), oofG = new Map(), oofB = new Map(); R.folds = [];
+  sids.forEach(sid => {
+    const train = shots.filter(s => sessKey(s) !== sid), test = shots.filter(s => sessKey(s) === sid);
+    const m = fitXg2(train), gm = fitGradeOnly(train), b = train.filter(s => s.goal === 1).length / train.length;
+    test.forEach(s => { oof.set(s, predictXg2(m, xg2Profile(s))); oofG.set(s, gm(s)); oofB.set(s, b); });
+    R.folds.push({ sid, m, n: test.length });
+  });
+  const y = s => s.goal === 1 ? 1 : 0, cl = p => Math.max(1e-4, Math.min(1 - 1e-4, p));
+  const ll = (M, l) => -l.reduce((a, s) => a + (y(s) ? Math.log(cl(M.get(s))) : Math.log(1 - cl(M.get(s)))), 0) / l.length;
+  const br = M => shots.reduce((a, s) => a + (M.get(s) - y(s)) ** 2, 0) / shots.length;
+  Object.assign(R, { oof, llModel: ll(oof, shots), llGrade: ll(oofG, shots), llBase: ll(oofB, shots), brModel: br(oof), brGrade: br(oofG), brBase: br(oofB) });
+  R.skill = 1 - R.llModel / R.llBase; R.skillGrade = 1 - R.llGrade / R.llBase;
+  R.sessWins = sids.filter(sid => { const t = shots.filter(s => sessKey(s) === sid); return ll(oof, t) < ll(oofB, t); }).length;
+  R.calib = [[0, 0.15], [0.15, 0.3], [0.3, 0.45], [0.45, 0.6], [0.6, 1.01]].map(([lo, hi]) => { const b = shots.filter(s => oof.get(s) >= lo && oof.get(s) < hi); return { lo, hi, n: b.length, pred: b.length ? b.reduce((a, s) => a + oof.get(s), 0) / b.length : null, act: b.length ? b.filter(s => s.goal === 1).length / b.length : null }; });
+  R.goals = shots.filter(s => s.goal === 1).length;
+  // "Move to a zone" puts the shot on the team's typical spot there: the logged spot nearest the zone's median.
+  ZONE_ORDER.forEach(z => { const l = shots.filter(s => shotZone(s) === z); if (!l.length) return; const ml = devMedian(l.map(s => s.lateralYds)), md = devMedian(l.map(s => s.distanceYds));
+    const b = l.reduce((a, s) => Math.hypot(s.lateralYds - ml, s.distanceYds - md) < Math.hypot(a.lateralYds - ml, a.distanceYds - md) ? s : a, l[0]); R.zoneSpot[z] = { lat: b.lateralYds, dist: b.distanceYds, n: l.length }; });
+  R.ok = R.skill > 0;
+  if (!R.ok) R.why = `On sessions it never saw, the model predicted goals no better than the team’s base rate (log-loss skill ${(R.skill * 100).toFixed(1)}%).`;
+  return (DEV_MODEL = R);
+}
+// Calibration of the held-out predictions inside one situation: goals vs the predictions' sum, in standard errors.
+function devCell(R, pred) {
+  const l = R.shots.filter(pred), E = l.reduce((a, s) => a + R.oof.get(s), 0), V = l.reduce((a, s) => { const p = R.oof.get(s); return a + p * (1 - p); }, 0), G = l.filter(s => s.goal === 1).length;
+  const z = V > 0 ? (G - E) / Math.sqrt(V) : null;
+  return { n: l.length, g: G, e: E, z, ok: l.length >= DEV_CELL_MIN && z !== null && Math.abs(z) <= DEV_Z };
+}
+// ---- What-if levers ----
+// Selection = where and in what situation he shoots; skill = how he shoots. His finishing (goals above expected) and
+// his opportunity (how many attempts he gets) are never changed by a scenario.
+const DEV_LEVERS = [
+  { k: 'loc', label: 'Location', kind: 'selection', opts: () => [['c2', '2 yds closer, same angle'], ['c4', '4 yds closer, same angle']].concat(ZONE_ORDER.map(z => [z, 'Move to ' + z])) },
+  { k: 'angle', label: 'Angle', kind: 'selection', opts: () => ANGLE_BANDS.map(b => [b[0], b[0]]) },
+  { k: 'dodge', label: 'Catch / dodge', kind: 'selection', opts: () => [['0', 'Off the catch'], ['1', 'Off the dodge']] },
+  { k: 'pressure', label: 'Pressure', kind: 'selection', opts: () => [['Open', 'Open'], ['Light', 'Light'], ['Heavy', 'Heavy']] },
+  { k: 'hand', label: 'Hand', kind: 'skill', opts: () => [['Right', 'Righty'], ['Left', 'Lefty']] },
+  { k: 'release', label: 'Release', kind: 'skill', opts: () => SHOT_MECHANISM_OPTIONS.map(m => [m, m]) },
+];
+const devLever = k => DEV_LEVERS.find(l => l.k === k);
+const devIsZone = v => ZONE_ORDER.includes(v);
+function devBandOf(lat, dist) { if (lat === null || lat === undefined || dist === null || dist === undefined) return null; return angleBand({ lateralYds: lat, distanceYds: dist }); }
+// The value a lever reads off a shot profile (for "which situation" checks).
+function devLeverVal(k, p) {
+  if (k === 'loc') return zoneAt(p.lat, p.dist);
+  if (k === 'angle') return devBandOf(p.lat, p.dist);
+  if (k === 'dodge') return p.dodge === null ? null : String(p.dodge);
+  if (k === 'pressure') return ['Open', 'Light', 'Heavy'].includes(p.contest) ? p.contest : null;
+  if (k === 'hand') return p.hand || null;
+  if (k === 'release') return p.plane || null;
+  return null;
+}
+// One attempt with the changes applied. A zone move overrides the angle lever. A field that wasn't logged isn't
+// changed (it'd be a change from an unknown); it's counted in `miss`.
+function devApply(p, wi, R, only) {
+  const q = Object.assign({}, p), did = [], miss = [];
+  const use = k => wi[k] && (!only || devLever(k).kind === only);
+  const zoneMove = use('loc') && devIsZone(wi.loc);
+  if (use('angle') && !zoneMove && devBandOf(q.lat, q.dist) !== wi.angle) {
+    const b = ANGLE_BANDS.find(x => x[0] === wi.angle);
+    if (b) { const deg = b[2] > 90 ? 67.5 : (b[1] + b[2]) / 2, r = Math.hypot(q.lat, q.dist), side = q.lat < 0 ? -1 : 1, a = deg * Math.PI / 180; q.lat = side * r * Math.sin(a); q.dist = r * Math.cos(a); did.push('angle'); }
+  }
+  if (use('loc')) {
+    if (zoneMove) { const sp = R.zoneSpot[wi.loc]; if (sp && zoneAt(p.lat, p.dist) !== wi.loc) { q.lat = sp.lat; q.dist = sp.dist; did.push('loc'); } }
+    else { const r = Math.hypot(q.lat, q.dist), nr = Math.max(DEV_MIN_R, r - (wi.loc === 'c4' ? 4 : 2)); if (nr < r - 1e-6) { q.lat = q.lat * nr / r; q.dist = q.dist * nr / r; did.push('loc'); } }
+  }
+  [['dodge', 'dodge', v => Number(v)], ['pressure', 'contest', v => v], ['hand', 'hand', v => v], ['release', 'plane', v => v]].forEach(([k, f, cv]) => {
+    if (!use(k)) return;
+    if (p[f] === null || p[f] === undefined || (k === 'pressure' && !['Open', 'Light', 'Heavy'].includes(p[f]))) { miss.push(k); return; }
+    const v = cv(wi[k]); if (p[f] !== v) { q[f] = v; did.push(k); }
+  });
+  return { q, did, miss };
+}
+// all: his located attempts in scope (the full sample); sel: keys of the attempts the scenario changes.
+function devScenario(R, all, sel, wi) {
+  const P = (m, p) => predictXg2(m, p);
+  const rows = all.map(s => { const p = xg2Profile(s), inSel = sel.has(devKey(s)); return { s, p, inSel, a: inSel ? devApply(p, wi, R) : null, aSel: inSel ? devApply(p, wi, R, 'selection') : null, aSk: inSel ? devApply(p, wi, R, 'skill') : null }; });
+  const ch = rows.filter(r => r.a && r.a.did.length);
+  const sum = (m, f) => rows.reduce((a, r) => a + P(m, f(r)), 0);
+  const base = sum(R.model, r => r.p), scen = sum(R.model, r => r.a ? r.a.q : r.p);
+  const selOnly = sum(R.model, r => r.aSel ? r.aSel.q : r.p), skOnly = sum(R.model, r => r.aSk ? r.aSk.q : r.p);
+  const selBase = rows.filter(r => r.inSel).reduce((a, r) => a + P(R.model, r.p), 0);
+  // Session jackknife: refit without each session (the held-out fits), recompute the change; spread = uncertainty
+  // in the model's estimate of this change.
+  const th = R.folds.map(f => ch.reduce((a, r) => a + P(f.m, r.a.q) - P(f.m, r.p), 0)), G = th.length, tb = th.reduce((a, v) => a + v, 0) / (G || 1);
+  const se = G > 1 ? Math.sqrt((G - 1) / G * th.reduce((a, v) => a + (v - tb) ** 2, 0)) : null;
+  const did = {}, miss = {}; rows.forEach(r => { if (!r.a) return; r.a.did.forEach(k => { did[k] = (did[k] || 0) + 1; }); r.a.miss.forEach(k => { miss[k] = (miss[k] || 0) + 1; }); });
+  // Support: for each lever that changed something, the situations shots move from and to, checked on held-out
+  // predictions across the team; and the combination of every "to" at once.
+  const used = Object.keys(did), checks = used.map(k => {
+    const from = new Set(ch.filter(r => r.a.did.includes(k)).map(r => devLeverVal(k, r.p))), to = new Set(ch.filter(r => r.a.did.includes(k)).map(r => devLeverVal(k, r.a.q)));
+    from.delete(null); to.delete(null);
+    const cf = devCell(R, s => from.has(devLeverVal(k, xg2Profile(s)))), ct = devCell(R, s => to.has(devLeverVal(k, xg2Profile(s))));
+    const his = all.filter(s => to.has(devLeverVal(k, xg2Profile(s))) && R.oof.has(s));
+    return { k, from: [...from], to: [...to], cf, ct, ok: cf.ok && ct.ok, his: { n: his.length, g: his.filter(s => s.goal === 1).length, e: his.reduce((a, s) => a + R.oof.get(s), 0) } };
+  });
+  const joint = used.length > 1 ? devCell(R, s => { const p = xg2Profile(s); return checks.every(c => c.to.includes(devLeverVal(c.k, p))); }) : null;
+  const status = !R.ok ? 'model' : !ch.length ? 'none' : checks.some(c => !c.ok) || (joint && joint.n >= DEV_CELL_MIN && !joint.ok) ? 'support' : 'pass';
+  return { rows, ch, n: rows.length, nSel: rows.filter(r => r.inSel).length, base, scen, d: scen - base, dSel: selOnly - base, dSk: skOnly - base, selBase, se, did, miss, checks, joint, status };
+}
+// ---- Page ----
+const devPills = (attr, opts, cur) => `<div class="grade-pills dev-pills">${opts.map(([v, t]) => `<button type="button" class="pill${cur === v ? ' active' : ''}" ${attr}="${escapeHtml(v)}">${escapeHtml(t)}</button>`).join('')}</div>`;
+function devPlayers(season) {
+  const c = {}; devTeamShots(season).forEach(s => { c[s.shooterJersey] = (c[s.shooterJersey] || 0) + 1; });
+  return Object.keys(c).sort((a, b) => c[b] - c[a] || a.localeCompare(b, undefined, { numeric: true })).map(j => ({ j, n: c[j] }));
+}
+// His attempts behind the explorer's current view: saved evidence keys if a conclusion's records are open, else filters.
+function devSelected(mine) { return DEV.only ? mine.filter(s => DEV.only.has(devKey(s))) : mine.filter(s => devMatch(s, DEV.f)); }
+function renderDevelop() {
+  const wrap = document.getElementById('devWrap'); if (!wrap) return;
+  if (!document.getElementById('develView').classList.contains('active')) return;
+  const season = briefSeason();
+  if (DEV.season !== season) { DEV.season = season; DEV.f = {}; DEV.excl = new Set(); DEV.only = null; DEV.wi = {}; DEV.edit = null; }
+  devNotesListen(season);
+  const players = devPlayers(season);
+  if (PLAYER_MODE) DEV.j = pmJersey(season) || '';
+  else if (!players.some(p => p.j === DEV.j)) DEV.j = players.length ? players[0].j : '';
+  const picker = PLAYER_MODE ? '' : `<div class="pf-pick">${players.map(p => `<button type="button" class="${p.j === DEV.j ? 'on' : ''}" data-dev-j="${escapeHtml(p.j)}">#${escapeHtml(p.j)} ${escapeHtml(lastNameOf(nameFor(p.j, season) || ''))} <span class="n-note">${p.n}</span></button>`).join('')}</div>`;
+  const j = DEV.j;
+  if (!j || !players.some(p => p.j === j)) { wrap.innerHTML = picker + `<p class="view-intro">${PLAYER_MODE ? escapeHtml(PLAYER_MODE.name) + ' has no ' : 'No '}${escapeHtml(season)} shots logged yet.</p>`; return; }
+  const xm = xgModelFor(season), team = devScope(season, DEV.range, DEV.cat), mine = team.filter(s => s.shooterJersey === j), rest = team.filter(s => s.shooterJersey !== j);
+  const bySess = {}; mine.forEach(s => { (bySess[devCat(s)] = bySess[devCat(s)] || new Set()).add(sessKey(s)); });
+  const sessTxt = DEV_CATS.map(([k, t]) => bySess[k] ? `${bySess[k].size} ${t.toLowerCase()}` : null).filter(Boolean).join(', ') || 'no sessions';
+  const head = `${picker}<div class="panel"><p class="panel-title" style="font-size:18px;">${escapeHtml(jerseyLabel(j, season))}</p>
+    <div class="dev-bar"><span class="cap">Dates</span>${devPills('data-dev-range', [['Full', 'Full season'], ['Fall', 'Fall'], ['Spring', 'Spring']], DEV.range)}<span class="cap">Sessions</span>${devPills('data-dev-cat', [['All', 'All']].concat(DEV_CATS), DEV.cat)}</div>
+    <p class="panel-sub" style="margin-top:8px;">${escapeHtml(season)} &middot; ${escapeHtml(devRangeLabel(DEV.range))} &middot; ${mine.length} attempt${mine.length === 1 ? '' : 's'} (sessions: ${escapeHtml(sessTxt)}). ${infoTip(DEV_CAT_NOTE)}</p></div>`;
+  // 1. Explorer.
+  const sel = devSelected(mine), selRest = DEV.only ? [] : rest.filter(s => devMatch(s, DEV.f));
+  const A = devStat(sel, xm), B = devStat(selRest, xm);
+  const fRows = DEV_DIMS.map(d => {
+    const vals = d.opts(mine.concat(rest)), cur = DEV.f[d.k] || '';
+    const ctl = d.sel ? `<select data-dev-fsel="${d.k}"><option value="">All</option>${vals.map(v => `<option value="${escapeHtml(v)}"${cur === v ? ' selected' : ''}>${escapeHtml(devShow(d, v))}</option>`).join('')}<option value="${DEV_NONE}"${cur === DEV_NONE ? ' selected' : ''}>Not logged</option></select>`
+      : devPills('data-dev-f', [['', 'All']].concat(vals.map(v => [v, devShow(d, v)]), [[DEV_NONE, 'Not logged']]).map(([v, t]) => [d.k + '|' + v, t]), d.k + '|' + cur);
+    return `<div class="dev-flab">${escapeHtml(d.label)}</div><div>${ctl}</div>`;
+  }).join('');
+  const missing = DEV_DIMS.filter(d => d.k !== 'trigger').map(d => [d.label, mine.filter(s => !d.of(s)).length]).filter(x => x[1]);
+  const onlyBar = DEV.only ? `<div class="model-note" style="color:var(--ink);">Showing the ${DEV.only.size} record${DEV.only.size === 1 ? '' : 's'} saved with a conclusion${DEV.onlyLabel ? ' (' + escapeHtml(DEV.onlyLabel) + ')' : ''}; ${sel.length} ${sel.length === 1 ? 'is' : 'are'} in the log under these dates and sessions. <button type="button" class="pill" data-dev-act="only-clear">Back to filters</button></div>` : '';
+  const tiles = [
+    statTile('Attempts', String(A.n), DEV.only ? 'saved records' : devFilterLabel(DEV.f)),
+    statTile('Goals', A.n ? `${A.g} <span style="font-size:14px;">(${pct(A.gp)})</span>` : '—', A.n ? `on cage ${pct(A.ocp)}` : 'no attempts'),
+    statTile('Goals vs expected', devSg(A.gmx), A.n ? `${devSg(A.p100)} per 100 attempts &middot; xG ${num(A.xg, 1)}` : '—', 'Goals minus expected goals. Expected goals = the tracker’s standard model: how often shots with that grade go in (practice and game rates), the same numbers as Efficiency and Reports.'),
+    statTile('Rest of the team, same filters', B.n ? pct(B.gp) : '—', B.n ? `${B.g}/${B.n} &middot; ${devSg(B.p100)} vs expected per 100` : (DEV.only ? 'not shown for saved records' : 'no attempts')),
+  ].join('');
+  const byOpts = DEV_DIMS.map(d => [d.k, d.label]);
+  const explorer = `<div class="panel"><p class="panel-title">Where his results come from</p>
+    <p class="panel-sub">Filter his actual attempts. The benchmark is the rest of the team on the same filters, dates and session types. &ldquo;&mdash;&rdquo; = nothing to measure; &ldquo;Not logged&rdquo; = attempts where that field is blank.</p>
+    ${onlyBar}<div class="dev-filters${DEV.only ? ' dev-dim' : ''}">${fRows}</div>
+    <p style="margin:8px 0 0;"><button type="button" class="pill" data-dev-act="clear">Clear filters</button>${missing.length ? ` <span class="n-note">Not logged on his attempts here: ${missing.map(([l, n]) => `${escapeHtml(l.toLowerCase())} ${n}`).join(', ')}.</span>` : ''}</p>
+    <div class="view-tiles trend-grid" style="margin:12px 0;">${tiles}</div>
+    <p class="sans" style="font-size:13px; margin:12px 0 4px;"><b>Break it down by</b></p>${devPills('data-dev-by', byOpts, DEV.by)}
+    <div id="devByWrap" style="margin-top:8px;"></div></div>`;
+  const records = `<details class="panel collapsible" id="devRecBox"${DEV.recOpen ? ' open' : ''}><summary><span class="panel-title">The attempts (${sel.length})</span> <span class="panel-sub" id="devClipNote"></span></summary><p class="panel-sub">Every attempt in the current selection, with its record (session and shot number) and film. Untick an attempt to leave it out of the what-if.</p><div id="devRecWrap"></div></details>`;
+  // 2. What-if (filled by devRenderWhatIf).
+  const levers = DEV_LEVERS.map(l => {
+    const off = l.k === 'angle' && devIsZone(DEV.wi.loc);
+    const ctl = l.k === 'loc' ? `<select data-dev-wisel="loc"><option value="">As logged</option>${l.opts().map(([v, t]) => `<option value="${escapeHtml(v)}"${DEV.wi.loc === v ? ' selected' : ''}>${escapeHtml(t)}</option>`).join('')}</select>`
+      : devPills('data-dev-wi', [['', 'As logged']].concat(l.opts()).map(([v, t]) => [l.k + '|' + v, t]), l.k + '|' + (DEV.wi[l.k] || ''));
+    return `<div class="dev-flab">${escapeHtml(l.label)} <span class="n-note">${l.kind}</span></div><div${off ? ' class="dev-dim" title="A zone move sets the angle too."' : ''}>${ctl}</div>`;
+  }).join('');
+  const whatif = `<div class="panel"><p class="panel-title">What if he changed&hellip;</p>
+    <p class="panel-sub">Replays the attempts selected above (untick any under &ldquo;The attempts&rdquo; to leave them out) with every change below applied together. His other attempts and his number of attempts stay exactly as logged. <b>Selection</b> = where and in what situation he shoots; <b>skill</b> = how he shoots. His finishing and his playing time are never changed.</p>
+    <div class="dev-filters">${levers}</div><p style="margin:8px 0 0;"><button type="button" class="pill" data-dev-act="wi-clear">Reset changes</button></p>
+    <div id="devWiOut" style="margin-top:12px;"></div></div>`;
+  const audit = `<details class="panel collapsible" id="devAuditBox"><summary><span class="panel-title">Model check: sessions it never saw</span> <span class="panel-sub" id="devAuditSum"></span></summary><div id="devAuditWrap"></div></details>`;
+  const notes = `<div class="panel"><p class="panel-title">Coaching conclusions</p><div id="devNotesWrap"></div></div>`;
+  wrap.innerHTML = head + explorer + whatif + records + audit + notes;
+  document.getElementById('devRecBox').addEventListener('toggle', e => { DEV.recOpen = e.target.open; });
+  devRenderBy(mine, rest, xm);
+  devRenderRecords(sel, xm, season);
+  const R = devModel(season);
+  devRenderAudit(R);
+  devRenderWhatIf(R, mine, sel);
+  devRenderNotes(season, j, sel, xm);
+  if (!DEV.clips || DEV.clips.season !== season) {
+    if (!DEV.clipsBusy) { DEV.clipsBusy = true; devLoadClips(season).then(() => { DEV.clipsBusy = false; if (document.getElementById('develView').classList.contains('active')) devRenderRecords(devSelected(devScope(season, DEV.range, DEV.cat).filter(s => s.shooterJersey === DEV.j)), xgModelFor(season), season); }); }
+  }
+}
+function devRenderBy(mine, rest, xm) {
+  const d = devDim(DEV.by) || DEV_DIMS[0], f = Object.assign({}, DEV.f); delete f[d.k];
+  const m = DEV.only ? mine.filter(s => DEV.only.has(devKey(s))) : mine.filter(s => devMatch(s, f)), r = DEV.only ? [] : rest.filter(s => devMatch(s, f));
+  const vals = d.opts(mine.concat(rest)).concat([DEV_NONE]);
+  const rows = vals.map((v, i) => { const pick = s => v === DEV_NONE ? !d.of(s) : d.of(s) === v, a = devStat(m.filter(pick), xm), b = devStat(r.filter(pick), xm); return { v, order: i, label: devShow(d, v), a, b }; }).filter(x => x.a.n);
+  renderSortableTable('devByWrap', [
+    { key: 'label', label: d.label, type: 'num', value: x => x.order, format: (v, x) => escapeHtml(x.label) },
+    { key: 'n', label: 'Attempts', type: 'num', value: x => x.a.n },
+    { key: 'g', label: 'Goals', type: 'num', value: x => x.a.g },
+    { key: 'gp', label: 'Goal %', type: 'num', value: x => x.a.gp, format: v => pct(v), cellStyle: (v, x) => smallCellStyle(x.a.n, DEV_SMALL) },
+    { key: 'xg', label: 'xG', type: 'num', value: x => x.a.xg, format: v => num(v, 1) },
+    { key: 'gmx', label: 'G − xG', type: 'num', value: x => x.a.gmx, format: v => devSg(v), title: 'Goals minus expected goals (total).' },
+    { key: 'p100', label: 'per 100', type: 'num', value: x => x.a.p100, format: v => devSg(v), title: 'Goals minus expected goals per 100 attempts.' },
+    { key: 'bgp', label: 'Goal %', type: 'num', value: x => x.b.gp, format: (v, x) => x.b.n ? `${pct(v)} <span class="n-note">(${x.b.n})</span>` : '—', group: 'Rest of the team' },
+    { key: 'bp100', label: 'G − xG per 100', type: 'num', value: x => x.b.p100, format: v => devSg(v), group: 'Rest of the team' },
+  ], rows, { dense: true, defaultSort: { key: 'label', dir: 'asc' }, emptyMsg: 'No attempts with these filters.' });
+  const w = document.getElementById('devByWrap'); if (w && rows.length) w.insertAdjacentHTML('beforeend', `<p class="n-note" style="margin-top:4px;">Other filters still apply; this one is split out. Faded rows have fewer than ${DEV_SMALL} attempts.</p>`);
+}
+function devRenderRecords(sel, xm, season) {
+  const C = DEV.clips, note = document.getElementById('devClipNote');
+  if (note) note.textContent = !C || C.season !== season ? 'checking Film Check…' : C.err ? C.err : `${sel.filter(s => C.map.has(devKey(s))).length} of ${sel.length} have a clip confirmed in Film Check.`;
+  const rows = sel.slice().sort((a, b) => (a.date || '').localeCompare(b.date || '') || a.id - b.id);
+  const d1 = v => v === null || v === undefined ? '—' : escapeHtml(v);
+  renderSortableTable('devRecWrap', [
+    { key: 'use', label: 'Use', type: 'text', sortable: false, value: s => '', format: (v, s) => `<input type="checkbox" data-dev-x="${escapeHtml(devKey(s))}"${DEV.excl.has(devKey(s)) ? '' : ' checked'} title="Include this attempt in the what-if">` },
+    { key: 'date', label: 'Date', type: 'text', value: s => s.date || '', format: v => `<span style="white-space:nowrap;">${escapeHtml(v)}</span>` },
+    { key: 'type', label: 'Session', type: 'text', value: s => DEV_CATS.find(c => c[0] === devCat(s)) ? DEV_CATS.find(c => c[0] === devCat(s))[1] : '—' },
+    { key: 'rec', label: 'Record', type: 'text', value: s => devKey(s), format: (v, s) => `<span style="white-space:nowrap;" title="Session ${escapeHtml(sessKey(s))}, shot #${s.id}">#${s.id}</span>` },
+    { key: 'where', label: 'Location', type: 'text', value: s => shotZone(s) || '', format: (v, s) => shotZone(s) ? `${escapeHtml(shotZone(s))} <span class="n-note">${num(s.distanceYds, 0)} yds</span>` : '—' },
+    { key: 'ang', label: 'Angle', type: 'num', value: s => shotAngleDeg(s), format: v => v === null ? '—' : num(v, 0) + '°' },
+    { key: 'cd', label: 'C / D', type: 'text', value: s => devDim('dodge').of(s) || '', format: v => v ? (v === 'Off the dodge' ? 'Dodge' : 'Catch') : '—' },
+    { key: 'pr', label: 'Pressure', type: 'text', value: s => devDim('pressure').of(s) || '', format: v => d1(v || null) },
+    { key: 'hand', label: 'Hand', type: 'text', value: s => getHandedness(s) || '', format: v => v ? (v === 'Right' ? 'R' : 'L') : '—' },
+    { key: 'rel', label: 'Release', type: 'text', value: s => devDim('release').of(s) || '', format: v => d1(v || null) },
+    { key: 'gr', label: 'Grade', type: 'text', value: s => devDim('grade').of(s) || '', format: v => v ? `<span class="tier-chip ${v.slice(2).toLowerCase()}">${escapeHtml(v.slice(2))}</span>` : '—' },
+    { key: 'trg', label: 'Trigger', type: 'text', value: s => normalizeTrigger(s.trigger) || '', format: v => d1(v || null) },
+    { key: 'res', label: 'Result', type: 'text', value: s => outcomeFor(s) },
+    { key: 'xg', label: 'xG', type: 'num', value: s => xgForShot(s, xm), format: v => num(v, 2) },
+    { key: 'clip', label: 'Film', type: 'text', sortable: false, value: s => '', format: (v, s) => devClipCell(s) },
+  ], rows, { dense: true, defaultSort: { key: 'date', dir: 'asc' }, emptyMsg: 'No attempts match.' });
+}
+function devRenderAudit(R) {
+  const sum = document.getElementById('devAuditSum'), w = document.getElementById('devAuditWrap'); if (!w) return;
+  if (!R.model) { sum.textContent = 'not enough data yet'; w.innerHTML = `<p class="sans" style="font-size:13px;">${escapeHtml(R.why || '')}</p>`; return; }
+  sum.textContent = R.ok ? `passed: ${(R.skill * 100).toFixed(1)}% better than the base rate on ${R.sids.length} held-out sessions` : 'failed: what-ifs are switched off';
+  const rows = [['Objective model (no grade) — used for what-ifs', R.skill, R.brModel], ['Grade only (Gold / Silver / Bronze, + practice vs game)', R.skillGrade, R.brGrade], ['Team base rate (from the other sessions)', 0, R.brBase]];
+  w.innerHTML = `<div class="sans" style="font-size:13px; line-height:1.6;">
+    <p>Each of the ${R.sids.length} ${escapeHtml(R.season)} sessions is left out in turn; the model is fit on the other sessions and scores that session&rsquo;s ${'shots'} cold. ${R.shots.length} located shots, ${R.goals} goals. Skill = how much better than predicting the team&rsquo;s base rate (log loss); 0% = no better.</p>
+    ${rptMiniTable(['Model', 'Held-out skill', 'Brier score (lower is better)'], rows.map(([n, s, b]) => [escapeHtml(n), `<b>${(s * 100).toFixed(1)}%</b>`, b.toFixed(4)]))}
+    <p>The objective model beat the base rate in <b>${R.sessWins} of ${R.sids.length}</b> held-out sessions.${R.skillGrade > R.skill ? ` <b>The grade alone predicts better</b> (${(R.skillGrade * 100).toFixed(1)}% vs ${(R.skill * 100).toFixed(1)}%): a coach&rsquo;s grade takes in parts of a look the logged facts don&rsquo;t (the goalie, the stick, the moment). A what-if can only change logged facts, so it reflects only the part of a look those facts explain.` : ''}</p>
+    <p style="margin:10px 0 4px;"><b>Calibration on held-out sessions</b></p>
+    ${rptMiniTable(['Predicted chance', 'Shots', 'Predicted', 'Went in'], R.calib.filter(c => c.n).map(c => [`${Math.round(c.lo * 100)}–${Math.min(100, Math.round(c.hi * 100))}%`, String(c.n), pct(c.pred), pct(c.act)]))}
+    <p class="n-note" style="font-size:12px;">${R.ok ? 'Passing this check lets what-ifs run; each what-if is still checked on the situations it moves shots from and to.' : escapeHtml(R.why || '')} The xG Model page&rsquo;s own test mixes shots from one session into both its training and test folds, so its skill number can read higher than this one.</p></div>`;
+}
+function devCellTxt(c) { return c.n ? `${c.g} goals on ${c.n} team shots vs ${num(c.e, 1)} predicted${c.z === null ? '' : ` (${c.z >= 0 ? '+' : '−'}${Math.abs(c.z).toFixed(1)} SE)`}` : 'no team shots'; }
+function devCheckWhy(c) { return c.n < DEV_CELL_MIN ? `only ${c.n} team shot${c.n === 1 ? '' : 's'} (needs ${DEV_CELL_MIN}+ to check)` : !c.ok ? 'held-out predictions miss here by more than 2 standard errors' : 'checks out'; }
+function devWiSummary(wi) { return DEV_LEVERS.filter(l => wi[l.k]).map(l => `${l.label}: ${(l.opts().find(o => o[0] === wi[l.k]) || [0, wi[l.k]])[1]}`).join(' · '); }
+let DEV_LAST_SC = null;
+function devRenderWhatIf(R, mine, sel) {
+  const out = document.getElementById('devWiOut'); if (!out) return;
+  DEV_LAST_SC = null;
+  if (!DEV_LEVERS.some(l => DEV.wi[l.k])) { out.innerHTML = '<p class="n-note" style="font-size:12.5px;">Pick a change above to replay his selected attempts with it.</p>'; return; }
+  if (!R.model || !R.ok) { out.innerHTML = `<div class="dev-status fail"><b>What-ifs are off.</b> ${escapeHtml(R.why || '')} See the model check below.</div>`; return; }
+  const all = mine.filter(xg2Usable), unloc = mine.length - all.length;
+  const keys = new Set(sel.filter(s => xg2Usable(s) && !DEV.excl.has(devKey(s))).map(devKey));
+  const S = devScenario(R, all, keys, DEV.wi);
+  const lname = k => devLever(k).label.toLowerCase();
+  const support = S.checks.length ? rptMiniTable(['Change', 'Moves shots from', 'To', 'His own attempts there', 'Result'], S.checks.map(c => [escapeHtml(devLever(c.k).label),
+    `${escapeHtml(c.from.map(v => devLeverShow(c.k, v)).join(', ') || '—')}<br><span class="n-note">${devCellTxt(c.cf)}</span>`,
+    `${escapeHtml(c.to.map(v => devLeverShow(c.k, v)).join(', ') || '—')}<br><span class="n-note">${devCellTxt(c.ct)}</span>`,
+    c.his.n ? `${c.his.g} of ${c.his.n} <span class="n-note">(${pct(c.his.g / c.his.n)}; held-out model ${num(c.his.e, 1)})</span>` : '<span class="n-note">none &mdash; he hasn&rsquo;t shot from there</span>',
+    c.ok ? '<b style="color:var(--good);">Supported</b>' : `<b style="color:var(--critical);">Not supported</b><br><span class="n-note">${escapeHtml(!c.cf.ok ? 'from: ' + devCheckWhy(c.cf) : 'to: ' + devCheckWhy(c.ct))}</span>`])) : '';
+  const jointTxt = S.joint ? (S.joint.n < DEV_CELL_MIN ? `<p class="n-note" style="font-size:12px;">The changes together: only ${S.joint.n} team shot${S.joint.n === 1 ? '' : 's'} had all of them at once, too few to check the combination directly; the model adds up their separate effects.</p>` : `<p class="n-note" style="font-size:12px;">The changes together: ${devCellTxt(S.joint)} &mdash; ${S.joint.ok ? 'checks out' : 'held-out predictions miss here'}.</p>`) : '';
+  const notChanged = Object.keys(S.miss).map(k => `${S.miss[k]} not changed for ${lname(k)} (not logged)`);
+  const cover = `<p class="n-note" style="font-size:12px;">${S.ch.length} of ${S.nSel} selected attempt${S.nSel === 1 ? '' : 's'} change${S.ch.length === 1 ? 's' : ''}${notChanged.length ? '; ' + notChanged.join('; ') : ''}. ${S.nSel - S.ch.length - Object.values(S.miss).reduce((a, v) => a + v, 0) > 0 ? 'The rest are already that way. ' : ''}${unloc ? `${unloc} of his attempts have no location, so the model can&rsquo;t replay them; they count the same either way and aren&rsquo;t in these totals.` : ''}</p>`;
+  if (S.status === 'none') { out.innerHTML = `<div class="dev-status warn">None of the selected attempts change with these settings.</div>${cover}`; return; }
+  if (S.status === 'support') { out.innerHTML = `<div class="dev-status fail"><b>Not shown: this change isn&rsquo;t supported by our data yet.</b> On sessions the model never saw, its predictions don&rsquo;t hold up (or there are too few team shots to check) in a situation this change moves shots from or to. A number here would be a guess.</div>${support}${jointTxt}${cover}`; return; }
+  const n = S.n, m = S.ch.length, goals = all.filter(s => s.goal === 1).length, lo = S.d - 1.96 * S.se, hi = S.d + 1.96 * S.se;
+  const zeroIn = S.se !== null && lo <= 0 && hi >= 0;
+  DEV_LAST_SC = { wi: Object.assign({}, DEV.wi), label: devWiSummary(DEV.wi), n, m, d: S.d, se: S.se, base: S.base, scen: S.scen };
+  const tbl = rptMiniTable(['', 'As logged', 'Scenario', 'Change'], [
+    [`Expected goals, the ${S.nSel} selected attempt${S.nSel === 1 ? '' : 's'}`, num(S.selBase, 2), num(S.selBase + S.d, 2), `<b>${devSg(S.d, 2)}</b>`],
+    [`Expected goals, all ${n} of his attempts here`, num(S.base, 2), num(S.scen, 2), `<b>${devSg(S.d, 2)}</b> <span class="n-note">(${devSg(100 * S.d / n, 1)} per 100 attempts)</span>`],
+    [`Per attempt that changes (${m})`, num(m ? S.ch.reduce((a, r) => a + predictXg2(R.model, r.p), 0) / m : null, 3), num(m ? S.ch.reduce((a, r) => a + predictXg2(R.model, r.a.q), 0) / m : null, 3), devSg(m ? S.d / m : null, 3)],
+  ]);
+  const split = DEV_LEVERS.some(l => DEV.wi[l.k] && l.kind === 'selection') && DEV_LEVERS.some(l => DEV.wi[l.k] && l.kind === 'skill')
+    ? `<p class="sans" style="font-size:12.5px;">Split: selection changes alone ${devSg(S.dSel, 2)}, skill changes alone ${devSg(S.dSk, 2)}, together ${devSg(S.d, 2)} expected goals (the parts don&rsquo;t simply add, because each change matters more or less depending on the others).</p>` : '';
+  out.innerHTML = `<div class="dev-status pass"><b>${devSg(S.d, 2)} expected goals over his ${n} attempts</b> (${devSg(100 * S.d / n, 1)} per 100), ${devSg(m ? S.d / m : null, 3)} per attempt that changes. 95% range from refitting without each session: ${devSg(lo, 2)} to ${devSg(hi, 2)}.${zeroIn ? ' <b>That range includes zero</b>, so with this many sessions the change can&rsquo;t be told apart from no change.' : ''}</div>
+    ${tbl}${split}
+    <p class="sans" style="font-size:12.5px; line-height:1.6;"><b>Recorded:</b> ${goals} goals on these ${n} attempts; the objective model expected ${num(S.base, 1)} (finishing ${devSg(goals - S.base, 1)}, ${devSg(100 * (goals - S.base) / n, 1)} per 100). That finishing is his own and isn&rsquo;t carried into the scenario.<br>
+    <b>Opportunity held fixed:</b> the same ${n} attempts. This doesn&rsquo;t add attempts, minutes, touches or a bigger role, and it isn&rsquo;t a forecast.</p>
+    ${cover}
+    <details class="collapsible"><summary class="sans" style="font-size:12.5px;"><b>Why it&rsquo;s shown, and the limits</b></summary>
+    ${support}${jointTxt}
+    <ul class="sans" style="font-size:12px; line-height:1.6; margin:6px 0; padding-left:18px;">
+      <li>Model: Efficiency &rsaquo; xG Model (objective, never sees the Gold/Silver/Bronze grade), fit on every located ${escapeHtml(R.season)} shot by the team. A grade is a coach&rsquo;s read of the whole look, so it can&rsquo;t be held fixed while the look changes, and changing it would be a guess.</li>
+      <li>It estimates what the average shooter on our team scores from the new situation; it can&rsquo;t say whether he can get there, or how defenses would react.</li>
+      <li>Other parts of each attempt (transition, man-up, rebound, bounce, practice vs game) stay as logged. A location move keeps the stick plane; a zone move uses the team&rsquo;s most typical spot in that zone.</li>
+      <li>The 95% range covers how much the model&rsquo;s estimate moves when a session is left out; it doesn&rsquo;t cover goalies, defenders or chance on the day.</li></ul></details>`;
+}
+function devLeverShow(k, v) { if (k === 'dodge') return v === '1' ? 'Off the dodge' : 'Off the catch'; if (k === 'hand') return v === 'Right' ? 'Righty' : 'Lefty'; return String(v); }
+// ---- Coaching conclusions (app/devnotes_<season>; field n_<id> = JSON) ----
+const DEV_AREAS = [['selection', 'Shot selection'], ['skill', 'Skill'], ['opportunity', 'Opportunity'], ['other', 'Other']];
+const DEV_NOTE_ID = /^[A-Za-z0-9_-]{4,60}$/, DEV_KEY_RE = /^[A-Za-z0-9_-]{1,80}#\d{1,9}$/;
+function devNoteClean(raw) {
+  const o = cleanDeep(raw); if (!o || typeof o !== 'object' || typeof o.text !== 'string' || typeof o.j !== 'string') return null;
+  const ev = o.ev && typeof o.ev === 'object' ? o.ev : {};
+  const f = {}; if (ev.f && typeof ev.f === 'object') DEV_DIMS.forEach(d => { if (typeof ev.f[d.k] === 'string') f[d.k] = ev.f[d.k].slice(0, 60); });
+  const sc = o.sc && typeof o.sc === 'object' && typeof o.sc.label === 'string' && isFinite(o.sc.d) ? { label: o.sc.label.slice(0, 200), d: Number(o.sc.d), se: isFinite(o.sc.se) ? Number(o.sc.se) : null, n: Number(o.sc.n) || 0, m: Number(o.sc.m) || 0 } : null;
+  return { j: o.j.slice(0, 4), text: o.text.slice(0, 1200), area: DEV_AREAS.some(a => a[0] === o.area) ? o.area : 'other', shared: o.shared === true, by: String(o.by || '').slice(0, 60), at: String(o.at || '').slice(0, 30), ed: String(o.ed || '').slice(0, 30),
+    ev: { range: ['Full', 'Fall', 'Spring'].includes(ev.range) ? ev.range : 'Full', cat: ['All', 'practice', 'intra', 'opp'].includes(ev.cat) ? ev.cat : 'All', f, keys: Array.isArray(ev.keys) ? ev.keys.filter(k => typeof k === 'string' && DEV_KEY_RE.test(k)).slice(0, 400) : [],
+      n: Number(ev.n) || 0, g: Number(ev.g) || 0, xg: isFinite(ev.xg) ? Number(ev.xg) : null }, sc };
+}
+function devNotesListen(season) {
+  if (DEV.notesSeason === season || !DB) return;
+  if (DEV.notesUnsub) { DEV.notesUnsub(); DEV.notesUnsub = null; }
+  DEV.notesSeason = season; DEV.notes = {}; DEV.notesErr = '';
+  DEV.notesUnsub = DB.doc('app/devnotes_' + season).onSnapshot(snap => {
+    const d = snap.exists ? snap.data() : {}, o = {};
+    Object.keys(d).forEach(k => { if (!k.startsWith('n_') || typeof d[k] !== 'string' || !DEV_NOTE_ID.test(k.slice(2))) return; try { const n = devNoteClean(JSON.parse(d[k])); if (n) o[k.slice(2)] = n; } catch (e) { /* skip a bad note */ } });
+    DEV.notes = o;
+    if (document.getElementById('develView').classList.contains('active')) { const S = devCurrentSel(); if (S) devRenderNotes(season, DEV.j, S.sel, xgModelFor(season)); }
+    if (document.getElementById('reportsView').classList.contains('active') && rptMode === 'review') renderReports();
+  }, e => { console.error('dev notes', e); DEV.notesErr = 'Couldn’t load conclusions.'; });
+}
+function devCurrentSel() { const season = DEV.season; if (!season || !DEV.j) return null; const mine = devScope(season, DEV.range, DEV.cat).filter(s => s.shooterJersey === DEV.j); return { mine, sel: devSelected(mine) }; }
+// Evidence for a note: the explorer's current view and the records in it (plus the what-if, if one is showing).
+function devEvidence(sel, xm) { return { range: DEV.range, cat: DEV.cat, f: DEV.only ? {} : Object.assign({}, DEV.f), keys: sel.map(devKey).slice(0, 400), n: sel.length, g: sel.filter(s => s.goal === 1).length, xg: Math.round(xgSum(sel, xm) * 100) / 100 }; }
+function devEvidenceLine(n, season) {
+  const ev = n.ev, xm = xgModelFor(season), byKey = new Map(devTeamShots(season).map(s => [devKey(s), s]));
+  const now = ev.keys.map(k => byKey.get(k)).filter(Boolean), gone = ev.keys.length - now.length, ng = now.filter(s => s.goal === 1).length;
+  const where = `${devRangeLabel(ev.range)}, ${ev.cat === 'All' ? 'all sessions' : DEV_CAT_LONG[ev.cat].toLowerCase()}, ${devFilterLabel(ev.f)}`;
+  const changed = gone || ng !== ev.g ? ` <b style="color:var(--gold-ink);">Today:</b> ${now.length} of those records are in the log${gone ? ` (${gone} deleted or moved)` : ''}, ${ng} goals.` : '';
+  return `Evidence: ${ev.n} attempt${ev.n === 1 ? '' : 's'} (${escapeHtml(where)}) &mdash; ${ev.g} goals, ${num(ev.xg, 1)} expected when saved.${changed}${n.sc ? `<br>What-if saved with it: ${escapeHtml(n.sc.label)} &rarr; ${devSg(n.sc.d, 2)} expected goals over ${n.sc.n} attempts${n.sc.se !== null ? ` (95% range ${devSg(n.sc.d - 1.96 * n.sc.se, 2)} to ${devSg(n.sc.d + 1.96 * n.sc.se, 2)})` : ''}.` : ''}`;
+}
+function devNotesFor(j, staffAll) { return Object.entries(DEV.notes).filter(([, n]) => n.j === j && (staffAll || n.shared)).sort((a, b) => (b[1].at || '').localeCompare(a[1].at || '')); }
+function devRenderNotes(season, j, sel, xm) {
+  const w = document.getElementById('devNotesWrap'); if (!w) return;
+  const list = devNotesFor(j, !PLAYER_MODE), E = DEV.edit;
+  const area = a => (DEV_AREAS.find(x => x[0] === a) || DEV_AREAS[3])[1];
+  const item = ([id, n]) => `<div class="dev-note"><div><span class="tier-chip ungraded">${escapeHtml(area(n.area))}</span>${PLAYER_MODE ? '' : ` <span class="n-note">${n.shared ? 'shared with him in Player View' : 'staff only'}</span>`}</div>
+    <p class="sans" style="font-size:13.5px; margin:6px 0; white-space:pre-wrap;">${escapeHtml(n.text)}</p>
+    <p class="n-note" style="font-size:12px; font-style:normal;">${devEvidenceLine(n, season)}</p>
+    <p class="n-note" style="font-size:11.5px;">${escapeHtml(n.by)} &middot; ${escapeHtml(n.at.slice(0, 10))}${n.ed ? ` &middot; edited ${escapeHtml(n.ed.slice(0, 10))}` : ''}</p>
+    <div class="print-hide"><button type="button" class="pill" data-dev-act="note-show" data-id="${escapeHtml(id)}">Show these records</button>${PLAYER_MODE ? '' : ` <button type="button" class="pill" data-dev-act="note-edit" data-id="${escapeHtml(id)}">Edit</button> <button type="button" class="pill" data-dev-act="note-del" data-id="${escapeHtml(id)}">${DEV.delArm === id ? 'Tap again to delete' : 'Delete'}</button>`}</div></div>`;
+  let form = '';
+  if (!PLAYER_MODE) {
+    if (E) {
+      const ev = E.ev;
+      form = `<div class="dev-note dev-edit"><p class="sans" style="font-size:13px; margin:0 0 6px;"><b>${E.id ? 'Edit conclusion' : 'New conclusion'}</b></p>
+        ${devPills('data-dev-area', DEV_AREAS, E.area)}
+        <textarea data-dev-text rows="4" maxlength="1200" style="width:100%; margin-top:8px; font:13px var(--text);" placeholder="What the records show and what to work on, in plain words.">${escapeHtml(E.text)}</textarea>
+        <label class="sans" style="font-size:12.5px; display:block; margin:6px 0;"><input type="checkbox" data-dev-shared${E.shared ? ' checked' : ''}> Share with him (shows in Player View)</label>
+        <p class="n-note" style="font-size:12px; font-style:normal;">Evidence: ${ev.n} attempt${ev.n === 1 ? '' : 's'} &mdash; ${escapeHtml(devRangeLabel(ev.range))}, ${escapeHtml(ev.cat === 'All' ? 'all sessions' : DEV_CAT_LONG[ev.cat].toLowerCase())}, ${escapeHtml(devFilterLabel(ev.f))}; ${ev.g} goals, ${num(ev.xg, 1)} expected.${E.sc ? ` What-if: ${escapeHtml(E.sc.label)} (${devSg(E.sc.d, 2)}).` : ''}
+        <button type="button" class="pill" data-dev-act="note-ev">Use the current selection instead</button></p>
+        <button type="button" class="btn" data-dev-act="note-save">Save</button> <button type="button" class="btn secondary" data-dev-act="note-cancel">Cancel</button> <span class="n-note" data-dev-msg>${escapeHtml(DEV.msg)}</span></div>`;
+    } else form = `<p><button type="button" class="btn secondary" data-dev-act="note-new">New conclusion from this selection</button> <span class="n-note">Saves the ${sel.length} attempt${sel.length === 1 ? '' : 's'} shown above with it${DEV_LAST_SC ? ', and the what-if' : ''}.</span></p>`;
+  }
+  w.innerHTML = `<p class="panel-sub">Each conclusion is saved with the attempts behind it, so it can be checked again later. ${PLAYER_MODE ? '' : 'Staff see every one; a conclusion marked Share also shows in Player View.'}</p>${DEV.notesErr ? `<p class="n-note">${escapeHtml(DEV.notesErr)}</p>` : ''}${form}${list.map(item).join('') || `<p class="n-note">${PLAYER_MODE ? 'No conclusions shared yet.' : 'No conclusions for him yet.'}</p>`}`;
+}
+async function devSaveNote() {
+  const E = DEV.edit; if (!E || PLAYER_MODE || !DB) return;
+  const text = cleanText(E.text || '').trim().slice(0, 1200);
+  if (!text) { DEV.msg = 'Write the conclusion first.'; return devRefreshNotes(); }
+  const season = DEV.season, id = E.id || `${DEV.j}_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`, field = 'n_' + id, now = new Date().toISOString();
+  const prev = E.id ? E.base : null;   // the note as it was when this edit was opened
+  const rec = { j: DEV.j, text, area: E.area, shared: !!E.shared, by: prev ? prev.by : dpWho(), at: prev ? prev.at : now, ed: prev ? now : '', ev: E.ev, sc: E.sc || null };
+  if (!DEV_NOTE_ID.test(id)) { DEV.msg = 'Couldn’t save (bad id).'; return devRefreshNotes(); }
+  DEV.msg = 'Saving…'; devRefreshNotes();
+  let conflict = false;
+  const ok = await dbChange('app/devnotes_' + season, cur => {
+    // An edit is refused if another coach changed or deleted the note since it was opened here.
+    if (E.id) { let s = null; try { s = devNoteClean(JSON.parse(cur[field] || 'null')); } catch (e) { s = null; } if (!s || JSON.stringify(s) !== JSON.stringify(prev)) { conflict = true; return null; } }
+    return Object.assign({}, cur, { [field]: JSON.stringify(rec) });
+  });
+  if (conflict) { DEV.msg = 'Another coach changed or deleted this conclusion since you opened it. Cancel and open it again.'; return devRefreshNotes(); }
+  if (!ok) { DEV.msg = 'Couldn’t save. Check the connection and try again.'; return devRefreshNotes(); }
+  DEV.notes[id] = devNoteClean(rec); DEV.edit = null; DEV.msg = ''; devRefreshNotes();
+}
+async function devDeleteNote(id) {
+  if (PLAYER_MODE || !DB || !DEV.notes[id]) return;
+  const ok = await dbChange('app/devnotes_' + DEV.season, cur => { const o = Object.assign({}, cur); delete o['n_' + id]; return o; });
+  if (ok) delete DEV.notes[id]; else DEV.msg = 'Couldn’t delete. Try again.';
+  DEV.delArm = null; devRefreshNotes();
+}
+function devRefreshNotes() { const S = devCurrentSel(); if (S) devRenderNotes(DEV.season, DEV.j, S.sel, xgModelFor(DEV.season)); }
+// ---- Events ----
+document.addEventListener('click', ev => {
+  const t = ev.target.closest('#devWrap [data-dev-j], #devWrap [data-dev-range], #devWrap [data-dev-cat], #devWrap [data-dev-f], #devWrap [data-dev-by], #devWrap [data-dev-wi], #devWrap [data-dev-area], #devWrap [data-dev-act]');
+  if (!t) return;
+  const d = t.dataset;
+  if (d.devJ) { DEV.j = d.devJ; DEV.f = {}; DEV.excl = new Set(); DEV.only = null; DEV.wi = {}; DEV.edit = null; return renderDevelop(); }
+  if (d.devRange) { DEV.range = d.devRange; return renderDevelop(); }
+  if (d.devCat) { DEV.cat = d.devCat; return renderDevelop(); }
+  if (d.devF) { const i = d.devF.indexOf('|'), k = d.devF.slice(0, i), v = d.devF.slice(i + 1); if (v) DEV.f[k] = v; else delete DEV.f[k]; DEV.only = null; return renderDevelop(); }
+  if (d.devBy) { DEV.by = d.devBy; return renderDevelop(); }
+  if (d.devWi) { const i = d.devWi.indexOf('|'), k = d.devWi.slice(0, i), v = d.devWi.slice(i + 1); if (v) DEV.wi[k] = v; else delete DEV.wi[k]; return renderDevelop(); }
+  if (d.devArea && DEV.edit) { DEV.edit.area = d.devArea; return devRefreshNotes(); }
+  const a = d.devAct, id = d.id;
+  if (a === 'clear') { DEV.f = {}; DEV.only = null; return renderDevelop(); }
+  if (a === 'only-clear') { DEV.only = null; return renderDevelop(); }
+  if (a === 'wi-clear') { DEV.wi = {}; return renderDevelop(); }
+  if (a === 'note-new' || a === 'note-ev') {
+    const S = devCurrentSel(); if (!S) return;
+    const ev = devEvidence(S.sel, xgModelFor(DEV.season));
+    if (a === 'note-ev' && DEV.edit) { DEV.edit.ev = ev; DEV.edit.sc = DEV_LAST_SC; } else DEV.edit = { id: null, text: '', area: 'selection', shared: false, ev, sc: DEV_LAST_SC };
+    DEV.msg = ''; return devRefreshNotes();
+  }
+  if (a === 'note-edit' && DEV.notes[id]) { const n = DEV.notes[id]; DEV.edit = { id, base: JSON.parse(JSON.stringify(n)), text: n.text, area: n.area, shared: n.shared, ev: n.ev, sc: n.sc }; DEV.msg = ''; return devRefreshNotes(); }
+  if (a === 'note-cancel') { DEV.edit = null; DEV.msg = ''; return devRefreshNotes(); }
+  if (a === 'note-save') return devSaveNote();
+  if (a === 'note-del') { if (DEV.delArm === id) return devDeleteNote(id); DEV.delArm = id; return devRefreshNotes(); }
+  if (a === 'note-show' && DEV.notes[id]) {
+    const n = DEV.notes[id]; DEV.j = n.j; DEV.range = n.ev.range; DEV.cat = n.ev.cat; DEV.f = Object.assign({}, n.ev.f); DEV.only = new Set(n.ev.keys); DEV.onlyLabel = n.text.slice(0, 60) + (n.text.length > 60 ? '…' : '');
+    if (NAV_ST.cur !== 'develop') goNav('develop'); else renderDevelop();
+    return;
+  }
+});
+document.addEventListener('change', ev => {
+  const t = ev.target; if (!t.closest || !t.closest('#devWrap')) return;
+  if (t.dataset.devFsel) { if (t.value) DEV.f[t.dataset.devFsel] = t.value; else delete DEV.f[t.dataset.devFsel]; DEV.only = null; return renderDevelop(); }
+  if (t.dataset.devWisel) { if (t.value) DEV.wi[t.dataset.devWisel] = t.value; else delete DEV.wi[t.dataset.devWisel]; return renderDevelop(); }
+  if (t.dataset.devX) { if (t.checked) DEV.excl.delete(t.dataset.devX); else DEV.excl.add(t.dataset.devX); const S = devCurrentSel(); if (S) { devRenderWhatIf(devModel(DEV.season), S.mine, S.sel); devRefreshNotes(); } return; }
+  if (t.hasAttribute('data-dev-shared') && DEV.edit) DEV.edit.shared = t.checked;
+});
+document.addEventListener('input', ev => { const t = ev.target; if (t.hasAttribute && t.hasAttribute('data-dev-text') && DEV.edit) DEV.edit.text = t.value; });
+// ---------------- Reports > Player review ----------------
+// A player's whole season (or Fall / Spring) on one printable page: his numbers by session type with the rest of
+// the team on the same sessions as the benchmark, situations, coaching conclusions with their evidence, his stat
+// sheet, and every attempt behind it. Numbers come from the same functions as the session reports (rptFullStats).
+function rptReviewPeriods(season) {
+  const all = rptPeriods('practice', true).filter(p => seasonForDate(p.date) === season);
+  return ['Full', 'Fall', 'Spring'].map(part => { const l = all.filter(p => inPart({ date: p.date }, season, part)); if (!l.length) return null; const ds = l.map(p => p.date).sort(); return { key: part, part, keys: l.map(p => p.key), from: ds[0], to: ds[ds.length - 1] }; }).filter(Boolean);
+}
+const rptReviewName = p => `${p.part === 'Full' ? 'Season to date' : p.part} · ${p.from} – ${p.to} (${p.keys.length} session${p.keys.length === 1 ? '' : 's'})`;
+function rptReviewShow(on) {
+  const tp = document.getElementById('rptTrackPanel'), md = document.getElementById('rptModel').closest('details'), gp = document.getElementById('rptGroupPills');
+  if (tp) tp.style.display = on ? 'none' : ''; if (md) md.style.display = on ? 'none' : '';
+  document.getElementById('rptScoreTitle').textContent = on ? 'Player review' : 'Scorecard';
+  document.getElementById('rptScoreSub').textContent = on ? 'One player, by session type, with the attempts behind every number. Pick a position group to narrow the list.' : 'Whole team by default. Pick a position group, then a player, to narrow it.';
+  if (gp) gp.style.display = '';
+}
+function renderPlayerReview() {
+  const box = document.getElementById('rptScore'), season = briefSeason();
+  rptReviewShow(true);
+  ['rptTeam', 'rptFullTeam', 'rptGroupBody', 'rptModel'].forEach(id => { document.getElementById(id).innerHTML = ''; });
+  devNotesListen(season);
+  const periods = rptReviewPeriods(season), sel = document.getElementById('rptPeriodSelect');
+  sel.innerHTML = periods.length ? periods.map(p => `<option value="${p.key}">${escapeHtml(rptReviewName(p))}</option>`).join('') : '<option value="">Nothing logged yet</option>';
+  if (!periods.some(p => p.key === rptKey)) rptKey = periods.length ? periods[0].key : '';
+  sel.value = rptKey;
+  const period = periods.find(p => p.key === rptKey), psel = document.getElementById('rptPlayerSelect');
+  if (!period) { box.innerHTML = `<p class="sans" style="color:var(--muted); font-size:13px;">No ${escapeHtml(season)} sessions logged yet.</p>`; ['rptPlayer', 'rptSheet'].forEach(id => { document.getElementById(id).innerHTML = ''; }); psel.innerHTML = ''; return; }
+  const F = rptFullStats('practice', period.keys, season);
+  const players = Object.keys(F.players).filter(j => !rptGroup || PLAYER_MODE || rptInGroup(season, j, rptGroup)).map(j => ({ j, name: nameFor(j, season) || '' })).sort((a, b) => a.name.localeCompare(b.name));
+  psel.innerHTML = '<option value="">Pick a player</option>' + players.map(p => `<option value="${escapeHtml(p.j)}">#${escapeHtml(p.j)} ${escapeHtml(p.name)}</option>`).join('');
+  if (rptPlayer && !players.some(p => p.j === rptPlayer)) rptPlayer = '';
+  psel.value = rptPlayer;
+  if (PLAYER_MODE) rptPlayer = pmLockSelect(psel);
+  const j = rptPlayer;
+  if (!j || j === '__NONE__') { box.innerHTML = `<p class="sans" style="color:var(--muted); font-size:13px;">${PLAYER_MODE ? escapeHtml(PLAYER_MODE.name) + ' has nothing logged in this period.' : 'Pick a player for his review.'}</p>`; ['rptPlayer', 'rptSheet'].forEach(id => { document.getElementById(id).innerHTML = ''; }); return; }
+  const who = rptWhoBySession(), xm = xgModelFor(season), latest = depthLatestDate(season);
+  const types = DEV_CATS.map(([k, t]) => ({ k, t, keys: period.keys.filter(x => devCatKey(x) === k) })).filter(x => x.keys.length);
+  const line = (label, keys) => {
+    const G = keys.length === period.keys.length ? F : rptFullStats('practice', keys, season), me = G.players[j], o = me ? me.off : null, T = G.team.off;
+    const stS = trackSetStatus(keys, 'shots'), stP = trackSetStatus(keys, 'poss'), mine = keys.filter(k => (who[k] || new Set()).has(j)).length;
+    const n = o ? o.shots : 0, g = o ? o.goals : 0, xg = o ? o.xg : 0, rn = T.shots - n, rg = T.goals - g, rx = T.xg - xg;
+    const to = o ? o.to : 0, toCell = stP === 'N' || (stP !== 'C' && !to) ? '—' : String(to) + (stP === 'C' ? '' : '*');
+    const gap = stS === 'N';
+    return [escapeHtml(label), `${mine} of ${keys.length}`, gap ? '—' : String(n), gap || !n ? '—' : String(g), gap ? '—' : pct(ratio(g, n)), gap ? '—' : pct(o ? o.onCage : null), gap || !n ? '—' : num(xg, 1),
+      gap || !n ? '—' : devSg(g - xg), gap || !n ? '—' : devSg(100 * (g - xg) / n), o ? `${o.potAst} <span class="n-note">(${o.ast} A)</span>` : '—', toCell,
+      rn ? `${pct(rg / rn)} <span class="n-note">(${rg}/${rn})</span>` : '—', rn ? devSg(100 * (rg - rx) / rn) : '—'];
+  };
+  const rows = types.map(x => line(DEV_CAT_LONG[x.k], x.keys)).concat(types.length > 1 ? [line('All sessions', period.keys)] : []);
+  const table = rptMiniTable(['Session type', 'Sessions he’s logged in', 'Attempts', 'Goals', 'Goal %', 'On cage %', 'xG', 'G − xG', 'G − xG per 100', 'Shots set up (A)', 'Turnovers', 'Rest of the team: Goal %', 'Rest: G − xG per 100'], rows);
+  // Situations, each session type on its own (Reports' split rules: 8+ attempts for him and the team).
+  const sit = types.map(x => {
+    const S = rptSlice('practice', x.keys).S, sp = rptPlayerSplits(S.filter(s => s.shooterJersey === j), S.filter(s => s.shooterJersey !== j));
+    const good = sp.filter(s => s.score > 0.02).sort((a, b) => b.score - a.score).slice(0, 2), work = sp.filter(s => s.score < -0.02).sort((a, b) => a.score - b.score).slice(0, 2);
+    if (!good.length && !work.length) return '';
+    const li = s => `<li><b>${escapeHtml(s.label)}</b> (${escapeHtml(s.group.toLowerCase())}): ${s.g} of ${s.n} (${pct(s.his)}); rest of the team ${pct(s.tm)} on these.</li>`;
+    const ul = (title, color, l) => l.length ? `<p class="sans" style="font-size:12.5px; margin:4px 0 0; color:${color};"><b>${title}</b></p><ul class="sans" style="font-size:13px; line-height:1.6; margin:0; padding-left:18px;">${l.map(li).join('')}</ul>` : '';
+    return `<div class="rpt-block"><p class="sans" style="font-size:13px; margin:10px 0 2px;"><b>${escapeHtml(DEV_CAT_LONG[x.k])}</b></p>${ul('Working', 'var(--good)', good)}${ul('To work on', 'var(--gold-ink)', work)}</div>`;
+  }).join('');
+  box.innerHTML = `<p class="panel-title" style="font-size:16px;">${escapeHtml(jerseyLabel(j, season))} &mdash; ${escapeHtml(rptReviewName(period))}</p>
+    <p class="panel-sub">Sessions by type, as logged: ${types.map(x => `${x.keys.length} ${escapeHtml(DEV_CAT_LONG[x.k].toLowerCase())}`).join(', ')}. ${escapeHtml(DEV_CAT_NOTE)} Expected goals (xG) use the tracker&rsquo;s standard grade-based model, latest version (every ${escapeHtml(season)} shot through ${escapeHtml(latest || '—')}, including this period). The benchmark is the rest of the team in the same sessions. &ldquo;&mdash;&rdquo; = nothing to measure or not tracked; 0 = measured zero.</p>
+    ${table}<p class="n-note" style="font-size:12px;">* Turnover tracking wasn&rsquo;t confirmed Complete for every session here, so the count may be missing some. Turnovers show &ldquo;&mdash;&rdquo; when none were logged and tracking wasn&rsquo;t confirmed.</p>
+    ${sit ? `<p class="panel-title" style="font-size:15px; margin-top:14px;">Situations that stand out</p><p class="panel-sub">His goal % vs the rest of the team on the same kind of shot, within each session type (${RPT_SPLIT_MIN}+ attempts each). First the strongest, then the weakest.</p>${sit}` : ''}
+    <p class="print-hide" style="margin-top:12px;"><button type="button" class="btn secondary" data-dev-act="open-dev" data-j="${escapeHtml(j)}" data-part="${period.part}">Explore his attempts and what-ifs &rarr;</button></p>`;
+  const notes = devNotesFor(j, !PLAYER_MODE);
+  document.getElementById('rptPlayer').innerHTML = `<p class="panel-title">Coaching conclusions</p>${notes.length ? notes.map(([, n]) => `<div class="dev-note rpt-block"><span class="tier-chip ungraded">${escapeHtml((DEV_AREAS.find(a => a[0] === n.area) || DEV_AREAS[3])[1])}</span>${PLAYER_MODE ? '' : ` <span class="n-note">${n.shared ? 'shared' : 'staff only'}</span>`}<p class="sans" style="font-size:13.5px; margin:6px 0; white-space:pre-wrap;">${escapeHtml(n.text)}</p><p class="n-note" style="font-size:12px; font-style:normal;">${devEvidenceLine(n, season)}</p><p class="n-note">${escapeHtml(n.by)} &middot; ${escapeHtml(n.at.slice(0, 10))}${n.ed ? ' &middot; edited ' + escapeHtml(n.ed.slice(0, 10)) : ''}</p></div>`).join('') : `<p class="n-note">${PLAYER_MODE ? 'None shared yet.' : 'None yet. Write them on Player Development, from the attempts that support them.'}</p>`}
+    <details class="collapsible" open style="margin-top:14px;"><summary><span class="panel-title" style="font-size:15px;">The attempts behind these numbers</span> <span class="n-note" id="rptDevRecNote"></span></summary><div id="rptDevRec"></div></details>`;
+  rptReviewRecords(season, period, j);
+  if (!DEV.clips || DEV.clips.season !== season) devLoadClips(season).then(() => { if (rptMode === 'review' && rptPlayer === j && document.getElementById('rptDevRec')) rptReviewRecords(season, period, j); });
+  renderRptSheet(F, j);
+}
+function rptReviewRecords(season, period, j) {
+  const xm = xgModelFor(season), C = DEV.clips, keys = new Set(period.keys);
+  const l = devTeamShots(season).filter(s => s.shooterJersey === j && keys.has(sessKey(s))).sort((a, b) => (a.date || '').localeCompare(b.date || '') || a.id - b.id);
+  const note = document.getElementById('rptDevRecNote'); if (note) note.textContent = `${l.length} attempt${l.length === 1 ? '' : 's'}; ` + (!C || C.season !== season ? 'checking Film Check…' : C.err || `${l.filter(s => C.map.has(devKey(s))).length} with a confirmed clip.`);
+  renderSortableTable('rptDevRec', [
+    { key: 'date', label: 'Date', type: 'text', value: s => s.date || '' },
+    { key: 'type', label: 'Session', type: 'text', value: s => (DEV_CATS.find(c => c[0] === devCat(s)) || [0, '—'])[1] },
+    { key: 'rec', label: 'Record', type: 'text', value: s => devKey(s), format: (v, s) => `<span title="Session ${escapeHtml(sessKey(s))}">#${s.id}</span>` },
+    { key: 'where', label: 'Location', type: 'text', value: s => shotZone(s) || '—' },
+    { key: 'cd', label: 'C / D', type: 'text', value: s => s.offDodge === 1 ? 'Dodge' : s.offDodge === 0 ? 'Catch' : '—' },
+    { key: 'pr', label: 'Pressure', type: 'text', value: s => devDim('pressure').of(s) || '—' },
+    { key: 'gr', label: 'Grade', type: 'text', value: s => (devDim('grade').of(s) || '—').replace(/^\d-/, '') },
+    { key: 'res', label: 'Result', type: 'text', value: s => outcomeFor(s) },
+    { key: 'xg', label: 'xG', type: 'num', value: s => xgForShot(s, xm), format: v => num(v, 2) },
+    { key: 'clip', label: 'Film', type: 'text', sortable: false, value: () => '', format: (v, s) => devClipCell(s) },
+  ], l, { dense: true, defaultSort: { key: 'date', dir: 'asc' }, emptyMsg: 'No attempts in this period.' });
+}
+document.addEventListener('click', ev => {
+  const t = ev.target.closest('#rptScore [data-dev-act="open-dev"]'); if (!t) return;
+  DEV.j = t.dataset.j; DEV.range = ['Full', 'Fall', 'Spring'].includes(t.dataset.part) ? t.dataset.part : 'Full'; DEV.cat = 'All'; DEV.f = {}; DEV.only = null; DEV.excl = new Set(); DEV.wi = {};
+  goNav('develop');
+});
 
 // ---- Methods one-pagers (written from the code; live worked examples) ----
 let methodKey = 'xg';
