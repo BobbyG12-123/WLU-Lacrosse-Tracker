@@ -7992,6 +7992,11 @@ function buildEffData() {
 const GAME_SCORE_W = { g: 1.0, a: 0.75, xg: 0.5, xa: 0.35, gbLog: 0.3, ct: 0.5, to: -0.5, dom: 0.25 };
 const GAME_SCORE_TIP = 'Game Score = 1.0 x goals + 0.75 x assists + 0.5 x xG + 0.35 x xA + 0.3 x ground balls (from the ground-ball log) + 0.5 x caused turnovers + 0.25 x dominoes started - 0.5 x turnovers.';
 function gameScore(b) { return Object.keys(GAME_SCORE_W).reduce((sum, k) => sum + GAME_SCORE_W[k] * (b[k] || 0), 0); }
+// Game Score is only complete for a session whose ground balls were marked Complete; otherwise unlogged ground
+// balls are missing from it (not zero), so it is shown as provisional and isn't comparable with complete ones.
+const gsComplete = sid => trackStatus(sid, 'gb') === 'C';
+const GS_PROV_TIP = 'Provisional: ground balls weren’t marked Complete for this session, so ground balls that weren’t logged are missing from the score (not counted as zero). Not comparable with fully tracked sessions. Earlier versions added 0.3 for each ground ball tagged as starting a possession; a possession tag isn’t a ground-ball count, so that is no longer included.';
+const gsCell = (v, inc, tip) => v === null || v === undefined ? '—' : `${num(v, 2)}${inc ? `<span title="${escapeHtml(tip || GS_PROV_TIP)}" style="color:var(--gold-ink); cursor:help;">*</span>` : ''}`;
 function stdev(arr) {
   if (arr.length < 2) return null;
   const m = arr.reduce((a, b) => a + b, 0) / arr.length;
@@ -8205,12 +8210,13 @@ function renderEffRates(d) {
       jersey: p.jersey, name: nameFor(p.jersey, EFF_SEASON), apps, fromStints,
       gPer: g / apps, aPer: a / apps, pPer: (g + a) / apps, xgPer: xg / apps, xaPer: xa / apps, xpPer: (xg + xa) / apps,
       gs: boxes.reduce((acc, b) => acc + gameScore(b), 0) / apps,
+      gsInc: sessions.filter(s => !gsComplete(s.sid)).length,
       consistency: stdev(boxes.map(b => b.xg + b.xa)),
     });
   });
   const withStints = Object.values(d.bySession).filter(s => s.hasStints).length;
   const totalSess = Object.keys(d.bySession).length;
-  sub.textContent = `${EFF_SEASON} ${EFF_CTX_WORD()}, per ${EFF_CONTEXT === 'All' ? 'session (practice, scrimmage or game)' : EFF_CONTEXT.toLowerCase()} played. An appearance is any session a player was in a logged lineup; in sessions without lineups (${totalSess - withStints} of ${totalSess}) it falls back to sessions where he shot, passed or was tagged — which misses sessions he played quietly. Apps marked * include fallback sessions.`;
+  sub.textContent = `${EFF_SEASON} ${EFF_CTX_WORD()}, per ${EFF_CONTEXT === 'All' ? 'session (practice, scrimmage or game)' : EFF_CONTEXT.toLowerCase()} played. An appearance is any session a player was in a logged lineup; in sessions without lineups (${totalSess - withStints} of ${totalSess}) it falls back to sessions where he shot, passed or was tagged — which misses sessions he played quietly. Apps marked * include fallback sessions.` + (rows.some(r => r.gsInc) ? ' Game Score * = provisional: ground balls weren’t tracked completely in some of his sessions, so it isn’t comparable with fully tracked ones.' : '');
   const d2 = v => num(v, 2);
   const cols = [
     { key: 'jersey', label: '#', type: 'text', value: r => r.jersey },
@@ -8222,7 +8228,7 @@ function renderEffRates(d) {
     { key: 'xgPer', label: 'xG', type: 'num', value: r => r.xgPer, format: d2, group: 'Expected per session' },
     { key: 'xaPer', label: 'xA', type: 'num', value: r => r.xaPer, format: d2, group: 'Expected per session' },
     { key: 'xpPer', label: 'xP', type: 'num', value: r => r.xpPer, format: d2, group: 'Expected per session', title: 'Expected points per session (xG + xA). The best single read of a player’s output rate, since it doesn’t swing on finishing luck.' },
-    { key: 'gs', label: 'Game Score', type: 'num', value: r => r.gs, format: d2, title: GAME_SCORE_TIP + ' Averaged per session.' },
+    { key: 'gs', label: 'Game Score', type: 'num', value: r => r.gs, format: (v, r) => gsCell(v, r.gsInc > 0, `Provisional: ${r.gsInc} of ${r.apps} sessions didn’t have ground balls marked Complete. ` + GS_PROV_TIP.replace(/^Provisional: [^.]*\. /, '')), title: GAME_SCORE_TIP + ' Averaged per session. * = provisional (ground balls not tracked completely in some sessions).' },
     { key: 'consistency', label: 'Swing', type: 'num', value: r => r.consistency, format: d2, title: 'Consistency: how much his per-session xP moves around (standard deviation). Lower = steadier. Needs 2+ sessions.' },
   ];
   renderSortableTable('effRateWrap', cols, rows, { dense: true, defaultSort: { key: 'xpPer', dir: 'desc' }, emptyMsg: 'No ' + EFF_SEASON + ' sessions logged yet.' });
@@ -8238,7 +8244,8 @@ function renderEffBoxScore(d) {
   const sub = document.getElementById('effBoxSub');
   if (!sess) { sub.textContent = ''; document.getElementById('effBoxWrap').innerHTML = ''; return; }
   const rows = Object.values(sess.players).map(b => Object.assign({ name: nameFor(b.jersey, EFF_SEASON), p: b.g + b.a, gs: gameScore(b) }, b));
-  sub.textContent = `${rows.length} player(s) with a logged lineup or involvement.` + (sess.hasStints ? '' : ' No lineups logged for this session.');
+  const gsInc = !gsComplete(sess.sid);
+  sub.textContent = `${rows.length} player(s) with a logged lineup or involvement.` + (sess.hasStints ? '' : ' No lineups logged for this session.') + (gsInc ? ' Game Scores are provisional (*): ground balls weren’t marked Complete for this session.' : '');
   const d1 = v => num(v, 1);
   const cols = [
     { key: 'jersey', label: '#', type: 'text', value: r => r.jersey },
@@ -8252,7 +8259,7 @@ function renderEffBoxScore(d) {
     { key: 'ct', label: 'CT', type: 'num', value: r => r.ct },
     { key: 'to', label: 'TO', type: 'num', value: r => r.to },
     { key: 'dom', label: 'Dominoes', type: 'num', value: r => r.dom },
-    { key: 'gs', label: 'Game Score', type: 'num', value: r => r.gs, format: v => num(v, 2), title: GAME_SCORE_TIP },
+    { key: 'gs', label: 'Game Score', type: 'num', value: r => r.gs, format: v => gsCell(v, gsInc), title: GAME_SCORE_TIP + (gsInc ? ' * = provisional: ground balls weren’t marked Complete for this session.' : '') },
   ];
   renderSortableTable('effBoxWrap', cols, rows, { dense: true, defaultSort: { key: 'gs', dir: 'desc' } });
 }
@@ -10217,8 +10224,19 @@ function rptSplitSentence(x) { return `<b>${escapeHtml(x.label)}</b> (${escapeHt
 // app/xg_snapshots (one field per cutoff) when a coach confirms that session's tracking (the "everything is logged"
 // signal) and reused from then on, so later backfills never silently change an old report; the report says when a
 // rebuild today would differ. Until then the report uses a provisional as-of model built the same way.
-let XG_SNAPS = {};
-function xgSnapsFrom(data) { const o = {}; Object.keys(data || {}).filter(k => /^xg_/.test(k)).forEach(k => { try { o[k] = JSON.parse(data[k]); } catch (e) { /* skip */ } }); return o; }
+// Fields: xg_<season>_<cutoff> = the current saved model; xgh_<season>_<cutoff>_<version> = a version it replaced.
+let XG_SNAPS = {}, XG_SNAP_HIST = {};
+function xgSnapsFrom(data) {
+  const o = {}, h = {};
+  Object.keys(data || {}).forEach(k => {
+    let v; try { v = JSON.parse(data[k]); } catch (e) { return; }
+    if (/^xg_/.test(k)) o[k] = v;
+    else if (/^xgh_/.test(k)) { const base = 'xg_' + k.slice(4).replace(/_xg-.*$/, ''); (h[base] = h[base] || []).push(v); }
+  });
+  Object.values(h).forEach(l => l.sort((a, b) => (b.replacedAt || '').localeCompare(a.replacedAt || '')));
+  XG_SNAP_HIST = h;
+  return o;
+}
 function xgHash(str) { let h = 2166136261; for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 16777619); } return ('00000000' + (h >>> 0).toString(16)).slice(-8).slice(0, 6); }
 const xgFixedModel = rate => ({ rate, reliable: () => false, subjectTotals: {}, subjectN: 0, subjectGoals: 0 });
 function xgBuildAsOf(season, cutoff) {
@@ -10231,15 +10249,46 @@ function xgBuildAsOf(season, cutoff) {
   rec.ver = 'xg-' + cutoff + '-' + xgHash(JSON.stringify([rec.shotRate, rec.facedRate]));
   return rec;
 }
-// The saved model for a cutoff, or a provisional one. save = true (tracking just confirmed) saves it if none exists.
-function xgSnapshotFor(season, cutoff, save) {
-  const key = 'xg_' + season + '_' + cutoff, fresh = xgBuildAsOf(season, cutoff);
-  let snap = XG_SNAPS[key], saved = !!snap;
-  if (!snap) {
-    snap = Object.assign({ builtAt: new Date().toISOString() }, fresh);
-    if (save && DB && !PLAYER_MODE) { XG_SNAPS[key] = snap; settleWrite(DB.doc('app/xg_snapshots').set({ [key]: JSON.stringify(snap) }, { merge: true })).then(r => { if (r === 'error') { delete XG_SNAPS[key]; } }); saved = true; }
-  }
-  return { snap, saved, drift: saved && fresh.ver !== snap.ver ? fresh : null };
+// The saved model for a cutoff, or (until tracking is confirmed) a provisional one built the same way.
+function xgSnapshotFor(season, cutoff) {
+  const key = 'xg_' + season + '_' + cutoff, fresh = xgBuildAsOf(season, cutoff), snap = XG_SNAPS[key];
+  return snap ? { key, snap, saved: true, drift: fresh.ver !== snap.ver ? fresh : null } : { key, snap: Object.assign({ builtAt: new Date().toISOString() }, fresh), saved: false, drift: null };
+}
+// Confirming tracking and fixing the session's model are one transaction. It refuses (and shows the other coach's
+// version) when the confirmation changed since this coach loaded it; an existing saved model is never replaced here.
+async function confirmTrackingTx(sid, rec, baseAt) {
+  if (!DB) return { ok: false, why: 'Not connected.' };
+  const tRef = DB.doc('app/session_tracking'), xRef = DB.doc('app/xg_snapshots');
+  const sd = sid.slice(0, 10), season = /^\d{4}-\d{2}-\d{2}$/.test(sd) ? seasonForDate(sd) : null;
+  const snapKey = season && isAdvSeason(season) ? 'xg_' + season + '_' + sd : null;
+  const snap = snapKey ? Object.assign({ builtAt: rec.at }, xgBuildAsOf(season, sd)) : null;
+  try {
+    return await DB.runTransaction(async tx => {
+      const ts = await tx.get(tRef), xs = snapKey ? await tx.get(xRef) : null;
+      let cur = null; try { const raw = ts.exists ? ts.data()['trk_' + sid] : null; cur = raw ? JSON.parse(raw) : null; } catch (e) { cur = null; }
+      if ((cur ? cur.at : null) !== (baseAt || null)) return { ok: false, conflict: cur };
+      tx.set(tRef, { ['trk_' + sid]: JSON.stringify(rec) }, { merge: true });
+      const have = xs && xs.exists && xs.data()[snapKey];
+      if (snapKey && !have) tx.set(xRef, { [snapKey]: JSON.stringify(snap) }, { merge: true });
+      return { ok: true, snapKey, snap: snapKey && !have ? snap : null };
+    });
+  } catch (e) { console.error('tracking confirm failed', e); return { ok: false, why: 'Save failed — please try again.' }; }
+}
+// Rebuilding a saved model is an explicit action: the replaced version is kept (xgh_ field), and the rebuild is
+// refused if someone else changed the saved model since this coach saw it.
+async function rebuildSnapshotTx(key, seenVer, fresh) {
+  if (!DB || PLAYER_MODE) return { ok: false, why: 'Not available.' };
+  const xRef = DB.doc('app/xg_snapshots'), now = new Date().toISOString();
+  try {
+    return await DB.runTransaction(async tx => {
+      const xs = await tx.get(xRef);
+      let cur = null; try { cur = xs.exists && xs.data()[key] ? JSON.parse(xs.data()[key]) : null; } catch (e) { cur = null; }
+      if (!cur || cur.ver !== seenVer) return { ok: false, why: 'The saved model changed since this page loaded; reopen the report and try again.' };
+      const next = Object.assign({}, fresh, { builtAt: now, replaces: cur.ver });
+      tx.set(xRef, { ['xgh_' + key.slice(3) + '_' + cur.ver]: JSON.stringify(Object.assign({}, cur, { replacedAt: now, replacedBy: next.ver })), [key]: JSON.stringify(next) }, { merge: true });
+      return { ok: true, next };
+    });
+  } catch (e) { console.error('model rebuild failed', e); return { ok: false, why: 'Rebuild failed — please try again.' }; }
 }
 
 // ---------------- Session tracking completeness (Nov 2026) ----------------
@@ -10251,7 +10300,7 @@ const TRACK_CATS = [['shots', 'Shots'], ['poss', 'No-shot possessions'], ['fo', 
   ['slide', 'Slide timing'], ['brk', 'Off-ball breakdowns'], ['pick', 'Picks & screens'], ['lineup', 'Lineups']];
 const TRACK_LABEL = { C: 'Complete', P: 'Partial', N: 'Not tracked' };
 const TRACK_NEXT = { C: 'P', P: 'N', N: 'C' };
-let TRACKING = {}, TRACK_DRAFT = {};
+let TRACKING = {}, TRACK_DRAFT = {}, TRACK_BASE = {};
 function trackingFrom(data) {
   const o = {};
   Object.keys(data || {}).filter(k => /^trk_/.test(k)).forEach(k => { try { const r = JSON.parse(data[k]); if (r && r.cats) o[k.slice(4)] = r; } catch (e) { /* skip a bad record */ } });
@@ -10275,10 +10324,6 @@ function trackSetStatus(keys, cat) {
   if (st.every(x => x === null)) return 'U';
   return 'P';
 }
-async function persistTracking(sid, rec) {
-  if (!DB) return false;
-  return settleWrite(DB.doc('app/session_tracking').set({ ['trk_' + sid]: JSON.stringify(rec) }, { merge: true })).then(r => r !== 'error');
-}
 function trackLogSid() { const s = readSessionFields(); return s.error ? null : sessionIdFor(s); }
 function trackRptSid() { return rptMode === 'practice' && rptKey ? rptKey : null; }
 function renderTrackingControls() {
@@ -10295,6 +10340,7 @@ function renderTrackingControls() {
     box.querySelectorAll('[data-trk]').forEach(b => b.addEventListener('click', () => {
       const base = Object.assign({}, cats); const c = b.dataset.trk;
       base[c] = base[c] ? TRACK_NEXT[base[c]] : 'C';
+      if (!TRACK_DRAFT[sid]) TRACK_BASE[sid] = rec ? rec.at || null : null;
       TRACK_DRAFT[sid] = base; renderTrackingControls();
     }));
     box.querySelector('[data-trk-save]').addEventListener('click', async () => {
@@ -10302,10 +10348,21 @@ function renderTrackingControls() {
       const msg = box.querySelector('[data-trk-msg]');
       if (Object.keys(full).length !== TRACK_CATS.length) { msg.textContent = 'Set every category first (tap the ? ones).'; msg.style.color = 'var(--critical)'; return; }
       const rec2 = { cats: full, confirmed: true, at: new Date().toISOString() };
-      if (!(await persistTracking(sid, rec2))) { msg.textContent = 'Save failed — please try again.'; msg.style.color = 'var(--critical)'; return; }
-      TRACKING[sid] = rec2; delete TRACK_DRAFT[sid];
-      // Confirming tracking fixes this session's scorecard model (dated before the session's day).
-      const sd = sid.slice(0, 10); if (/^\d{4}-\d{2}-\d{2}$/.test(sd) && isAdvSeason(seasonForDate(sd))) xgSnapshotFor(seasonForDate(sd), sd, true);
+      const baseAt = TRACK_DRAFT[sid] ? (TRACK_BASE[sid] || null) : (rec ? rec.at || null : null);
+      msg.textContent = 'Saving…'; msg.style.color = '';
+      const r = await confirmTrackingTx(sid, rec2, baseAt);
+      if (!r.ok) {
+        if (r.conflict !== undefined) {
+          if (r.conflict) TRACKING[sid] = r.conflict; else delete TRACKING[sid];
+          delete TRACK_DRAFT[sid]; delete TRACK_BASE[sid]; renderTrackingControls();
+          const m2 = document.querySelector(`#${id} [data-trk-msg]`);
+          if (m2) { m2.textContent = `Not saved: another coach changed this session’s tracking${r.conflict ? ' (' + (r.conflict.at || '').slice(0, 16).replace('T', ' ') + ')' : ''} after you opened it. Their version is shown; change it and confirm again if needed.`; m2.style.color = 'var(--critical)'; }
+          return;
+        }
+        msg.textContent = r.why; msg.style.color = 'var(--critical)'; return;
+      }
+      TRACKING[sid] = rec2; delete TRACK_DRAFT[sid]; delete TRACK_BASE[sid];
+      if (r.snap) XG_SNAPS[r.snapKey] = r.snap;
       renderTrackingControls();
       if (document.getElementById('reportsView').classList.contains('active')) renderReports();
     });
@@ -10373,7 +10430,7 @@ function rptAgg(F, scope) {
 const rptModel = (list, p) => { let act = 0, exp = 0, v = 0; list.forEach(s => { const q = p(s); exp += q; v += q * (1 - q); if (s.goal === 1) act++; }); return { type: 'model', n: list.length, act, exp, v }; };
 const RPT_ROWS = [
   { id: 'fin', area: 'Shooting', label: 'Finishing: goals vs expected goals', cat: 'shots', unit: 'shots', better: 1, who: 'shoot',
-    val: A => rptModel(A.shots, s => xgForShot(s, A.F.d.model)), note: 'Expected goals use every shot, misses included (all-shot model).' },
+    val: A => rptModel(A.shots, s => xgForShot(s, A.F.d.model)), latest: (A, L) => rptModel(A.shots, s => xgForShot(s, L.shot)), note: 'Expected goals use every shot, misses included (all-shot model).' },
   { id: 'sh', area: 'Shooting', label: 'Shooting %', cat: 'shots', better: 1, who: 'shoot', val: A => ({ type: 'rate', num: A.shots.filter(s => s.goal === 1).length, den: A.shots.length, unit: 'shots' }) },
   { id: 'cage', area: 'Shooting', label: 'On cage %', cat: 'shots', better: 1, who: 'shoot', val: A => ({ type: 'rate', num: A.shots.filter(s => s.onKeeper === 1).length, den: A.shots.length, unit: 'shots' }) },
   { id: 'xgps', area: 'Shooting', label: 'Shot quality: expected goals per shot', cat: 'shots', better: 1, who: 'shoot',
@@ -10392,6 +10449,7 @@ const RPT_ROWS = [
     val: (A, sc, ctx) => sc.kind === 'team' ? (ctx.kind === 'comp' ? { type: 'rate', num: A.F.team.fo.comp.filter(f => f.won === 1).length, den: A.F.team.fo.comp.length, unit: 'faceoffs' } : null) : { type: 'rate', num: A.fo.w, den: A.fo.n, unit: 'two-sided reps' } },
   { id: 'onb', area: 'Defense', label: 'On-ball goals vs expected (supporting context)', cat: 'def', better: -1, who: 'def', unit: 'shots defended',
     val: A => { const r = { type: 'model', n: A.def.on, act: A.def.onG, exp: A.def.onXg, v: A.def.onVar }; return r; },
+    latest: (A, L, sc) => rptModel(A.F.d.shots.concat(A.F.d.oppShots).filter(s => rptWl(s.defender) && (sc.kind === 'team' || A.js.includes(s.defender))), s => xgForShot(s, L.shot)),
     note: 'Shared responsibility: a goal on his man can come from a slide, a pick or an off-ball breakdown. Read it next to the breakdown tags, not as a defender rating.' },
   { id: 'beat', area: 'Defense', label: 'Beaten on-ball', cat: 'def', better: -1, who: 'def', val: A => ({ type: 'rate', num: A.def.beat, den: A.def.bl, unit: 'on-ball reps with Beaten logged' }) },
   { id: 'brk', area: 'Defense', label: 'Off-ball breakdowns + blown pick coverage', cat: 'brk', better: -1, who: 'def', compOff: true, zeroIsGap: true,
@@ -10402,7 +10460,7 @@ const RPT_ROWS = [
     val: (A, sc, ctx) => sc.kind === 'team' ? { type: 'rate', num: A.def.ct, den: A.F.team.defPoss, unit: 'defensive possessions' } : { type: 'count', c: A.def.ct, k: ctx.k, unit: 'sessions' } },
   { id: 'sv', area: 'Goaltending', label: 'Save %', cat: 'shots', better: 1, who: 'gk', val: A => ({ type: 'rate', num: A.faced.filter(s => s.goal !== 1).length, den: A.faced.length, unit: 'shots on cage faced' }) },
   { id: 'sax', area: 'Goaltending', label: 'Saves above expected', cat: 'shots', better: -1, who: 'gk', unit: 'shots on cage faced', flipSign: true,
-    val: A => rptModel(A.faced, s => xgForShot(s, A.F.fm)), note: 'Expected goals allowed use probabilities built from shots on cage only (faced model). Saves above expected = expected goals allowed − goals allowed.' },
+    val: A => rptModel(A.faced, s => xgForShot(s, A.F.fm)), latest: (A, L) => rptModel(A.faced, s => xgForShot(s, L.faced)), note: 'Expected goals allowed use probabilities built from shots on cage only (faced model). Saves above expected = expected goals allowed − goals allowed.' },
 ];
 // Which rows a scope shows. Positions follow the Depth Chart; anyone who shot gets the shooting rows.
 function rptRowApplies(row, sc, A) {
@@ -10559,8 +10617,13 @@ function rptScorecard(period, season, scope) {
     const read = gap ? '<span class="n-note">—</span>' : rptRead(row, r, nums, b, bn);
     let sec = '';
     if (secA) { const sr = row.val(secA, secScope, ctx), sn = rptRowNums(sr); sec = `<td>${sr && sn && sn.n ? rptFmtRow(row, sr, sn) : '—'}</td>`; }
+    let modelNote = '';
+    if (r.type === 'model' && row.latest && RPT_LATEST && nums && nums.n && st !== 'N') {
+      const ln = rptRowNums(row.latest(A, RPT_LATEST, scope));
+      if (ln && ln.total !== null && Math.abs(ln.total - nums.total) >= 0.05) modelNote = `<br><span class="n-note" style="color:var(--gold-ink);">Benchmark change, not performance: today&rsquo;s model, which includes this session, would read ${rptSgn(row.flipSign ? -ln.total : ln.total)}. The gap comes from the expected-goals model, not from what the players did.</span>`;
+    }
     const extra = (r.extra ? `<br><span class="n-note">${escapeHtml(r.extra)}</span>` : '') + (row.note ? `<br><span class="n-note">${escapeHtml(row.note)}</span>` : '');
-    return { area: row.area, html: `<td>${escapeHtml(row.label)}${extra}</td><td>${cur}${tag}</td><td>${benchCell}</td><td>${diff}</td><td>${read}</td>${sec}` };
+    return { area: row.area, html: `<td>${escapeHtml(row.label)}${extra}</td><td>${cur}${tag}${modelNote}</td><td>${benchCell}</td><td>${diff}</td><td>${read}</td>${sec}` };
   }).filter(Boolean);
   const secHead = secA ? `<th>${secScope.kind === 'team' ? 'Team' : escapeHtml(RPT_GROUPS.find(x => x.value === secScope.g).label + ' group')} this ${rptMode === 'practice' ? 'session' : 'week'}</th>` : '';
   const body = trs.map(t => { const head = t.area !== lastArea ? `<tr><td colspan="${secA ? 6 : 5}" style="background:var(--card-2); font-weight:700; font-size:12px; letter-spacing:.04em; text-transform:uppercase;">${escapeHtml(t.area)}</td></tr>` : ''; lastArea = t.area; return head + `<tr>${t.html}</tr>`; }).join('');
@@ -10568,6 +10631,21 @@ function rptScorecard(period, season, scope) {
   return `<p class="panel-title" style="font-size:16px;">${escapeHtml(title)} &mdash; ${escapeHtml(rptLabel(rptMode, period))}</p>
     <p class="panel-sub">Session type: ${escapeHtml(kind === 'mixed' ? 'mixed (practices and games/scrimmages)' : RPT_KIND_WORD[kind])}${rptMode === 'week' ? ` &mdash; ${curKeys.length} session${curKeys.length === 1 ? '' : 's'} this week${allWeek > curKeys.length ? ` (${allWeek - curKeys.length} game/scrimmage session${allWeek - curKeys.length === 1 ? '' : 's'} left out; see them one at a time in Practice mode)` : ''}` : ''}. Benchmarks come only from earlier sessions of the same type. &ldquo;Within chance&rdquo; means the gap is smaller than 1.5 standard errors at this sample size; rows under ${RPT_MIN_N} are marked small sample.</p>
     <div class="table-wrap" style="max-height:none;"><table class="shotlog dense rpt-score"><thead><tr><th>Stat</th><th>This ${rptMode === 'practice' ? 'session' : 'week'}</th><th>Benchmark</th><th>Difference</th><th>Read</th>${secHead}</tr></thead><tbody>${body}</tbody></table></div>`;
+}
+let RPT_LATEST = null, RPT_X = null;
+// "Rebuild with today's data": two steps, staff only, keeps the replaced version.
+function rptWireRebuild(X) {
+  const b = document.querySelector('#rptModel [data-xg-rebuild]'); if (!b) return;
+  const box = document.querySelector('#rptModel [data-xg-confirm]');
+  b.addEventListener('click', () => { box.style.display = ''; b.style.display = 'none'; });
+  box.querySelector('[data-xg-cancel]').addEventListener('click', () => { box.style.display = 'none'; b.style.display = ''; });
+  box.querySelector('[data-xg-yes]').addEventListener('click', async () => {
+    const m = box.querySelector('[data-xg-msg]'); m.textContent = 'Saving…';
+    const r = await rebuildSnapshotTx(X.key, X.snap.ver, X.drift);
+    if (!r.ok) { m.textContent = r.why; m.style.color = 'var(--critical)'; return; }
+    (XG_SNAP_HIST[X.key] = XG_SNAP_HIST[X.key] || []).unshift(Object.assign({}, X.snap, { replacedAt: r.next.builtAt, replacedBy: r.next.ver }));
+    XG_SNAPS[X.key] = r.next; renderReports();
+  });
 }
 // How the expected numbers are built: the saved model's version, cutoff, samples and rates by grade.
 function rptModelDetails(period, season, X) {
@@ -10584,12 +10662,15 @@ function rptModelDetails(period, season, X) {
   let drift = '';
   if (X.drift) {
     const curKeys = rptCurKeys(period), shots = advShots(season).filter(s => curKeys.includes(sessKey(s)));
-    drift = `<p style="margin:10px 0 4px; color:var(--gold-ink);"><b>Changed since saved:</b> shots dated before ${escapeHtml(snap.cutoff)} have been added or edited since this model was saved (backfilled film, corrections). This report keeps the saved model; a rebuild today (${escapeHtml(X.drift.ver)}) would give <b>${num(xgSum(shots, xgFixedModel(X.drift.shotRate)), 2)}</b> expected goals for this period instead of <b>${num(xgSum(shots, xgFixedModel(snap.shotRate)), 2)}</b>.</p>`;
+    drift = `<p style="margin:10px 0 4px; color:var(--gold-ink);"><b>Changed since saved:</b> shots dated before ${escapeHtml(snap.cutoff)} have been added or edited since this model was saved (backfilled film, corrections). This report keeps the saved model; a rebuild today (${escapeHtml(X.drift.ver)}) would give <b>${num(xgSum(shots, xgFixedModel(X.drift.shotRate)), 2)}</b> expected goals for this period instead of <b>${num(xgSum(shots, xgFixedModel(snap.shotRate)), 2)}</b>.</p>`
+      + (PLAYER_MODE ? '' : `<p style="margin:4px 0;"><button type="button" class="btn secondary" data-xg-rebuild>Rebuild with today&rsquo;s data&hellip;</button></p>
+      <div data-xg-confirm style="display:none; margin:4px 0; padding:8px 10px; border:1px solid var(--line); border-radius:8px;">This replaces model ${escapeHtml(snap.ver)} with ${escapeHtml(X.drift.ver)} for this report and every report on ${escapeHtml(snap.cutoff)}. The old version is kept and listed below. <button type="button" class="btn" data-xg-yes>Yes, rebuild</button> <button type="button" class="btn secondary" data-xg-cancel>Cancel</button> <span class="n-note" data-xg-msg></span></div>`);
   }
   return `<div class="sans" style="font-size:12.5px; line-height:1.6;">
     <p style="margin:6px 0;"><b>Model ${escapeHtml(snap.ver)}</b> &mdash; ${X.saved ? `fixed for this report, saved ${escapeHtml((snap.builtAt || '').slice(0, 10))}` : '<b>provisional</b>: it is saved (fixed) when a coach confirms this session&rsquo;s tracking, so film backfilled for earlier days before then still counts'}. Built from 2026 plus ${season} shots dated <b>before ${escapeHtml(snap.cutoff)}</b> (${snap.shotN} shots; ${snap.facedN} shots on cage for the goalie model). This period&rsquo;s own shots are never in it, and later backfills don&rsquo;t change it. Player projections and the other pages use the latest model.</p>
     <p style="margin:6px 0;"><b>Finishing and on-ball defense</b> use the all-shot model: the chance a shot of that grade goes in, counting every shot (misses, saves and blocks too). <b>Goaltending</b> uses the faced model: the chance a shot <i>on cage</i> of that grade goes in. Each rate blends 2026 with this season: (${season} goals + ${XG_PRIOR_WEIGHT} &times; 2026 rate) &divide; (${season} shots + ${XG_PRIOR_WEIGHT}), so 2026 counts like ${XG_PRIOR_WEIGHT} shots and this season takes over as it grows. Scrimmages use the practice rates.</p>
     ${drift}
+    ${(XG_SNAP_HIST[X.key] || []).length ? `<p style="margin:6px 0;"><b>Earlier versions:</b> ${XG_SNAP_HIST[X.key].map(h => `${escapeHtml(h.ver)} (saved ${escapeHtml((h.builtAt || '').slice(0, 10))}, replaced ${escapeHtml((h.replacedAt || '').slice(0, 10))})`).join('; ')}.</p>` : ''}
     <p style="margin:10px 0 4px;"><b>All-shot model</b></p>${tbl(cal, snap.shotCounts || {}, snap.shotRate)}
     <p style="margin:10px 0 4px;"><b>Faced model (shots on cage)</b></p>${tbl(cal.filter(x => x.onKeeper === 1), snap.facedCounts || {}, snap.facedRate)}
   </div>`;
@@ -10622,13 +10703,16 @@ function renderReports() {
   // The scorecard and standouts are judged with the saved model for this period's start date.
   const cutoff = rptMode === 'practice' ? period.date : (rptPeriods('practice', true).filter(p => rptCurKeys(period).includes(p.key)).map(p => p.date).sort()[0] || period.key);
   const X = xgSnapshotFor(season, cutoff);
+  RPT_X = X;
+  RPT_LATEST = { shot: xgModelFor(season), faced: facedXgModelFor(season) };
   XG_FIXED = { season, shot: xgFixedModel(X.snap.shotRate), faced: xgFixedModel(X.snap.facedRate) };
   let standHtml = '';
   try {
     box.innerHTML = rptScorecard(period, season, scope) + `<p class="n-note" style="font-size:12px; margin-top:6px;">Expected values: model ${escapeHtml(X.snap.ver)} (${X.saved ? 'fixed' : 'provisional until tracking is confirmed'}; shots before ${escapeHtml(cutoff)})${X.drift ? ' &mdash; changed since saved, see below' : ''}.</p>`;
     standHtml = rptStandoutsHtml(rptSlice(rptMode, [period.key]), season);
-  } finally { XG_FIXED = null; }
+  } finally { XG_FIXED = null; RPT_LATEST = null; }
   document.getElementById('rptModel').innerHTML = rptModelDetails(period, season, X);
+  rptWireRebuild(X);
   // Details (collapsed): the full tables from before.
   renderRptFullTeam(F, rptLabel(rptMode, period));
   renderRptGroup(F);
