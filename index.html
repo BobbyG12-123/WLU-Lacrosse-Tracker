@@ -5107,6 +5107,27 @@ function refreshFormRosterOptions() {
 
 // Opponent box for games and scrimmages (blank in a scrimmage = intra-squad); the Ball toggle once
 // there's an opponent; game clock and score in games only.
+// Any entry of any kind (shot, possession, lineup, faceoff, ground ball) logged in a session.
+function scrimSessionHasEntries(sid) {
+  const live = LIVE_SESSIONS[sid];
+  if (live && (live.shots.length + live.poss.length + live.stints.length) > 0) return true;
+  return FACEOFFS.some(f => sessionIdFor(f) === sid) || GROUNDBALLS.some(g => sessionIdFor(g) === sid);
+}
+// The type a new entry inherits when the coach picks a date and Scrimmage: the recorded type of that date's
+// blank-opponent scrimmage, else the opponent scrimmage(s) already logged that day. A blank-opponent scrimmage with
+// entries and no recorded type (logged before types existed) inherits nothing: it stays "Type not recorded".
+function scrimInherit(date) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date || '')) return null;
+  const rec = scrimRecFor(date);
+  if (rec) return { type: rec.type, opponent: null };
+  if (scrimSessionHasEntries(date + '_scrimmage')) return null;
+  const opps = new Set();
+  Object.values(LIVE_SESSIONS).forEach(s => { if (s.date === date && s.context === 'Scrimmage' && s.opponent && (s.shots.length || s.poss.length)) opps.add(s.opponent); });
+  FACEOFFS.concat(GROUNDBALLS).forEach(e => { if (e.date === date && e.context === 'Scrimmage' && e.opponent) opps.add(e.opponent); });
+  if (!opps.size) return null;
+  return { type: 'Opponent scrimmage', opponent: opps.size === 1 ? [...opps][0] : null };
+}
+let SCRIM_INHERIT_KEY = null;   // the date + session it last inherited for, so a coach's own choice is never overridden
 // The recorded type of the blank-opponent scrimmage on a date (app/session_tracking), if any.
 function scrimRecFor(date) { return /^\d{4}-\d{2}-\d{2}$/.test(date || '') ? (SESSION_TYPE_REC[date + '_scrimmage'] || null) : null; }
 function currentScrimType() { const v = document.getElementById('f_scrimtype').dataset.value; return v === 'Intra-squad' || v === 'Opponent scrimmage' ? v : null; }
@@ -5114,6 +5135,12 @@ function currentScrimType() { const v = document.getElementById('f_scrimtype').d
 // blank, so new entries land in that same session (its id has no opponent in it).
 function scrimLocked() { const rec = scrimRecFor(document.getElementById('f_date').value); return isScrimmageSession() && currentScrimType() === 'Opponent scrimmage' && rec && rec.type === 'Opponent scrimmage' ? rec : null; }
 function updateSessionBarUi() {
+  const ctx0 = currentContext(), date0 = document.getElementById('f_date').value, key = date0 + '|' + ctx0;
+  if (ctx0 === 'Scrimmage' && key !== SCRIM_INHERIT_KEY) {
+    SCRIM_INHERIT_KEY = key;
+    const inh = currentScrimType() ? null : scrimInherit(date0);
+    if (inh) { setPillGroupValue('f_scrimtype', inh.type); if (inh.opponent && !document.getElementById('f_opponent').value.trim()) document.getElementById('f_opponent').value = inh.opponent; }
+  } else if (ctx0 !== 'Scrimmage') SCRIM_INHERIT_KEY = null;
   const ctx = currentContext(), game = ctx === 'Game', scrim = ctx === 'Scrimmage', ty = scrim ? currentScrimType() : null;
   const rec = scrim ? scrimRecFor(document.getElementById('f_date').value) : null, lock = scrimLocked(), opIn = document.getElementById('f_opponent');
   document.getElementById('scrimTypeWrap').style.display = scrim ? '' : 'none';
@@ -5305,6 +5332,7 @@ document.getElementById('submitFaceoffBtn').addEventListener('click', async () =
   FACEOFFS.push(faceoff);
   const okSave = await persistFaceoff(faceoff);
   if (!okSave) { FACEOFFS.pop(); showFoMsg('Save failed — please try again.', false); return; }
+  if (sess.recordIntra) recordIntraSquad(sess.recordIntra);
   const season = currentFoSeason(), winner = foResult === 'A' ? a.value : b.value;
   showFoMsg(`Saved faceoff #${faceoff.id}: ${escapeHtml(jerseyLabel(a.value, season))} vs ${b.value ? escapeHtml(jerseyLabel(b.value, season)) : 'their man'} — ${winner ? escapeHtml(jerseyLabel(winner, season)) + ' won' : 'lost'}.`, true);
   foResult = null;
@@ -6199,7 +6227,7 @@ function pointSessionBarAt(entry) {
   setPillGroupValue('f_context', SESSION_CONTEXTS.includes(entry.context) ? entry.context : 'Practice');
   if (entry.context === 'Game') { setPillGroupValue('f_quarter', entry.quarter || '1'); document.getElementById('f_clock').value = entry.clock || ''; }
   document.getElementById('f_opponent').value = (entry.context === 'Game' || entry.context === 'Scrimmage') ? (entry.opponent || '') : '';
-  if (entry.context === 'Scrimmage') { const t = sessionTypeOf(entry); setPillGroupValue('f_scrimtype', t === 'Intra-squad' || t === 'Opponent scrimmage' ? t : null); }
+  if (entry.context === 'Scrimmage') { const t = sessionTypeOf(entry); setPillGroupValue('f_scrimtype', t === 'Intra-squad' || t === 'Opponent scrimmage' ? t : null); SCRIM_INHERIT_KEY = (entry.date || '') + '|Scrimmage'; }
   updateSessionBarUi();
   lineupLoadedFor = null;
   onSessionChanged();
@@ -6340,7 +6368,7 @@ function readSessionFields() {
   if (context === 'Game' && !opponent) return { error: 'Type the opponent for this game.' };
   if (context === 'Scrimmage') {
     const ty = currentScrimType(), rec = scrimRecFor(date), sid = date + '_scrimmage', live = LIVE_SESSIONS[sid];
-    const hasEntries = !!live && (live.shots.length + live.poss.length + live.stints.length) > 0;
+    const hasEntries = scrimSessionHasEntries(sid);
     const editingHere = (editingShotId !== null || editingPossId !== null) && !opponent;
     if (!ty) {
       // Editing an entry of a scrimmage whose type was never recorded keeps it as it is (still "Type not recorded").
@@ -19656,7 +19684,7 @@ function briefCandidates(season, sl) {
   RPT_TREND.forEach(([k, label]) => {
     const z = briefZ(mr[k], mb[k]); if (z === null) return;
     const good = (z > 0) !== !!RPT_LOWER_BETTER[k];
-    add(z, `${label} is ${z > 0 ? 'up' : 'down'} the last 14 days.`, `${rptFmt(k, mr[k].v)}${mr[k].kind === 'rate' ? ` (${mr[k].num} of ${mr[k].den})` : ` (${mr[k].n} shots)`} vs ${rptFmt(k, mb[k].v)}${mb[k].kind === 'rate' ? ` (${mb[k].num} of ${mb[k].den})` : ` (${mb[k].n} shots)`} earlier this season, in the ${good ? 'good' : 'wrong'} direction.`, ...(trendPage[k] || ['eff']));
+    add(z, `${label} was ${z > 0 ? 'higher' : 'lower'} in the last ${BRIEF_DAYS} days than earlier this season.`, `${rptFmt(k, mr[k].v)}${mr[k].kind === 'rate' ? ` (${mr[k].num} of ${mr[k].den})` : ` (${mr[k].n} shots)`} vs ${rptFmt(k, mb[k].v)}${mb[k].kind === 'rate' ? ` (${mb[k].num} of ${mb[k].den})` : ` (${mb[k].n} shots)`} earlier this season, in the ${good ? 'good' : 'wrong'} direction.`, ...(trendPage[k] || ['eff']));
   });
   // Player hot / cold: his Sh% the last 14 days vs his own earlier shots.
   const byP = (list) => { const m = {}; list.forEach(s => { if (s.shooterJersey) (m[s.shooterJersey] = m[s.shooterJersey] || []).push(s); }); return m; };
@@ -19665,7 +19693,7 @@ function briefCandidates(season, sl) {
     const r = rP[j], b = bP[j] || []; if (r.length < BRIEF_HOT_MIN || b.length < BRIEF_HOT_MIN) return;
     const rg = r.filter(s => s.goal === 1).length, bg = b.filter(s => s.goal === 1).length;
     const z = briefZ(briefRate(rg, r.length), briefRate(bg, b.length));
-    add(z, `${who(j)} is ${z > 0 ? 'hot' : 'cold'}.`, `${rg} of ${r.length} (${pct(rg / r.length)}) the last 14 days vs ${pct(bg / b.length)} on his ${b.length} earlier shots.`, 'profile', null, j);
+    add(z, `${who(j)}'s shooting % was ${z > 0 ? 'higher' : 'lower'} in the last ${BRIEF_DAYS} days than on his earlier shots this season.`, `${rg} of ${r.length} (${pct(rg / r.length)}) the last 14 days vs ${pct(bg / b.length)} on his ${b.length} earlier shots.`, 'profile', null, j);
   });
   // Goalie gaps: save % the last 14 days vs his own earlier shots faced.
   const byG = (d) => { const m = {}; rptFaced(d).forEach(s => { (m[s.goalieJersey] = m[s.goalieJersey] || []).push(s); }); return m; };
@@ -19674,7 +19702,7 @@ function briefCandidates(season, sl) {
     const r = rG[j], b = bG[j] || []; if (r.length < RPT_MIN_N || b.length < RPT_MIN_N) return;
     const rs = r.filter(s => s.goal !== 1).length, bs = b.filter(s => s.goal !== 1).length;
     const z = briefZ(briefRate(rs, r.length), briefRate(bs, b.length));
-    add(z, `${who(j)} is ${z > 0 ? 'separating in goal' : 'struggling in goal'}.`, `Saving ${pct(rs / r.length)} (${rs} of ${r.length}) the last 14 days vs ${pct(bs / b.length)} (${bs} of ${b.length}) earlier.`, 'gscore');
+    add(z, `${who(j)}'s save % was ${z > 0 ? 'higher' : 'lower'} in the last ${BRIEF_DAYS} days than on his earlier shots faced this season.`, `Saving ${pct(rs / r.length)} (${rs} of ${r.length}) the last 14 days vs ${pct(bs / b.length)} (${bs} of ${b.length}) earlier.`, 'gscore');
   });
   // Tactical spots: goals per possession for a coverage, man situation or
   // trigger vs the matching baseline, this season.
@@ -19683,14 +19711,14 @@ function briefCandidates(season, sl) {
   const grp = (list, keyOf) => { const m = {}; list.forEach(p => { const k = keyOf(p); if (k) (m[k] = m[k] || []).push(p); }); return m; };
   const wlu = poss.filter(p => p.team === 'WLU'), opp = poss.filter(p => p.team === 'OPP');
   const withPick = wlu.filter(p => p.pick && p.pick.coverage), base = rateOf(withPick);
-  Object.entries(grp(withPick, p => p.pick.coverage)).forEach(([cov, l]) => { const r = rateOf(l), z = briefZ(r, base); add(z, `Our picks ${z > 0 ? 'beat' : 'stall against'} ${escapeHtml(cov.toLowerCase())} coverage.`, `${r.num} goals on ${r.den} pick possessions (${pct(r.v)}) vs ${pct(base.v)} on all ${base.den} of our pick possessions.`, 'picks'); });
+  Object.entries(grp(withPick, p => p.pick.coverage)).forEach(([cov, l]) => { const r = rateOf(l), z = briefZ(r, base); add(z, `Our pick possessions against ${escapeHtml(cov.toLowerCase())} coverage had a ${z > 0 ? 'higher' : 'lower'} scoring rate than all our pick possessions.`, `${r.num} goals on ${r.den} pick possessions (${pct(r.v)}) vs ${pct(base.v)} on all ${base.den} of our pick possessions.`, 'picks'); });
   const even = rateOf(wlu.filter(p => p.man === 'Even'));
   const mu = rateOf(wlu.filter(p => p.man === 'Man-Up')), zmu = briefZ(mu, even);
-  add(zmu, `Man-up offense is ${zmu > 0 ? 'cashing in' : 'not converting'}.`, `${mu.num} goals on ${mu.den} man-up possessions (${pct(mu.v)}) vs ${pct(even.v)} on ${even.den} even-strength possessions.`, 'eff', 'Man-Up / Man-Down');
+  add(zmu, `Our man-up possessions had a ${zmu > 0 ? 'higher' : 'lower'} scoring rate than our even-strength possessions.`, `${mu.num} goals on ${mu.den} man-up possessions (${pct(mu.v)}) vs ${pct(even.v)} on ${even.den} even-strength possessions.`, 'eff', 'Man-Up / Man-Down');
   const oEven = rateOf(opp.filter(p => p.man === 'Even')), md = rateOf(opp.filter(p => p.man === 'Man-Up')), zmd = briefZ(md, oEven);
-  add(zmd === null ? null : -zmd, `Man-down defense is ${zmd < 0 ? 'holding up' : 'leaking'}.`, `Opponents scored on ${md.num} of ${md.den} man-up chances (${pct(md.v)}) vs ${pct(oEven.v)} on ${oEven.den} even-strength chances.`, 'eff', 'Man-Up / Man-Down');
+  add(zmd === null ? null : -zmd, `Opponents' man-up possessions had a ${zmd > 0 ? 'higher' : 'lower'} scoring rate than their even-strength possessions.`, `Opponents scored on ${md.num} of ${md.den} man-up chances (${pct(md.v)}) vs ${pct(oEven.v)} on ${oEven.den} even-strength chances.`, 'eff', 'Man-Up / Man-Down');
   const allW = rateOf(wlu);
-  Object.entries(grp(wlu, p => normalizeTrigger((p.shots[0] && p.shots[0].trigger) || p.e.trigger || null))).forEach(([t, l]) => { const r = rateOf(l), z = briefZ(r, allW); add(z, `The ${escapeHtml(t)} trigger is ${z > 0 ? 'working' : 'not working'}.`, `${r.num} goals on ${r.den} possessions (${pct(r.v)}) vs ${pct(allW.v)} on all ${allW.den} possessions.`, 'triggers'); });
+  Object.entries(grp(wlu, p => normalizeTrigger((p.shots[0] && p.shots[0].trigger) || p.e.trigger || null))).forEach(([t, l]) => { const r = rateOf(l), z = briefZ(r, allW); add(z, `${escapeHtml(t)}-tagged possessions had a ${z > 0 ? 'higher' : 'lower'} scoring rate than all our possessions.`, `${r.num} goals on ${r.den} possessions (${pct(r.v)}) vs ${pct(allW.v)} on all ${allW.den} possessions. A tag can describe the finishing action rather than the play that was called, and an observed rate doesn't show the play caused it.`, 'triggers'); });
   const res = out.sort((a, b) => Math.abs(b.z) - Math.abs(a.z)); res.screened = screened;
   return res;
 }

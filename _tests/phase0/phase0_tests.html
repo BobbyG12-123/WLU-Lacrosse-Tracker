@@ -144,6 +144,7 @@ async function run() {
   // ===== Head Coach Brief =====
   const bN = n(`T.briefTxt('Practice')`);
   ok('Brief: "Flagged for review", screening rule and number screened shown; no "beyond chance" / "normal noise"', /Flagged for review/.test(bN) && /out of \d+ screened/.test(bN) && /Screening rule: the last 14 days differ from the rest of the season by at least 1\.5 standard errors, with at least 8 attempts/.test(bN) && /will flag some gaps by chance/.test(bN) && !/beyond chance/.test(bN) && !/normal noise/.test(bN) && !/Three things to know/.test(bN), bN.slice(0, 600));
+  ok('Brief flag titles describe the observed result against a named benchmark (no "working", "hot", "leaking"…)', !/is working|not working|is hot\b|is cold\b|cashing in|not converting|holding up|leaking|separating in goal|struggling in goal|stall against/.test(bN) && (!/-tagged possessions/.test(bN) || /A tag can describe the finishing action/.test(bN)), bN.slice(bN.indexOf('Flagged for review'), bN.indexOf('Flagged for review') + 700));
   ok('Brief scope named; Goalie Score marked "(all session types)" beside its result', /practices only · last 14 days/.test(bN) && /Goalie Score \(all session types\)/.test(bN));
   ok('Brief Hot & Cold follows Sessions', same(JSON.parse(n(`JSON.stringify(T.hotCold('Practice'))`)), JSON.parse(n(`JSON.stringify(T.hotColdExpect('Practice'))`))));
   const lsP = JSON.parse(n(`JSON.stringify(T.briefLast('Practice'))`));
@@ -244,9 +245,29 @@ async function run() {
   const ed = JSON.parse(await N.eval(`T.editShot('${UNTYPED_SID}', 'filmTime', 42.5).then(JSON.stringify)`));
   ok('edit of a 9/25 shot saves; same entries, session fields unchanged, type record untouched; still Opponent scrimmage vs Alumni', (ed.result === 'ok' || ed.result === 'pending') && ed.sameKeys && same(ed.meta, ['2026-09-25', 'Scrimmage', null]) && ed.recSame && ed.recPresent && ed.edited === 42.5 && ed.type === 'Opponent scrimmage' && ed.opp === 'Alumni', ed);
 
+  // ===== Every first-entry path classifies a new scrimmage the same way (added after the main comparisons: it adds entries) =====
+  const kinds = ['shot', 'poss', 'gb', 'faceoff'], E2 = (k, d, ty, op, fresh) => N.eval(`T.entry('${k}', '${d}', ${ty ? `'${ty}'` : 'null'}, '${op || ''}', ${!!fresh}).then(JSON.stringify)`).then(JSON.parse);
+  for (let i = 0; i < kinds.length; i++) {
+    const k = kinds[i], d = '2026-11-0' + (2 + i);
+    const a = await E2(k, d, null, ''), b = await E2(k, d, 'Opponent scrimmage', '');
+    ok(`${k}: a scrimmage entry needs the type, and Opponent scrimmage needs a name (nothing saved otherwise)`, !a.saved && !b.saved && a.n === 0 && b.n === 0 && !a.typeWrites.length && !b.typeWrites.length, { a, b });
+    const c = await E2(k, d, 'Intra-squad', '');
+    ok(`${k}: first entry of a new intra-squad scrimmage saves and records the type once`, c.saved && c.typeWrites.length === 1 && c.rec && JSON.parse(c.rec).type === 'Intra-squad' && c.n === 1 && same(c.types, ['Intra-squad']) && same(c.sids, [d + '_scrimmage']), c);
+    const e = await E2(k, d, null, '', true);
+    ok(`${k}: a later entry inherits Intra-squad without asking; the record isn't rewritten`, e.bar.type === 'Intra-squad' && e.saved && e.typeWrites.length === 0 && e.rec === c.rec && e.n === 2 && same(e.types, ['Intra-squad']), e);
+    if (k === 'shot' || k === 'poss') {
+      const f = JSON.parse(await N.eval(`T.editFirst('${k}', '${d}').then(JSON.stringify)`));
+      ok(`${k}: editing that entry saves (stored value checked) and keeps the classification and the record`, (f.r === 'ok' || f.r === 'pending') && f.recSame && f.type === 'Intra-squad' && f.stored === 11.5, f);
+    }
+  }
+  const DO = '2026-11-07', g1 = await E2('gb', DO, 'Opponent scrimmage', 'Synth U'), g2 = await E2('faceoff', DO, null, '', true);
+  ok('opponent scrimmage: first entry saves under the opponent (no type record needed); the next entry inherits the type and name', g1.saved && !g1.typeWrites.length && same(g1.types, ['Opponent scrimmage']) && same(g1.opps, ['Synth U']) && g2.bar.type === 'Opponent scrimmage' && g2.bar.opponent === 'Synth U' && g2.saved && same(g2.opps, ['Synth U']) && same(g2.types, ['Opponent scrimmage']), { g1, g2 });
+  const g3 = await E2('poss', '2026-09-25', null, '', true);
+  ok('9/25 after the correction: a new entry inherits Opponent scrimmage vs Alumni and lands in the same session', g3.bar.type === 'Opponent scrimmage' && g3.bar.locked && g3.saved && same(g3.sids, [UNTYPED_SID]) && same(g3.types, ['Opponent scrimmage']), g3);
+
   ok('no page errors', errs.length === 0, errs.slice(0, 5));
   ok('no network access attempted', N.__GUARD.blocked.length === 0 && O.__GUARD.blocked.length === 0, [N.__GUARD.blocked.slice(0, 3), O.__GUARD.blocked.slice(0, 3)]);
-  const allowed = x => (x.coll === 'app' && ['session_tracking', 'xg_snapshots'].includes(x.id)) || (x.coll === 'app' && /^op_/.test(x.id)) || (x.coll === 'sessions' && x.id === UNTYPED_SID);
+  const allowed = x => (x.coll === 'app' && ['session_tracking', 'xg_snapshots', 'faceoffs_live', 'groundballs_live'].includes(x.id)) || (x.coll === 'app' && /^op_/.test(x.id)) || (x.coll === 'sessions' && (x.id === UNTYPED_SID || /^2026-11-0\d_scrimmage/.test(x.id)));
   ok('in-memory writes are only the test’s own (saved records, type records, the correction, the edit)', N.__FAKE.__writes.every(allowed) && O.__FAKE.__writes.every(x => x.coll === 'app' && ['session_tracking', 'xg_snapshots'].includes(x.id)), N.__FAKE.__writes.filter(x => !allowed(x)).slice(0, 5));
   const result = { at: new Date().toISOString(), export: EXPORT, real: REAL, pass: T.pass, fail: T.fail, results: T.results, expected: T.expected, reports: T.reports, examples: T.examples };
   document.getElementById('out').textContent = JSON.stringify(result, null, 1);

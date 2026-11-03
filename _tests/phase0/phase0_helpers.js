@@ -110,5 +110,50 @@ window.T = {
     return JSON.stringify([Object.keys(a).sort().map(k => [k, a[k]]), Object.keys(b).filter(k => /^trk_/.test(k)).sort().map(k => [k, b[k]])]); },
   rptOne(mode, key) { goNav('reports'); navPick('rptModePills', mode === 'practice' ? 'Practice' : 'Week'); rptMode = mode; rptPlayer = ''; rptGroup = ''; rptKey = key; renderReports();
     return ['rptScore', 'rptTeam'].map(id => (document.getElementById(id) || {}).innerText || '').join('\n'); },
+  // ---- one entry through a real Log Shot form, in memory, as a test coach. kind: shot | poss | gb | faceoff
+  async entry(kind, date, ty, opp, fresh) {
+    const sleep = ms => new Promise(r => setTimeout(r, ms));
+    const hadApp = 'app' in DB, keepApp = DB.app; DB.app = { auth: () => ({ currentUser: { uid: 'TESTCOACH', email: 'test.coach@example.invalid' } }) };
+    try {
+      goNav('logshot');
+      document.getElementById('f_date').value = date;
+      if (fresh) { setPillGroupValue('f_context', 'Practice'); updateSessionBarUi(); setPillGroupValue('f_scrimtype', null); document.getElementById('f_opponent').value = ''; }
+      setPillGroupValue('f_context', 'Scrimmage');
+      if (!fresh) { setPillGroupValue('f_scrimtype', ty || null); document.getElementById('f_opponent').value = opp || ''; }
+      updateSessionBarUi(); onSessionChanged();
+      const bar = { type: currentScrimType(), opponent: document.getElementById('f_opponent').value, locked: document.getElementById('f_opponent').disabled };
+      const w0 = __FAKE.__writes.length, j = rosterPlayers('2027').map(r => r.jersey);
+      if (kind === 'shot') {
+        setSegValue('entryTypeSeg', 'shot'); showEntryType('shot'); setSegValue('lb_possession', 'WLU');
+        resolvedShooterJersey = j[0]; setPillGroupValue('f_quality', '2-Silver'); setPillGroupValue('f_contest', 'Open'); setPillGroupValue('f_outcome', 'Miss');
+        setPillGroupValue('f_catchdodge', CATCH_DODGE_OPTIONS[0]); pendingField = { distanceYds: 10, lateralYds: 2, fieldX: 50, fieldY: 30 };
+        await saveShotFromForm({ at: 'check' });
+      } else if (kind === 'poss') {
+        setSegValue('entryTypeSeg', 'poss'); showEntryType('poss'); setPillGroupValue('p_end', 'Failed clear'); await savePossFromForm();
+      } else if (kind === 'gb') {
+        document.getElementById('gb_jersey').value = j[1]; await submitGroundBall();
+      } else {
+        document.getElementById('fo_a').value = j[2]; document.getElementById('fo_b').value = bar.type === 'Opponent scrimmage' ? '' : j[3]; foResult = 'A';
+        document.getElementById('submitFaceoffBtn').click();
+      }
+      await sleep(900);
+      const writes = __FAKE.__writes.slice(w0).map(x => x.coll + '/' + x.id + ':' + x.keys.filter(k => !/^(rev|lastOp)$/.test(k)).join(','));
+      const trk = (await DB.doc('app/session_tracking').get()).data() || {}, sidBlank = date + '_scrimmage';
+      const pool = kind === 'shot' ? SHOTS : kind === 'poss' ? POSSESSIONS : kind === 'gb' ? GROUNDBALLS : FACEOFFS;
+      const mine = pool.filter(e => e.date === date && e.context === 'Scrimmage');
+      return { bar, saved: writes.filter(x => !/session_tracking/.test(x)).length > 0, typeWrites: writes.filter(x => /session_tracking/.test(x)), rec: trk['typ_' + sidBlank] || null,
+        n: mine.length, types: [...new Set(mine.map(sessionTypeOf))], opps: [...new Set(mine.map(e => e.opponent || null))], sids: [...new Set(mine.map(e => e._sid || sessionIdFor(e)))] };
+    } finally { if (hadApp) DB.app = keepApp; else delete DB.app; setPillGroupValue('f_context', 'Practice'); setPillGroupValue('f_scrimtype', null); document.getElementById('f_opponent').value = ''; updateSessionBarUi(); }
+  },
+  async editFirst(kind, date) {
+    const hadApp = 'app' in DB, keepApp = DB.app; DB.app = { auth: () => ({ currentUser: { uid: 'TESTCOACH', email: 'test.coach@example.invalid' } }) };
+    try { const pool = kind === 'shot' ? SHOTS : POSSESSIONS, base = pool.find(e => e.date === date && e.context === 'Scrimmage'); const before = ((await DB.doc('app/session_tracking').get()).data() || {})['typ_' + date + '_scrimmage'];
+      const r = await (kind === 'shot' ? persistShot(Object.assign({}, base, { filmTime: 11.5 }), undefined, { base: Object.assign({}, base) }) : persistPossession(Object.assign({}, base, { filmTime: 11.5 }), undefined, { base: Object.assign({}, base) }));
+      await new Promise(res => setTimeout(res, 700)); const after = ((await DB.doc('app/session_tracking').get()).data() || {})['typ_' + date + '_scrimmage'];
+      const matches = pool.filter(x => x.date === date && x.id === base.id), e = matches[matches.length - 1];
+      const doc = (await DB.collection('sessions').doc(base._sid || sessionIdFor(base)).get()).data() || {}, key = (kind === 'shot' ? 's_' : 'p_') + base.id;
+      const cols = kind === 'shot' ? COLS : POSS_COLS, stored = doc[key] ? JSON.parse(doc[key])[cols.indexOf('filmTime')] : 'missing';
+      return { r, recSame: before === after && !!after, type: sessionTypeOf(e), filmTime: e.filmTime, matches: matches.length, sid: base._sid, stored, id: base.id, filmIdx: cols.indexOf('filmTime') };
+    } finally { if (hadApp) DB.app = keepApp; else delete DB.app; } },
 };
 'loaded';
