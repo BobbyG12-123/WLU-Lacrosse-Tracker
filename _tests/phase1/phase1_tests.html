@@ -219,6 +219,41 @@ async function run() {
       return { pills, j, others: names.filter(x => x !== 'Teammate' && !x.includes(name)).length, teammates: names.filter(x => x === 'Teammate').length }; } finally { PLAYER_MODE = null; renderScoringChange(); } })()`);
   ok('Player View: the Who pills are Team and him only; other shooters show as "Teammate" in the records', pm.pills.length === 2 && pm.pills[0] === 'Team' && pm.pills[1].startsWith('#' + pm.j + ' ') && pm.others === 0 && pm.teammates > 0, pm);
 
+  // ===== Finishing pass: explicit empty session type =====
+  const gm = nj(`(() => { const o = {}; Object.assign(SC_ST, { type: 'Game', barCtx: 'All', period: '5', custom: null, subject: 'team', grouping: 'groups' }); NAV_ST.ctx = 'All'; renderShootingTrends();
+    o.type = SC_ST.type; o.active = document.getElementById('scTypePills').dataset.value; o.pills = [...document.querySelectorAll('#scTypePills .pill')].map(b => b.textContent);
+    o.text = document.getElementById('scBody').textContent; o.empty = !!document.querySelector('#scBody .sc-empty'); renderScoringChange(); o.again = SC_ST.type;
+    Object.assign(SC_ST, { type: 'Practice', barCtx: 'All' }); NAV_ST.ctx = 'Game'; renderShootingTrends(); o.fromBar = SC_ST.type; o.barText = document.getElementById('scBody').textContent;
+    NAV_ST.ctx = 'Intra-squad'; renderShootingTrends(); o.intra = SC_ST.type; o.intraText = document.getElementById('scBody').textContent;
+    NAV_ST.ctx = 'All'; renderShootingTrends(); o.afterAll = SC_ST.type; Object.assign(SC_ST, { type: 'Practice' }); renderScoringChange(); return o; })()`);
+  ok('Game picked with no game data: stays on Game, shows an empty Game state, never falls back', gm.type === 'Game' && gm.active === 'Game' && gm.again === 'Game' && gm.empty && /No games with logged WLU shots in 2027/.test(gm.text) && gm.pills.includes('Game · 0'), gm);
+  ok('the top bar naming an empty type (Game, Intra-squad) sets it; All then keeps it', gm.fromBar === 'Game' && /No games with logged/.test(gm.barText) && gm.intra === 'Intra-squad' && /No intra-squad scrimmages with logged/.test(gm.intraText) && gm.afterAll === 'Intra-squad', gm);
+  ok('every session type is offered, with its session count', ['Practice', 'Intra-squad', 'Opponent scrimmage', 'Game'].every(t => gm.pills.some(x => x.startsWith(t + ' · '))), gm.pills);
+
+  // ===== Finishing pass: headline weighs shots with no location =====
+  const hl = nj(`(() => { const o = {}; Object.assign(SC_ST, { type: 'Practice', period: '5', subject: 'team', grouping: 'groups' });
+    const lead = () => { renderScoringChange(); const el = [...document.querySelectorAll('#scBody p')].find(p => /Largest part|No part of the change/.test(p.textContent)); return el ? el.textContent : ''; };
+    o.none = lead();
+    const r0 = scCompare({ season: '2027', type: 'Practice', period: '5', subject: 'team', grouping: 'groups' });
+    const strip = list => { const saved = list.map(s => [s, s.lateralYds]); list.forEach(s => { s.lateralYds = null; }); return () => saved.forEach(([s, v]) => { s.lateralYds = v; }); };
+    let undo = strip(r0.shotsB.slice(0, 3)); o.few = lead(); undo();
+    // Strip location from k = |total| + 20 goals in one period (B if the total is up, A if down), so the no-location change (±k)
+    // is larger than the located change (total ∓ k, magnitude 20) whatever the data.
+    const tot0 = r0.dec.total, k = Math.abs(tot0) + 20; o.k = k; o.sign = tot0 >= 0 ? 1 : -1;
+    undo = strip((tot0 >= 0 ? r0.shotsB : r0.shotsA).filter(s => s.goal === 1).slice(0, k)); const d = scCompare({ season: '2027', type: 'Practice', period: '5', subject: 'team', grouping: 'groups' }).dec;
+    o.dom = lead(); o.d = { unloc: d.unlocated, located: d.located, total: d.total, recon: Math.abs(d.volume + (d.split ? d.mix + d.conversion : d.rate) + d.unlocated - d.total) }; undo();
+    o.restored = lead() === o.none; return o; })()`);
+  ok('no unlocated shots: the headline is about located parts only, no unlocated wording', /Largest part|No part/.test(hl.none) && !/no location/.test(hl.none), hl.none);
+  ok('a few unlocated shots: the headline says the location parts cover only shots with a location', /cover only the \d+ shots with a location/.test(hl.few) && !/can.t account/.test(hl.few), hl.few);
+  ok('unlocated shots dominate: the headline names them and says the location-based explanation can\'t account for most of the change', hl.d.unloc === hl.sign * hl.k && Math.abs(hl.d.unloc) > Math.abs(hl.d.located) && hl.dom.includes(`: shots with no location (${hl.sign > 0 ? '+' : '−'}${hl.k}.0 goals)`) && /location-based explanation can.t account for most of the overall change/.test(hl.dom) && hl.d.recon < EPS && hl.restored, hl);
+
+  // ===== Finishing pass: per-100 labels and display rules =====
+  const lb = nj(`(() => { const r0 = scCompare({ season: '2027', type: 'Practice', period: '5', subject: 'team', grouping: 'groups' }), v = r0.shotsB.slice(0, 5), sv = v.map(s => s.lateralYds); v.forEach(s => { s.lateralYds = null; });
+    try { renderScoringChange(); const b = document.getElementById('scBody'), tot = [...b.querySelectorAll('table.sc-break tr')].find(x => /Total change in goals/.test(x.textContent));
+      return { tile: [...b.querySelectorAll('div')].some(x => x.textContent.trim().startsWith('Goals per 100 shots (all shots)')), col: [...b.querySelectorAll('table.sc-break th')].map(x => x.textContent), tot: tot ? tot.textContent : '', text: b.textContent }; } finally { v.forEach((s, i) => { s.lateralYds = sv[i]; }); renderScoringChange(); } })()`);
+  ok('all-shot and located-shot per 100 are labeled apart (tile = all shots; table column = located; total row gives both)', lb.tile && lb.col.includes('Per 100 located shots') && /Per 100: located shots [\d.]+ → [\d.]+ \(this column\); all shots [\d.]+ → [\d.]+/.test(lb.tot), lb);
+  ok('the 10-shot minimum and the under-5 mark are stated as display rules, not reliability thresholds', (lb.text.match(/Display rules, not reliability thresholds/g) || []).length === 2 && /not tested differences/.test(lb.text));
+
   // ===== Safety =====
   ok('no page errors', errs.length === 0, errs.slice(0, 5));
   ok('no network access attempted', N.__GUARD.blocked.length === 0 && O.__GUARD.blocked.length === 0, [N.__GUARD.blocked.slice(0, 3), O.__GUARD.blocked.slice(0, 3)]);

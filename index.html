@@ -16180,7 +16180,7 @@ function scDecompose(a, b, keys) {
     return { key: k, nA: A.n, gA: A.g, nB: B.n, gB: B.g, pA, pB, cA, cB,
       mix100: both ? 100 * (pB - pA) * ((cA + cB) / 2 - rM) : null, conv100: both ? 100 * ((pA + pB) / 2) * (cB - cA) : null };
   });
-  if (LA < SC_MIN_LOCATED || LB < SC_MIN_LOCATED) { res.why = `A location split needs ${SC_MIN_LOCATED}+ shots with a location in each period (A has ${LA}, B has ${LB}).`; return res; }
+  if (LA < SC_MIN_LOCATED || LB < SC_MIN_LOCATED) { res.why = `A location split needs ${SC_MIN_LOCATED}+ shots with a location in each period (A has ${LA}, B has ${LB}); a display rule, not a reliability threshold.`; return res; }
   if (oneSided.length) {
     res.why = `No conversion rate to compare for ${oneSided.map(k => `${k} (shots only in period ${a.cells[k].n ? 'A' : 'B'}: ${a.cells[k].n || b.cells[k].n})`).join(', ')}.`;
     return res;
@@ -16248,12 +16248,17 @@ function scMapSvg(sum, keys, grouping, base, spread, title) {
 }
 
 function scSyncControls(season, pool) {
-  const present = SESSION_TYPES.concat([SCRIM_UNTYPED]).filter(t => pool.some(s => sessionTypeOf(s) === t));
-  // The top bar's Sessions choice seeds this panel's type when it names one type; otherwise it starts on Practice.
+  // Every session type is offered, with its count of sessions that have shots, so an empty type can still be picked.
+  // A picked type is never swapped for another: a type with no data shows an empty state. "Type not recorded" is
+  // offered only while such sessions exist (or it is the current choice), like the top bar's pill.
+  const nSess = t => scSessions(pool, t).length;
+  const offered = SESSION_TYPES.concat(nSess(SCRIM_UNTYPED) || SC_ST.type === SCRIM_UNTYPED ? [SCRIM_UNTYPED] : []);
+  // The top bar's Sessions choice sets this panel's type when it names one type (with or without data); on All the
+  // panel keeps its own choice. A fresh start is Practice.
   const bar = offCtx();
-  if (SC_ST.barCtx !== bar || !SC_ST.type) { SC_ST.barCtx = bar; if (present.includes(bar)) SC_ST.type = bar; else if (!SC_ST.type) SC_ST.type = 'Practice'; }
-  if (!present.includes(SC_ST.type) && present.length) SC_ST.type = present.includes('Practice') ? 'Practice' : present[0];
-  setupPillGroup('scTypePills', present, SC_ST.type, v => { if (v) SC_ST.type = v; renderScoringChange(); });
+  if (SC_ST.barCtx !== bar) { SC_ST.barCtx = bar; if (SESSION_TYPES.includes(bar) || bar === SCRIM_UNTYPED) SC_ST.type = bar; }
+  if (!SC_ST.type) SC_ST.type = 'Practice';
+  setupPillGroup('scTypePills', offered.map(t => ({ value: t, label: `${t} · ${nSess(t)}` })), SC_ST.type, v => { if (v) SC_ST.type = v; renderScoringChange(); });
   setupPillGroup('scPeriodPills', SC_SIZES.map(n => ({ value: String(n), label: `Last ${n} vs ${n} before` })).concat([{ value: 'custom', label: 'Custom dates' }]), SC_ST.period, v => {
     if (v === 'custom' && !SC_ST.custom) {
       const per = scPeriods(scSessions(pool, SC_ST.type), SC_ST.period === 'custom' ? '5' : SC_ST.period);
@@ -16294,6 +16299,10 @@ function renderScoringChange() {
   const who = SC_ST.subject === 'team' ? 'Team' : `#${SC_ST.subject} ${nameFor(SC_ST.subject, season)}`;
   document.getElementById('scSub').innerHTML = `Two periods of ${escapeHtml(typeWords)} side by side for <b>${escapeHtml(who)}</b>. Periods are whole sessions with logged WLU shots${SEASON_PART !== 'Full' ? ` in ${SEASON_PART} ${season}` : ` in ${season}`}; a player is compared over the team's sessions, so a missed session just means fewer shots. This panel picks its own session type: the top bar's Sessions choice sets it when that names one type.`;
   const per = R.per, A = R.a, B = R.b, D = R.dec;
+  if (!R.sessions.length) {
+    body.innerHTML = `<p class="sans sc-empty" style="font-size:13px; margin:6px 0;"><b>No ${escapeHtml(typeWords)} with logged WLU shots in ${SEASON_PART !== 'Full' ? escapeHtml(SEASON_PART) + ' ' : ''}${season}.</b> There is nothing to compare for this session type. It stays selected; pick another type above to compare those sessions.</p>`;
+    return;
+  }
   const sessList = l => l.length ? l.map(s => `${scDate(s.date)}${/_scrimmage_|_game_/.test(s.sid) ? ' ' + escapeHtml(s.sid.split('_').slice(2).join(' ')) : ''} (${s.n})`).join(', ') : '—';
   const notes = [];
   if (per.wanted && per.A.length < per.wanted) notes.push(per.A.length ? `Only ${R.sessions.length} sessions of this type have shots, so period A has ${per.A.length} session${per.A.length === 1 ? '' : 's'}, not ${per.wanted}.` : `Only ${R.sessions.length} session${R.sessions.length === 1 ? '' : 's'} of this type ${R.sessions.length === 1 ? 'has' : 'have'} shots: there is no earlier period to compare yet.`);
@@ -16314,7 +16323,7 @@ function renderScoringChange() {
   h += `<div style="display:flex; gap:10px; flex-wrap:wrap; margin-bottom:12px;">
     ${tile('Goals', A.G, B.G, scNum(B.G - A.G, 0), i0)}
     ${tile('Shots', A.N, B.N, scNum(B.N - A.N, 0), i0)}
-    ${tile('Goals per 100 shots', p100(A), p100(B), p100(A) === null || p100(B) === null ? '—' : scNum(p100(B) - p100(A)), f1)}</div>`;
+    ${tile('Goals per 100 shots (all shots)', p100(A), p100(B), p100(A) === null || p100(B) === null ? '—' : scNum(p100(B) - p100(A)), f1)}</div>`;
   // ---- Exact breakdown ----
   const row = (label, goals, per100, explain, strong) => `<tr${strong ? ' style="font-weight:700;"' : ''}><td style="text-align:left;">${label}</td><td>${goals}</td><td>${per100}</td><td style="text-align:left; white-space:normal; color:var(--muted);">${explain}</td></tr>`;
   let br = `<table class="shotlog dense sc-break"><thead><tr><th style="text-align:left;">Part of the change</th><th>Goals</th><th>Per 100 located shots</th><th style="text-align:left;">What it means</th></tr></thead><tbody>`;
@@ -16332,15 +16341,23 @@ function renderScoringChange() {
   }
   if (D) {
     br += row('Shots with no location', scNum(D.unlocated, 0), '', `${A.unloc.N} &rarr; ${B.unloc.N} shots (${A.unloc.G} &rarr; ${B.unloc.G} goals); counted in the total, not split.`);
-    br += row('Total change in goals', scNum(D.total, 0), D.per100 ? scNum(D.per100.delta) : '—', `${A.G} &rarr; ${B.G} goals. The parts above add up to this (rounding aside).`, true);
-    const parts = D.split ? [['shot volume', D.volume], ['location mix', D.mix], ['conversion within location', D.conversion]] : (D.volume !== null ? [['shot volume', D.volume], ['scoring rate', D.rate]] : []);
+    const allP100 = (p100(A) === null || p100(B) === null) ? 'all shots: —' : `all shots ${f1(p100(A))} &rarr; ${f1(p100(B))} (${scNum(p100(B) - p100(A))})`;
+    br += row('Total change in goals', scNum(D.total, 0), D.per100 ? scNum(D.per100.delta) : '—', `${A.G} &rarr; ${B.G} goals. The parts above add up to this (rounding aside). Per 100: located shots ${D.per100 ? `${f1(D.per100.a)} &rarr; ${f1(D.per100.b)}` : '—'} (this column); ${allP100} (the tile above).`, true);
+    // The headline weighs every line of the table, the no-location line included.
+    const locParts = D.split ? [['shot volume', D.volume], ['location mix', D.mix], ['conversion within location', D.conversion]]
+      : (D.volume !== null ? [['shot volume', D.volume], ['scoring rate', D.rate]] : [['shots with a location (not split)', D.located]]);
+    const parts = locParts.concat(A.unloc.N || B.unloc.N ? [['shots with no location', D.unlocated]] : []);
     const big = parts.slice().sort((x, y) => Math.abs(y[1]) - Math.abs(x[1]))[0];
-    if (big && Math.abs(big[1]) >= 0.5) lead = `Largest part of the ${scNum(D.total, 0)}-goal change: <b>${big[0]}</b> (${scNum(big[1])} goals).${D.split ? '' : ' A location split isn&rsquo;t supported for this selection.'} This describes what happened in these shots; it doesn&rsquo;t say why.`;
+    const unlocDominates = (A.unloc.N || B.unloc.N) && (Math.abs(D.unlocated) > Math.abs(D.located) || (big && big[0] === 'shots with no location'));
+    if (big && Math.abs(big[1]) >= 0.5) lead = `Largest part of the ${scNum(D.total, 0)}-goal change: <b>${big[0]}</b> (${scNum(big[1])} goals).${D.split || D.volume === null ? '' : ' A location split isn&rsquo;t supported for this selection.'}`;
     else if (big) lead = `No part of the change reaches half a goal.`;
+    if (unlocDominates) lead += ` <b>The location-based explanation can&rsquo;t account for most of the overall change:</b> goals on shots with no location changed by ${scNum(D.unlocated, 0)}, against ${scNum(D.located, 0)} on shots with a location.`;
+    else if (A.unloc.N || B.unloc.N) lead += ` The location parts cover only the ${A.loc.N + B.loc.N} shots with a location; the ${scNum(D.unlocated, 0)} on shots with no location isn&rsquo;t split.`;
+    if (lead) lead += ' This describes what happened in these shots; it doesn&rsquo;t say why.';
   }
   br += `</tbody></table>`;
   h += `<p class="panel-sub" style="margin:4px 0 4px; font-weight:700; color:var(--ink);">Exact breakdown (no model)</p>${lead ? `<p class="sans" style="font-size:13px; margin:0 0 6px;">${lead}</p>` : ''}<div class="table-wrap">${br}</div>
-    <p class="n-note" style="margin:4px 0 12px;">Each split uses the average of both periods, so the parts add up exactly and swapping the periods flips every sign. Per 100 holds volume fixed: only location mix and conversion move it. ${R.grouping === 'groups' ? escapeHtml(SC_GROUP_WORDS) + '.' : 'The 13 named zones, as on the Efficiency zone map.'}</p>`;
+    <p class="n-note" style="margin:4px 0 12px;">Each split uses the average of both periods, so the parts add up exactly and swapping the periods flips every sign. Per 100 holds volume fixed: only location mix and conversion move it. Display rules, not reliability thresholds: the ${SC_MIN_LOCATED}-located-shot minimum only decides whether the location split is drawn, and the italic mark only flags cells under ${SC_SMALL} shots. A split that is shown can still be mostly chance; these are descriptive counts, not tested differences. ${R.grouping === 'groups' ? escapeHtml(SC_GROUP_WORDS) + '.' : 'The 13 named zones, as on the Efficiency zone map.'}</p>`;
   // ---- Maps on one scale ----
   const pooledN = A.loc.N + B.loc.N, base = pooledN ? (A.loc.G + B.loc.G) / pooledN : 0;
   const rates = [];
@@ -16361,7 +16378,7 @@ function renderScoringChange() {
   });
   lt += `<tr style="font-weight:700;"><td style="text-align:left;">All located</td><td>${A.loc.N}</td><td>${A.loc.N ? '100%' : '—'}</td><td>${A.loc.G}</td><td>${A.loc.N ? scPct(A.loc.G / A.loc.N) : '—'}</td><td>${B.loc.N}</td><td>${B.loc.N ? '100%' : '—'}</td><td>${B.loc.G}</td><td>${B.loc.N ? scPct(B.loc.G / B.loc.N) : '—'}</td><td>${D && D.split ? scNum(D.per100.mix) : '—'}</td><td>${D && D.split ? scNum(D.per100.conversion) : '—'}</td></tr>`;
   lt += `</tbody></table>`;
-  h += `<div class="table-wrap">${lt}</div><p class="n-note" style="margin:4px 0 12px;">Italic = fewer than ${SC_SMALL} shots in that period (real number, small sample). Mix and conversion per location show where the per-100 change came from; they appear only when the split is supported.</p>`;
+  h += `<div class="table-wrap">${lt}</div><p class="n-note" style="margin:4px 0 12px;">Italic = fewer than ${SC_SMALL} shots in that period (real number, small sample). Mix and conversion per location show where the per-100 change came from; they appear only when the split is drawn. Display rules, not reliability thresholds: the ${SC_MIN_LOCATED}-located-shot minimum only decides whether the location split is drawn, and the italic mark only flags cells under ${SC_SMALL} shots. A split that is shown can still be mostly chance; these are descriptive counts, not tested differences.</p>`;
   // ---- Model-based view ----
   const xpS = s => s.N ? s.xg / s.N : null;
   h += `<div style="border:1px solid var(--line); border-radius:8px; padding:8px 10px; margin-bottom:12px;">
