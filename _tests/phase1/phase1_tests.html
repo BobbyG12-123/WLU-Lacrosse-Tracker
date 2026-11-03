@@ -1,0 +1,232 @@
+<!doctype html>
+<html><head><meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; connect-src 'self'; style-src 'unsafe-inline'; frame-src 'self'; base-uri 'none'; form-action 'none'">
+<script src="guard_offline.js"></script>
+<script src="fake_firestore.js"></script>
+<title>TEST — Phase 1 scoring change (offline, in-memory database only)</title>
+<style>body{font:13px system-ui;margin:16px} iframe{width:48%;height:700px;border:1px solid #999}</style>
+</head><body>
+<h3>Phase 1 scoring change: main vs branch on the same export, in-memory database only</h3>
+<iframe id="fOld" src="tracker_main.html"></iframe><iframe id="fNew" src="tracker_branch.html"></iframe>
+<pre id="out">running…</pre>
+<script>
+const Q = new URLSearchParams(location.search), EXPORT = Q.get('export') || 'fixture.json', REAL = Q.get('real') === '1';
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+const T = { results: [], pass: 0, fail: 0 };
+const ok = (name, cond, info) => { T.results.push({ name, ok: !!cond, info: info === undefined ? null : info }); cond ? T.pass++ : T.fail++; };
+const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+const EPS = 1e-9, near = (a, b) => Math.abs(a - b) < EPS;
+
+// ---- Independent recomputation straight from the export (no tracker code) ----
+// The zone rules are copied from the tracker's zoneAt() on purpose, so a change there shows up here as a failure.
+function zoneAtRef(L, D) {
+  const a = Math.abs(L), s = L < 0 ? 'Left' : 'Right';
+  if (Math.hypot(L, D) < 5 || (D < 6 && a < 3)) return 'Doorstep';
+  if (D < 3 && a >= 5) return 'GLE ' + s;
+  if (D < 6 && a >= 3 && a < 12) return 'Low ' + s;
+  if (a >= 12) return 'Wing ' + s;
+  if (D < 11 && a < 4) return 'Crease';
+  if (D >= 11 && a < 5) return 'Top Center';
+  if (D < 12 && a < 12) return 'Alley ' + s;
+  return 'Top ' + s;
+}
+const GROUP_REF = z => /^(Doorstep|Crease)$/.test(z) ? 'Inside' : /^(GLE|Low) /.test(z) ? 'Low/GLE' : /^Alley/.test(z) ? 'Alley' : /^Top/.test(z) ? 'Top' : 'Wing';
+function expectedDefault(exp, COLS, n) {
+  const ix = c => COLS.indexOf(c), I = { s: ix('shooterJersey'), t: ix('team'), d: ix('date'), g: ix('goal'), L: ix('lateralYds'), D: ix('distanceYds') };
+  const typ = {}; const tr = (exp.collections.app || {}).session_tracking || {};
+  Object.keys(tr).filter(k => k.startsWith('typ_')).forEach(k => { try { typ[k.slice(4)] = JSON.parse(tr[k]); } catch (e) {} });
+  const typeOf = (sid, d) => d.context === 'Game' ? 'Game' : d.context === 'Practice' ? 'Practice' : d.context === 'Scrimmage' ? (typ[sid] ? typ[sid].type : (d.opponent ? 'Opponent scrimmage' : 'Type not recorded')) : null;
+  const sess = [];
+  for (const [sid, d] of Object.entries(exp.collections.sessions)) {
+    if (typeOf(sid, d) !== 'Practice') continue;
+    const shots = [];
+    for (const [k, v] of Object.entries(d)) {
+      if (!k.startsWith('s_')) continue;
+      const a = JSON.parse(v), dt = a[I.d];
+      if (!(dt >= '2026-08-01' && dt < '2027-08-01') || a[I.t] === 'OPP' || !a[I.s]) continue;
+      shots.push({ goal: a[I.g] === 1 ? 1 : 0, L: a[I.L], D: a[I.D], date: dt });
+    }
+    if (shots.length) sess.push({ sid, date: d.date, shots });
+  }
+  sess.sort((x, y) => (x.date + x.sid).localeCompare(y.date + y.sid));
+  const B = sess.slice(-n), A = sess.slice(Math.max(0, sess.length - 2 * n), Math.max(0, sess.length - n));
+  const sum = list => { const o = { N: 0, G: 0, unloc: 0, cells: {} }; ['Inside', 'Low/GLE', 'Alley', 'Top', 'Wing'].forEach(k => { o.cells[k] = { n: 0, g: 0 }; });
+    list.forEach(s => s.shots.forEach(x => { o.N++; o.G += x.goal; if (x.L === null || x.L === undefined || x.D === null || x.D === undefined) { o.unloc++; return; } const c = o.cells[GROUP_REF(zoneAtRef(x.L, x.D))]; c.n++; c.g += x.goal; })); return o; };
+  return { A: A.map(s => s.sid), B: B.map(s => s.sid), a: sum(A), b: sum(B), nSessions: sess.length };
+}
+
+async function boot() {
+  const exp = await (await fetch(EXPORT)).json();
+  const frames = { old: document.getElementById('fOld').contentWindow, neu: document.getElementById('fNew').contentWindow };
+  for (const k of Object.keys(frames)) {
+    const w = frames[k];
+    for (let i = 0; i < 60 && !(w.firebase && w.firebase.apps && w.firebase.apps.length && typeof w.init === 'function'); i++) await sleep(300);
+    const fake = makeFakeFirestore(exp.collections);
+    const real = w.firebase.firestore, f = function () { return fake; }; Object.keys(real).forEach(x => { f[x] = real[x]; }); f.FieldValue = real.FieldValue;
+    w.firebase.firestore = f; w.__FAKE = fake;
+    w.init().then(() => { w.__BOOT_DONE = true; }, e => { w.__BOOT_ERR = String(e && e.stack || e); });
+  }
+  for (let i = 0; i < 160 && !(frames.old.__appReady && frames.neu.__appReady); i++) await sleep(500);
+  await sleep(3000);
+  return { frames, exp };
+}
+
+async function run() {
+  const { frames, exp } = await boot();
+  const O = frames.old, N = frames.neu, o = src => O.eval(src), n = src => N.eval(src), nj = src => JSON.parse(n(`JSON.stringify(${src})`));
+  const errs = []; N.addEventListener('error', e => errs.push(String(e.message)));
+  ok('both builds booted', O.__appReady && N.__appReady, [O.__BOOT_ERR || null, N.__BOOT_ERR || null]);
+  ok('same data loaded in both', same(o('[SHOTS.length, POSSESSIONS.length]'), n('[SHOTS.length, POSSESSIONS.length]')), o('[SHOTS.length, POSSESSIONS.length]'));
+  const writes0 = { old: O.__FAKE.__writes.length, neu: N.__FAKE.__writes.length };
+
+  // ===== Existing analytics unchanged =====
+  const snapSrc = await (await fetch('analytics_snapshot.js')).text();
+  const sa = JSON.parse(o(snapSrc)), sb = JSON.parse(n(snapSrc)), keys = [...new Set(Object.keys(sa).concat(Object.keys(sb)))];
+  const sdiff = keys.filter(k => JSON.stringify(sa[k]) !== JSON.stringify(sb[k]));
+  ok('analytics snapshot identical to main', sdiff.length === 0 && keys.length > 0, { compared: keys.length, diff: sdiff.slice(0, 10) });
+  const zm = w => w.eval(`(() => { const season = '2027', model = xgModelFor(season), sh = advShots(season).filter(s => s.team !== 'OPP' && s.shooterJersey);
+    renderZoneMap(sh, x => xgForShot(x, model)); return document.getElementById('angFanWrap').innerHTML.replace(/zm\\d+_/g, 'zm_'); })()`);
+  const zo = zm(O), zn = zm(N);
+  ok('Efficiency zone map identical to main (shared zone shapes refactor)', zo === zn && zo.length > 1000, { len: [zo.length, zn.length] });
+  const tr = (w, ctx, win) => w.eval(`(() => { NAV_ST.ctx = '${ctx}'; heatSeason = '2027'; trendWindow = '${win}'; trendMetric = 'shotPct'; renderShootingTrends();
+    return ['shootingTrendsSub', 'shootingTrendsUpGrid', 'shootingTrendsDownGrid', 'trendRollingWrap'].map(id => document.getElementById(id).innerHTML).join('|'); })()`);
+  for (const [ctx, win] of [['All', 'days7'], ['Practice', 'days7'], ['All', 'games3'], ['Practice', 'rolling']]) ok(`Shooting Trends (${ctx}, ${win}) identical to main`, tr(O, ctx, win) === tr(N, ctx, win));
+  n(`NAV_ST.ctx = 'All'`); o(`NAV_ST.ctx = 'All'`);
+
+  // ===== Panel shows in 2027 only =====
+  n(`heatSeason = '2026'; renderShootingTrends()`);
+  ok('panel hidden for 2026 (no zone data model there)', n(`document.getElementById('scPanel').style.display`) === 'none');
+  n(`heatSeason = '2027'; Object.assign(SC_ST, { type: null, barCtx: null, period: '5', custom: null, subject: 'team', grouping: 'groups' }); renderShootingTrends()`);
+  ok('panel shown for 2027 with defaults: Practice, last 5 vs 5, Team, 5 field groups', n(`document.getElementById('scPanel').style.display`) === '' &&
+    same(nj(`['scTypePills', 'scPeriodPills', 'scSubjectPills', 'scGroupPills'].map(id => document.getElementById(id).dataset.value)`), ['Practice', '5', 'team', 'groups']));
+
+  // ===== Default comparison matches an independent count from the export =====
+  const COLS = JSON.parse(n('JSON.stringify(COLS)'));
+  const E = expectedDefault(exp, COLS, 5);
+  const R = nj(`(() => { const r = scCompare({ season: '2027', type: 'Practice', period: '5', subject: 'team', grouping: 'groups' }); return { A: r.per.A.map(s => s.sid), B: r.per.B.map(s => s.sid), a: r.a, b: r.b, dec: r.dec, n: r.sessions.length }; })()`);
+  ok('default periods = the last 5 practices with shots vs the 5 before (independent count)', same(R.A, E.A) && same(R.B, E.B) && R.A.length === 5 && R.B.length === 5, { got: [R.A, R.B], want: [E.A, E.B] });
+  ok('shots and goals per period match the export', R.a.N === E.a.N && R.a.G === E.a.G && R.b.N === E.b.N && R.b.G === E.b.G, { got: [R.a.N, R.a.G, R.b.N, R.b.G], want: [E.a.N, E.a.G, E.b.N, E.b.G] });
+  ok('field-group counts per period match the export (Inside, Low/GLE, Alley, Top, Wing)', ['Inside', 'Low/GLE', 'Alley', 'Top', 'Wing'].every(k => same(R.a.cells[k], E.a.cells[k]) && same(R.b.cells[k], E.b.cells[k])) && R.a.unloc.N === E.a.unloc && R.b.unloc.N === E.b.unloc,
+    { got: [R.a.cells, R.b.cells], want: [E.a.cells, E.b.cells] });
+  T.summary = { sessions: R.n, A: [R.a.N, R.a.G], B: [R.b.N, R.b.G], split: R.dec && R.dec.split, why: R.dec && R.dec.why,
+    parts: R.dec ? { volume: +(R.dec.volume || 0).toFixed(2), mix: R.dec.mix === null ? null : +R.dec.mix.toFixed(2), conversion: R.dec.conversion === null ? null : +R.dec.conversion.toFixed(2), rate: R.dec.rate === null ? null : +R.dec.rate.toFixed(2), unlocated: R.dec.unlocated, total: R.dec.total } : null };
+
+  // ===== Reconciliation everywhere =====
+  const rec = nj(`(() => { const out = [], types = SESSION_TYPES.concat([SCRIM_UNTYPED]);
+    const pool = scPool('2027'), players = [...new Set(pool.map(s => String(s.shooterJersey)))];
+    types.forEach(type => ['3', '5', '10'].forEach(period => ['team'].concat(players).forEach(subject => (subject === 'team' ? ['groups', 'zones'] : ['groups']).forEach(grouping => {
+      const r = scCompare({ season: '2027', type, period, subject, grouping }), d = r.dec; if (!d) return;
+      const parts = d.volume === null ? d.located : d.volume + (d.split ? d.mix + d.conversion : d.rate);
+      const p100 = d.split ? Math.abs(d.per100.mix + d.per100.conversion - d.per100.delta) : 0;
+      const rowSum = d.split ? Math.abs(d.rows.reduce((t, x) => t + x.mix100, 0) - d.per100.mix) + Math.abs(d.rows.reduce((t, x) => t + x.conv100, 0) - d.per100.conversion) : 0;
+      out.push({ type, period, subject, grouping, split: d.split, err: Math.abs(parts + d.unlocated - d.total), p100, rowSum, rate: d.volume === null ? 0 : Math.abs(d.volume + d.rate - d.located), totalOk: d.total === r.b.G - r.a.G, why: d.why });
+    })))); return out; })()`);
+  const bad = rec.filter(x => x.err > EPS || x.p100 > EPS || x.rowSum > EPS || x.rate > EPS || !x.totalOk);
+  ok(`components add up to the observed change in every comparison (${rec.length} checked: each type × 3/5/10 × team + every player, 5 groups and 13 zones)`, rec.length > 50 && bad.length === 0, bad.slice(0, 5));
+  ok('supported and unsupported location splits both occur in the checks', rec.some(x => x.split) && rec.some(x => !x.split && x.why), { split: rec.filter(x => x.split).length, unsupported: rec.filter(x => !x.split).length });
+  ok('every unsupported split says why', rec.filter(x => !x.split).every(x => x.why && x.why.length > 20), rec.filter(x => !x.split && !(x.why && x.why.length > 20)).slice(0, 3));
+
+  // ===== Invariants =====
+  const eq = nj(`(() => { const ss = scSessions(scPool('2027'), 'Practice'), f = ss[ss.length - 5].date, t = ss[ss.length - 1].date;
+    const r = scCompare({ season: '2027', type: 'Practice', period: 'custom', custom: { aFrom: f, aTo: t, bFrom: f, bTo: t }, subject: 'team', grouping: 'groups' });
+    const r13 = scCompare({ season: '2027', type: 'Practice', period: 'custom', custom: { aFrom: f, aTo: t, bFrom: f, bTo: t }, subject: 'team', grouping: 'zones' });
+    return { d: r.dec, d13: r13.dec, overlap: r.per.overlap }; })()`);
+  const zeros = d => d && d.split && [d.total, d.volume, d.mix, d.conversion, d.unlocated, d.per100.delta].every(v => v === 0) && d.rows.every(x => x.mix100 === 0 && x.conv100 === 0);
+  ok('equal periods give exactly zero change in every part (5 groups and 13 zones)', zeros(eq.d) && zeros(eq.d13) && eq.overlap === 5, { d: eq.d && [eq.d.total, eq.d.volume, eq.d.mix, eq.d.conversion], why13: eq.d13 && eq.d13.why });
+  const sw = nj(`(() => { const ss = scSessions(scPool('2027'), 'Practice'), A = ss.slice(-10, -5), B = ss.slice(-5);
+    const c = { aFrom: A[0].date, aTo: A[A.length - 1].date, bFrom: B[0].date, bTo: B[B.length - 1].date }, s = { aFrom: c.bFrom, aTo: c.bTo, bFrom: c.aFrom, bTo: c.aTo };
+    const x = scCompare({ season: '2027', type: 'Practice', period: 'custom', custom: c, subject: 'team', grouping: 'groups' }).dec, y = scCompare({ season: '2027', type: 'Practice', period: 'custom', custom: s, subject: 'team', grouping: 'groups' }).dec,
+      z = scCompare({ season: '2027', type: 'Practice', period: '5', subject: 'team', grouping: 'groups' }).dec; return { x, y, z }; })()`);
+  ok('custom dates equal to the default periods give the same result', same(sw.x, sw.z));
+  ok('swapping the periods flips every sign', ['total', 'volume', 'mix', 'conversion', 'rate', 'unlocated'].every(k => (sw.x[k] === null && sw.y[k] === null) || near(sw.x[k], -sw.y[k])), [sw.x, sw.y].map(d => [d.total, d.volume, d.mix, d.conversion]));
+  ok('per 100 shots holds volume fixed: equal share and conversion with doubled volume gives zero per-100 change', n(`(() => {
+    const mk = (n, g) => ({ N: 0, G: 0, loc: { N: 0, G: 0 }, unloc: { N: 0, G: 0 }, cells: Object.fromEntries(SC_GROUPS.map(k => [k, { n: 0, g: 0 }])) });
+    const a = mk(), b = mk(); [['Inside', 10, 5], ['Top', 10, 2]].forEach(([k, s, g]) => { a.cells[k] = { n: s, g }; b.cells[k] = { n: 2 * s, g: 2 * g }; a.loc.N += s; a.loc.G += g; b.loc.N += 2 * s; b.loc.G += 2 * g; });
+    a.N = a.loc.N; a.G = a.loc.G; b.N = b.loc.N; b.G = b.loc.G; const d = scDecompose(a, b, SC_GROUPS);
+    return d.split && d.per100.delta === 0 && d.mix === 0 && d.conversion === 0 && d.volume === 7 && d.total === 7; })()`));
+  ok('hand-checked example: shift 10 shots from Top (20%) to Inside (50%), same conversion → all of it is location mix', n(`(() => {
+    const mk = cells => { const o = { N: 0, G: 0, loc: { N: 0, G: 0 }, unloc: { N: 0, G: 0 }, cells: Object.fromEntries(SC_GROUPS.map(k => [k, { n: 0, g: 0 }])) }; cells.forEach(([k, s, g]) => { o.cells[k] = { n: s, g }; o.loc.N += s; o.loc.G += g; }); o.N = o.loc.N; o.G = o.loc.G; return o; };
+    const d = scDecompose(mk([['Inside', 10, 5], ['Top', 30, 6]]), mk([['Inside', 20, 10], ['Top', 20, 4]]), SC_GROUPS);
+    return d.split && d.total === 3 && d.volume === 0 && Math.abs(d.mix - 3) < 1e-12 && Math.abs(d.conversion) < 1e-12; })()`));
+
+  // ===== Unsupported attribution is not forced =====
+  const uns = nj(`(() => { const out = {}; const k = ['Inside', 'Low/GLE', 'Alley', 'Top', 'Wing'];
+    const mk = cells => { const o = { N: 0, G: 0, loc: { N: 0, G: 0 }, unloc: { N: 0, G: 0 }, cells: Object.fromEntries(k.map(x => [x, { n: 0, g: 0 }])) }; cells.forEach(([z, s, g]) => { o.cells[z] = { n: s, g }; o.loc.N += s; o.loc.G += g; }); o.N = o.loc.N; o.G = o.loc.G; return o; };
+    out.oneSided = scDecompose(mk([['Inside', 12, 6], ['Top', 10, 2]]), mk([['Inside', 10, 5], ['Top', 8, 2], ['Wing', 3, 1]]), k);
+    out.few = scDecompose(mk([['Inside', 5, 2], ['Top', 3, 1]]), mk([['Inside', 12, 6], ['Top', 8, 2]]), k);
+    out.empty = scDecompose(mk([]), mk([['Inside', 12, 6]]), k); return out; })()`);
+  ok('a location with shots in only one period: no mix/conversion split, the reason names it, volume + rate still add up', !uns.oneSided.split && uns.oneSided.mix === null && /Wing \(shots only in period B: 3\)/.test(uns.oneSided.why) && near(uns.oneSided.volume + uns.oneSided.rate, uns.oneSided.total), uns.oneSided);
+  ok(`fewer than 10 located shots in a period: no location split, says so`, !uns.few.split && /10\+ shots with a location/.test(uns.few.why) && near(uns.few.volume + uns.few.rate, uns.few.total), uns.few);
+  ok('a period with no located shots: nothing is split, the change is shown whole', uns.empty.volume === null && uns.empty.rate === null && /Period A has/.test(uns.empty.why) && uns.empty.located === 6, uns.empty);
+  const ui1 = nj(`(() => { Object.assign(SC_ST, { type: 'Practice', period: '5', subject: 'team', grouping: 'zones' }); renderScoringChange(); const t = document.getElementById('scBody').textContent;
+    const r = scCompare({ season: '2027', type: 'Practice', period: '5', subject: 'team', grouping: 'zones' }); return { split: r.dec.split, why: r.dec.why, hasUnavail: /Location split unavailable/.test(t), hasMix: /Location mix/.test(t) }; })()`);
+  ok('the page shows "Location split unavailable" exactly when the split is unsupported (13 zones, team)', ui1.split ? (!ui1.hasUnavail && ui1.hasMix) : (ui1.hasUnavail && !ui1.hasMix), ui1);
+
+  // ===== Missing location: counted, never split =====
+  const ml = nj(`(() => { const r0 = scCompare({ season: '2027', type: 'Practice', period: '5', subject: 'team', grouping: 'groups' });
+    const victims = r0.shotsB.slice(0, 3), saved = victims.map(s => [s.lateralYds, s.distanceYds]); victims.forEach(s => { s.lateralYds = null; });
+    try { const r = scCompare({ season: '2027', type: 'Practice', period: '5', subject: 'team', grouping: 'groups' }), d = r.dec;
+      Object.assign(SC_ST, { type: 'Practice', period: '5', subject: 'team', grouping: 'groups' }); renderScoringChange();
+      const row = [...document.querySelectorAll('#scBody table.sc-break tr')].find(x => /Shots with no location/.test(x.textContent));
+      return { unloc: r.b.unloc.N, N: r.b.N, N0: r0.b.N, recon: Math.abs((d.volume + (d.split ? d.mix + d.conversion : d.rate)) + d.unlocated - d.total), row: row ? row.textContent : null, missing: document.getElementById('scBody').textContent.match(/Missing data:[^.]*\\./)?.[0] };
+    } finally { victims.forEach((s, i) => { s.lateralYds = saved[i][0]; }); } })()`);
+  ok('shots with no location stay in the totals, get their own line, and the parts still add up', ml.unloc === 3 && ml.N === ml.N0 && ml.recon < EPS && /0 → 3 shots/.test(ml.row || '') && /B 3 of/.test(ml.missing || ''), ml);
+
+  // ===== Session types stay separate =====
+  const st = nj(`(() => { const r = scCompare({ season: '2027', type: 'Practice', period: '10', subject: 'team', grouping: 'groups' });
+    const o = scCompare({ season: '2027', type: 'Opponent scrimmage', period: '5', subject: 'team', grouping: 'groups' });
+    return { pr: r.shotsA.concat(r.shotsB).every(s => sessionTypeOf(s) === 'Practice'), opp: o.shotsA.concat(o.shotsB).every(s => sessionTypeOf(s) === 'Opponent scrimmage'),
+      oppSessions: o.sessions.length, oppA: o.per.A.length, oppB: o.per.B.length, noOpp: r.shotsA.concat(r.shotsB).every(s => s.team !== 'OPP') }; })()`);
+  ok('a practice comparison holds only practice shots; an opponent-scrimmage one only those (never mixed silently), and never their shots on our goalies', st.pr && st.opp && st.noOpp, st);
+  const few = nj(`(() => { Object.assign(SC_ST, { type: 'Opponent scrimmage', period: '5', subject: 'team', grouping: 'groups' }); renderScoringChange(); return document.getElementById('scBody').textContent; })()`);
+  ok('too few sessions: says there is no earlier period (or how many sessions period A got)', st.oppA < 5 && (/there is no earlier period to compare yet/.test(few) || /so period A has/.test(few)), { st, text: few.slice(0, 300) });
+  const bar = nj(`(() => { Object.assign(SC_ST, { type: null, barCtx: null }); NAV_ST.ctx = 'Opponent scrimmage'; renderShootingTrends(); const a = SC_ST.type;
+    NAV_ST.ctx = 'All'; renderShootingTrends(); const b = SC_ST.type; Object.assign(SC_ST, { type: null, barCtx: null }); renderShootingTrends(); return [a, b, SC_ST.type]; })()`);
+  ok('the top bar seeds the session type when it names one (Opponent scrimmage), keeps it on All, and a fresh start is Practice', same(bar, ['Opponent scrimmage', 'Opponent scrimmage', 'Practice']), bar);
+
+  // ===== Players =====
+  const pl = nj(`(() => { const pool = scPool('2027'), c = {}; pool.filter(s => sessionTypeOf(s) === 'Practice').forEach(s => { c[s.shooterJersey] = (c[s.shooterJersey] || 0) + 1; });
+    const j = Object.keys(c).sort((a, b) => c[b] - c[a])[0]; Object.assign(SC_ST, { type: 'Practice', period: '5', subject: j, grouping: 'zones' }); renderScoringChange();
+    const r = scCompare({ season: '2027', type: 'Practice', period: '5', subject: j, grouping: 'groups' }), t = scCompare({ season: '2027', type: 'Practice', period: '5', subject: 'team', grouping: 'groups' });
+    return { j, grouping: SC_ST.grouping, gpills: document.querySelectorAll('#scGroupPills .pill').length, onlyHim: r.shotsA.concat(r.shotsB).every(s => String(s.shooterJersey) === j), sameSessions: same(r.per, t.per),
+      recRows: document.querySelectorAll('#scBody table.sc-rec tbody tr').length, n: r.shotsA.length + r.shotsB.length }; function same(a, b) { return JSON.stringify(a) === JSON.stringify(b); } })()`);
+  ok('player view: only his shots, over the team\'s sessions; 13 zones is team-only (falls back to 5 groups)', pl.onlyHim && pl.sameSessions && pl.grouping === 'groups' && pl.gpills === 1, pl);
+  ok('player view: the records list holds exactly the shots counted', pl.recRows === pl.n && pl.n > 0, pl);
+
+  // ===== Page text: totals, per 100, samples, records =====
+  const ui = nj(`(() => { Object.assign(SC_ST, { type: 'Practice', period: '5', subject: 'team', grouping: 'groups' }); renderScoringChange();
+    const b = document.getElementById('scBody'), r = scCompare({ season: '2027', type: 'Practice', period: '5', subject: 'team', grouping: 'groups' });
+    const tot = [...b.querySelectorAll('table.sc-break tr')].find(x => /Total change in goals/.test(x.textContent));
+    return { text: b.textContent, totalRow: tot ? [...tot.children].map(c => c.textContent) : null, recRows: b.querySelectorAll('table.sc-rec tbody tr').length, n: r.a.N + r.b.N, G: [r.a.G, r.b.G], N: [r.a.N, r.b.N], maps: b.querySelectorAll('svg').length,
+      locRows: b.querySelectorAll('table.sc-loc tbody tr').length, sub: document.getElementById('scSub').textContent }; })()`);
+  const sgn = v => (v > 0 ? '+' : v < 0 ? '−' : '') + Math.abs(v);
+  ok('total goals A → B and the total change are on the page', ui.totalRow && ui.totalRow[1] === sgn(ui.G[1] - ui.G[0]) && ui.text.includes(`${ui.G[0]} → ${ui.G[1]} goals`), ui.totalRow);
+  ok('goals per 100 shots for both periods are on the page', ui.text.includes('Goals per 100 shots') && ui.text.includes((100 * ui.G[0] / ui.N[0]).toFixed(1)) && ui.text.includes((100 * ui.G[1] / ui.N[1]).toFixed(1)));
+  ok('two field maps on one scale, a row per field group plus a total row', ui.maps === 2 && ui.locRows === 6 && /share one color scale/.test(ui.text));
+  ok('sample sizes, sessions used and missing data are shown', /Period A \(earlier\): 5 sessions/.test(ui.text) && /Period B \(later\): 5 sessions/.test(ui.text) && /located shots/.test(ui.text) && /Missing data:/.test(ui.text));
+  ok('the records behind the numbers: one row per shot counted', ui.recRows === ui.n, [ui.recRows, ui.n]);
+  ok('the model-based xG view is separate and labeled in-sample, with no skill claim', /Model-based view: expected goals/.test(ui.text) && /including the shots being compared/.test(ui.text) && /isn.t proof a player improved/.test(ui.text));
+  ok('the breakdown describes, it does not explain why', /doesn.t say why/.test(ui.text) || /No part of the change reaches half a goal/.test(ui.text));
+  ok('the subtitle says this panel picks its own session type and names it', /picks its own session type/.test(ui.sub) && /practices/.test(ui.sub), ui.sub);
+  const cu = nj(`(() => { Object.assign(SC_ST, { period: 'custom', custom: { aFrom: '2026-09-01', aTo: '2026-09-02', bFrom: '2026-09-01', bTo: '2026-09-02' } }); renderScoringChange();
+    const t = document.getElementById('scBody').textContent, row = document.getElementById('scCustomRow').style.display; Object.assign(SC_ST, { period: '5', custom: null }); renderScoringChange(); return { t, row }; })()`);
+  ok('custom dates with no sessions: the inputs show and the page says the period is empty', cu.row === '' && /has no practices with shots in its dates/.test(cu.t) && /No shots for Team in either period/.test(cu.t), cu.t.slice(0, 300));
+
+  // ===== Player View: only him named =====
+  const pm = nj(`(() => { const pool = scPool('2027'), j = String(pool.find(s => sessionTypeOf(s) === 'Practice').shooterJersey), name = nameFor(j, '2027');
+    PLAYER_MODE = { name, names: [name], seasons: { '2027': j }, roles: ['player'] }; try { Object.assign(SC_ST, { type: 'Practice', period: '5', subject: 'team', grouping: 'groups' }); renderScoringChange();
+      const pills = [...document.querySelectorAll('#scSubjectPills .pill')].map(b => b.textContent), names = [...document.querySelectorAll('#scBody table.sc-rec tbody tr td:nth-child(3)')].map(td => td.textContent);
+      return { pills, j, others: names.filter(x => x !== 'Teammate' && !x.includes(name)).length, teammates: names.filter(x => x === 'Teammate').length }; } finally { PLAYER_MODE = null; renderScoringChange(); } })()`);
+  ok('Player View: the Who pills are Team and him only; other shooters show as "Teammate" in the records', pm.pills.length === 2 && pm.pills[0] === 'Team' && pm.pills[1].startsWith('#' + pm.j + ' ') && pm.others === 0 && pm.teammates > 0, pm);
+
+  // ===== Safety =====
+  ok('no page errors', errs.length === 0, errs.slice(0, 5));
+  ok('no network access attempted', N.__GUARD.blocked.length === 0 && O.__GUARD.blocked.length === 0, [N.__GUARD.blocked.slice(0, 3), O.__GUARD.blocked.slice(0, 3)]);
+  ok('the new panel writes nothing (in-memory writes unchanged since boot)', N.__FAKE.__writes.length === writes0.neu, N.__FAKE.__writes.slice(writes0.neu, writes0.neu + 5));
+  const result = { at: new Date().toISOString(), export: EXPORT, real: REAL, pass: T.pass, fail: T.fail, results: T.results, summary: T.summary };
+  document.getElementById('out').textContent = JSON.stringify(result, null, 1);
+  await fetch('/results/' + (REAL ? 'phase1_real' : 'phase1_tests') + '.json', { method: 'POST', body: JSON.stringify(result, null, 1) });
+}
+run().catch(e => { document.getElementById('out').textContent = 'HARNESS ERROR ' + (e && e.stack || e); fetch('/results/' + (REAL ? 'phase1_real' : 'phase1_tests') + '.json', { method: 'POST', body: JSON.stringify({ err: String(e && e.stack || e), results: T.results }) }); });
+</script>
+</body></html>

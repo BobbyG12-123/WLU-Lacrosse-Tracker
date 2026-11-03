@@ -118,6 +118,7 @@
   .flag-card.good { border-left-color: var(--good); }
   .flag-card .why { font-size: 12px; color: var(--muted); line-height: 1.5; margin-top: 6px; }
   .n-note { font-family: var(--text); font-size: 11px; color: var(--muted); font-style: italic; }
+  #scSubjectPills .pill { padding: 5px 10px; font-size: 12px; }
   .model-note { font-family: var(--text); font-size: 11.5px; color: var(--muted); background: #FBFAF6; border-left: 3px solid var(--line); padding: 8px 12px; border-radius: 0 6px 6px 0; margin-bottom: 14px; }
   .chart-wrap svg { width: 100%; height: auto; display: block; }
   .table-wrap { max-height: 520px; overflow: auto; border: 1px solid var(--line); border-radius: 8px; }
@@ -1514,6 +1515,21 @@
         <div class="section-heading down"><span>&#9660;</span> Trending Down</div>
         <div class="trend-grid" id="shootingTrendsDownGrid"></div>
       </div>
+    </div>
+    <div class="panel" id="scPanel" style="display:none;">
+      <p class="panel-title">Scoring Change: What Moved</p>
+      <p class="panel-sub" id="scSub">Two periods side by side. The change in goals is split into shot volume, location mix and conversion within each location.</p>
+      <div class="controls-row" style="margin-bottom:8px; flex-wrap:wrap;">
+        <div class="control-group"><label>Sessions</label><div class="pill-row" id="scTypePills"></div></div>
+        <div class="control-group"><label>Periods</label><div class="pill-row" id="scPeriodPills"></div></div>
+        <div class="control-group"><label>Locations</label><div class="pill-row" id="scGroupPills"></div></div>
+      </div>
+      <div class="controls-row" id="scCustomRow" style="display:none; margin-bottom:8px; flex-wrap:wrap; gap:14px;">
+        <label class="sans" style="font-size:12px; color:var(--muted); display:flex; align-items:center; gap:6px;">Period A from <input type="date" id="scAFrom"> to <input type="date" id="scATo"></label>
+        <label class="sans" style="font-size:12px; color:var(--muted); display:flex; align-items:center; gap:6px;">Period B from <input type="date" id="scBFrom"> to <input type="date" id="scBTo"></label>
+      </div>
+      <div class="control-group" style="margin-bottom:10px;"><label>Who</label><div class="pill-row" id="scSubjectPills" style="flex-wrap:wrap;"></div></div>
+      <div id="scBody"></div>
     </div>
     </div>
     <div class="subpage" data-label="Deep Dive">
@@ -14268,6 +14284,20 @@ function renderAngSelNote() {
   el.innerHTML = `Focused on <b>${escapeHtml(selWords.charAt(0).toUpperCase() + selWords.slice(1))}</b>: the aim map, angle chart and 3D map follow it. <button type="button" class="btn secondary" id="angSelClear" style="padding:2px 8px; font-size:11.5px; margin-left:6px;">Clear</button>`;
   document.getElementById('angSelClear').addEventListener('click', () => { angSel = null; renderEfficiencyView(); });
 }
+// Zone shapes in zoneAt() priority order, lowest first (each is masked by every shape after it). R(l0, l1, d0, d1) draws
+// a rectangle and circ(r) a circle around the goal, both in yds; shared by the zone map and the scoring-change maps.
+function zoneShapePaths(R, circ) {
+  return [
+    ['Top Left', R(-20, 0, 0, 20)], ['Top Right', R(0, 20, 0, 20)],
+    ['Alley Left', R(-12, 0, 0, 12)], ['Alley Right', R(0, 12, 0, 12)],
+    ['Top Center', R(-5, 5, 11, 20)],
+    ['Crease', R(-4, 4, 0, 11)],
+    ['Wing Left', R(-20, -12, 0, 20)], ['Wing Right', R(12, 20, 0, 20)],
+    ['Low Left', R(-12, -3, 0, 6)], ['Low Right', R(3, 12, 0, 6)],
+    ['GLE Left', R(-20, -5, 0, 3)], ['GLE Right', R(5, 20, 0, 3)],
+    ['Doorstep', circ(5) + R(-3, 3, 0, 6)],
+  ];
+}
 // Top-down field divided into the named zones, each showing goal % and shots.
 function renderZoneMap(shots, xgOf) {
   const wrap = document.getElementById('angFanWrap');
@@ -14288,16 +14318,7 @@ function renderZoneMap(shots, xgOf) {
   // shape (the Doorstep) fills as one piece.
   // Zone shapes in priority order, lowest first. Each one is masked by every
   // shape after it, so what's drawn matches zoneAt() exactly.
-  const SHAPES = [
-    ['Top Left', R(-20, 0, 0, 20)], ['Top Right', R(0, 20, 0, 20)],
-    ['Alley Left', R(-12, 0, 0, 12)], ['Alley Right', R(0, 12, 0, 12)],
-    ['Top Center', R(-5, 5, 11, 20)],
-    ['Crease', R(-4, 4, 0, 11)],
-    ['Wing Left', R(-20, -12, 0, 20)], ['Wing Right', R(12, 20, 0, 20)],
-    ['Low Left', R(-12, -3, 0, 6)], ['Low Right', R(3, 12, 0, 6)],
-    ['GLE Left', R(-20, -5, 0, 3)], ['GLE Right', R(5, 20, 0, 3)],
-    ['Doorstep', circ(5) + R(-3, 3, 0, 6)],
-  ];
+  const SHAPES = zoneShapePaths(R, circ);
   // Fixed label spots inside each zone (yds wide, yds out).
   const LABEL_AT = { 'Doorstep': [0, 4.6], 'GLE Left': [-12.5, 1.2], 'GLE Right': [12.5, 1.2], 'Low Left': [-8, 4.4], 'Low Right': [8, 4.4],
     'Crease': [0, 8.4], 'Alley Left': [-8, 8.6], 'Alley Right': [8, 8.6], 'Wing Left': [-16, 10.5], 'Wing Right': [16, 10.5],
@@ -16031,6 +16052,7 @@ function renderRollingTrendChart(containerId, playersSeries, opts) {
 let trendWindow = 'days7', trendMetric = 'shotPct';
 function renderShootingTrends() {
   if (!document.getElementById('shootingTrendsUpGrid')) return;
+  renderScoringChange();
   const controlsRow = document.getElementById('trendControlsRow');
   const rollingWrap = document.getElementById('trendRollingWrap');
   const groupsWrap = document.getElementById('trendWindowGroups');
@@ -16078,6 +16100,290 @@ function renderShootingTrends() {
   const down = result.entries.filter(e => e.delta < 0).sort((a, b) => a.delta - b.delta).slice(0, 3);
   renderTrendGroup('shootingTrendsUpGrid', up, 'up', 'players');
   renderTrendGroup('shootingTrendsDownGrid', down, 'down', 'players');
+}
+
+// ---------------- Scoring change: two periods, volume / location mix / conversion (Phase 1, Nov 3, 2026) ----------------
+// Bobby's spec: team and individual players; two selectable periods (default: the last 5 practices with logged shots vs
+// the 5 before); five field groups (13 zones as optional team detail); total goals and goals per 100 shots, sample sizes,
+// missing data and the records behind each number; no attribution the data can't support.
+//
+// Exact descriptive breakdown, on shots with a location (L = located shots, r = goals per located shot,
+// p_k = share of located shots in location k, c_k = conversion in k; a bar means the average of the two periods):
+//   goals on located shots = L x r, so the change = volume + rate, with volume = dL x mean(r) and rate = mean(L) x dr.
+//   dr = location mix + conversion, with mix = sum_k dp_k x (mean(c_k) - mean(r)) and conversion = sum_k mean(p_k) x dc_k.
+// Each split is symmetric (the average of both orders), so the parts add up exactly to the observed change and swapping
+// the periods flips every sign. Shots with no location are their own line: they are counted, never split.
+// A location split needs a conversion rate in BOTH periods for every location that has shots in either, and at least
+// SC_MIN_LOCATED located shots per period; otherwise it says why and shows the volume / rate split only.
+// Expected goals (the season model) are a separate, model-based view, labeled as in-sample.
+const SC_GROUPS = ['Inside', 'Low/GLE', 'Alley', 'Top', 'Wing'];
+const SC_GROUP_OF = { 'Doorstep': 'Inside', 'Crease': 'Inside', 'GLE Left': 'Low/GLE', 'GLE Right': 'Low/GLE', 'Low Left': 'Low/GLE', 'Low Right': 'Low/GLE',
+  'Alley Left': 'Alley', 'Alley Right': 'Alley', 'Top Left': 'Top', 'Top Center': 'Top', 'Top Right': 'Top', 'Wing Left': 'Wing', 'Wing Right': 'Wing' };
+const SC_GROUP_WORDS = 'Inside = Doorstep + Crease; Low/GLE = GLE and Low, both sides; Alley = both alleys; Top = Top Left, Center and Right; Wing = both wings';
+const SC_MIN_LOCATED = 10;   // located shots per period before a location split is attempted
+const SC_SMALL = 5;          // a location with fewer shots in a period is marked "small"
+const SC_SIZES = [3, 5, 10];
+const SC_ST = { type: null, barCtx: null, period: '5', custom: null, subject: 'team', grouping: 'groups' };
+
+const scKeys = grouping => grouping === 'zones' ? ZONE_ORDER : SC_GROUPS;
+function scCellOf(x, grouping) { const z = shotZone(x); return z ? (grouping === 'zones' ? z : SC_GROUP_OF[z]) : null; }
+const scDate = d => d ? `${Number(d.slice(5, 7))}/${Number(d.slice(8, 10))}` : '—';
+const scSid = x => x._sid || sessionIdFor(x);
+// WLU shots with a shooter in the season (and Fall/Spring part): the same pool as Shooting Trends.
+function scPool(season) { return advShots(season).filter(s => s.team !== 'OPP' && s.shooterJersey && inPart(s, season)); }
+// Sessions of one type that have logged shots, oldest first.
+function scSessions(pool, type) {
+  const m = {};
+  pool.filter(s => sessionTypeOf(s) === type).forEach(s => { const id = scSid(s); (m[id] = m[id] || { sid: id, date: s.date || '', n: 0 }).n++; });
+  return Object.values(m).sort((a, b) => (a.date + a.sid).localeCompare(b.date + b.sid));
+}
+// Period A (earlier) and B (later), as session lists. 'N' = the last N sessions vs the N before; 'custom' = date ranges.
+function scPeriods(sessions, period, custom) {
+  if (period === 'custom') {
+    const c = custom || {}, inR = (s, f, t) => !!f && !!t && s.date >= f && s.date <= t;
+    const A = sessions.filter(s => inR(s, c.aFrom, c.aTo)), B = sessions.filter(s => inR(s, c.bFrom, c.bTo));
+    const overlap = A.filter(s => B.some(b => b.sid === s.sid)).length;
+    return { A, B, overlap, wanted: null, label: 'custom dates' };
+  }
+  const n = Number(period) || 5, B = sessions.slice(-n), A = sessions.slice(Math.max(0, sessions.length - 2 * n), Math.max(0, sessions.length - n));
+  return { A, B, overlap: 0, wanted: n, label: `the last ${n} vs the ${n} before` };
+}
+// Counts for one period's shots. cells: located shots by location key; unloc: shots with no location.
+function scSummarize(shots, grouping, model) {
+  const keys = scKeys(grouping), cells = {};
+  keys.forEach(k => { cells[k] = { n: 0, g: 0 }; });
+  const out = { N: shots.length, G: 0, loc: { N: 0, G: 0 }, unloc: { N: 0, G: 0 }, cells, xg: 0, ungraded: 0 };
+  shots.forEach(s => {
+    const goal = s.goal === 1 ? 1 : 0, k = scCellOf(s, grouping);
+    out.G += goal;
+    if (k) { cells[k].n++; cells[k].g += goal; out.loc.N++; out.loc.G += goal; } else { out.unloc.N++; out.unloc.G += goal; }
+    if (model) out.xg += xgForShot(s, model);
+    if (!s.shotQuality) out.ungraded++;
+  });
+  return out;
+}
+// The breakdown of B - A. Every number reconciles: volume + mix + conversion (or volume + rate) + no-location = total.
+function scDecompose(a, b, keys) {
+  const res = { total: b.G - a.G, unlocated: b.unloc.G - a.unloc.G, located: b.loc.G - a.loc.G, volume: null, rate: null, mix: null, conversion: null,
+    split: false, why: null, per100: null, rows: [] };
+  const LA = a.loc.N, LB = b.loc.N;
+  if (!LA || !LB) { res.why = `${!LA && !LB ? 'Neither period has' : (!LA ? 'Period A has no' : 'Period B has no')} shots with a location, so the change can't be split.`; return res; }
+  const rA = a.loc.G / LA, rB = b.loc.G / LB, rM = (rA + rB) / 2, LM = (LA + LB) / 2;
+  res.volume = (LB - LA) * rM;
+  res.rate = LM * (rB - rA);
+  res.per100 = { a: 100 * rA, b: 100 * rB, delta: 100 * (rB - rA), mix: null, conversion: null };
+  const used = keys.filter(k => a.cells[k].n || b.cells[k].n);
+  const oneSided = used.filter(k => !a.cells[k].n || !b.cells[k].n);
+  res.rows = used.map(k => {
+    const A = a.cells[k], B = b.cells[k], pA = A.n / LA, pB = B.n / LB, cA = A.n ? A.g / A.n : null, cB = B.n ? B.g / B.n : null;
+    const both = cA !== null && cB !== null;
+    return { key: k, nA: A.n, gA: A.g, nB: B.n, gB: B.g, pA, pB, cA, cB,
+      mix100: both ? 100 * (pB - pA) * ((cA + cB) / 2 - rM) : null, conv100: both ? 100 * ((pA + pB) / 2) * (cB - cA) : null };
+  });
+  if (LA < SC_MIN_LOCATED || LB < SC_MIN_LOCATED) { res.why = `A location split needs ${SC_MIN_LOCATED}+ shots with a location in each period (A has ${LA}, B has ${LB}).`; return res; }
+  if (oneSided.length) {
+    res.why = `No conversion rate to compare for ${oneSided.map(k => `${k} (shots only in period ${a.cells[k].n ? 'A' : 'B'}: ${a.cells[k].n || b.cells[k].n})`).join(', ')}.`;
+    return res;
+  }
+  const mix100 = res.rows.reduce((t, r) => t + r.mix100, 0), conv100 = res.rows.reduce((t, r) => t + r.conv100, 0);
+  res.split = true;
+  res.per100.mix = mix100; res.per100.conversion = conv100;
+  res.mix = LM * mix100 / 100; res.conversion = LM * conv100 / 100;
+  return res;
+}
+// The whole comparison for one selection; pure apart from reading SHOTS / session types (the tests call it directly).
+function scCompare(opts) {
+  const season = opts.season, pool = scPool(season), sessions = scSessions(pool, opts.type);
+  const per = scPeriods(sessions, opts.period, opts.custom);
+  const ids = list => new Set(list.map(s => s.sid));
+  const aIds = ids(per.A), bIds = ids(per.B);
+  const subj = s => opts.subject === 'team' || String(s.shooterJersey) === String(opts.subject);
+  const typed = pool.filter(s => sessionTypeOf(s) === opts.type && subj(s));
+  const shotsA = typed.filter(s => aIds.has(scSid(s))), shotsB = typed.filter(s => bIds.has(scSid(s)));
+  const model = xgModelFor(season), keys = scKeys(opts.grouping);
+  const a = scSummarize(shotsA, opts.grouping, model), b = scSummarize(shotsB, opts.grouping, model);
+  const dec = (shotsA.length || shotsB.length) ? scDecompose(a, b, keys) : null;
+  return { season, type: opts.type, sessions, per, shotsA, shotsB, a, b, dec, keys, grouping: opts.grouping, subject: opts.subject };
+}
+
+function scNum(v, d) {
+  if (v === null || v === undefined || !isFinite(v)) return '—';
+  const t = Math.abs(v).toFixed(d === undefined ? 1 : d);
+  return Number(t) === 0 ? t : (v > 0 ? '+' : '−') + t;   // a change that rounds to zero shows no sign
+}
+const scPct = v => v === null || v === undefined ? '—' : Math.round(v * 100) + '%';
+// Two maps on one color scale: base = both periods' located shots pooled, spread = the largest gap among cells with 3+ shots.
+function scMapSvg(sum, keys, grouping, base, spread, title) {
+  const K = 2.3, X = l => 50 + l * K, Y = d => 1 + (d + 3.5) * K, H = Y(21) + 1, uid = 'scm' + (++svgUid) + '_';
+  const R = (l0, l1, d0, d1) => `M${X(l0).toFixed(2)},${Y(d0).toFixed(2)}H${X(l1).toFixed(2)}V${Y(d1).toFixed(2)}H${X(l0).toFixed(2)}Z`;
+  const circ = r => { const pr = r * K; return `M${(X(0) - pr).toFixed(2)},${Y(0).toFixed(2)}a${pr.toFixed(2)},${pr.toFixed(2)} 0 1,1 ${(2 * pr).toFixed(2)},0a${pr.toFixed(2)},${pr.toFixed(2)} 0 1,1 -${(2 * pr).toFixed(2)},0Z`; };
+  const SHAPES = zoneShapePaths(R, circ), L = sum.loc.N;
+  const cellOfZone = z => grouping === 'zones' ? z : SC_GROUP_OF[z];
+  let svg = `<svg viewBox="0 0 100 ${H.toFixed(1)}" xmlns="http://www.w3.org/2000/svg" style="width:100%; display:block; border-radius:10px;" role="img" aria-label="${escapeHtml(title)}"><defs>`;
+  SHAPES.forEach((sh, i) => { svg += `<mask id="${uid}m${i}" maskUnits="userSpaceOnUse" x="0" y="0" width="100" height="${H.toFixed(1)}"><rect x="0" y="0" width="100" height="${H.toFixed(1)}" fill="#000"/><path d="${sh[1]}" fill="#FFF"/>${SHAPES.slice(i + 1).map(o => `<path d="${o[1]}" fill="#000"/>`).join('')}</mask>`; });
+  svg += `</defs><rect x="0" y="0" width="100" height="${H.toFixed(1)}" fill="#2F6A3C"/>`;
+  SHAPES.forEach(([z, d], i) => {
+    const c = sum.cells[cellOfZone(z)], fill = c.n ? heatColor(c.g / c.n, base, spread) : '#FFFFFF';
+    svg += `<path d="${d}" mask="url(#${uid}m${i})" fill="${fill}" fill-opacity="${c.n >= 3 ? 0.62 : (c.n ? 0.25 : 0.06)}" stroke="#FFFFFF" stroke-opacity="${grouping === 'zones' ? 0.55 : 0.18}" stroke-width="0.35"/>`;
+  });
+  const W = 'rgba(255,255,255,0.92)', ft = `font-family="Instrument Sans, Helvetica Neue, Arial, sans-serif"`;
+  svg += `<line x1="${X(-20)}" y1="${Y(0)}" x2="${X(20)}" y2="${Y(0)}" stroke="#FFFFFF" stroke-opacity="0.45" stroke-width="0.3"/>`;
+  svg += `<line x1="${X(-21)}" y1="${Y(20)}" x2="${X(21)}" y2="${Y(20)}" stroke="${W}" stroke-width="0.45"/><path d="${circ(3)}" fill="rgba(255,255,255,0.10)" stroke="${W}" stroke-width="0.35"/>`;
+  svg += `<line x1="${X(-1)}" y1="${Y(0)}" x2="${X(1)}" y2="${Y(0)}" stroke="#FF8A3D" stroke-width="0.7" stroke-linecap="round"/>`;
+  const GROUP_AT = { 'Inside': [[0, 6.6]], 'Low/GLE': [[-9, 2.6], [9, 2.6]], 'Alley': [[-8, 8.8], [8, 8.8]], 'Wing': [[-16, 10.5], [16, 10.5]], 'Top': [[0, 15.8]] };
+  const ZONE_AT = { 'Doorstep': [0, 4.6], 'GLE Left': [-12.5, 1.2], 'GLE Right': [12.5, 1.2], 'Low Left': [-8, 4.4], 'Low Right': [8, 4.4], 'Crease': [0, 8.4],
+    'Alley Left': [-8, 8.6], 'Alley Right': [8, 8.6], 'Wing Left': [-16, 10.5], 'Wing Right': [16, 10.5], 'Top Left': [-8.5, 16.2], 'Top Center': [0, 15.6], 'Top Right': [8.5, 16.2] };
+  const ts = `text-anchor="middle" ${ft} fill="#FFFFFF" stroke="rgba(15,31,61,0.55)" stroke-width="0.35" paint-order="stroke"`;
+  keys.forEach(k => {
+    const c = sum.cells[k], spots = grouping === 'zones' ? [ZONE_AT[k]] : GROUP_AT[k];
+    spots.forEach(([l, d], j) => {
+      const cx = X(l).toFixed(2);
+      svg += `<text x="${cx}" y="${(Y(d) - 1.4).toFixed(2)}" font-size="${grouping === 'zones' ? 1.5 : 1.8}" font-weight="700" ${ts}>${escapeHtml(k)}</text>`;
+      if (j > 0) return;   // a two-sided group shows its numbers once, on the left
+      svg += `<text x="${cx}" y="${(Y(d) + 0.9).toFixed(2)}" font-size="2.3" font-weight="700" ${ts}>${c.n ? Math.round(c.g / c.n * 100) + '%' : '—'}</text>`;
+      svg += `<text x="${cx}" y="${(Y(d) + 2.6).toFixed(2)}" font-size="1.4" ${ts}>${c.g}/${c.n}${L ? ' · ' + Math.round(c.n / L * 100) + '% of shots' : ''}</text>`;
+    });
+  });
+  return svg + `</svg>`;
+}
+
+function scSyncControls(season, pool) {
+  const present = SESSION_TYPES.concat([SCRIM_UNTYPED]).filter(t => pool.some(s => sessionTypeOf(s) === t));
+  // The top bar's Sessions choice seeds this panel's type when it names one type; otherwise it starts on Practice.
+  const bar = offCtx();
+  if (SC_ST.barCtx !== bar || !SC_ST.type) { SC_ST.barCtx = bar; if (present.includes(bar)) SC_ST.type = bar; else if (!SC_ST.type) SC_ST.type = 'Practice'; }
+  if (!present.includes(SC_ST.type) && present.length) SC_ST.type = present.includes('Practice') ? 'Practice' : present[0];
+  setupPillGroup('scTypePills', present, SC_ST.type, v => { if (v) SC_ST.type = v; renderScoringChange(); });
+  setupPillGroup('scPeriodPills', SC_SIZES.map(n => ({ value: String(n), label: `Last ${n} vs ${n} before` })).concat([{ value: 'custom', label: 'Custom dates' }]), SC_ST.period, v => {
+    if (v === 'custom' && !SC_ST.custom) {
+      const per = scPeriods(scSessions(pool, SC_ST.type), SC_ST.period === 'custom' ? '5' : SC_ST.period);
+      const f = l => l.length ? l[0].date : '', t = l => l.length ? l[l.length - 1].date : '';
+      SC_ST.custom = { aFrom: f(per.A), aTo: t(per.A), bFrom: f(per.B), bTo: t(per.B) };
+    }
+    if (v) SC_ST.period = v; renderScoringChange();
+  });
+  const players = {};
+  pool.filter(s => sessionTypeOf(s) === SC_ST.type).forEach(s => { players[s.shooterJersey] = (players[s.shooterJersey] || 0) + 1; });
+  let subj = Object.keys(players).sort((x, y) => players[y] - players[x]).map(j => ({ value: String(j), label: `#${j} ${nameFor(j, season)}` }));
+  if (PLAYER_MODE) { subj = subj.filter(o => pmHas(o.label)); if (SC_ST.subject !== 'team' && !subj.some(o => o.value === SC_ST.subject)) SC_ST.subject = 'team'; }
+  if (SC_ST.subject !== 'team' && !players[SC_ST.subject]) SC_ST.subject = 'team';
+  setupPillGroup('scSubjectPills', [{ value: 'team', label: 'Team' }].concat(subj), SC_ST.subject, v => { SC_ST.subject = v || 'team'; if (SC_ST.subject !== 'team') SC_ST.grouping = 'groups'; renderScoringChange(); });
+  const gOpts = [{ value: 'groups', label: '5 field groups' }].concat(SC_ST.subject === 'team' ? [{ value: 'zones', label: '13 zones (team detail)' }] : []);
+  if (SC_ST.subject !== 'team') SC_ST.grouping = 'groups';
+  setupPillGroup('scGroupPills', gOpts, SC_ST.grouping, v => { SC_ST.grouping = v || 'groups'; renderScoringChange(); });
+  const row = document.getElementById('scCustomRow');
+  row.style.display = SC_ST.period === 'custom' ? '' : 'none';
+  if (SC_ST.period === 'custom') {
+    const c = SC_ST.custom || {};
+    [['scAFrom', 'aFrom'], ['scATo', 'aTo'], ['scBFrom', 'bFrom'], ['scBTo', 'bTo']].forEach(([id, k]) => {
+      const el = document.getElementById(id); el.value = c[k] || '';
+      el.onchange = () => { SC_ST.custom = Object.assign({}, SC_ST.custom, { [k]: el.value }); renderScoringChange(); };
+    });
+  }
+}
+
+function renderScoringChange() {
+  const panel = document.getElementById('scPanel');
+  if (!panel) return;
+  if (!isAdvSeason(heatSeason)) { panel.style.display = 'none'; return; }
+  panel.style.display = '';
+  const season = heatSeason, pool = scPool(season), body = document.getElementById('scBody');
+  scSyncControls(season, pool);
+  const R = scCompare({ season, type: SC_ST.type, period: SC_ST.period, custom: SC_ST.custom, subject: SC_ST.subject, grouping: SC_ST.grouping });
+  const typeWords = sessionCtxWords(SC_ST.type).replace(/ only$/, '');
+  const who = SC_ST.subject === 'team' ? 'Team' : `#${SC_ST.subject} ${nameFor(SC_ST.subject, season)}`;
+  document.getElementById('scSub').innerHTML = `Two periods of ${escapeHtml(typeWords)} side by side for <b>${escapeHtml(who)}</b>. Periods are whole sessions with logged WLU shots${SEASON_PART !== 'Full' ? ` in ${SEASON_PART} ${season}` : ` in ${season}`}; a player is compared over the team's sessions, so a missed session just means fewer shots. This panel picks its own session type: the top bar's Sessions choice sets it when that names one type.`;
+  const per = R.per, A = R.a, B = R.b, D = R.dec;
+  const sessList = l => l.length ? l.map(s => `${scDate(s.date)}${/_scrimmage_|_game_/.test(s.sid) ? ' ' + escapeHtml(s.sid.split('_').slice(2).join(' ')) : ''} (${s.n})`).join(', ') : '—';
+  const notes = [];
+  if (per.wanted && per.A.length < per.wanted) notes.push(per.A.length ? `Only ${R.sessions.length} sessions of this type have shots, so period A has ${per.A.length} session${per.A.length === 1 ? '' : 's'}, not ${per.wanted}.` : `Only ${R.sessions.length} session${R.sessions.length === 1 ? '' : 's'} of this type ${R.sessions.length === 1 ? 'has' : 'have'} shots: there is no earlier period to compare yet.`);
+  if (per.overlap) notes.push(`The periods share ${per.overlap} session${per.overlap === 1 ? '' : 's'}; shared shots count in both.`);
+  if (SC_ST.period === 'custom' && (!per.A.length || !per.B.length)) notes.push(`Period ${!per.A.length ? 'A' : 'B'} has no ${escapeHtml(typeWords)} with shots in its dates.`);
+  let h = `<div class="sans" style="font-size:12.5px; line-height:1.55; margin-bottom:10px;">
+    <div><b>Period A</b> (earlier): ${per.A.length} session${per.A.length === 1 ? '' : 's'} · ${sessList(per.A)}</div>
+    <div><b>Period B</b> (later): ${per.B.length} session${per.B.length === 1 ? '' : 's'} · ${sessList(per.B)}</div>
+    <div class="n-note">Session (team shots in it). ${R.sessions.length} ${escapeHtml(typeWords)} with shots this season; ${per.label}.</div>
+    ${notes.map(n => `<div style="color:#B0703A; margin-top:4px;">${n}</div>`).join('')}</div>`;
+  if (!R.shotsA.length && !R.shotsB.length) { body.innerHTML = h + `<p class="sans" style="color:var(--muted); font-size:13px;">No shots for ${escapeHtml(who)} in either period.</p>`; return; }
+  const p100 = s => s.N ? 100 * s.G / s.N : null;
+  const tile = (label, va, vb, delta, fmt) => `<div style="flex:1 1 150px; border:1px solid var(--line); border-radius:8px; padding:8px 10px;">
+      <div class="n-note" style="font-style:normal; text-transform:uppercase; letter-spacing:.04em;">${label}</div>
+      <div class="sans" style="font-size:18px; font-weight:700;">${fmt(va)} &rarr; ${fmt(vb)}</div>
+      <div class="sans" style="font-size:12px; color:var(--muted);">change ${delta}</div></div>`;
+  const i0 = v => v === null ? '—' : String(Math.round(v)), f1 = v => v === null ? '—' : v.toFixed(1);
+  h += `<div style="display:flex; gap:10px; flex-wrap:wrap; margin-bottom:12px;">
+    ${tile('Goals', A.G, B.G, scNum(B.G - A.G, 0), i0)}
+    ${tile('Shots', A.N, B.N, scNum(B.N - A.N, 0), i0)}
+    ${tile('Goals per 100 shots', p100(A), p100(B), p100(A) === null || p100(B) === null ? '—' : scNum(p100(B) - p100(A)), f1)}</div>`;
+  // ---- Exact breakdown ----
+  const row = (label, goals, per100, explain, strong) => `<tr${strong ? ' style="font-weight:700;"' : ''}><td style="text-align:left;">${label}</td><td>${goals}</td><td>${per100}</td><td style="text-align:left; white-space:normal; color:var(--muted);">${explain}</td></tr>`;
+  let br = `<table class="shotlog dense sc-break"><thead><tr><th style="text-align:left;">Part of the change</th><th>Goals</th><th>Per 100 located shots</th><th style="text-align:left;">What it means</th></tr></thead><tbody>`;
+  let lead = '';
+  if (D && D.volume !== null) {
+    br += row('Shot volume', scNum(D.volume), '', `${A.loc.N} &rarr; ${B.loc.N} shots with a location, at the two periods' average rate (${f1(100 * (A.loc.G / A.loc.N + B.loc.G / B.loc.N) / 2)} per 100).`);
+    if (D.split) {
+      br += row('Location mix', scNum(D.mix), scNum(D.per100.mix), 'Where the shots came from, at each location&rsquo;s average conversion over both periods.');
+      br += row('Conversion within location', scNum(D.conversion), scNum(D.per100.conversion), 'Goals per shot inside each location, at its average share of shots.');
+    } else {
+      br += row('Scoring rate (not split by location)', scNum(D.rate), scNum(D.per100.delta), `Location split unavailable: ${escapeHtml(D.why)}`);
+    }
+  } else if (D) {
+    br += row('Shots with a location', scNum(D.located, 0), '', escapeHtml(D.why || ''));
+  }
+  if (D) {
+    br += row('Shots with no location', scNum(D.unlocated, 0), '', `${A.unloc.N} &rarr; ${B.unloc.N} shots (${A.unloc.G} &rarr; ${B.unloc.G} goals); counted in the total, not split.`);
+    br += row('Total change in goals', scNum(D.total, 0), D.per100 ? scNum(D.per100.delta) : '—', `${A.G} &rarr; ${B.G} goals. The parts above add up to this (rounding aside).`, true);
+    const parts = D.split ? [['shot volume', D.volume], ['location mix', D.mix], ['conversion within location', D.conversion]] : (D.volume !== null ? [['shot volume', D.volume], ['scoring rate', D.rate]] : []);
+    const big = parts.slice().sort((x, y) => Math.abs(y[1]) - Math.abs(x[1]))[0];
+    if (big && Math.abs(big[1]) >= 0.5) lead = `Largest part of the ${scNum(D.total, 0)}-goal change: <b>${big[0]}</b> (${scNum(big[1])} goals).${D.split ? '' : ' A location split isn&rsquo;t supported for this selection.'} This describes what happened in these shots; it doesn&rsquo;t say why.`;
+    else if (big) lead = `No part of the change reaches half a goal.`;
+  }
+  br += `</tbody></table>`;
+  h += `<p class="panel-sub" style="margin:4px 0 4px; font-weight:700; color:var(--ink);">Exact breakdown (no model)</p>${lead ? `<p class="sans" style="font-size:13px; margin:0 0 6px;">${lead}</p>` : ''}<div class="table-wrap">${br}</div>
+    <p class="n-note" style="margin:4px 0 12px;">Each split uses the average of both periods, so the parts add up exactly and swapping the periods flips every sign. Per 100 holds volume fixed: only location mix and conversion move it. ${R.grouping === 'groups' ? escapeHtml(SC_GROUP_WORDS) + '.' : 'The 13 named zones, as on the Efficiency zone map.'}</p>`;
+  // ---- Maps on one scale ----
+  const pooledN = A.loc.N + B.loc.N, base = pooledN ? (A.loc.G + B.loc.G) / pooledN : 0;
+  const rates = [];
+  R.keys.forEach(k => [A, B].forEach(s => { const c = s.cells[k]; if (c.n >= 3) rates.push(Math.abs(c.g / c.n - base)); }));
+  const spread = Math.max(0.08, ...rates);
+  h += `<div style="display:flex; gap:12px; flex-wrap:wrap; margin-bottom:6px;">
+    <div style="flex:1 1 300px; min-width:0;"><div class="sans" style="font-size:12px; font-weight:700; margin-bottom:4px;">Period A · ${A.loc.N} located shots</div>${scMapSvg(A, R.keys, R.grouping, base, spread, 'Period A goal % by location')}</div>
+    <div style="flex:1 1 300px; min-width:0;"><div class="sans" style="font-size:12px; font-weight:700; margin-bottom:4px;">Period B · ${B.loc.N} located shots</div>${scMapSvg(B, R.keys, R.grouping, base, spread, 'Period B goal % by location')}</div></div>
+    <p class="n-note" style="margin:0 0 12px;">Both maps share one color scale, centered on the two periods together (${scPct(base)} of located shots scored). Faded = fewer than 3 shots; — = no shots.</p>`;
+  // ---- Location table ----
+  let lt = `<table class="shotlog dense sc-loc"><thead><tr><th style="text-align:left;">Location</th><th>A shots</th><th>A share</th><th>A goals</th><th>A conv.</th><th>B shots</th><th>B share</th><th>B goals</th><th>B conv.</th><th>Mix (per 100)</th><th>Conversion (per 100)</th></tr></thead><tbody>`;
+  const sm = (n, txt) => n && n < SC_SMALL ? `<i style="color:var(--muted);" title="fewer than ${SC_SMALL} shots">${txt}</i>` : txt;
+  R.keys.forEach(k => {
+    const r = D && D.rows ? D.rows.find(x => x.key === k) : null, ca = A.cells[k], cb = B.cells[k];
+    lt += `<tr><td style="text-align:left;">${escapeHtml(k)}</td><td>${ca.n}</td><td>${A.loc.N ? scPct(ca.n / A.loc.N) : '—'}</td><td>${ca.g}</td><td>${ca.n ? sm(ca.n, scPct(ca.g / ca.n)) : '—'}</td>
+      <td>${cb.n}</td><td>${B.loc.N ? scPct(cb.n / B.loc.N) : '—'}</td><td>${cb.g}</td><td>${cb.n ? sm(cb.n, scPct(cb.g / cb.n)) : '—'}</td>
+      <td>${D && D.split && r ? scNum(r.mix100) : '—'}</td><td>${D && D.split && r ? scNum(r.conv100) : '—'}</td></tr>`;
+  });
+  lt += `<tr style="font-weight:700;"><td style="text-align:left;">All located</td><td>${A.loc.N}</td><td>${A.loc.N ? '100%' : '—'}</td><td>${A.loc.G}</td><td>${A.loc.N ? scPct(A.loc.G / A.loc.N) : '—'}</td><td>${B.loc.N}</td><td>${B.loc.N ? '100%' : '—'}</td><td>${B.loc.G}</td><td>${B.loc.N ? scPct(B.loc.G / B.loc.N) : '—'}</td><td>${D && D.split ? scNum(D.per100.mix) : '—'}</td><td>${D && D.split ? scNum(D.per100.conversion) : '—'}</td></tr>`;
+  lt += `</tbody></table>`;
+  h += `<div class="table-wrap">${lt}</div><p class="n-note" style="margin:4px 0 12px;">Italic = fewer than ${SC_SMALL} shots in that period (real number, small sample). Mix and conversion per location show where the per-100 change came from; they appear only when the split is supported.</p>`;
+  // ---- Model-based view ----
+  const xpS = s => s.N ? s.xg / s.N : null;
+  h += `<div style="border:1px solid var(--line); border-radius:8px; padding:8px 10px; margin-bottom:12px;">
+    <p class="panel-sub" style="margin:0 0 4px; font-weight:700; color:var(--ink);">Model-based view: expected goals (separate from the breakdown above)</p>
+    <div class="table-wrap"><table class="shotlog dense sc-xg"><thead><tr><th style="text-align:left;"></th><th>Shots</th><th>Expected goals</th><th>xG per shot</th><th>Goals</th><th>Goals &minus; xG</th></tr></thead><tbody>
+      <tr><td style="text-align:left;">Period A</td><td>${A.N}</td><td>${A.xg.toFixed(1)}</td><td>${xpS(A) === null ? '—' : xpS(A).toFixed(3)}</td><td>${A.G}</td><td>${scNum(A.G - A.xg)}</td></tr>
+      <tr><td style="text-align:left;">Period B</td><td>${B.N}</td><td>${B.xg.toFixed(1)}</td><td>${xpS(B) === null ? '—' : xpS(B).toFixed(3)}</td><td>${B.G}</td><td>${scNum(B.G - B.xg)}</td></tr>
+      <tr style="font-weight:700;"><td style="text-align:left;">Change</td><td>${scNum(B.N - A.N, 0)}</td><td>${scNum(B.xg - A.xg)}</td><td>${xpS(A) === null || xpS(B) === null ? '—' : scNum(xpS(B) - xpS(A), 3)}</td><td>${scNum(B.G - A.G, 0)}</td><td>${scNum((B.G - B.xg) - (A.G - A.xg))}</td></tr>
+    </tbody></table></div>
+    <p class="n-note" style="margin:4px 0 0;">Change in goals = change in expected goals (${scNum(B.xg - A.xg)}) + change in goals vs expected (${scNum((B.G - B.xg) - (A.G - A.xg))}). ${escapeHtml(XG_SCOPE_NOTE(season))} Finishing above expectation includes chance variation and context the tracker doesn&rsquo;t record; it isn&rsquo;t proof a player improved. Ungraded shots: A ${A.ungraded}, B ${B.ungraded} (scored at the model&rsquo;s ungraded rate).</p></div>`;
+  // ---- Missing data ----
+  h += `<p class="sans" style="font-size:12.5px; margin:0 0 8px;"><b>Missing data:</b> shots with no location: A ${A.unloc.N} of ${A.N}, B ${B.unloc.N} of ${B.N}. Ungraded shots: A ${A.ungraded}, B ${B.ungraded}.</p>`;
+  // ---- Records ----
+  const nameOf = j => (PLAYER_MODE && !pmHas(`#${j} ${nameFor(j, season)}`)) ? 'Teammate' : `#${j} ${nameFor(j, season)}`;
+  const recRows = (label, list) => list.slice().sort((x, y) => chronoKey(x).localeCompare(chronoKey(y))).map(s => {
+    const z = shotZone(s);
+    return `<tr><td>${label}</td><td>${scDate(s.date)}</td><td style="text-align:left;">${escapeHtml(nameOf(s.shooterJersey))}</td><td style="text-align:left;">${z ? escapeHtml(z) : '—'}</td><td style="text-align:left;">${z ? escapeHtml(SC_GROUP_OF[z]) : '—'}</td><td>${s.goal === 1 ? 'Goal' : 'No goal'}</td><td>${s.shotQuality ? escapeHtml(String(s.shotQuality).replace(/^\d-/, '')) : '—'}</td></tr>`;
+  }).join('');
+  h += `<details class="collapsible" id="scRecords"><summary><p class="panel-sub" style="font-weight:700; color:var(--ink);">The ${A.N + B.N} shots behind these numbers</p></summary>
+    <div class="table-wrap" style="max-height:420px; overflow:auto;"><table class="shotlog dense sc-rec"><thead><tr><th>Period</th><th>Date</th><th style="text-align:left;">Shooter</th><th style="text-align:left;">Zone</th><th style="text-align:left;">Group</th><th>Result</th><th>Grade</th></tr></thead>
+    <tbody>${recRows('A', R.shotsA)}${recRows('B', R.shotsB)}</tbody></table></div></details>`;
+  body.innerHTML = h;
 }
 
 function renderGoalieTrends() {
