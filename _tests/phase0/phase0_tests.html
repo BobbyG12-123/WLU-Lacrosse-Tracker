@@ -265,9 +265,52 @@ async function run() {
   const g3 = await E2('poss', '2026-09-25', null, '', true);
   ok('9/25 after the correction: a new entry inherits Opponent scrimmage vs Alumni and lands in the same session', g3.bar.type === 'Opponent scrimmage' && g3.bar.locked && g3.saved && same(g3.sids, [UNTYPED_SID]) && same(g3.types, ['Opponent scrimmage']), g3);
 
+  // ===== Review of e21a4bf: edit exception, session-scoped bar, classification saved with the entry =====
+  // All through the real Log Shot controls (date change events, pill clicks), with no form reset between steps.
+  const NJ = async src => JSON.parse(await N.eval(`(${src}).then(JSON.stringify)`));
+  const DU = '2026-11-11', seed = await NJ(`T.ui.seedUntyped('${DU}')`);
+  ok('setup: a scrimmage with no recorded type (1 shot, 1 possession), saved straight through the save path in memory', seed.shots === 1 && seed.poss === 1 && seed.type === 'Type not recorded', seed);
+  for (const k of ['shot', 'poss']) {
+    const r = await NJ(`T.ui.editUntyped('${k}', '${DU}', 'Intra-squad')`);
+    ok(`editing an unclassified ${k} with Intra-squad picked: saved in place, session stays "Type not recorded", no type written`, r.before.type === null && r.picked.type === 'Intra-squad' && !r.recordIntra && !r.readErr && r.sameSession && (k === 'poss' ? r.stored === 'End of period' : !!r.stored) && r.typeWrites === 0 && r.rec === null && r.type === 'Type not recorded', r);
+  }
+  const ce = JSON.parse(n(`JSON.stringify(T.ui.crossEdit('${DU}'))`));
+  ok('the edit exception covers only the entry’s own session: a practice shot pointed at that scrimmage as Intra-squad is refused', /isn't confirmed yet/.test(ce.err || '') && !ce.recordIntra, ce);
+  await E2('gb', '2026-11-08', 'Opponent scrimmage', 'Synth V');
+  const sw = await NJ(`(async () => { T.ui.open(); const o = {}, st = () => T.ui.state();
+    T.ui.date('2026-11-07'); T.ui.pill('f_context', 'Scrimmage'); o.a = st();
+    T.ui.date('2026-11-08'); o.b = st();
+    T.ui.date('2026-10-25'); o.c = st(); o.cSave = await T.ui.gb();
+    T.ui.date('2026-11-02'); o.d = st();
+    T.ui.date('2026-11-07'); o.e = st();
+    T.ui.date('2026-11-02'); o.f = st(); o.fSave = await T.ui.gb();
+    T.ui.pill('f_context', 'Practice'); T.ui.pill('f_context', 'Scrimmage'); o.g = st();
+    T.ui.pill('f_scrimtype', 'Opponent scrimmage'); const op = document.getElementById('f_opponent'); op.value = 'Typo Team'; op.dispatchEvent(new Event('input')); o.h1 = st();
+    T.ui.date('2026-11-09'); o.h2 = st();
+    return o; })()`);
+  ok('switching between two opponent dates: the opponent follows the date (Synth U → Synth V), never the old one', sw.a.type === 'Opponent scrimmage' && sw.a.opp === 'Synth U' && sw.a.sid === '2026-11-07_scrimmage_synth-u' && sw.b.type === 'Opponent scrimmage' && sw.b.opp === 'Synth V' && sw.b.sid === '2026-11-08_scrimmage_synth-v', [sw.a, sw.b]);
+  ok('a date with two opponent scrimmages asks for the name instead of keeping the previous one; nothing saved', sw.c.type === 'Opponent scrimmage' && sw.c.opp === '' && /Type the opponent/.test(sw.c.err || '') && sw.cSave.added === 0, [sw.c, sw.cSave]);
+  ok('switching between intra-squad and opponent dates: Intra-squad ↔ Opponent + name, opponent cleared each way; the save lands in the intra-squad session', sw.d.type === 'Intra-squad' && sw.d.opp === '' && sw.d.sid === '2026-11-02_scrimmage' && !sw.d.recordIntra && sw.e.type === 'Opponent scrimmage' && sw.e.opp === 'Synth U' && sw.f.type === 'Intra-squad' && sw.f.opp === '' && sw.fSave.added === 1 && sw.fSave.last.sid === '2026-11-02_scrimmage' && sw.fSave.last.opp === null && !sw.fSave.writes.some(w => /session_tracking/.test(w)), [sw.d, sw.e, sw.f, sw.fSave]);
+  ok('changing the session kind and back re-resolves the session', sw.g.type === 'Intra-squad' && sw.g.opp === '', sw.g);
+  ok('a manual type and opponent don’t carry to another date (new date: nothing picked, the save asks)', sw.h1.sid === '2026-11-02_scrimmage_typo-team' && sw.h2.type === null && sw.h2.opp === '' && /Pick the scrimmage type/.test(sw.h2.err || ''), [sw.h1, sw.h2]);
+  const DF = '2026-11-09', fl = await NJ(`(async () => { const o = {}; T.ui.date('${DF}'); T.ui.pill('f_context', 'Scrimmage'); T.ui.pill('f_scrimtype', 'Intra-squad');
+    T.ui.failNextTx('offline'); o.f1 = await T.ui.gb(); o.f1rec = await T.ui.rec('${DF}_scrimmage');
+    T.ui.failNextTx('reject'); o.f2 = await T.ui.gb(); o.f2rec = await T.ui.rec('${DF}_scrimmage'); o.st = T.ui.state();
+    o.f3 = await T.ui.gb(); o.f3rec = await T.ui.rec('${DF}_scrimmage'); o.f4 = await T.ui.gb(); o.f4rec = await T.ui.rec('${DF}_scrimmage'); return o; })()`);
+  ok('classification write fails (connection): nothing saved, no type, the coach is told', fl.f1.added === 0 && !fl.f1.writes.length && fl.f1rec === null && /Couldn.t record this scrimmage as intra-squad/.test(fl.f1.msg), fl.f1);
+  ok('classification write refused (permissions): nothing saved, no type', fl.f2.added === 0 && !fl.f2.writes.length && fl.f2rec === null && /Nothing was saved/.test(fl.f2.msg), fl.f2);
+  ok('not stranded: the session isn’t behind the "not confirmed" guard; saving again records the type once and saves the entry once', !fl.st.err && fl.st.recordIntra === DF + '_scrimmage' && fl.f3.added === 1 && fl.f3.writes.filter(w => /session_tracking:typ_/.test(w)).length === 1 && JSON.parse(fl.f3rec).type === 'Intra-squad' && fl.f4.added === 1 && !fl.f4.writes.some(w => /session_tracking/.test(w)) && fl.f4rec === fl.f3rec, fl);
+  const DS = '2026-11-10', stl = await NJ(`(async () => { const o = {}; await T.ui.serverRec('${DS}_scrimmage', { type: 'Opponent scrimmage', opponent: 'Synth W', by: 'OTHER COACH', at: '2026-11-03T12:00:00Z', note: 'test' });
+    T.ui.date('2026-11-09'); T.ui.date('${DS}'); o.s1 = T.ui.state(); T.ui.pill('f_scrimtype', 'Intra-squad'); o.s2 = T.ui.state();
+    o.save = await T.ui.gb(); o.rec = await T.ui.rec('${DS}_scrimmage'); o.s3 = T.ui.state(); return o; })()`);
+  ok('stale local state: the server’s Opponent scrimmage record is kept; the intra-squad save is refused and nothing is saved', stl.s1.type === null && stl.s2.recordIntra === DS + '_scrimmage' && stl.save.added === 0 && !stl.save.writes.length && /already recorded as an opponent scrimmage vs Synth W/.test(stl.save.msg) && JSON.parse(stl.rec).opponent === 'Synth W' && /recorded as an opponent scrimmage vs Synth W/.test(stl.s3.err || ''), stl);
+  const DI = '2026-11-12', stl2 = await NJ(`(async () => { const o = {}; await T.ui.serverRec('${DI}_scrimmage', { type: 'Intra-squad', opponent: null, by: 'OTHER COACH', at: '2026-11-03T12:00:00Z', note: 'test' });
+    T.ui.date('2026-11-09'); T.ui.date('${DI}'); T.ui.pill('f_scrimtype', 'Intra-squad'); o.save = await T.ui.gb(); o.rec = await T.ui.rec('${DI}_scrimmage'); return o; })()`);
+  ok('stale local state: the server’s Intra-squad record is kept as is (not rewritten) and the entry saves', stl2.save.added === 1 && !stl2.save.writes.some(w => /session_tracking/.test(w)) && JSON.parse(stl2.rec).at === '2026-11-03T12:00:00Z' && JSON.parse(stl2.rec).by === 'OTHER COACH', stl2);
+
   ok('no page errors', errs.length === 0, errs.slice(0, 5));
   ok('no network access attempted', N.__GUARD.blocked.length === 0 && O.__GUARD.blocked.length === 0, [N.__GUARD.blocked.slice(0, 3), O.__GUARD.blocked.slice(0, 3)]);
-  const allowed = x => (x.coll === 'app' && ['session_tracking', 'xg_snapshots', 'faceoffs_live', 'groundballs_live'].includes(x.id)) || (x.coll === 'app' && /^op_/.test(x.id)) || (x.coll === 'sessions' && (x.id === UNTYPED_SID || /^2026-11-0\d_scrimmage/.test(x.id)));
+  const allowed = x => (x.coll === 'app' && ['session_tracking', 'xg_snapshots', 'faceoffs_live', 'groundballs_live'].includes(x.id)) || (x.coll === 'app' && /^op_/.test(x.id)) || (x.coll === 'sessions' && (x.id === UNTYPED_SID || /^2026-11-\d\d_scrimmage/.test(x.id)));
   ok('in-memory writes are only the test’s own (saved records, type records, the correction, the edit)', N.__FAKE.__writes.every(allowed) && O.__FAKE.__writes.every(x => x.coll === 'app' && ['session_tracking', 'xg_snapshots'].includes(x.id)), N.__FAKE.__writes.filter(x => !allowed(x)).slice(0, 5));
   const result = { at: new Date().toISOString(), export: EXPORT, real: REAL, pass: T.pass, fail: T.fail, results: T.results, expected: T.expected, reports: T.reports, examples: T.examples };
   document.getElementById('out').textContent = JSON.stringify(result, null, 1);

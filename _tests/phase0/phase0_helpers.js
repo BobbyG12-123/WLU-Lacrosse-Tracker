@@ -74,15 +74,16 @@ window.T = {
   pillVisible(id, label) { syncUntypedPills(); const b = [...document.querySelectorAll('#' + id + ' .pill')].find(x => x.textContent === label); return b ? b.style.display !== 'none' : null; },
   // ---- logger session bar (no saves)
   bar(date, ctx, ty, opp, editing) {
-    document.getElementById('f_date').value = date; setPillGroupValue('f_context', ctx); setPillGroupValue('f_scrimtype', ty || null);
-    document.getElementById('f_opponent').value = opp || ''; updateSessionBarUi();
-    const keepS = editingShotId; if (editing) editingShotId = -1;
-    try { const r = readSessionFields(), op = document.getElementById('f_opponent');
+    document.getElementById('f_date').value = date; setPillGroupValue('f_context', ctx); updateSessionBarUi();
+    setPillGroupValue('f_scrimtype', ty || null); document.getElementById('f_opponent').value = opp || ''; updateSessionBarUi();
+    const base = editing ? SHOTS.find(s => s._sid === date + '_scrimmage') : null;
+    try { const r = readSessionFields(base ? { edit: base } : undefined), op = document.getElementById('f_opponent');
       return { r, typeShown: document.getElementById('scrimTypeWrap').style.display !== 'none', oppShown: document.getElementById('opponentFieldWrap').style.display !== 'none', oppDisabled: op.disabled, placeholder: op.placeholder, label: document.getElementById('f_opponent_label').textContent, note: document.getElementById('scrimTypeNote').textContent, sid: r.error ? null : sessionIdFor(r), hasOpp: hasOpponentSession() };
-    } finally { editingShotId = keepS; setPillGroupValue('f_context', 'Practice'); setPillGroupValue('f_scrimtype', null); document.getElementById('f_opponent').value = ''; updateSessionBarUi(); } },
-  async recordIntra(sid) { const w = __FAKE.__writes.length; await recordIntraSquad(sid); await recordIntraSquad(sid); await new Promise(r => setTimeout(r, 400));
+    } finally { setPillGroupValue('f_context', 'Practice'); setPillGroupValue('f_scrimtype', null); document.getElementById('f_opponent').value = ''; updateSessionBarUi(); } },
+  async recordIntra(sid) { const w = __FAKE.__writes.length; const rec1 = typeof ensureIntraSquad === 'function' ? ensureIntraSquad : recordIntraSquad;   // recordIntraSquad: builds before e21a4bf's review fix
+    const r1 = await rec1(sid), r2 = await rec1(sid); await new Promise(r => setTimeout(r, 400));
     const writes = __FAKE.__writes.slice(w); const doc = (await DB.doc('app/session_tracking').get()).data() || {};
-    return { writes: writes.map(x => [x.coll, x.id, x.keys]), rec: doc['typ_' + sid] ? JSON.parse(doc['typ_' + sid]) : null, type: sessionTypeOf({ _sid: sid, context: 'Scrimmage', opponent: null }) }; },
+    return { r1, r2, writes: writes.map(x => [x.coll, x.id, x.keys]), rec: doc['typ_' + sid] ? JSON.parse(doc['typ_' + sid]) : null, type: sessionTypeOf({ _sid: sid, context: 'Scrimmage', opponent: null }) }; },
   // ---- an edit through the tracker's own save path (the one Film Check uses), in memory, as a test coach
   async editShot(sid, field, value) {
     const hadApp = 'app' in DB, keepApp = DB.app; DB.app = { auth: () => ({ currentUser: { uid: 'TESTCOACH', email: 'test.coach@example.invalid' } }) };   // in-memory DB only
@@ -117,10 +118,10 @@ window.T = {
     try {
       goNav('logshot');
       document.getElementById('f_date').value = date;
-      if (fresh) { setPillGroupValue('f_context', 'Practice'); updateSessionBarUi(); setPillGroupValue('f_scrimtype', null); document.getElementById('f_opponent').value = ''; }
-      setPillGroupValue('f_context', 'Scrimmage');
-      if (!fresh) { setPillGroupValue('f_scrimtype', ty || null); document.getElementById('f_opponent').value = opp || ''; }
-      updateSessionBarUi(); onSessionChanged();
+      setPillGroupValue('f_context', 'Practice'); updateSessionBarUi();
+      setPillGroupValue('f_context', 'Scrimmage'); updateSessionBarUi();   // the destination session is resolved here
+      if (!fresh) { setPillGroupValue('f_scrimtype', ty || null); document.getElementById('f_opponent').value = opp || ''; updateSessionBarUi(); }
+      onSessionChanged();
       const bar = { type: currentScrimType(), opponent: document.getElementById('f_opponent').value, locked: document.getElementById('f_opponent').disabled };
       const w0 = __FAKE.__writes.length, j = rosterPlayers('2027').map(r => r.jersey);
       if (kind === 'shot') {
@@ -155,5 +156,39 @@ window.T = {
       const cols = kind === 'shot' ? COLS : POSS_COLS, stored = doc[key] ? JSON.parse(doc[key])[cols.indexOf('filmTime')] : 'missing';
       return { r, recSame: before === after && !!after, type: sessionTypeOf(e), filmTime: e.filmTime, matches: matches.length, sid: base._sid, stored, id: base.id, filmIdx: cols.indexOf('filmTime') };
     } finally { if (hadApp) DB.app = keepApp; else delete DB.app; } },
+  // ---- the real Log Shot controls, driven the way a coach does: no resets between steps
+  ui: {
+    asCoach() { const had = 'app' in DB, keep = DB.app; DB.app = { auth: () => ({ currentUser: { uid: 'TESTCOACH', email: 'test.coach@example.invalid' } }) }; return () => { if (had) DB.app = keep; else delete DB.app; }; },
+    open() { goNav('logshot'); },
+    date(d) { const i = document.getElementById('f_date'); i.value = d; i.dispatchEvent(new Event('change')); },
+    pill(group, v) { const b = [...document.querySelectorAll('#' + group + ' .pill')].find(x => x.dataset.value === v); if (b && !b.classList.contains('active')) b.click(); return !!b; },
+    state() { const op = document.getElementById('f_opponent'), r = readSessionFields(); return { ctx: currentContext(), type: currentScrimType(), opp: op.value, locked: op.disabled, err: r.error || null, sid: r.error ? null : sessionIdFor(r), recordIntra: r.recordIntra || null }; },
+    async gb(j) { const done = T.ui.asCoach(); try { const n0 = GROUNDBALLS.length, w0 = __FAKE.__writes.length; document.getElementById('gb_jersey').value = j || rosterPlayers('2027').map(r => r.jersey)[1]; await submitGroundBall(); await new Promise(r => setTimeout(r, 600));
+      return { added: GROUNDBALLS.length - n0, msg: document.getElementById('gbMsg') ? document.getElementById('gbMsg').textContent : '', writes: __FAKE.__writes.slice(w0).map(x => x.coll + '/' + x.id + ':' + x.keys.join(',')), last: GROUNDBALLS[GROUNDBALLS.length - 1] && { sid: sessionIdFor(GROUNDBALLS[GROUNDBALLS.length - 1]), opp: GROUNDBALLS[GROUNDBALLS.length - 1].opponent || null } }; } finally { done(); } },
+    failNextTx(mode) { const real = DB.runTransaction; DB.runTransaction = function () { DB.runTransaction = real; const e = new Error(mode === 'reject' ? 'Missing or insufficient permissions.' : 'Failed to get document because the client is offline.'); e.code = mode === 'reject' ? 'permission-denied' : 'unavailable'; return Promise.reject(e); }; },
+    async rec(sid) { const d = (await DB.doc('app/session_tracking').get()).data() || {}; return d['typ_' + sid] || null; },
+    async serverRec(sid, rec) { await DB.doc('app/session_tracking').set({ ['typ_' + sid]: JSON.stringify(rec) }, { merge: true }); await new Promise(r => setTimeout(r, 300)); delete SESSION_TYPE_REC[sid]; },   // server has it; this device's copy is stale
+    // A blank-opponent scrimmage logged before types existed: entries saved straight through the save path, in memory.
+    async seedUntyped(date) { const done = T.ui.asCoach(); try { const j = rosterPlayers('2027').map(r => r.jersey), base = SHOTS.find(s => s.context === 'Practice' && s.shooterJersey && !s.seed && s.shotQuality && s.contestLevel && s.outcome && isAdvSeason(seasonForDate(s.date)));
+      await persistNewShot(Object.assign({}, base, { id: nextShotId(), date, context: 'Scrimmage', opponent: null, goalieJersey: null, stintId: null, eid: undefined, filmTime: null }));
+      const pb = POSSESSIONS.find(p => p.context === 'Practice'); await persistNewPossession(Object.assign({}, pb, { id: nextPossId(), date, context: 'Scrimmage', opponent: null, stintId: null, eid: undefined, manSituation: 'Even', end: 'Failed clear', turnoverBy: null, causedBy: null, dominoes: null }));
+      await new Promise(r => setTimeout(r, 800)); return { shots: SHOTS.filter(s => s._sid === date + '_scrimmage').length, poss: POSSESSIONS.filter(p => p._sid === date + '_scrimmage').length, type: sessionTypeOf({ _sid: date + '_scrimmage', context: 'Scrimmage', opponent: null }) }; } finally { done(); } },
+    async editUntyped(kind, date, pick) { const done = T.ui.asCoach(); try { const sid = date + '_scrimmage', w0 = __FAKE.__writes.length;
+      const e = (kind === 'shot' ? SHOTS : POSSESSIONS).find(x => x._sid === sid);
+      if (kind === 'shot') startEditShot(e.id, 'logView', sid); else startEditPoss(e.id, sid);
+      const before = T.ui.state(); if (pick) T.ui.pill('f_scrimtype', pick); const picked = T.ui.state();
+      const r = readSessionFields({ edit: kind === 'shot' ? editingShotBase : editingPossBase });
+      if (kind === 'shot') { T.ui.pill('f_contest', e.contestLevel === 'Open' ? 'Heavy' : 'Open'); await saveShotFromForm({ at: 'check' }); }
+      else { T.ui.pill('p_end', 'End of period'); await savePossFromForm(); }
+      await new Promise(res => setTimeout(res, 800));
+      const doc = (await DB.collection('sessions').doc(sid).get()).data() || {}, cols = kind === 'shot' ? COLS : POSS_COLS, raw = doc[(kind === 'shot' ? 's_' : 'p_') + e.id];
+      const stored = raw ? JSON.parse(raw)[cols.indexOf(kind === 'shot' ? 'contestLevel' : 'end')] : null;
+      const msgEl = document.getElementById(kind === 'shot' ? 'shotSaveMsg' : 'possSaveMsg');
+      return { before, picked, msg: msgEl ? msgEl.textContent : '', recordIntra: r.recordIntra || null, readErr: r.error || null, stored, typeWrites: __FAKE.__writes.slice(w0).filter(x => x.id === 'session_tracking').length, rec: await T.ui.rec(sid), type: sessionTypeOf({ _sid: sid, context: 'Scrimmage', opponent: null }), sameSession: !!raw };
+    } finally { try { exitEditMode(); exitPossEditMode(); } catch (x) {} done(); } },
+    // Editing an entry from another session and pointing it at the untyped scrimmage: not the entry's own session.
+    crossEdit(date) { const e = SHOTS.find(s => s.context === 'Practice' && s._sid && isAdvSeason(seasonForDate(s.date))); startEditShot(e.id, 'logView', e._sid);
+      T.ui.date(date); T.ui.pill('f_context', 'Scrimmage'); T.ui.pill('f_scrimtype', 'Intra-squad'); const r = readSessionFields({ edit: editingShotBase }); exitEditMode(); return { err: r.error || null, recordIntra: r.recordIntra || null }; },
+  },
 };
 'loaded';

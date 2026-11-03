@@ -5135,12 +5135,23 @@ function currentScrimType() { const v = document.getElementById('f_scrimtype').d
 // blank, so new entries land in that same session (its id has no opponent in it).
 function scrimLocked() { const rec = scrimRecFor(document.getElementById('f_date').value); return isScrimmageSession() && currentScrimType() === 'Opponent scrimmage' && rec && rec.type === 'Opponent scrimmage' ? rec : null; }
 function updateSessionBarUi() {
+  // The scrimmage type and opponent belong to the selected session. When the date or session kind changes, the
+  // destination is resolved again (its recorded type, or the opponent already logged that day) and whatever was
+  // picked or typed for the previous session is cleared, so it can't carry over and pass validation.
   const ctx0 = currentContext(), date0 = document.getElementById('f_date').value, key = date0 + '|' + ctx0;
-  if (ctx0 === 'Scrimmage' && key !== SCRIM_INHERIT_KEY) {
+  if (key !== SCRIM_INHERIT_KEY) {
+    const prevCtx = SCRIM_INHERIT_KEY ? SCRIM_INHERIT_KEY.split('|')[1] : null;
     SCRIM_INHERIT_KEY = key;
-    const inh = currentScrimType() ? null : scrimInherit(date0);
-    if (inh) { setPillGroupValue('f_scrimtype', inh.type); if (inh.opponent && !document.getElementById('f_opponent').value.trim()) document.getElementById('f_opponent').value = inh.opponent; }
-  } else if (ctx0 !== 'Scrimmage') SCRIM_INHERIT_KEY = null;
+    const opIn0 = document.getElementById('f_opponent');
+    if (ctx0 === 'Scrimmage') {
+      const inh = scrimInherit(date0);
+      setPillGroupValue('f_scrimtype', inh ? inh.type : null);
+      opIn0.value = inh && inh.opponent ? inh.opponent : '';
+    } else {
+      setPillGroupValue('f_scrimtype', null);
+      if (ctx0 === 'Game' && prevCtx === 'Scrimmage') opIn0.value = '';
+    }
+  }
   const ctx = currentContext(), game = ctx === 'Game', scrim = ctx === 'Scrimmage', ty = scrim ? currentScrimType() : null;
   const rec = scrim ? scrimRecFor(document.getElementById('f_date').value) : null, lock = scrimLocked(), opIn = document.getElementById('f_opponent');
   document.getElementById('scrimTypeWrap').style.display = scrim ? '' : 'none';
@@ -5322,6 +5333,7 @@ document.getElementById('submitFaceoffBtn').addEventListener('click', async () =
   if (!opp && !b.value) { showFoMsg('Type the other faceoff man’s number (both are ours in practice).', false); return; }
   if (!opp && a.value === b.value) { showFoMsg('The two faceoff men must be different players.', false); return; }
   if (!foResult) { showFoMsg(opp ? 'Pick Won or Lost.' : 'Pick who won.', false); return; }
+  if (sess.recordIntra) { const c = await ensureIntraSquad(sess.recordIntra); if (!c.ok) { showFoMsg(escapeHtml(c.why), false); return; } }
   const maxId = FACEOFFS.reduce((m, f) => Math.max(m, f.id || 0), 0);
   const faceoff = {
     id: maxId + 1, date: sess.date, context: sess.context, opponent: sess.opponent,
@@ -5332,7 +5344,6 @@ document.getElementById('submitFaceoffBtn').addEventListener('click', async () =
   FACEOFFS.push(faceoff);
   const okSave = await persistFaceoff(faceoff);
   if (!okSave) { FACEOFFS.pop(); showFoMsg('Save failed — please try again.', false); return; }
-  if (sess.recordIntra) recordIntraSquad(sess.recordIntra);
   const season = currentFoSeason(), winner = foResult === 'A' ? a.value : b.value;
   showFoMsg(`Saved faceoff #${faceoff.id}: ${escapeHtml(jerseyLabel(a.value, season))} vs ${b.value ? escapeHtml(jerseyLabel(b.value, season)) : 'their man'} — ${winner ? escapeHtml(jerseyLabel(winner, season)) + ' won' : 'lost'}.`, true);
   foResult = null;
@@ -5379,11 +5390,11 @@ async function submitGroundBall() {
   const team = gbTeam(), r = readJerseyField('gb_jersey', team);
   if (!r.ok) { showGbMsg(escapeHtml(r.why), false); return; }
   if (!r.value) { showGbMsg('Type the number of who picked it up.', false); return; }
+  if (sess.recordIntra) { const c = await ensureIntraSquad(sess.recordIntra); if (!c.ok) { showGbMsg(escapeHtml(c.why), false); return; } }
   const g = { id: GROUNDBALLS.reduce((m, x) => Math.max(m, x.id || 0), 0) + 1, date: sess.date, context: sess.context, opponent: sess.opponent || null, team, jersey: r.value };
   GROUNDBALLS.push(g);
   if (!(await persistGroundBall(g))) { GROUNDBALLS = GROUNDBALLS.filter(x => x !== g); showGbMsg('Save failed — please try again.', false); return; }
   showGbMsg(`Saved ground ball: ${escapeHtml(jerseyLabel(r.value, currentLogSeason()))}.`, true);
-  if (sess.recordIntra) recordIntraSquad(sess.recordIntra);
   const i = document.getElementById('gb_jersey'); i.value = ''; i.dispatchEvent(new Event('input')); i.focus();
   renderGbForm();
 }
@@ -6227,7 +6238,8 @@ function pointSessionBarAt(entry) {
   setPillGroupValue('f_context', SESSION_CONTEXTS.includes(entry.context) ? entry.context : 'Practice');
   if (entry.context === 'Game') { setPillGroupValue('f_quarter', entry.quarter || '1'); document.getElementById('f_clock').value = entry.clock || ''; }
   document.getElementById('f_opponent').value = (entry.context === 'Game' || entry.context === 'Scrimmage') ? (entry.opponent || '') : '';
-  if (entry.context === 'Scrimmage') { const t = sessionTypeOf(entry); setPillGroupValue('f_scrimtype', t === 'Intra-squad' || t === 'Opponent scrimmage' ? t : null); SCRIM_INHERIT_KEY = (entry.date || '') + '|Scrimmage'; }
+  SCRIM_INHERIT_KEY = (entry.date || '') + '|' + (SESSION_CONTEXTS.includes(entry.context) ? entry.context : 'Practice');   // this entry's own session: keep its values
+  if (entry.context === 'Scrimmage') { const t = sessionTypeOf(entry); setPillGroupValue('f_scrimtype', t === 'Intra-squad' || t === 'Opponent scrimmage' ? t : null); }
   updateSessionBarUi();
   lineupLoadedFor = null;
   onSessionChanged();
@@ -6360,24 +6372,25 @@ function localDateStr(d) {
   d = d || new Date();
   return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
 }
-function readSessionFields() {
+// opts.edit: the entry being edited (its saved copy), when this read is for an edit. Only then, and only when the
+// edit stays in that entry's own original session, does a session keep whatever classification it has.
+function readSessionFields(opts) {
   const date = document.getElementById('f_date').value;
   const context = currentContext();
   const opponent = (context === 'Game' || context === 'Scrimmage') ? cleanText(document.getElementById('f_opponent').value).trim().slice(0, 60) : '';
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return { error: 'Pick a date.' };
   if (context === 'Game' && !opponent) return { error: 'Type the opponent for this game.' };
   if (context === 'Scrimmage') {
-    const ty = currentScrimType(), rec = scrimRecFor(date), sid = date + '_scrimmage', live = LIVE_SESSIONS[sid];
+    const ty = currentScrimType(), rec = scrimRecFor(date), sid = date + '_scrimmage';
     const hasEntries = scrimSessionHasEntries(sid);
-    const editingHere = (editingShotId !== null || editingPossId !== null) && !opponent;
-    if (!ty) {
-      // Editing an entry of a scrimmage whose type was never recorded keeps it as it is (still "Type not recorded").
-      if (editingHere && !rec) return { date, context, opponent: null };
-      return { error: 'Pick the scrimmage type: Intra-squad or Opponent scrimmage.' };
-    }
+    const base = opts && opts.edit, baseSid = base ? (base._sid || sessionIdFor(base)) : null;
+    // Editing an entry and keeping it in its own blank-opponent session: the session keeps its classification.
+    // An untyped one stays "Type not recorded" whatever pill is picked; nothing is recorded through an edit.
+    if (base && baseSid === sid && !opponent && !rec && hasEntries && ty !== 'Opponent scrimmage') return { date, context, opponent: null };
+    if (!ty) return { error: 'Pick the scrimmage type: Intra-squad or Opponent scrimmage.' };
     if (ty === 'Intra-squad') {
       if (rec && rec.type === 'Opponent scrimmage') return { error: `The ${date.slice(5)} scrimmage is recorded as an opponent scrimmage vs ${rec.opponent || '?'}. Pick Opponent scrimmage.` };
-      if (!rec && hasEntries && !editingHere) return { error: `The ${date.slice(5)} scrimmage was logged before scrimmage types existed and its type isn't confirmed yet. Ask Bobby to confirm it before adding to it.` };
+      if (!rec && hasEntries) return { error: `The ${date.slice(5)} scrimmage was logged before scrimmage types existed and its type isn't confirmed yet. Ask Bobby to confirm it before adding to it.` };
       return { date, context, opponent: null, recordIntra: !rec ? sid : null };
     }
     if (rec && rec.type === 'Opponent scrimmage' && !opponent) return { date, context, opponent: null };
@@ -6385,15 +6398,34 @@ function readSessionFields() {
   }
   return { date, context, opponent: opponent || null };
 }
-// After the first entry of a new intra-squad scrimmage saves, record its type once (never overwrites a recorded type).
-async function recordIntraSquad(sid) {
-  if (!sid || !DB || SESSION_TYPE_REC[sid]) return;
-  const ref = DB.doc('app/session_tracking'), key = 'typ_' + sid, user = saveUser ? saveUser() : null;
+// The first entry of a new intra-squad scrimmage: record the session's type BEFORE the entry is saved, in one
+// transaction that reads the server's copy. The server's classification always wins (this device's copy may be stale):
+// an existing Intra-squad record is kept as is; any other recorded type stops the save. If the record can't be written
+// (no connection, refused), nothing is saved, so the coach can simply save again: no entry without its classification,
+// no duplicate entry, and no saved entry stranded behind the "type not confirmed" guard.
+async function ensureIntraSquad(sid) {
+  if (!DB) return { ok: false, why: 'Not connected. Nothing was saved.' };
+  const ref = DB.doc('app/session_tracking'), key = 'typ_' + sid, user = saveUser();
   const rec = { type: 'Intra-squad', opponent: null, by: (user && (user.email || user.uid)) || null, at: new Date().toISOString(), note: 'Chosen in Log Shot' };
+  let res;
   try {
-    await DB.runTransaction(async tx => { const s = await tx.get(ref); if (s.exists && s.data()[key] !== undefined) return; tx.set(ref, { [key]: JSON.stringify(rec) }, { merge: true }); });
-    SESSION_TYPE_REC[sid] = SESSION_TYPE_REC[sid] || rec;
-  } catch (e) { console.error('scrimmage type record failed', e); }
+    res = await DB.runTransaction(async tx => {
+      const s = await tx.get(ref), raw = s.exists ? s.data()[key] : undefined;
+      if (raw !== undefined) { let cur = null; try { cur = JSON.parse(raw); } catch (e) { cur = { type: null }; } return { existing: cur }; }
+      tx.set(ref, { [key]: JSON.stringify(rec) }, { merge: true });
+      return { wrote: rec };
+    });
+  } catch (e) {
+    console.error('scrimmage type record failed', e);
+    return { ok: false, why: 'Couldn’t record this scrimmage as intra-squad (no connection, or the save was refused). Nothing was saved. Save again when connected.' };
+  }
+  const cur = res.existing || res.wrote;
+  if (cur && cur.type) SESSION_TYPE_REC[sid] = cur;   // catch this device up with the server
+  if (res.existing && res.existing.type !== 'Intra-squad') {
+    updateSessionBarUi();
+    return { ok: false, conflict: true, why: `This scrimmage is already recorded as ${res.existing.type === 'Opponent scrimmage' ? 'an opponent scrimmage vs ' + (res.existing.opponent || '?') : 'something else'}. Nothing was saved.` };
+  }
+  return { ok: true, wrote: !!res.wrote };
 }
 
 // One save at a time; an unexpected error still ends in a message. `step` says how far it got, so the
@@ -6413,7 +6445,7 @@ document.getElementById('submitShotBtn').addEventListener('click', async () => {
   } finally { SHOT_SAVING = false; btn.disabled = false; if (near.textContent === 'Saving…') near.innerHTML = ''; }
 });
 async function saveShotFromForm(step) {
-  const sess = readSessionFields();
+  const sess = readSessionFields({ edit: editingShotId !== null ? (editingShotBase || entryAt('shot', editingShotId)) : null });
   if (sess.error) { showMsg(sess.error, false); return; }
   const team = currentTeam();
   const opp = team === 'OPP';
@@ -6522,12 +6554,14 @@ async function saveShotFromForm(step) {
     const original = entryAt('shot', editingShotId, editingShotBase && editingShotBase._sid);
     if (!original) { showMsg('That shot no longer exists.', false); exitEditMode(); return; }
     savedId = editingShotId;
+    if (sess.recordIntra) { const c = await ensureIntraSquad(sess.recordIntra); if (!c.ok) { showMsg(escapeHtml(c.why), false); return; } }   // a move into a new intra-squad scrimmage
     const updated = Object.assign({ id: savedId, _sid: original._sid, stintId: original.stintId === undefined ? null : original.stintId }, shotData);
     step.at = 'saving';
     saveResult = await persistShot(updated, undefined, { base: editingShotBase && editingShotBase.id === savedId ? editingShotBase : original });
     if (saveResult === 'error') { showMsg(saveFailedText(), false); return; }
     if (saveResult === 'conflict') { showMsg(saveConflictText('shot'), false); return; }
   } else {
+    if (sess.recordIntra) { const c = await ensureIntraSquad(sess.recordIntra); if (!c.ok) { showMsg(escapeHtml(c.why), false); return; } }
     const shot = Object.assign({ id: nextShotId() }, shotData);
     step.at = 'saving';
     saveResult = await persistNewShot(shot, currentLineup());
@@ -6536,7 +6570,6 @@ async function saveShotFromForm(step) {
     if (saveResult === 'conflict') { showMsg(saveConflictText('shot'), false); return; }
   }
   step.at = saveResult === 'pending' ? 'pending' : 'saved'; step.id = savedId;
-  if (sess.recordIntra) recordIntraSquad(sess.recordIntra);
 
   if (isEdit) {
     const back = editReturnTo;
@@ -6623,7 +6656,7 @@ document.getElementById('submitPossBtn').addEventListener('click', async () => {
   try { await savePossFromForm(); } finally { POSS_SAVING = false; btn.disabled = false; }
 });
 async function savePossFromForm() {
-  const sess = readSessionFields();
+  const sess = readSessionFields({ edit: editingPossId !== null ? (editingPossBase || entryAt('poss', editingPossId)) : null });
   if (sess.error) { showMsg(sess.error, false); return; }
   const team = currentTeam();
   const end = document.getElementById('p_end').dataset.value || null;
@@ -6663,15 +6696,16 @@ async function savePossFromForm() {
     const original = entryAt('poss', editingPossId, editingPossBase && editingPossBase._sid);
     if (!original) { showMsg('That possession no longer exists.', false); exitPossEditMode(); return; }
     id = editingPossId;
+    if (sess.recordIntra) { const c = await ensureIntraSquad(sess.recordIntra); if (!c.ok) { showMsg(escapeHtml(c.why), false); return; } }   // a move into a new intra-squad scrimmage
     res = await persistPossession(Object.assign({ id, _sid: original._sid, stintId: original.stintId === undefined ? null : original.stintId }, data), undefined, { base: editingPossBase && editingPossBase.id === id ? editingPossBase : original });
   } else {
+    if (sess.recordIntra) { const c = await ensureIntraSquad(sess.recordIntra); if (!c.ok) { showMsg(escapeHtml(c.why), false); return; } }
     const p = Object.assign({ id: nextPossId() }, data);
     res = await persistNewPossession(p, currentLineup());
     id = p.id;
   }
   if (res === 'error') { showMsg('Save failed — please try again.', false); return; }
   if (res === 'conflict') { showMsg(saveConflictText('possession'), false); return; }
-  if (sess.recordIntra) recordIntraSquad(sess.recordIntra);
   if (res === 'pending') saveStatusStart('poss', `Possession #${id} (${escapeHtml(end)})`, 'possession', fid => `${isEdit ? 'Updated' : 'Saved'} possession #${fid == null ? id : fid} (${escapeHtml(end)}).`);
   else showMsg(`${isEdit ? 'Updated' : 'Saved'} possession #${id} (${escapeHtml(end)}).`, true);
   exitPossEditMode();
