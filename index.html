@@ -874,6 +874,11 @@
           <label>Session</label>
           <div class="pill-row" id="f_context"></div>
         </div>
+        <div class="sb-item" id="scrimTypeWrap" style="display:none;">
+          <label>Scrimmage type</label>
+          <div class="pill-row" id="f_scrimtype"></div>
+          <div class="n-note" id="scrimTypeNote" style="font-style:normal; max-width:260px;"></div>
+        </div>
         <div class="sb-item" id="opponentFieldWrap" style="display:none;">
           <label for="f_opponent" id="f_opponent_label">Opponent</label>
           <input type="text" id="f_opponent" list="opponentList" placeholder="e.g. Roanoke" maxlength="60">
@@ -1472,7 +1477,7 @@
       </div>
       <details class="filters-box" id="playerFilterRowBox"><summary>Filters <span class="n-note" style="font-style:normal;">(this heat map only)</span> <span class="filter-count" id="pfCount"></span></summary>
       <div class="filter-row" id="playerFilterRow">
-        <select id="pf_context"><option value="">Any session type</option><option value="Practice">Practice</option><option value="Intra-squad">Intra-squad</option><option value="Opponent scrimmage">Opponent scrimmage</option><option value="Game">Game</option></select>
+        <select id="pf_context"><option value="">Any session type</option><option value="Practice">Practice</option><option value="Intra-squad">Intra-squad</option><option value="Opponent scrimmage">Opponent scrimmage</option><option value="Type not recorded">Type not recorded</option><option value="Game">Game</option></select>
         <select id="pf_defscheme"><option value="">Any defense</option><option value="Man">Man</option><option value="Zone">Zone</option></select>
         <select id="pf_transitiontype"><option value="">Any transition</option><option value="None">No transition</option><option value="FO">FO</option><option value="OTOD">OTOD</option></select>
         <select id="pf_handedness"><option value="">Any handedness</option><option value="Right">Right</option><option value="Left">Left</option></select>
@@ -1647,7 +1652,7 @@
       </div>
       <details class="filters-box" id="goalieFilterRowBox"><summary>Filters <span class="filter-count" id="gfCount"></span></summary>
       <div class="filter-row" id="goalieFilterRow">
-        <select id="gf_context"><option value="">Any session type</option><option value="Practice">Practice</option><option value="Intra-squad">Intra-squad</option><option value="Opponent scrimmage">Opponent scrimmage</option><option value="Game">Game</option></select>
+        <select id="gf_context"><option value="">Any session type</option><option value="Practice">Practice</option><option value="Intra-squad">Intra-squad</option><option value="Opponent scrimmage">Opponent scrimmage</option><option value="Type not recorded">Type not recorded</option><option value="Game">Game</option></select>
         <select id="gf_defscheme"><option value="">Any defense</option><option value="Man">Man</option><option value="Zone">Zone</option></select>
         <select id="gf_transitiontype"><option value="">Any transition</option><option value="None">No transition</option><option value="FO">FO</option><option value="OTOD">OTOD</option></select>
         <select id="gf_handedness"><option value="">Any handedness</option><option value="Right">Right</option><option value="Left">Left</option></select>
@@ -2235,7 +2240,7 @@
         <select id="tf_season"><option value="">All seasons</option></select>
         <select id="tf_player"><option value="">All shooters</option></select>
         <select id="tf_grade"><option value="">All grades</option><option value="1-Gold">Gold</option><option value="2-Silver">Silver</option><option value="3-Bronze">Bronze</option></select>
-        <select id="tf_context"><option value="">All contexts</option><option value="Practice">Practice</option><option value="Scrimmage">Scrimmage</option><option value="Game">Game</option></select>
+        <select id="tf_context"><option value="">All session types</option><option value="Practice">Practice</option><option value="Intra-squad">Intra-squad</option><option value="Opponent scrimmage">Opponent scrimmage</option><option value="Type not recorded">Type not recorded</option><option value="Game">Game</option></select>
         <button class="btn secondary" id="exportShotsBtn">Export CSV</button>
       </div>
       <div class="table-wrap">
@@ -2981,7 +2986,7 @@ function sessionMeta(entry) {
 // The session's id, date and entries stay as logged, and no entry save rewrites it. Practice and Game are never reclassified.
 const SESSION_TYPES = ['Practice', 'Intra-squad', 'Opponent scrimmage', 'Game'];
 const SESSION_FILTERS = ['All'].concat(SESSION_TYPES);
-const SCRIM_UNTYPED = 'Scrimmage (type not recorded)';
+const SCRIM_UNTYPED = 'Type not recorded';   // a scrimmage logged with no opponent and no recorded type
 let SESSION_TYPE_REC = {};
 function sessionTypesFrom(data) {
   const o = {};
@@ -3009,8 +3014,17 @@ function sessionCtxOk(e, ctx) {
   return sessionTypeOf(e) === ctx;
 }
 const SESSION_CTX_WORDS = { All: 'all session types', Practice: 'practices only', 'Intra-squad': 'intra-squad scrimmages only', 'Opponent scrimmage': 'opponent scrimmages only', Game: 'games only', Scrimmage: 'scrimmages only (both kinds)' };
+SESSION_CTX_WORDS[SCRIM_UNTYPED] = 'scrimmages with no type recorded only';
+// WLU shots and possessions in those sessions, for the top-bar count.
+function untypedEntryCount(season) { return untypedScrimmages(season).reduce((a, id) => { const s = LIVE_SESSIONS[id]; return { shots: a.shots + s.shots.filter(x => x.team !== 'OPP').length, poss: a.poss + s.poss.length, sessions: a.sessions + 1 }; }, { shots: 0, poss: 0, sessions: 0 }); }
+// Pill groups show the "Type not recorded" pill only while such sessions exist.
+function syncUntypedPills() {
+  const has = untypedScrimmages(typeof NAV_ST !== 'undefined' && NAV_ST.season ? NAV_ST.season : currentAdvSeason()).length > 0;
+  ['effContextPills', 'goalieSumContextPills', 'goalieAdvContextPills'].forEach(id => document.querySelectorAll('#' + id + ' .pill').forEach(b => { if (b.textContent === SCRIM_UNTYPED) b.style.display = has ? '' : 'none'; }));
+  ['pf_context', 'gf_context', 'tf_context'].forEach(id => { const o = document.querySelector('#' + id + ' option[value="' + SCRIM_UNTYPED + '"]'); if (o) o.hidden = !has; });
+}
 function sessionCtxWords(ctx) { return SESSION_CTX_WORDS[ctx || 'All'] || String(ctx).toLowerCase() + ' only'; }
-// Scrimmages with entries whose type isn't recorded: only in All, and named where a scrimmage filter leaves them out.
+// Scrimmages with entries whose type isn't recorded: their own filter value ("Type not recorded"), shown only while any exist.
 function untypedScrimmages(season) {
   return Object.values(LIVE_SESSIONS).filter(s => s.context === 'Scrimmage' && (!isAdvSeason(season) || seasonForDate(s.date) === season) && (s.shots.length || s.poss.length)
     && sessionTypeOf(Object.assign({}, s, { _sid: s.id })) === SCRIM_UNTYPED).map(s => s.id).sort();
@@ -3919,7 +3933,7 @@ async function loadAll() {
     const typ = snap.exists ? sessionTypesFrom(snap.data()) : {}, typChanged = JSON.stringify(typ) !== JSON.stringify(SESSION_TYPE_REC);
     SESSION_TYPE_REC = typ;
     renderTrackingControls();
-    if (typChanged && window.__appReady) rerenderAfterShotsChange();   // a recorded session type moves its entries between filters
+    if (typChanged && window.__appReady) { rerenderAfterShotsChange(); updateSessionBarUi(); syncUntypedPills(); if (typeof drawNav === 'function') drawNav(); }   // a recorded session type moves its entries between filters
   }, e => console.error('tracking sync error', e));
   // Official prior-season stats (for projections) and the coach's roles.
   ADV_SEASONS.forEach(season => {
@@ -3976,6 +3990,7 @@ async function loadAll() {
 // hidden, the redraw on opening already shows the new data. (Each save used to redraw all of them, ~0.2 s on a Mac.)
 function rerenderAfterShotsChange() {
   if (!window.__appReady) return;
+  syncUntypedPills();
   const open = id => document.getElementById(id).classList.contains('active');
   if (open('tableView')) renderTable();
   if (open('playerView')) renderPlayerHeat();
@@ -5092,10 +5107,23 @@ function refreshFormRosterOptions() {
 
 // Opponent box for games and scrimmages (blank in a scrimmage = intra-squad); the Ball toggle once
 // there's an opponent; game clock and score in games only.
+// The recorded type of the blank-opponent scrimmage on a date (app/session_tracking), if any.
+function scrimRecFor(date) { return /^\d{4}-\d{2}-\d{2}$/.test(date || '') ? (SESSION_TYPE_REC[date + '_scrimmage'] || null) : null; }
+function currentScrimType() { const v = document.getElementById('f_scrimtype').dataset.value; return v === 'Intra-squad' || v === 'Opponent scrimmage' ? v : null; }
+// Logging into a session recorded as an opponent scrimmage: the opponent comes from the record and the field stays
+// blank, so new entries land in that same session (its id has no opponent in it).
+function scrimLocked() { const rec = scrimRecFor(document.getElementById('f_date').value); return isScrimmageSession() && currentScrimType() === 'Opponent scrimmage' && rec && rec.type === 'Opponent scrimmage' ? rec : null; }
 function updateSessionBarUi() {
-  const ctx = currentContext(), game = ctx === 'Game';
-  document.getElementById('opponentFieldWrap').style.display = game || ctx === 'Scrimmage' ? '' : 'none';
-  document.getElementById('f_opponent_label').textContent = ctx === 'Scrimmage' ? 'Opponent (type it for an opponent scrimmage)' : 'Opponent';
+  const ctx = currentContext(), game = ctx === 'Game', scrim = ctx === 'Scrimmage', ty = scrim ? currentScrimType() : null;
+  const rec = scrim ? scrimRecFor(document.getElementById('f_date').value) : null, lock = scrimLocked(), opIn = document.getElementById('f_opponent');
+  document.getElementById('scrimTypeWrap').style.display = scrim ? '' : 'none';
+  document.getElementById('scrimTypeNote').textContent = !scrim ? '' : rec ? `This date's scrimmage is recorded as ${rec.type === 'Opponent scrimmage' ? 'an opponent scrimmage vs ' + (rec.opponent || '?') : 'intra-squad'}.` : ty ? '' : 'Pick one. A blank opponent no longer means intra-squad.';
+  if (ty === 'Intra-squad') opIn.value = '';
+  if (lock) opIn.value = '';
+  opIn.disabled = !!lock;
+  opIn.placeholder = lock ? `${lock.opponent || ''} (recorded)` : 'e.g. Roanoke';
+  document.getElementById('opponentFieldWrap').style.display = game || ty === 'Opponent scrimmage' ? '' : 'none';
+  document.getElementById('f_opponent_label').textContent = game ? 'Opponent' : lock ? 'Opponent (recorded)' : 'Opponent (required)';
   document.getElementById('possessionToggleWrap').style.display = hasOpponentSession() ? '' : 'none';
   ['gameClockWrap', 'gameScoreWrap'].forEach(id => { document.getElementById(id).style.display = game ? '' : 'none'; });
   if (!hasOpponentSession()) setSegValue('lb_possession', 'WLU');
@@ -5109,6 +5137,7 @@ function toggleOpponentField() {
 // session for every entry type, faceoffs included.
 function onSessionChanged() {
   if (!window.__appReady) return;
+  updateSessionBarUi();   // the date decides whether a scrimmage type is already recorded
   document.getElementById('fo_date').value = document.getElementById('f_date').value;
   document.getElementById('fo_context').value = currentContext();
   document.getElementById('fo_opponent').value = hasOpponentSession() ? document.getElementById('f_opponent').value.trim() : '';
@@ -5326,6 +5355,7 @@ async function submitGroundBall() {
   GROUNDBALLS.push(g);
   if (!(await persistGroundBall(g))) { GROUNDBALLS = GROUNDBALLS.filter(x => x !== g); showGbMsg('Save failed — please try again.', false); return; }
   showGbMsg(`Saved ground ball: ${escapeHtml(jerseyLabel(r.value, currentLogSeason()))}.`, true);
+  if (sess.recordIntra) recordIntraSquad(sess.recordIntra);
   const i = document.getElementById('gb_jersey'); i.value = ''; i.dispatchEvent(new Event('input')); i.focus();
   renderGbForm();
 }
@@ -5387,6 +5417,12 @@ document.getElementById('f_goalie').addEventListener('change', (e) => {
 
 // ---------------- Log Shot form: pill groups ----------------
 setupPillGroup('f_context', SESSION_CONTEXTS, 'Practice', toggleOpponentField);
+// Scrimmage type (Bobby, Nov 3): every scrimmage is logged as Intra-squad or Opponent scrimmage; nothing is inferred from a
+// blank opponent. Opponent scrimmage needs the opponent's name, unless the session's type is already recorded (9/25 Alumni).
+setupPillGroup('f_scrimtype', ['Intra-squad', 'Opponent scrimmage'], null, () => {
+  if (currentScrimType() === 'Intra-squad') document.getElementById('f_opponent').value = '';
+  updateSessionBarUi(); onSessionChanged(); if (window.__appReady) { applyTeamToForm(); renderLineupBar(); }
+});
 setupPillGroup('f_handedness', ['Right','Left'], null);
 setupPillGroup('f_transitiontype', ['FO','OTOD'], null);
 setupPillGroup('f_quality', [{value:'1-Gold',label:'Gold'},{value:'2-Silver',label:'Silver'},{value:'3-Bronze',label:'Bronze'}], null);
@@ -5618,7 +5654,7 @@ function isGameSession() { return document.getElementById('f_context').dataset.v
 function isScrimmageSession() { return document.getElementById('f_context').dataset.value === 'Scrimmage'; }
 // A game, or a scrimmage with an opponent typed: two teams, so the Ball toggle, opponent numbers and
 // "whose goalie is in net" work like a game. An intra-squad scrimmage (no opponent) works like practice.
-function hasOpponentSession() { return isGameSession() || (isScrimmageSession() && document.getElementById('f_opponent').value.trim() !== ''); }
+function hasOpponentSession() { return isGameSession() || (isScrimmageSession() && currentScrimType() === 'Opponent scrimmage' && (document.getElementById('f_opponent').value.trim() !== '' || !!scrimLocked())); }
 function currentContext() { const v = document.getElementById('f_context').dataset.value; return SESSION_CONTEXTS.includes(v) ? v : 'Practice'; }
 // Which team has the ball for the entry being logged. Practice is always
 // WLU (both sides are WLU players); in a game it's the Ball toggle.
@@ -6163,6 +6199,7 @@ function pointSessionBarAt(entry) {
   setPillGroupValue('f_context', SESSION_CONTEXTS.includes(entry.context) ? entry.context : 'Practice');
   if (entry.context === 'Game') { setPillGroupValue('f_quarter', entry.quarter || '1'); document.getElementById('f_clock').value = entry.clock || ''; }
   document.getElementById('f_opponent').value = (entry.context === 'Game' || entry.context === 'Scrimmage') ? (entry.opponent || '') : '';
+  if (entry.context === 'Scrimmage') { const t = sessionTypeOf(entry); setPillGroupValue('f_scrimtype', t === 'Intra-squad' || t === 'Opponent scrimmage' ? t : null); }
   updateSessionBarUi();
   lineupLoadedFor = null;
   onSessionChanged();
@@ -6301,7 +6338,34 @@ function readSessionFields() {
   const opponent = (context === 'Game' || context === 'Scrimmage') ? cleanText(document.getElementById('f_opponent').value).trim().slice(0, 60) : '';
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return { error: 'Pick a date.' };
   if (context === 'Game' && !opponent) return { error: 'Type the opponent for this game.' };
+  if (context === 'Scrimmage') {
+    const ty = currentScrimType(), rec = scrimRecFor(date), sid = date + '_scrimmage', live = LIVE_SESSIONS[sid];
+    const hasEntries = !!live && (live.shots.length + live.poss.length + live.stints.length) > 0;
+    const editingHere = (editingShotId !== null || editingPossId !== null) && !opponent;
+    if (!ty) {
+      // Editing an entry of a scrimmage whose type was never recorded keeps it as it is (still "Type not recorded").
+      if (editingHere && !rec) return { date, context, opponent: null };
+      return { error: 'Pick the scrimmage type: Intra-squad or Opponent scrimmage.' };
+    }
+    if (ty === 'Intra-squad') {
+      if (rec && rec.type === 'Opponent scrimmage') return { error: `The ${date.slice(5)} scrimmage is recorded as an opponent scrimmage vs ${rec.opponent || '?'}. Pick Opponent scrimmage.` };
+      if (!rec && hasEntries && !editingHere) return { error: `The ${date.slice(5)} scrimmage was logged before scrimmage types existed and its type isn't confirmed yet. Ask Bobby to confirm it before adding to it.` };
+      return { date, context, opponent: null, recordIntra: !rec ? sid : null };
+    }
+    if (rec && rec.type === 'Opponent scrimmage' && !opponent) return { date, context, opponent: null };
+    if (!opponent) return { error: 'Type the opponent for this scrimmage.' };
+  }
   return { date, context, opponent: opponent || null };
+}
+// After the first entry of a new intra-squad scrimmage saves, record its type once (never overwrites a recorded type).
+async function recordIntraSquad(sid) {
+  if (!sid || !DB || SESSION_TYPE_REC[sid]) return;
+  const ref = DB.doc('app/session_tracking'), key = 'typ_' + sid, user = saveUser ? saveUser() : null;
+  const rec = { type: 'Intra-squad', opponent: null, by: (user && (user.email || user.uid)) || null, at: new Date().toISOString(), note: 'Chosen in Log Shot' };
+  try {
+    await DB.runTransaction(async tx => { const s = await tx.get(ref); if (s.exists && s.data()[key] !== undefined) return; tx.set(ref, { [key]: JSON.stringify(rec) }, { merge: true }); });
+    SESSION_TYPE_REC[sid] = SESSION_TYPE_REC[sid] || rec;
+  } catch (e) { console.error('scrimmage type record failed', e); }
 }
 
 // One save at a time; an unexpected error still ends in a message. `step` says how far it got, so the
@@ -6444,6 +6508,7 @@ async function saveShotFromForm(step) {
     if (saveResult === 'conflict') { showMsg(saveConflictText('shot'), false); return; }
   }
   step.at = saveResult === 'pending' ? 'pending' : 'saved'; step.id = savedId;
+  if (sess.recordIntra) recordIntraSquad(sess.recordIntra);
 
   if (isEdit) {
     const back = editReturnTo;
@@ -6578,6 +6643,7 @@ async function savePossFromForm() {
   }
   if (res === 'error') { showMsg('Save failed — please try again.', false); return; }
   if (res === 'conflict') { showMsg(saveConflictText('possession'), false); return; }
+  if (sess.recordIntra) recordIntraSquad(sess.recordIntra);
   if (res === 'pending') saveStatusStart('poss', `Possession #${id} (${escapeHtml(end)})`, 'possession', fid => `${isEdit ? 'Updated' : 'Saved'} possession #${fid == null ? id : fid} (${escapeHtml(end)}).`);
   else showMsg(`${isEdit ? 'Updated' : 'Saved'} possession #${id} (${escapeHtml(end)}).`, true);
   exitPossEditMode();
@@ -9241,7 +9307,7 @@ function renderGoalieScore() {
   chartPanel.style.display = '';
   const all = computeGoalieScores(season);
   const shown = PLAYER_MODE ? all.filter(g => pmHas(g.name)) : all;
-  sub.textContent = `${season}, practice + game shots on cage. 0–100: 50 is a team-average goalie, higher is better.${PLAYER_MODE ? '' : ' Ranked best first.'}`;
+  sub.textContent = `${season}, shots on cage from every session type (practices, scrimmages, games); the Sessions choice doesn't change the Goalie Score. 0–100: 50 is a team-average goalie, higher is better.${PLAYER_MODE ? '' : ' Ranked best first.'}`;
   note.innerHTML = 'Weights: Saved vs. Expected 40%, Shooter-Adjusted (SAE) 40%, rebound control 6%, consistency 6%, tough situations (screened, not set) 4%, outlets 4%. Each part compares him to the team and is pulled toward 50 when his sample is small, so a hot week can&rsquo;t top the list. A part with no data yet drops out and its weight goes to the rest. The two main numbers stay as they are on the Summary, Advanced and Shooter-Adjusted tabs.';
   if (!shown.length) { cards.innerHTML = `<p class="sans" style="color:var(--muted); font-size:13px;">No ${escapeHtml(season)} shots on cage with ${PLAYER_MODE ? escapeHtml(PLAYER_MODE.name) : 'a WLU goalie'} in net yet.</p>`; document.getElementById('gsChart').innerHTML = ''; return; }
   const sgn = v => v === null || v === undefined ? '—' : (v >= 0 ? '+' : '') + v.toFixed(1);
@@ -10932,7 +10998,7 @@ function rptBlankDef() { return { on: 0, onG: 0, onXg: 0, onVar: 0, bl: 0, beat:
 // A faceoff rep counts toward win % when both sides are known: every game / scrimmage rep (us vs them), and a
 // practice rep logged with both of our faceoff men. Practice reps logged from the winner's side only stay as
 // historical logged wins.
-const foIsComp = f => f.context === 'Game' || (f.context === 'Scrimmage' && !!f.opponent);
+const foIsComp = f => { const t = sessionTypeOf(f); return t === 'Game' || t === 'Opponent scrimmage'; };
 const foTwoSided = f => foIsComp(f) || f.both === 1 || (!!f.vsPlayerJersey && !isOppJersey(f.vsPlayerJersey));
 function rptBlankGk() { return { list: [] }; }
 function rptFullStats(mode, keys, season) {
@@ -10998,7 +11064,7 @@ function rptFullStats(mode, keys, season) {
     fo: { n: fos.length, w: fos.filter(f => f.won === 1).length, games: fos.filter(f => f.context === 'Game'), comp: fos.filter(foIsComp) },
     gb: { us: gbs.filter(g => g.team !== 'OPP').length, them: gbs.filter(g => g.team === 'OPP').length },
     // Defensive possessions: in practice our defense faces our offense (WLU possessions); against an opponent, theirs.
-    defPoss: d.possList.filter(pp => (pp.e.context === 'Game' || (pp.e.context === 'Scrimmage' && pp.e.opponent)) ? pp.team === 'OPP' : pp.team === 'WLU').length,
+    defPoss: d.possList.filter(pp => ['Game', 'Opponent scrimmage'].includes(sessionTypeOf(pp.e)) ? pp.team === 'OPP' : pp.team === 'WLU').length,
     scr: Object.values(SC).reduce((a, r) => ({ n: a.n + r.n, adv: a.adv + r.adv }), { n: 0, adv: 0 }),
   };
   return { d, players, team, game, noGame, season, fm };
@@ -11986,12 +12052,12 @@ setupPillGroup('goalieSitTypePills', ['All', 'Goal zone', 'Height', 'Mechanism',
 });
 // Goalie Summary's own "Shots from" (2027+; the 2026 table stays as it was).
 let goalieSumContext = 'All';
-setupPillGroup('goalieSumContextPills', SESSION_FILTERS, 'All', v => {
+setupPillGroup('goalieSumContextPills', SESSION_FILTERS.concat([SCRIM_UNTYPED]), 'All', v => {
   goalieSumContext = v || 'All';
   if (!v) setPillGroupValue('goalieSumContextPills', 'All');
   renderGoalieSummary();
 });
-setupPillGroup('goalieAdvContextPills', SESSION_FILTERS, 'All', v => {
+setupPillGroup('goalieAdvContextPills', SESSION_FILTERS.concat([SCRIM_UNTYPED]), 'All', v => {
   goalieAdvContext = v || 'All';
   if (!v) setPillGroupValue('goalieAdvContextPills', 'All');
   renderGoalieAdvanced();
@@ -12636,7 +12702,7 @@ function renderGoalieProjections() {
   const season = goalieHeatSeason;
   if (!isAdvSeason(season)) { document.getElementById('pjGoalieSub').innerHTML = pjNotAdv(season); wrap.innerHTML = ''; return; }
   const r = computeProjections(season), b = r.base;
-  document.getElementById('pjGoalieSub').innerHTML = `<b>True level</b> from this season&rsquo;s shots on cage, pulled toward the team by how much save % can be trusted at his number of shots faced. The range in gray is where he&rsquo;ll likely land &mdash; about 4 times out of 5. Shown as if starting all ${PJ_GAMES} games, facing ${b.facedPerGame.toFixed(1)} shots on cage a game${b.useOwn ? '' : ' (mirroring ours in ' + escapeHtml(b.src) + ')'}.`;
+  document.getElementById('pjGoalieSub').innerHTML = `<b>True level</b> from this season&rsquo;s shots on cage, pulled toward the team by how much save % can be trusted at his number of shots faced. The range in gray is where he&rsquo;ll likely land &mdash; about 4 times out of 5. Shown as if starting all ${PJ_GAMES} games, facing ${b.facedPerGame.toFixed(1)} shots on cage a game${b.useOwn ? '' : ' (mirroring ours in ' + escapeHtml(b.src) + ')'}. <span class="n-note" style="font-style:normal;">Uses every session type in the season: the Sessions and Fall/Spring choices don&rsquo;t change it.</span>`;
   renderSortableTable('pjGoalieWrap', [
     { key: 'jersey', label: '#', type: 'text', value: g => g.jersey },
     { key: 'name', label: 'Name', type: 'text', value: g => g.name, format: nameCell },
@@ -13455,6 +13521,7 @@ function renderXg2Tab() {
     return;
   }
   how.innerHTML = `For every shot, this model asks: <b>how often do shots like this go in for us?</b> It learns from all ${r.shots.length} ${escapeHtml(season)} shots, using only facts about the shot &mdash; where it was taken from, how much of the cage was open, catch or dodge, which hand and side, stick plane, contest, transition, man-up, rebound, bounce, and practice vs game. It <b>never looks at the Gold/Silver/Bronze grade</b>, so it&rsquo;s a second opinion on every look. It refits itself as you log. For now it&rsquo;s shown side by side with the grade-based xG; nothing else in the tracker uses it yet.`;
+  how.innerHTML += ' <span class="n-note" style="font-style:normal;">Missing data: inside this model, a shot with no man situation logged is still treated as even strength (the descriptive tables show it as Unknown). Not changed in this release.</span>';
   // 2. What matters most.
   const eff = r.effects.filter(e => isFinite(e.delta)).sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta));
   const maxAbs = Math.max(0.01, ...eff.map(e => Math.abs(e.delta)));
@@ -14393,7 +14460,7 @@ setupPillGroup('effSeasonPills', ADV_SEASONS, EFF_SEASON, v => {
   else setPillGroupValue('effSeasonPills', EFF_SEASON);
   renderEfficiencyView();
 });
-setupPillGroup('effContextPills', SESSION_FILTERS, 'All', v => {
+setupPillGroup('effContextPills', SESSION_FILTERS.concat([SCRIM_UNTYPED]), 'All', v => {
   EFF_CONTEXT = v || 'All';
   if (!v) setPillGroupValue('effContextPills', 'All');
   renderEfficiencyView();
@@ -14947,7 +15014,7 @@ function renderTable() {
   if (PLAYER_MODE) rows = rows.filter(r => { const j = pmJersey(seasonForDate(r.date)); return j && ((r.team !== 'OPP' && r.shooterJersey === j) || r.goalieJersey === j); });
   else if (pf) rows = rows.filter(r=>r.shooterJersey===pf);
   if (gf) rows = rows.filter(r=>r.shotQuality===gf);
-  if (cf) rows = rows.filter(r=>r.context===cf);
+  if (cf) rows = rows.filter(r => sessionCtxOk(r, cf));
   rows = rows.slice(0, 300);
   const tbody = document.getElementById('shotTableBody');
   tbody.innerHTML = '';
@@ -16304,7 +16371,7 @@ const NAV_FILTERS = {
   depthView: { a: 'depthSeasonPills' }, healthView: { a: 'healthSeasonPills' },
 };
 const NAV_ST = { cur: null, history: [], season: null, ctx: 'All', pins: [], busy: false, open: {} };
-try { const g = JSON.parse(localStorage.getItem('wluGlobal') || 'null'); if (g) { NAV_ST.season = g.season || null; NAV_ST.ctx = SESSION_FILTERS.includes(g.ctx) ? g.ctx : 'All'; SEASON_PART = ['Fall', 'Spring'].includes(g.part) ? g.part : 'Full'; } } catch (e) { /* storage unavailable */ }
+try { const g = JSON.parse(localStorage.getItem('wluGlobal') || 'null'); if (g) { NAV_ST.season = g.season || null; NAV_ST.ctx = SESSION_FILTERS.includes(g.ctx) || g.ctx === 'Type not recorded' ? g.ctx : 'All'; SEASON_PART = ['Fall', 'Spring'].includes(g.part) ? g.part : 'Full'; } } catch (e) { /* storage unavailable */ }
 try { const p = JSON.parse(localStorage.getItem('wluPins') || '[]'); if (Array.isArray(p)) NAV_ST.pins = p.filter(id => NAV_PAGES[id]); } catch (e) { /* storage unavailable */ }
 
 function navVisible(p) {
@@ -16341,7 +16408,7 @@ function navApplyFilters(viewId) {
   const season = NAV_ST.season, ctx = NAV_ST.ctx;
   if ((ctx === 'Intra-squad' || ctx === 'Opponent scrimmage') && typeof LIVE_SESSIONS !== 'undefined') {
     const u = untypedScrimmages(season);
-    if (u.length) notes.push(`${u.length} scrimmage${u.length === 1 ? '' : 's'} with no type recorded (${u.map(x => x.slice(5, 10)).join(', ')}) ${u.length === 1 ? 'is' : 'are'} only in All.`);
+    if (u.length) notes.push(`${u.length} scrimmage${u.length === 1 ? '' : 's'} with no type recorded (${u.map(x => x.slice(5, 10)).join(', ')}) ${u.length === 1 ? 'is' : 'are'} under "${SCRIM_UNTYPED}", not here.`);
   }
   if (f.s) navPick(f.s, season);
   if (f.a) { const t = ADV_SEASONS.includes(season) ? season : currentAdvSeason(); navPick(f.a, t); if (t !== season) notes.push(`This page starts in ${ADV_FIRST_SEASON} — showing ${t}.`); }
@@ -16362,7 +16429,11 @@ function navSetGlobal(season, ctx) {
   if (season) NAV_ST.season = season; if (ctx) NAV_ST.ctx = ctx;
   navSave();
   const p = NAV_PAGES[NAV_ST.cur]; NAV_ST.notes = p ? navApplyFilters(p.view) : [];
-  if (window.__appReady) renderFallSpring(heatSeason);   // it reads Sessions directly, so redraw it here
+  // Panels that read Sessions directly (Offense, Compare, the Brief) redraw here; pages with their own pills redraw on the pill.
+  if (window.__appReady) {
+    renderPlayerHeat(); renderPlayerDeepDive(); renderShotQualityShare(); renderNewEfficiencyTables(); renderShootingTrends(); renderShooterScore(); renderCompare();
+    if (document.getElementById('briefView').classList.contains('active')) renderBrief();
+  }
   drawNav();
 }
 
@@ -16400,11 +16471,12 @@ function navOnSwitch(viewId) {
 // ---- drawing the chrome ----
 const navEsc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 function drawNav() {
+  if (window.__appReady) syncUntypedPills();
   const p = NAV_PAGES[NAV_ST.cur] || navFirstVisible(), sec = p.sec;
   const secs = NAV.filter(s => s.pages.some(([id]) => navVisible(NAV_PAGES[id])));
   document.getElementById('sdSecs').innerHTML = secs.map(s => `<button type="button" class="${s === sec ? 'on' : ''}${s.id === 'lab' ? ' lab' : ''}" data-nsec="${s.id}">${s.name}</button>`).join('');
   document.getElementById('sdCrumb').innerHTML = `${NAV_ST.history.length ? '<button type="button" class="back" data-nback="1">&larr; Back</button>' : ''}<button type="button" data-nsec="${sec.id}">${sec.name}</button><span>/</span><span class="cur">${navEsc(p.name)}</span>`;
-  document.getElementById('sdFilters').innerHTML = `<span class="cap">Season</span><div class="tog">${[...SEASONS, 'All Seasons'].map(v => `<button type="button" class="${NAV_ST.season === v ? 'on' : ''}" data-nseason="${v}">${v === 'All Seasons' ? 'All' : v}</button>`).join('')}</div><span class="cap">Sessions</span><div class="tog">${SESSION_FILTERS.map(v => `<button type="button" class="${NAV_ST.ctx === v ? 'on' : ''}" data-nctx="${v}">${v}</button>`).join('')}</div>${NAV_ST.season === 'All Seasons' ? '' : `<span class="cap" title="Fall = Aug-Dec, Spring = Jan-Jul of the season. Shooting pages only.">Part</span><div class="tog">${['Full', 'Fall', 'Spring'].map(v => `<button type="button" class="${SEASON_PART === v ? 'on' : ''}" data-npart="${v}">${v}</button>`).join('')}</div>`}`;
+  document.getElementById('sdFilters').innerHTML = `<span class="cap">Season</span><div class="tog">${[...SEASONS, 'All Seasons'].map(v => `<button type="button" class="${NAV_ST.season === v ? 'on' : ''}" data-nseason="${v}">${v === 'All Seasons' ? 'All' : v}</button>`).join('')}</div><span class="cap">Sessions</span><div class="tog">${SESSION_FILTERS.map(v => `<button type="button" class="${NAV_ST.ctx === v ? 'on' : ''}" data-nctx="${v}">${v}</button>`).join('')}${(() => { const u = untypedEntryCount(NAV_ST.season); return u.sessions ? `<button type="button" class="${NAV_ST.ctx === SCRIM_UNTYPED ? 'on' : ''}" data-nctx="${SCRIM_UNTYPED}" title="${u.shots} WLU shots and ${u.poss} possessions in ${u.sessions} scrimmage${u.sessions === 1 ? '' : 's'} logged with no opponent and no recorded type (${untypedScrimmages(NAV_ST.season).map(x => x.slice(5, 10)).join(', ')}). Pick this to see them; the Shot Log lists them one by one.">${SCRIM_UNTYPED} · ${u.shots}</button>` : ''; })()}</div>${NAV_ST.season === 'All Seasons' ? '' : `<span class="cap" title="Fall = Aug-Dec, Spring = Jan-Jul of the season. Shooting pages only.">Part</span><div class="tog">${['Full', 'Fall', 'Spring'].map(v => `<button type="button" class="${SEASON_PART === v ? 'on' : ''}" data-npart="${v}">${v}</button>`).join('')}</div>`}`;
   const pins = NAV_ST.pins.filter(id => NAV_PAGES[id] && navVisible(NAV_PAGES[id]));
   const panels = navPanels(p);
   document.getElementById('sdRail').innerHTML = (PLAYER_MODE ? '' : `<div class="rg"><span class="cap">&#9733; Pinned</span></div><ul class="rl">${pins.map(id => `<li><button type="button" data-npage="${id}" class="${id === p.id ? 'on' : ''}">${NAV_PAGES[id].name}<span class="rs">${NAV_PAGES[id].sec.name}</span></button></li>`).join('') || '<li class="rnote">Pin any page with the &#9734; button by its title.</li>'}</ul><hr>`) +
@@ -19575,7 +19647,8 @@ function briefSpark(vals, tone) {
 // three biggest with |z| >= 1.5 are shown.
 function briefCandidates(season, sl) {
   const out = [], who = j => escapeHtml(jerseyLabel(j, season));
-  const add = (z, title, body, page, anchor, player) => { if (z !== null && isFinite(z) && Math.abs(z) >= BRIEF_Z) out.push({ z, title, body, page, anchor, player }); };
+  let screened = 0;
+  const add = (z, title, body, page, anchor, player) => { if (z !== null && isFinite(z)) screened++; if (z !== null && isFinite(z) && Math.abs(z) >= BRIEF_Z) out.push({ z, title, body, page, anchor, player }); };
   // Team trends.
   const mr = rptTeamMetrics(sl.recent, season), mb = rptTeamMetrics(sl.rest, season);
   mr.toRate = briefToRate(sl.recent, season); mb.toRate = briefToRate(sl.rest, season);
@@ -19583,7 +19656,7 @@ function briefCandidates(season, sl) {
   RPT_TREND.forEach(([k, label]) => {
     const z = briefZ(mr[k], mb[k]); if (z === null) return;
     const good = (z > 0) !== !!RPT_LOWER_BETTER[k];
-    add(z, `${label} is ${z > 0 ? 'up' : 'down'} the last 14 days.`, `${rptFmt(k, mr[k].v)}${mr[k].kind === 'rate' ? ` (${mr[k].num} of ${mr[k].den})` : ''} vs ${rptFmt(k, mb[k].v)} earlier this season — ${good ? 'a good sign' : 'worth a look'}.`, ...(trendPage[k] || ['eff']));
+    add(z, `${label} is ${z > 0 ? 'up' : 'down'} the last 14 days.`, `${rptFmt(k, mr[k].v)}${mr[k].kind === 'rate' ? ` (${mr[k].num} of ${mr[k].den})` : ` (${mr[k].n} shots)`} vs ${rptFmt(k, mb[k].v)}${mb[k].kind === 'rate' ? ` (${mb[k].num} of ${mb[k].den})` : ` (${mb[k].n} shots)`} earlier this season, in the ${good ? 'good' : 'wrong'} direction.`, ...(trendPage[k] || ['eff']));
   });
   // Player hot / cold: his Sh% the last 14 days vs his own earlier shots.
   const byP = (list) => { const m = {}; list.forEach(s => { if (s.shooterJersey) (m[s.shooterJersey] = m[s.shooterJersey] || []).push(s); }); return m; };
@@ -19601,7 +19674,7 @@ function briefCandidates(season, sl) {
     const r = rG[j], b = bG[j] || []; if (r.length < RPT_MIN_N || b.length < RPT_MIN_N) return;
     const rs = r.filter(s => s.goal !== 1).length, bs = b.filter(s => s.goal !== 1).length;
     const z = briefZ(briefRate(rs, r.length), briefRate(bs, b.length));
-    add(z, `${who(j)} is ${z > 0 ? 'separating in goal' : 'struggling in goal'}.`, `Saving ${pct(rs / r.length)} (${rs} of ${r.length}) the last 14 days vs ${pct(bs / b.length)} earlier.`, 'gscore');
+    add(z, `${who(j)} is ${z > 0 ? 'separating in goal' : 'struggling in goal'}.`, `Saving ${pct(rs / r.length)} (${rs} of ${r.length}) the last 14 days vs ${pct(bs / b.length)} (${bs} of ${b.length}) earlier.`, 'gscore');
   });
   // Tactical spots: goals per possession for a coverage, man situation or
   // trigger vs the matching baseline, this season.
@@ -19610,15 +19683,16 @@ function briefCandidates(season, sl) {
   const grp = (list, keyOf) => { const m = {}; list.forEach(p => { const k = keyOf(p); if (k) (m[k] = m[k] || []).push(p); }); return m; };
   const wlu = poss.filter(p => p.team === 'WLU'), opp = poss.filter(p => p.team === 'OPP');
   const withPick = wlu.filter(p => p.pick && p.pick.coverage), base = rateOf(withPick);
-  Object.entries(grp(withPick, p => p.pick.coverage)).forEach(([cov, l]) => { const r = rateOf(l), z = briefZ(r, base); add(z, `Our picks ${z > 0 ? 'beat' : 'stall against'} ${escapeHtml(cov.toLowerCase())} coverage.`, `${r.num} goals on ${r.den} pick possessions (${pct(r.v)}) vs ${pct(base.v)} on all our picks.`, 'picks'); });
+  Object.entries(grp(withPick, p => p.pick.coverage)).forEach(([cov, l]) => { const r = rateOf(l), z = briefZ(r, base); add(z, `Our picks ${z > 0 ? 'beat' : 'stall against'} ${escapeHtml(cov.toLowerCase())} coverage.`, `${r.num} goals on ${r.den} pick possessions (${pct(r.v)}) vs ${pct(base.v)} on all ${base.den} of our pick possessions.`, 'picks'); });
   const even = rateOf(wlu.filter(p => p.man === 'Even'));
   const mu = rateOf(wlu.filter(p => p.man === 'Man-Up')), zmu = briefZ(mu, even);
-  add(zmu, `Man-up offense is ${zmu > 0 ? 'cashing in' : 'not converting'}.`, `${mu.num} goals on ${mu.den} man-up possessions (${pct(mu.v)}) vs ${pct(even.v)} at even strength.`, 'eff', 'Man-Up / Man-Down');
+  add(zmu, `Man-up offense is ${zmu > 0 ? 'cashing in' : 'not converting'}.`, `${mu.num} goals on ${mu.den} man-up possessions (${pct(mu.v)}) vs ${pct(even.v)} on ${even.den} even-strength possessions.`, 'eff', 'Man-Up / Man-Down');
   const oEven = rateOf(opp.filter(p => p.man === 'Even')), md = rateOf(opp.filter(p => p.man === 'Man-Up')), zmd = briefZ(md, oEven);
-  add(zmd === null ? null : -zmd, `Man-down defense is ${zmd < 0 ? 'holding up' : 'leaking'}.`, `Opponents scored on ${md.num} of ${md.den} man-up chances (${pct(md.v)}) vs ${pct(oEven.v)} at even strength.`, 'eff', 'Man-Up / Man-Down');
+  add(zmd === null ? null : -zmd, `Man-down defense is ${zmd < 0 ? 'holding up' : 'leaking'}.`, `Opponents scored on ${md.num} of ${md.den} man-up chances (${pct(md.v)}) vs ${pct(oEven.v)} on ${oEven.den} even-strength chances.`, 'eff', 'Man-Up / Man-Down');
   const allW = rateOf(wlu);
-  Object.entries(grp(wlu, p => normalizeTrigger((p.shots[0] && p.shots[0].trigger) || p.e.trigger || null))).forEach(([t, l]) => { const r = rateOf(l), z = briefZ(r, allW); add(z, `The ${escapeHtml(t)} trigger is ${z > 0 ? 'working' : 'not working'}.`, `${r.num} goals on ${r.den} possessions (${pct(r.v)}) vs ${pct(allW.v)} overall.`, 'triggers'); });
-  return out.sort((a, b) => Math.abs(b.z) - Math.abs(a.z));
+  Object.entries(grp(wlu, p => normalizeTrigger((p.shots[0] && p.shots[0].trigger) || p.e.trigger || null))).forEach(([t, l]) => { const r = rateOf(l), z = briefZ(r, allW); add(z, `The ${escapeHtml(t)} trigger is ${z > 0 ? 'working' : 'not working'}.`, `${r.num} goals on ${r.den} possessions (${pct(r.v)}) vs ${pct(allW.v)} on all ${allW.den} possessions.`, 'triggers'); });
+  const res = out.sort((a, b) => Math.abs(b.z) - Math.abs(a.z)); res.screened = screened;
+  return res;
 }
 
 // ---- 3-6. Hot & Cold, Leaders, Standouts, Last session ----
@@ -19641,7 +19715,7 @@ function briefLeaders(season) {
   const s0 = EFF_SEASON, c1 = EFF_CONTEXT; EFF_SEASON = season; EFF_CONTEXT = (typeof NAV_ST !== 'undefined' && NAV_ST.ctx) || 'All';
   let ga; try { ga = computeGoalsAdded(); } finally { EFF_SEASON = s0; EFF_CONTEXT = c1; }
   const cr = ga.rows.slice().sort((a, b) => b.total - a.total).slice(0, 3).map(r => [r.jersey, (r.total >= 0 ? '+' : '') + r.total.toFixed(2)]);
-  return [['Offense · Shooter Score', 'shooter', ss, true], ['Goaltending · Goalie Score', 'gscore', gs, false], ['Faceoffs · Win %', 'fosum', fo, true], ['Defense · Beaten % (low = good)', 'defense', df, true], ['Creation · Goals Added', 'ga', cr, true]];
+  return [['Offense · Shooter Score', 'shooter', ss, true], ['Goaltending · Goalie Score (all session types)', 'gscore', gs, false], ['Faceoffs · Win %', 'fosum', fo, true], ['Defense · Beaten % (low = good)', 'defense', df, true], ['Creation · Goals Added', 'ga', cr, true]];
 }
 // The Reports weekly standouts for this week, or last week if this week has none yet.
 function briefStandouts(season) {
@@ -19666,7 +19740,7 @@ function renderBrief() {
   const sec = (title, page, body, sub) => `<div class="panel bp"><p class="panel-title">${title}${page ? `<button type="button" class="bp-open" data-npage="${page}">Open &rsaquo;</button>` : ''}</p>${sub ? `<p class="panel-sub">${sub}</p>` : ''}${body}</div>`;
   if (!sl.season.S.length) { wrap.innerHTML = `<p class="view-intro">No ${escapeHtml(season)} shots logged yet. The brief fills in as you log.</p>`; return; }
   const vit = briefVitals(season, sl);
-  const things = briefCandidates(season, sl).slice(0, 3);
+  const cand = briefCandidates(season, sl), things = cand.slice(0, 3);
   const thingsHtml = things.map((t, i) => `<div class="bk"><span class="n">${i + 1}</span><div><b>${t.title}</b><span>${t.body}</span></div><button type="button" class="lnk" ${t.player ? `data-nprofile="${escapeHtml(t.player)}"` : `data-npage="${t.page}"${t.anchor ? ` data-nanchor="${escapeHtml(t.anchor)}"` : ''}`}>See why &rsaquo;</button></div>`).join('') + (things.length < 3 ? `<p class="bk-none">${things.length ? 'Nothing else is' : 'Nothing is'} beyond normal noise this week.</p>` : '');
   const hc = briefHotCold(season), row = (m, hot) => `<button type="button" class="bhc" data-nprofile="${escapeHtml(m.j)}"><span class="nm">${who(m.j)}</span><span class="sc">${m.from} &rarr; <b>${m.to}</b></span><span class="dl ${hot ? 'up' : 'down'}">${m.d > 0 ? '+' : '−'}${Math.abs(m.d)}</span></button>`;
   const hcHtml = hc.n ? `<div class="bhc-grid"><div><p class="bhc-h up">&#9650; Heating up</p>${hc.up.map(m => row(m, true)).join('') || '<p class="bk-none">Nobody up yet.</p>'}</div><div><p class="bhc-h down">&#9660; Cooling off</p>${hc.down.map(m => row(m, false)).join('') || '<p class="bk-none">Nobody down yet.</p>'}</div></div>` : `<p class="bk-none">Nobody has ${BRIEF_HOT_MIN}+ shots in the last 14 days yet.</p>`;
@@ -19679,8 +19753,8 @@ function renderBrief() {
   const ctx = typeof NAV_ST !== 'undefined' ? NAV_ST.ctx : 'All';
   wrap.innerHTML = `<p class="view-intro">${escapeHtml(season)} &middot; ${escapeHtml(sessionCtxWords(ctx))} &middot; last ${BRIEF_DAYS} days (${escapeHtml(sl.from.slice(5))} to today) vs the rest of the season.${escapeHtml(untypedLeftOutNote(season, ctx))} <span class="n-note" style="font-style:normal;">${escapeHtml(RECENT_WINDOWS_NOTE)}</span> Every block opens the page behind it. <button type="button" class="btn secondary print-hide" onclick="window.print()" style="padding:4px 10px; margin-left:6px;">Print</button></p>
     <div class="bv-grid">${vit.map(v => v.html).join('')}</div>
-    <div class="b-row21">${sec('Three things to know', null, thingsHtml, 'The three biggest moves beyond chance variation (1.5+ standard errors): team trends, players, goalies and tactics.')}${sec('Hot &amp; Cold', 'trends', hcHtml, `Shooter Score, season &rarr; last ${BRIEF_DAYS} days (${BRIEF_HOT_MIN}+ shots), ${escapeHtml(sessionCtxWords(ctx))}. Tap a name for his profile.`)}</div>
-    ${sec('Leaders by phase', null, `<div class="bl-grid">${lead}</div>`, `${escapeHtml(sessionCtxWords(ctx))}, except Goalie Score, which always uses every session type.`)}
+    <div class="b-row21">${sec('Flagged for review', null, thingsHtml, `Up to three comparisons, largest gap first, out of ${cand.screened} screened (team trends, players, goalies, tactics). Screening rule: the last ${BRIEF_DAYS} days differ from the rest of the season by at least ${BRIEF_Z} standard errors, with at least ${RPT_MIN_N} attempts in the last ${BRIEF_DAYS} days (${BRIEF_HOT_MIN}+ shots in both periods for a player). A screen across this many comparisons will flag some gaps by chance; each line shows its sample sizes, and the link opens the records.`)}${sec('Hot &amp; Cold', 'trends', hcHtml, `Shooter Score, season &rarr; last ${BRIEF_DAYS} days (${BRIEF_HOT_MIN}+ shots), ${escapeHtml(sessionCtxWords(ctx))}. Tap a name for his profile.`)}</div>
+    ${sec('Leaders by phase', null, `<div class="bl-grid">${lead}</div>`, `${escapeHtml(sessionCtxWords(ctx))}, except Goalie Score: it always uses every session type.`)}
     <div class="b-row2">${sec('This week&rsquo;s standouts', 'reports', stHtml, st ? escapeHtml(rptLabel('week', st.week)) : '')}${sec('Last session', 'reports', lsHtml, ls ? `${ls.shots} shots${ls.poss ? `, ${ls.poss} possessions` : ''} vs the previous ${ls.prior} ${escapeHtml(RPT_KIND_WORD[ls.kind] || 'sessions')}` : '')}</div>`;
 }
 
