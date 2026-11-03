@@ -1,0 +1,32 @@
+<!doctype html>
+<html><head><meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; connect-src 'self'; style-src 'unsafe-inline'; frame-src 'self'; img-src 'self' data:; base-uri 'none'; form-action 'none'">
+<script src="guard_offline.js"></script><script src="fake_firestore.js"></script>
+<title>TEST — view the branch build (in-memory database only)</title>
+<style>html,body{margin:0} iframe{width:100%;border:0;display:block;height:2400px}</style></head><body>
+<iframe id="f" src="tracker_branch.html"></iframe>
+<script>
+// ?scene=<name>&export=<file> — boots the branch build on the export (in memory), sets up one screen, then title = READY.
+const q = new URLSearchParams(location.search), sleep = ms => new Promise(r => setTimeout(r, ms));
+const SCENES = {
+  logger_new: `goNav('logshot'); document.getElementById('f_date').value = '2026-11-01'; setPillGroupValue('f_context', 'Scrimmage'); setPillGroupValue('f_scrimtype', null); updateSessionBarUi();`,
+  logger_opp: `goNav('logshot'); document.getElementById('f_date').value = '2026-11-01'; setPillGroupValue('f_context', 'Scrimmage'); setPillGroupValue('f_scrimtype', 'Opponent scrimmage'); updateSessionBarUi(); showMsg(readSessionFields().error || 'ok', false);`,
+  logger_0925: `goNav('logshot'); document.getElementById('f_date').value = '2026-09-25'; setPillGroupValue('f_context', 'Scrimmage'); setPillGroupValue('f_scrimtype', 'Intra-squad'); updateSessionBarUi(); showMsg(readSessionFields().error || 'ok', false);`,
+  untyped_bar: `NAV_ST.season = '2027'; navSetGlobal('2027', 'Type not recorded'); goNav('trends');`,
+  shotlog_untyped: `goNav('shotlog'); document.getElementById('tf_season').value = '2027'; document.getElementById('tf_context').value = 'Type not recorded'; renderTable();`,
+  trends_practice: `navSetGlobal('2027', 'Practice'); goNav('trends');`,
+  onoff: `navSetGlobal('2027', 'All'); goNav('lineups'); setTimeout(() => { const el = document.getElementById('effOnOffWrap'); if (el) el.scrollIntoView(); }, 300);`,
+  brief: `navSetGlobal('2027', 'Practice'); goNav('brief');`,
+  manup: `navSetGlobal('2027', 'All'); goNav('eff'); setTimeout(() => { const el = document.getElementById('effManWrap'); if (el) el.scrollIntoView(); }, 300);`,
+  after_0925: `(async () => { await eval(await (await fetch('session_type_correction_0925.js')).text()); await new Promise(r => setTimeout(r, 800)); goNav('logshot'); document.getElementById('f_date').value = '2026-09-25'; setPillGroupValue('f_context', 'Scrimmage'); setPillGroupValue('f_scrimtype', 'Opponent scrimmage'); updateSessionBarUi(); })()`,
+};
+(async () => {
+  const exp = await (await fetch(q.get('export') || 'fixture.json')).json(), w = document.getElementById('f').contentWindow;
+  for (let i = 0; i < 60 && !(w.firebase && w.firebase.apps && w.firebase.apps.length && typeof w.init === 'function'); i++) await sleep(300);
+  const fake = makeFakeFirestore(exp.collections), real = w.firebase.firestore, f = function () { return fake; }; Object.keys(real).forEach(x => { f[x] = real[x]; }); f.FieldValue = real.FieldValue; w.firebase.firestore = f;
+  await w.init(); for (let i = 0; i < 100 && !w.__appReady; i++) await sleep(300); await sleep(1500);
+  w.document.getElementById('authGate').style.display = 'none'; w.document.getElementById('appRoot').style.display = '';
+  try { await w.eval(SCENES[q.get('scene')] || ''); } catch (e) { document.body.insertAdjacentHTML('afterbegin', '<pre>' + e + '</pre>'); }
+  await sleep(2500); document.title = 'READY';
+})();
+</script></body></html>
