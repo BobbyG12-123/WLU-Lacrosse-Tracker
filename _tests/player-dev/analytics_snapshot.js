@@ -1,0 +1,11 @@
+(() => { const season = '2027', o = {}, put = (k, v) => { o[k] = typeof v === 'number' ? Math.round(v * 1e9) / 1e9 : v; };
+  const s0 = EFF_SEASON, c0 = EFF_CONTEXT; EFF_SEASON = season; EFF_CONTEXT = 'All';
+  try { const ga = computeGoalsAdded(); put('V', ga.V); put('Vadv', ga.Vadv); put('poss', ga.poss); ga.rows.forEach(r => GA_PARTS.map(x => x[0]).concat(['total', 'off', 'def', 'perApp']).forEach(k => put('ga.' + r.jersey + '.' + k, r[k] || 0)));
+    const d = buildEffData(); Object.values(d.players).forEach(p => ['shots', 'goals', 'assists', 'xg', 'xa', 'to', 'ct', 'gb', 'dominoes', 'potAst'].forEach(k => put('eff.' + p.jersey + '.' + k, p[k]))); } finally { EFF_SEASON = s0; EFF_CONTEXT = c0; }
+  const so = computeStartingOffense(season); Object.values(so.players || {}).forEach(p => { put('imp.' + p.j, p.rating); Object.entries(p.parts || {}).forEach(([k, v]) => put('imp.' + p.j + '.' + k, v)); }); ['attack', 'attack2', 'mid1', 'mid2', 'mid3'].forEach(l => put('line.' + l, so[l] && so[l].js ? so[l].js.join(',') : JSON.stringify(so[l] || '')));
+  const sd = computeStartingDefense(season); Object.values(sd.players || {}).forEach(p => put('def.' + p.j, p.rating)); ['unit1', 'unit2', 'ssdm1', 'ssdm2'].forEach(l => put('line.' + l, sd[l] && sd[l].js ? sd[l].js.join(',') : JSON.stringify(sd[l] || '')));
+  computeShooterScores(season, 'shooting').list.forEach(r => put('ss.' + r.jersey, r.score)); computeGoalieScores(season).forEach(g => put('gs.' + g.jersey, g.score));
+  const pj = computeProjections(season); pj.players.forEach(p => { put('pj.' + p.jersey + '.sh', p.sh && p.sh.m); put('pj.' + p.jersey + '.fin', p.fin && p.fin.m); put('pj.' + p.jersey + '.g17', p.goals17 ? p.goals17.m : null); });
+  const dp = defensePartsFor(season, 'All'); dp.rows.forEach(r => put('ct.' + r.jersey, r.ctV)); ((dp.B && dp.B.rows) || []).forEach(r => ['off', 'beat', 'blown', 'late', 'total'].forEach(k => put('bd.' + r.jersey + '.' + k, r[k])));
+  Object.keys(LIVE_SESSIONS).filter(sid => LIVE_SESSIONS[sid].context !== 'Game' && seasonForDate(LIVE_SESSIONS[sid].date) === season).forEach(sid => { const c = dsCoverage(season, sid); put('cov.' + sid, c ? c.sum.possessions + '/' + c.sum.inSeg + '/' + c.sum.complete : null); });
+  return JSON.stringify(o); })()

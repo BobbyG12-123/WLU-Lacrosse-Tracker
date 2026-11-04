@@ -1,0 +1,286 @@
+<!doctype html>
+<html><head><meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; connect-src 'self'; style-src 'unsafe-inline'; frame-src 'self'; base-uri 'none'; form-action 'none'">
+<script src="guard_offline.js"></script>
+<script src="fake_firestore.js"></script>
+<title>TEST — Player Development (synthetic data, in-memory database, offline)</title>
+<style>body{font:13px system-ui;margin:16px} iframe{width:48%;height:700px;border:1px solid #999}</style>
+</head><body>
+<h3>Player Development tests: main vs this branch on the same synthetic fixture, in-memory database, no network</h3>
+<iframe id="fOld" src="tracker_main.html"></iframe><iframe id="fNew" src="tracker_branch.html"></iframe>
+<pre id="out">running…</pre>
+<script>
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+const T = { results: [], pass: 0, fail: 0 };
+const ok = (name, cond, info) => { T.results.push({ name, ok: !!cond, info: info === undefined ? null : info }); cond ? T.pass++ : T.fail++; };
+async function boot() {
+  const exp = await (await fetch('fixture.json')).json();
+  const frames = { old: document.getElementById('fOld').contentWindow, neu: document.getElementById('fNew').contentWindow };
+  for (const k of Object.keys(frames)) {
+    const w = frames[k];
+    for (let i = 0; i < 60 && !(w.firebase && w.firebase.apps && w.firebase.apps.length && typeof w.init === 'function'); i++) await sleep(300);
+    const fake = makeFakeFirestore(exp.collections);
+    const real = w.firebase.firestore, f = function () { return fake; }; Object.keys(real).forEach(x => { f[x] = real[x]; }); f.FieldValue = real.FieldValue;
+    w.firebase.firestore = f; w.__FAKE = fake;
+    w.init().then(() => { w.__BOOT_DONE = true; }, e => { w.__BOOT_ERR = String(e && e.stack || e); });
+  }
+  for (let i = 0; i < 160 && !(frames.old.__appReady && frames.neu.__appReady); i++) await sleep(500);
+  await sleep(3000);
+  // Pin the season the fixture is in, whatever today's date is.
+  Object.values(frames).forEach(w => { try { w.eval(`navSetGlobal('2027')`); } catch (e) { /* main may differ */ } });
+  return { frames, exp };
+}
+async function run() {
+  const { frames, exp } = await boot();
+  const O = frames.old, N = frames.neu, E = s => N.eval(s);
+  const errs = []; N.addEventListener('error', e => errs.push(String(e.message)));
+  const M = exp.meta; ok('fixture is synthetic', M && M.synthetic === true, M);
+  ok('both builds booted', O.__appReady && N.__appReady, [O.__BOOT_ERR || null, N.__BOOT_ERR || null]);
+  // ---- Regression: every analytics number in the snapshot identical ----
+  const snapSrc = await (await fetch('analytics_snapshot.js')).text();
+  const a = JSON.parse(O.eval(snapSrc)), b = JSON.parse(N.eval(snapSrc)), keys = new Set(Object.keys(a).concat(Object.keys(b)));
+  const diff = [...keys].filter(q => JSON.stringify(a[q]) !== JSON.stringify(b[q]));
+  ok('analytics snapshot identical to main', diff.length === 0, { compared: keys.size, diff: diff.slice(0, 10) });
+  // ---- Regression: Reports practice + week pages render the same HTML as main for every period ----
+  const rptHtml = (w, mode) => w.eval(`(() => { const out = {}; goNav('reports'); navPick('rptModePills', '${mode === 'practice' ? 'Practice' : 'Week'}'); rptMode = '${mode}'; rptPlayer = ''; rptGroup = '';
+    const ps = rptPeriods(rptMode, true); ps.forEach(p => { rptKey = p.key; renderReports(); out[p.key] = ['rptScore','rptTeam','rptFullTeam','rptPlayer','rptSheet'].map(id => document.getElementById(id).innerHTML).join('|'); }); return JSON.stringify(out); })()`);
+  for (const mode of ['practice', 'week']) {
+    const ro = JSON.parse(rptHtml(O, mode)), rn = JSON.parse(rptHtml(N, mode));
+    const d = Object.keys(ro).filter(k => ro[k] !== rn[k]);
+    ok(`Reports ${mode} pages identical to main (${Object.keys(ro).length} periods)`, d.length === 0 && Object.keys(ro).length === Object.keys(rn).length, d.slice(0, 5));
+  }
+  // A player's practice report too.
+  const prow = w => w.eval(`(() => { rptMode = 'practice'; navPick('rptModePills','Practice'); const p = rptPeriods('practice', true)[0]; rptKey = p.key; renderReports(); const j = [...document.querySelectorAll('#rptPlayerSelect option')].map(o => o.value).filter(Boolean)[0]; rptPlayer = j; renderReports(); const h = ['rptScore','rptPlayer','rptSheet'].map(id => document.getElementById(id).innerHTML).join('|'); rptPlayer = ''; return h; })()`);
+  ok('Reports practice player report identical to main', prow(O) === prow(N));
+  // ---- Session types (verified metadata only) ----
+  const cats = JSON.parse(E(`JSON.stringify(Object.keys(LIVE_SESSIONS).sort().map(k => [k, devCatKey(k)]))`));
+  ok('session types from session ids', cats.every(([k, c]) => c === (/_scrimmage_./.test(k) || /_game_/.test(k) ? 'opp' : /_scrimmage$/.test(k) ? 'intra' : 'practice')), cats);
+  // ---- Record keys unique ----
+  const ku = JSON.parse(E(`(() => { const l = devTeamShots('2027'), k = new Set(l.map(devKey)); return JSON.stringify([l.length, k.size]); })()`));
+  ok('every attempt has a unique session#shot key', ku[0] === ku[1] && ku[0] > 0, ku);
+  // ---- Model audit ----
+  const t0 = performance.now();
+  const au = JSON.parse(E(`(() => { DEV_MODEL = null; const R = devModel('2027'); return JSON.stringify({ ok: R.ok, why: R.why || null, shots: R.shots.length, goals: R.goals, sessions: R.sids.length, skill: R.skill, skillGrade: R.skillGrade, wins: R.sessWins, br: [R.brModel, R.brGrade, R.brBase], calib: R.calib, zones: Object.keys(R.zoneSpot).length }); })()`));
+  au.ms = Math.round(performance.now() - t0);
+  ok('model audit ran (held-out sessions)', au.sessions >= 6 && isFinite(au.skill), au);
+  ok('model audit time < 4 s', au.ms < 4000, au.ms);
+  const zs = JSON.parse(E(`JSON.stringify(Object.entries(DEV_MODEL.zoneSpot).map(([z, p]) => [z, zoneAt(p.lat, p.dist)]))`));
+  ok('typical zone spots lie in their zone', zs.every(([z, w]) => z === w), zs);
+  // ---- Clips: confirmed matches only ----
+  const cl = JSON.parse(await N.eval(`(async () => { devClipsInvalidate(); const C = await devLoadClips('2027'); return JSON.stringify({ n: C.map.size, keys: [...C.map.keys()], amb: [...C.amb], unresolved: C.unresolved, sids: C.sids.size, err: C.err }); })()`));
+  ok('clips: entry-id mark and number mark link; double claim flagged with no clip', cl.n === 2 && cl.keys.includes(M.eid_mark) && cl.keys.includes(M.num_mark) && cl.amb.length === 1 && cl.amb[0] === M.double_claim && !cl.err, cl);
+  const fc = exp.collections.app['filmcheck_2026-10-21'];
+  const st25 = Object.keys(fc).find(k => k.startsWith('st_') && JSON.parse(fc[k]).s === 'm'), lastId = Number(M.double_claim.split('#')[1]);
+  // With the wrong mark removed (in memory), the remaining one links its own clip.
+  const one = JSON.parse(await N.eval(`(async () => { const k = 'app/filmcheck_2026-10-21', w = __FAKE.__writes.length; await DB.doc(k).set({ ${JSON.stringify(st25)}: firebase.firestore.FieldValue.delete() }, { merge: true }); devClipsInvalidate(); const C = await devLoadClips('2027'); const c = C.map.get(${JSON.stringify(M.double_claim)});
+    const r = { linked: !!c, fileId: c ? c.fileId : null, amb: C.amb.size }; await DB.doc(k).set({ ${JSON.stringify(st25)}: ${JSON.stringify(fc[st25])} }, { merge: true }); devClipsInvalidate(); await devLoadClips('2027'); __FAKE.__writes.splice(w); return JSON.stringify(r); })()`));
+  ok('a single confirmed mark links its own clip to that session’s shot', one.linked && one.fileId === M.clip24_file && one.amb === 0, one);
+  // Film Check fix: a shot logged from a clip ('n') must not be offered to a later clip. Main offers it (the bug).
+  const st24 = Object.keys(fc).find(k => k.startsWith('st_') && JSON.parse(fc[k]).s === 'n').slice(3);
+  const offer = w => JSON.parse(w.eval(`(() => { const doc = ${JSON.stringify({ drafts: fc.drafts })}; const keep = Object.assign({}, FC); Object.assign(FC, { key: '2026-10-21', date: '2026-10-21', context: 'Practice', opponent: null, drafts: fcValidDrafts(JSON.parse(doc.drafts)), st: { ${JSON.stringify(st24)}: { s: 'n', id: ${lastId} } } });
+    const plan = fcPlan(), offered = plan.items.filter(it => it.offer && it.offer.id === ${lastId}).map(it => it.d.id); Object.assign(FC, keep); return JSON.stringify(offered); })()`));
+  const oOld = offer(O), oNew = offer(N);
+  ok('Film Check: a shot logged from a clip is no longer offered to another clip (main offers it)', oOld.length > 0 && oNew.length === 0, { main: oOld, branch: oNew });
+  // Same shot number in another session must not pick up the clip.
+  const iso = JSON.parse(E(`(() => { const s = devTeamShots('2027').find(x => sessKey(x) !== '2026-10-21_practice' && sessKey(x) !== '2026-10-19_practice' && x.id === ${lastId - 1000} || (sessKey(x) === '2026-10-14_practice')); return JSON.stringify(devClipCell(s).includes('Clip') ? 'LEAK' : 'ok'); })()`));
+  ok('no clip on shots outside the marked session', iso === 'ok');
+  // A mark whose shot number belongs to another session never links (numbers are only looked up in the clip's own session).
+  const xs = JSON.parse(await N.eval(`(async () => { const w = __FAKE.__writes.length, other = devTeamShots('2027').find(x => sessKey(x) === '2026-10-14_practice'); const doc = (await DB.doc('app/filmcheck_2026-10-19').get()).data(); const drafts = JSON.parse(doc.drafts); const free = drafts.find(d => !doc['st_' + d.id]);
+    await DB.doc('app/filmcheck_2026-10-19').set({ ['st_' + free.id]: JSON.stringify({ s: 'm', id: other.id }) }, { merge: true }); devClipsInvalidate(); const C = await devLoadClips('2027'); const r = { linkedOther: C.map.has(devKey(other)), unresolved: C.unresolved };
+    await DB.doc('app/filmcheck_2026-10-19').set({ ['st_' + free.id]: firebase.firestore.FieldValue.delete() }, { merge: true }); devClipsInvalidate(); await devLoadClips('2027'); __FAKE.__writes.splice(w); return JSON.stringify(r); })()`));
+  ok('a mark naming another session’s shot number links nothing', !xs.linkedOther && xs.unresolved === 1, xs);
+  // Ambiguity: two marks on one shot -> no clip.
+  const amb = JSON.parse(await N.eval(`(async () => { const d = __FAKE; const k = 'filmcheck_2026-10-19'; const doc = (await DB.doc('app/' + k).get()).data(); const st = Object.keys(doc).filter(x => x.startsWith('st_')); const one = JSON.parse(doc[st.find(x => !JSON.parse(doc[x]).eid)]); const drafts = JSON.parse(doc.drafts); const other = drafts.find(x => x.kind === 'shot' && !st.includes('st_' + x.id));
+    const saved = __FAKE.__writes.length; await DB.doc('app/' + k).set({ ['st_' + other.id]: JSON.stringify(one) }, { merge: true }); devClipsInvalidate(); const C = await devLoadClips('2027'); const key = '2026-10-19_practice#' + one.id; const r = { amb: C.amb.has(key), linked: C.map.has(key) };
+    await DB.doc('app/' + k).set({ ['st_' + other.id]: firebase.firestore.FieldValue.delete() }, { merge: true }); devClipsInvalidate(); await devLoadClips('2027'); __FAKE.__writes.splice(saved); return JSON.stringify(r); })()`));
+  ok('a shot claimed by two clips gets no clip', amb.amb && !amb.linked, amb);
+  // ---- Page renders ----
+  E(`DEV.recOpen = true; goNav('develop')`); await sleep(400);
+  const pg = JSON.parse(E(`JSON.stringify({ title: document.querySelector('#develView .panel-title') && document.querySelector('#develView .panel-title').textContent, hasExplorer: !!document.getElementById('devByWrap'), recRows: document.querySelectorAll('#devRecWrap tbody tr').length, j: DEV.j, mine: devScope('2027', DEV.range, DEV.cat).filter(s => s.shooterJersey === DEV.j).length })`));
+  ok('Player Development page renders with his attempts listed', pg.hasExplorer && pg.recRows === pg.mine && pg.mine > 0, pg);
+  // Breakdown rows add up to the selection, for every dimension; benchmark excludes him.
+  const bd = JSON.parse(E(`(() => { const out = []; const xm = xgModelFor('2027'), team = devScope('2027','Full','All'), mine = team.filter(s => s.shooterJersey === DEV.j), rest = team.filter(s => s.shooterJersey !== DEV.j);
+    DEV_DIMS.forEach(d => { const vals = d.opts(team).concat([DEV_NONE]); const n = vals.reduce((a, v) => a + mine.filter(s => v === DEV_NONE ? !d.of(s) : d.of(s) === v).length, 0); out.push([d.k, n, mine.length]); });
+    return JSON.stringify({ out, restHasHim: rest.some(s => s.shooterJersey === DEV.j) }); })()`));
+  ok('each breakdown covers every attempt exactly once (Not logged included)', bd.out.every(([, n, m]) => n === m), bd.out);
+  ok('benchmark (rest of the team) excludes him', !bd.restHasHim);
+  // Filter pill click narrows; Not logged works.
+  const fl = JSON.parse(E(`(() => { const b = document.querySelector('#devWrap [data-dev-f="pressure|Open"]'); b.click(); const n1 = document.querySelectorAll('#devRecWrap tbody tr').length; const want = devScope('2027', DEV.range, DEV.cat).filter(s => s.shooterJersey === DEV.j && s.contestLevel === 'Open').length;
+    document.querySelector('#devWrap [data-dev-f="pressure|${'__none__'}"]').click(); const n2 = document.querySelectorAll('#devRecWrap tbody tr').length; const want2 = devScope('2027', DEV.range, DEV.cat).filter(s => s.shooterJersey === DEV.j && !['Open','Light','Heavy'].includes(s.contestLevel)).length;
+    document.querySelector('#devWrap [data-dev-act="clear"]').click(); return JSON.stringify([n1, want, n2, want2]); })()`));
+  ok('filters: Open and Not logged pick the right attempts', fl[0] === fl[1] && fl[2] === fl[3], fl);
+  // ---- What-if engine invariants ----
+  const wi = JSON.parse(E(`(() => { const R = devModel('2027'); const out = {};
+    // Pick the player with the most located attempts.
+    const by = {}; devTeamShots('2027').filter(xg2Usable).forEach(s => { (by[s.shooterJersey] = by[s.shooterJersey] || []).push(s); }); const j = Object.keys(by).sort((a, b) => by[b].length - by[a].length)[0], all = by[j];
+    const contested = all.filter(s => s.contestLevel === 'Light' || s.contestLevel === 'Heavy'), keys = new Set(contested.map(devKey));
+    const S0 = devScenario(R, all, keys, {}); out.empty = [S0.d, S0.ch.length, S0.status];
+    const S1 = devScenario(R, all, keys, { pressure: 'Open' }); out.press = { n: S1.n, nSel: S1.nSel, m: S1.ch.length, d: S1.d, se: S1.se, status: S1.status, checks: S1.checks.map(c => [c.k, c.from, c.to, c.cf.n, +(c.cf.z || 0).toFixed(2), c.ct.n, +(c.ct.z || 0).toFixed(2), c.ok]) };
+    // Unselected attempts unchanged; volume constant.
+    const P = p => predictXg2(R.model, p); const un = S1.rows.filter(r => !r.inSel); out.unchanged = un.every(r => !r.a); out.volume = [S1.rows.length, all.length];
+    out.recon = Math.abs(S1.scen - S1.base - S1.d) < 1e-9 && Math.abs(S1.rows.reduce((a, r) => a + P(r.a ? r.a.q : r.p) - P(r.p), 0) - S1.d) < 1e-9;
+    // Already-open shots selected under "Open" don't change.
+    const S2 = devScenario(R, all, new Set(all.filter(s => s.contestLevel === 'Open').map(devKey)), { pressure: 'Open' }); out.already = [S2.ch.length, S2.status];
+    // Geometry.
+    const p = xg2Profile(all.find(s => Math.hypot(s.lateralYds, s.distanceYds) > 8)); const r0 = Math.hypot(p.lat, p.dist), a0 = Math.atan2(Math.abs(p.lat), p.dist);
+    const c2 = devApply(p, { loc: 'c2' }, R).q; out.closer = [+(r0 - Math.hypot(c2.lat, c2.dist)).toFixed(6), +Math.abs(Math.atan2(Math.abs(c2.lat), c2.dist) - a0).toFixed(9)];
+    const zt = 'Top Center', zq = devApply(p, { loc: zt }, R).q; out.zone = zoneAt(zq.lat, zq.dist) === zt || zoneAt(p.lat, p.dist) === zt;
+    const band = ANGLE_BANDS[2][0], aq = devApply(p, { angle: band }, R).q; out.angle = [devBandOf(aq.lat, aq.dist) === band, +Math.abs(Math.hypot(aq.lat, aq.dist) - r0).toFixed(9)];
+    // Missing field: an attempt with no contest logged isn't changed by the pressure lever.
+    const pm = Object.assign({}, p, { contest: null }), am = devApply(pm, { pressure: 'Open' }, R); out.missing = [am.did.length, am.miss];
+    // Selection vs skill split.
+    const S3 = devScenario(R, all, new Set(all.map(devKey)), { pressure: 'Open', hand: 'Left' }); out.split = { d: S3.d, sel: S3.dSel, sk: S3.dSk, status: S3.status };
+    out.j = j; return JSON.stringify(out); })()`));
+  ok('what-if: no change = zero', wi.empty[0] === 0 && wi.empty[1] === 0 && wi.empty[2] === 'none', wi.empty);
+  ok('what-if: unselected attempts untouched, attempt count constant', wi.unchanged && wi.volume[0] === wi.volume[1], wi.volume);
+  ok('what-if: totals reconcile', wi.recon);
+  ok('what-if: shots already in the target state don’t change', wi.already[0] === 0, wi.already);
+  ok('what-if: "2 yds closer" moves 2 yds at the same angle', wi.closer[0] === 2 && wi.closer[1] < 1e-9, wi.closer);
+  ok('what-if: zone move lands in the zone', wi.zone);
+  ok('what-if: angle move lands in the band at the same distance', wi.angle[0] && wi.angle[1] < 1e-9, wi.angle);
+  ok('what-if: unlogged field is not changed and is counted', wi.missing[0] === 0 && wi.missing[1].includes('pressure'), wi.missing);
+  ok('what-if: jackknife uncertainty is computed', isFinite(wi.press.se) && wi.press.se > 0, wi.press);
+  ok('what-if: selection and skill parts are computed separately', isFinite(wi.split.sel) && isFinite(wi.split.sk), wi.split);
+  // UI: set a lever, read the status.
+  const ui = JSON.parse(E(`(() => { DEV.j = ${JSON.stringify(wi.j)}; renderDevelop(); document.querySelector('#devWrap [data-dev-wi="pressure|Open"]').click(); const st = document.querySelector('#devWiOut .dev-status'); const t = st ? st.className + ' :: ' + st.textContent.slice(0, 300) : null; const tbl = document.querySelectorAll('#devWiOut table').length; return JSON.stringify({ t, tbl }); })()`));
+  ok('what-if UI shows a status (numbers only when supported)', ui.t && (/pass/.test(ui.t) ? ui.tbl >= 1 : !/expected goals over/.test(ui.t)), ui);
+  // Unticking an attempt removes it from the scenario.
+  const ux = JSON.parse(E(`(() => { const R = devModel('2027'); const cb = document.querySelector('#devRecWrap input[data-dev-x]'); const k = cb.dataset.devX; cb.checked = false; cb.dispatchEvent(new Event('change', { bubbles: true })); const r = DEV.excl.has(k); cb.checked = true; cb.dispatchEvent(new Event('change', { bubbles: true })); return JSON.stringify([r, DEV.excl.has(k)]); })()`));
+  ok('unticking an attempt excludes it from the what-if', ux[0] === true && ux[1] === false, ux);
+  // ---- Finding 1: the combination of changes must pass the screen too ----
+  const jt = JSON.parse(E(`(() => { const R = devModel('2027'); const all = devTeamShots('2027').filter(s => s.shooterJersey === '20' && xg2Usable(s));
+    const sel = new Set(all.filter(s => s.contestLevel === 'Open' && s.shotMechanism === 'Overhand').map(devKey));
+    const pairN = R.shots.filter(s => s.contestLevel === 'Heavy' && s.shotMechanism === 'Underhand').length;
+    const A = devScenario(R, all, sel, { pressure: 'Heavy', release: 'Underhand' });
+    const B = devScenario(R, all, sel, { pressure: 'Heavy' }), C = devScenario(R, all, sel, { release: 'Underhand' });
+    const P = devScenario(R, all, new Set(all.map(devKey)), { pressure: 'Open', dodge: '0' });
+    return JSON.stringify({ pairN, A: { st: A.status, checks: A.checks.map(c => c.ok), joint: A.joint && A.joint.n }, B: B.status, C: C.status, P: { st: P.status, joint: P.joint && P.joint.n, jointOk: P.joint && P.joint.ok } }); })()`));
+  ok('combination: each change passes alone, zero team shots have both → no estimate', jt.pairN === 0 && jt.B === 'pass' && jt.C === 'pass' && jt.A.checks.every(Boolean) && jt.A.joint === 0 && jt.A.st === 'support', jt);
+  ok('combination: a common pair that passes everywhere still gives an estimate', jt.P.st === 'pass' && jt.P.joint >= 25 && jt.P.jointOk, jt.P);
+  const jui = JSON.parse(E(`(() => { DEV.j = '20'; DEV.f = { pressure: 'Open', release: 'Overhand' }; DEV.only = null; DEV.excl = new Set(); DEV.wi = { pressure: 'Heavy', release: 'Underhand' }; renderDevelop(); const o = document.getElementById('devWiOut'); const r = { cls: o.querySelector('.dev-status').className, txt: o.textContent.slice(0, 400), num: /expected goals over/.test(o.textContent) }; DEV.wi = {}; DEV.f = {}; renderDevelop(); return JSON.stringify(r); })()`));
+  ok('combination: the page shows no number and says why', /fail/.test(jui.cls) && !jui.num && /all the changes together/i.test(jui.txt), jui);
+  const scr = JSON.parse(E(`(() => { DEV.j = '20'; DEV.wi = { pressure: 'Open' }; renderDevelop(); const t = document.getElementById('devWiOut').textContent; DEV.wi = {}; renderDevelop(); return JSON.stringify({ screen: /not proof/.test(t), minimum: /minimum, not a proof/.test(t) }); })()`));
+  ok('screening language: “not proof” on every estimate and in the limits', scr.screen && scr.minimum, scr);
+  // ---- Finding 3: Film Check corrections refresh the clip matches ----
+  const cc = JSON.parse(await N.eval(`(async () => { const s = ms => new Promise(r => setTimeout(r, ms)); const out = {}; const k = ${JSON.stringify(M.double_claim)}, w0 = __FAKE.__writes.length;
+    devClipsInvalidate(); await devLoadClips('2027'); out.before = { amb: DEV.clips.amb.has(k), linked: DEV.clips.map.has(k) };
+    // (a) The coach fixes it in Film Check: clear the wrong mark through Film Check's own save.
+    fcOpen('2026-10-21'); await s(300); await fcStatusWrite(${JSON.stringify(st25.slice(3))}, null); out.dropped = DEV.clips === null;
+    if (FC.unsub) { FC.unsub(); FC.unsub = null; }
+    const until = async () => { for (let i = 0; i < 40 && !(DEV.clips && DEV.clips.season === '2027'); i++) await s(100); return { busy: DEV.clipsBusy, gen: DEV.clipGen, wait: (DEV.clipsWait || []).length, loaded: !!DEV.clips }; };
+    goNav('develop'); DEV.j = '20'; renderDevelop(); await s(400); out.state = await until();
+    const fixed = devTeamShots('2027').find(x => devKey(x) === k); out.cell = !!fixed && devClipCell(fixed).includes(${JSON.stringify(M.clip24_file)});
+    // and on screen: open that shooter's page and look at his attempts list
+    DEV.j = fixed.shooterJersey; DEV.f = {}; DEV.only = null; renderDevelop(); await s(300); out.onScreen = document.getElementById('devRecWrap').innerHTML.includes(${JSON.stringify(M.clip24_file)}); DEV.j = '20'; renderDevelop(); out.after = { amb: DEV.clips && DEV.clips.amb.has(k), linked: DEV.clips && DEV.clips.map.has(k) };
+    // (b) Another coach puts the wrong mark back while this page is closed; opening the page reads it fresh.
+    goNav('reports'); await DB.doc('app/filmcheck_2026-10-21').set({ ${JSON.stringify(st25)}: ${JSON.stringify(fc[st25])} }, { merge: true }); goNav('develop'); await until(); out.reopen = { amb: DEV.clips && DEV.clips.amb.has(k) };
+    // (c) A load overtaken by a change is thrown away.
+    devClipsInvalidate(); const p = devLoadClips('2027'); devClipsInvalidate(); const r = await p; out.stale = { returned: r, kept: DEV.clips };
+    // (d) Re-check link.
+    await devLoadClips('2027'); const btn = document.querySelector('#devWrap [data-dev-act="clips-recheck"]'); out.recheckBtn = !!btn; if (btn) btn.click(); out.recheckDropped = DEV.clips === null || DEV.clipsBusy;
+    await s(500); __FAKE.__writes.splice(w0); return JSON.stringify(out); })()`));
+  ok('clip cache: Film Check’s own save drops the cached matches', cc.dropped, cc);
+  ok('clip cache: after the fix the page shows the clip, no duplicate warning', cc.before.amb && !cc.before.linked && cc.after.linked && !cc.after.amb && cc.cell && cc.onScreen, cc);
+  ok('clip cache: a change made elsewhere shows when the page is opened again', cc.reopen.amb, cc.reopen);
+  ok('clip cache: a load overtaken by a change is discarded', cc.stale.returned === null && cc.stale.kept === null, cc.stale);
+  ok('clip cache: Re-check link reloads', cc.recheckBtn && cc.recheckDropped, cc);
+  // ---- Conclusions: in-memory database only ----
+  const w0 = N.__FAKE.__writes.length;
+  const nt = JSON.parse(await N.eval(`(async () => { const s = ms => new Promise(r => setTimeout(r, ms)); const q = x => document.querySelector('#devWrap ' + x);
+    document.querySelector('#devWrap [data-dev-wi="pressure|"]').click(); document.querySelector('#devWrap [data-dev-f="dodge|Off the dodge"]').click();
+    q('[data-dev-act="note-new"]').click(); const ta = q('textarea[data-dev-text]'); ta.value = 'TEST conclusion: dodges <b>going</b> well'; ta.dispatchEvent(new Event('input', { bubbles: true }));
+    q('[data-dev-area="skill"]').click(); q('[data-dev-act="note-save"]').click(); await s(800);
+    const doc = (await DB.doc('app/devnotes_2027').get()).data() || {}; const ids = Object.keys(doc).filter(k => k.startsWith('n_')); const saved = ids.length ? JSON.parse(doc[ids[0]]) : null;
+    const listed = document.querySelectorAll('#devNotesWrap .dev-note').length;
+    // Edit.
+    const id = ids[0].slice(2); document.querySelector('#devWrap [data-dev-act="note-edit"][data-id="' + id + '"]').click(); const ta2 = q('textarea[data-dev-text]'); ta2.value = 'TEST edited'; ta2.dispatchEvent(new Event('input', { bubbles: true })); q('[data-dev-act="note-save"]').click(); await s(800);
+    const after = JSON.parse((await DB.doc('app/devnotes_2027').get()).data()['n_' + id]);
+    // Conflict: another coach edits while this one has it open.
+    document.querySelector('#devWrap [data-dev-act="note-edit"][data-id="' + id + '"]').click(); await DB.doc('app/devnotes_2027').set({ ['n_' + id]: JSON.stringify(Object.assign({}, after, { text: 'OTHER COACH', ed: '2099-01-01T00:00:00Z' })) }, { merge: true }); await s(200);
+    const ta3 = q('textarea[data-dev-text]'); ta3.value = 'TEST mine'; ta3.dispatchEvent(new Event('input', { bubbles: true })); q('[data-dev-act="note-save"]').click(); await s(800);
+    const conf = JSON.parse((await DB.doc('app/devnotes_2027').get()).data()['n_' + id]).text; const msg = (q('[data-dev-msg]') || {}).textContent;
+    q('[data-dev-act="note-cancel"]').click();
+    // Show these records.
+    document.querySelector('#devWrap [data-dev-act="note-show"][data-id="' + id + '"]').click(); await s(200); const shown = DEV.only ? DEV.only.size : -1, rows = document.querySelectorAll('#devRecWrap tbody tr').length;
+    document.querySelector('#devWrap [data-dev-act="only-clear"]').click();
+    // Delete (two taps).
+    document.querySelector('#devWrap [data-dev-act="note-del"][data-id="' + id + '"]').click(); document.querySelector('#devWrap [data-dev-act="note-del"][data-id="' + id + '"]').click(); await s(800);
+    const gone = !((await DB.doc('app/devnotes_2027').get()).data() || {})['n_' + id];
+    return JSON.stringify({ saved, listed, edited: [after.text, !!after.ed, after.at === saved.at], conflictKept: conf, msg, shown, rows, gone, evN: saved && saved.ev.n, evKeys: saved && saved.ev.recs.length }); })()`));
+  ok('conclusion saved with its evidence (records + filters), text cleaned', nt.saved && nt.saved.text === 'TEST conclusion: dodges bgoing/b well' && nt.saved.area === 'skill' && nt.evN === nt.evKeys && nt.evN > 0 && nt.saved.ev.recs.every(r => r.length === 3 && r[2]) && nt.saved.ev.f.dodge === 'Off the dodge', nt.saved);
+  ok('conclusion listed on the page', nt.listed >= 1, nt.listed);
+  ok('edit keeps author/date, sets edited', nt.edited[0] === 'TEST edited' && nt.edited[1] && nt.edited[2], nt.edited);
+  ok('edit refused when another coach changed it', nt.conflictKept === 'OTHER COACH' && /Another coach/.test(nt.msg || ''), nt.msg);
+  ok('“Show these records” opens exactly the saved records', nt.shown === nt.evKeys && nt.rows === nt.evKeys, [nt.shown, nt.rows]);
+  ok('delete removes it', nt.gone);
+  const wr = N.__FAKE.__writes.slice(w0);
+  ok('the feature writes only app/devnotes_<season> (in-memory)', wr.length > 0 && wr.every(x => x.coll === 'app' && x.id === 'devnotes_2027'), wr.map(x => x.id + ':' + x.keys.join(',')).slice(0, 8));
+
+  // ---- Finding 2: every record is kept, with stable ids, and later changes are flagged ----
+  const big = JSON.parse(await N.eval(`(async () => { const s = ms => new Promise(r => setTimeout(r, ms)); const q = x => document.querySelector('#devWrap ' + x);
+    goNav('develop'); DEV.j = '20'; DEV.range = 'Full'; DEV.cat = 'All'; DEV.f = {}; DEV.only = null; DEV.excl = new Set(); DEV.wi = {}; renderDevelop();
+    q('[data-dev-act="note-new"]').click(); const ta = q('textarea[data-dev-text]'); ta.value = 'TEST all of his attempts'; ta.dispatchEvent(new Event('input', { bubbles: true })); q('[data-dev-act="note-save"]').click(); await s(800);
+    const doc = (await DB.doc('app/devnotes_2027').get()).data(); const id = Object.keys(doc).filter(k => k.startsWith('n_')).map(k => k.slice(2)).find(i => JSON.parse(doc['n_' + i]).text === 'TEST all of his attempts'); const n = JSON.parse(doc['n_' + id]);
+    const out = { n: n.ev.n, recs: n.ev.recs.length, withEid: n.ev.recs.filter(r => r[1]).length };
+    q('[data-dev-act="note-show"][data-id="' + id + '"]').click(); await s(200); out.shown = DEV.only.size; out.rows = document.querySelectorAll('#devRecWrap tbody tr').length; q('[data-dev-act="only-clear"]').click();
+    // Change the log underneath it (in memory): edit one shot, renumber one that has an entry id, delete one without.
+    const mine = devTeamShots('2027').filter(x => x.shooterJersey === '20'); const ed = mine[0], rn = mine.find(x => eidOf(x) && x !== ed), dl = mine.find(x => !eidOf(x) && x !== ed);
+    const tup = o => JSON.stringify(objToTuple(o)); const sd = x => 'sessions/' + sessKey(x);
+    await DB.doc(sd(ed)).set({ ['s_' + ed.id]: tup(Object.assign({}, ed, { contestLevel: ed.contestLevel === 'Open' ? 'Heavy' : 'Open' })) }, { merge: true });
+    const newId = 99001; await DB.doc(sd(rn)).set({ ['s_' + rn.id]: firebase.firestore.FieldValue.delete(), ['s_' + newId]: tup(Object.assign({}, rn, { id: newId })) }, { merge: true });
+    await DB.doc(sd(dl)).set({ ['s_' + dl.id]: firebase.firestore.FieldValue.delete() }, { merge: true }); await s(1200);
+    const R = devResolveRecs(devNoteClean(n).ev.recs, '2027'); out.res = { found: R.found.length, edited: R.edited, renumbered: R.renumbered, gone: R.gone, followed: R.found.some(x => x.id === newId) };
+    renderDevelop(); const t = [...document.querySelectorAll('#devNotesWrap .dev-note')].find(d => d.textContent.includes('TEST all of his attempts')); out.line = t ? t.textContent.slice(0, 900) : null;
+    q('[data-dev-act="note-show"][data-id="' + id + '"]').click(); await s(200); out.shownAfter = DEV.only.size; out.banner = (document.querySelector('#devWrap .model-note') || {}).textContent || ''; q('[data-dev-act="only-clear"]').click();
+    return JSON.stringify(out); })()`));
+  ok('evidence: all 450 records saved (no 400 cap), with entry ids where shots have them', big.n === big.recs && big.recs === 450 && big.withEid > 0, big);
+  ok('evidence: “Show these records” reproduces all of them', big.shown === 450 && big.rows === 450, [big.shown, big.rows]);
+  ok('evidence: edit, renumber (followed by entry id) and delete are each detected', big.res.edited === 1 && big.res.renumbered === 1 && big.res.followed && big.res.gone === 1 && big.res.found === 449, big.res);
+  ok('evidence: the conclusion says it changed since it was written', big.line && /Changed since it was written/.test(big.line) && /1 edited/.test(big.line) && /1 renumbered/.test(big.line) && /1 deleted/.test(big.line), big.line);
+  ok('evidence: showing the records after the changes includes the renumbered shot and notes the rest', big.shownAfter === 449 && /edited since/.test(big.banner) && /no longer in the log/.test(big.banner), [big.shownAfter, big.banner]);
+  // ---- Reports: Player review ----
+  const rv = JSON.parse(await N.eval(`(async () => { goNav('reports'); navPick('rptModePills', 'Player review'); await new Promise(r => setTimeout(r, 200));
+    const opts = [...document.querySelectorAll('#rptPeriodSelect option')].map(o => o.textContent); const pick = [...document.querySelectorAll('#rptPlayerSelect option')].map(o => o.value).filter(Boolean);
+    const j = ${JSON.stringify(wi.j)}; rptPlayer = j; renderReports(); await new Promise(r => setTimeout(r, 500));
+    const tbl = document.querySelector('#rptScore table'), head = [...tbl.querySelectorAll('th')].map(t => t.textContent), body = [...tbl.querySelectorAll('tbody tr')].map(tr => [...tr.children].map(td => td.textContent));
+    const recs = document.querySelectorAll('#rptDevRec tbody tr').length, want = devTeamShots('2027').filter(s => s.shooterJersey === j).length;
+    const track = document.getElementById('rptTrackPanel').style.display, title = document.getElementById('rptScoreTitle').textContent, sheet = document.getElementById('rptSheet').innerHTML.includes('Stat Sheet');
+    // His row totals vs the tracker's own player numbers.
+    const F = rptFullStats('practice', rptReviewPeriods('2027')[0].keys, '2027'), o = F.players[j].off;
+    navPick('rptModePills', 'Practice'); await new Promise(r => setTimeout(r, 200)); const back = [document.getElementById('rptTrackPanel').style.display, document.getElementById('rptScoreTitle').textContent];
+    return JSON.stringify({ opts, nPick: pick.length, head, body, recs, want, track, title, sheet, tot: [o.shots, o.goals, +o.xg.toFixed(1)], back }); })()`));
+  const allRow = rv.body.find(r => r[0] === 'All sessions') || rv.body[0];
+  ok('Player review: periods offered (season / fall)', rv.opts.length >= 1 && /Season to date/.test(rv.opts[0]), rv.opts);
+  ok('Player review: by-session-type table with benchmark columns', rv.head.includes('Rest of the team: Goal %') && rv.body.some(r => /Practice/.test(r[0])) && rv.body.some(r => /Opponent/.test(r[0])), { head: rv.head, body: rv.body });
+  ok('Player review: totals equal the tracker’s player numbers', Number(allRow[2]) === rv.tot[0] && Number(allRow[3]) === rv.tot[1] && Number(allRow[6]) === rv.tot[2], { row: allRow, tracker: rv.tot });
+  ok('Player review: every attempt listed as a record', rv.recs === rv.want, [rv.recs, rv.want]);
+  ok('Player review: session tracking panel hidden, title changed, stat sheet present', rv.track === 'none' && rv.title === 'Player review' && rv.sheet, [rv.track, rv.title, rv.sheet]);
+  ok('Back to Practice mode restores the page', rv.back[0] === '' && rv.back[1] === 'Scorecard', rv.back);
+  // ---- Player View: only his data, read-only conclusions ----
+  const pv = JSON.parse(await N.eval(`(async () => { const s = ms => new Promise(r => setTimeout(r, ms)); const j = ${JSON.stringify(wi.j)}, name = nameFor(j, '2027');
+    // Put one shared and one staff-only note in (in-memory) so the filter can be checked.
+    const base = { j, area: 'selection', by: 'TEST', at: '2026-11-02T00:00:00Z', ed: '', ev: { range: 'Full', cat: 'All', f: {}, recs: [], n: 0, g: 0, xg: 0 }, sc: null };
+    await DB.doc('app/devnotes_2027').set({ n_TESTshared1: JSON.stringify(Object.assign({}, base, { text: 'SHARED one', shared: true })), n_TESTstaff1: JSON.stringify(Object.assign({}, base, { text: 'STAFF one', shared: false })) }, { merge: true }); await s(300);
+    pmPickerOpen(); await s(100); const b = [...document.querySelectorAll('#pmPickerList .pm-pick')].find(x => x.textContent.includes(name)); if (!b) return JSON.stringify({ err: 'no picker button for ' + name }); b.click(); await s(400);
+    goNav('develop'); await s(500);
+    const r = { pm: !!PLAYER_MODE, j: DEV.j, picker: !!document.querySelector('#devWrap .pf-pick'), shared: document.getElementById('devNotesWrap').textContent.includes('SHARED one'), staff: document.getElementById('devNotesWrap').textContent.includes('STAFF one'), edit: !!document.querySelector('#devWrap [data-dev-act="note-edit"], #devWrap [data-dev-act="note-new"]'), recRows: document.querySelectorAll('#devRecWrap tbody tr').length, mine: devSelected(devScope('2027', DEV.range, DEV.cat).filter(x => x.shooterJersey === j)).length };
+    const others = (ROSTERS['2027'] || []).map(x => x.name).filter(n => n && n !== name && !pmHas(n)); r.otherNames = others.filter(n => document.getElementById('develView').textContent.includes(n));
+    goNav('reports'); navPick('rptModePills', 'Player review'); await s(400); r.rv = document.getElementById('rptPlayer').textContent; r.rvShared = r.rv.includes('SHARED one'); r.rvStaff = r.rv.includes('STAFF one'); r.rvOther = others.filter(n => document.getElementById('reportsView').textContent.includes(n)); navPick('rptModePills', 'Practice');
+    pmExit(); await s(300); r.after = !!PLAYER_MODE; delete r.rv;
+    await DB.doc('app/devnotes_2027').set({ n_TESTshared1: firebase.firestore.FieldValue.delete(), n_TESTstaff1: firebase.firestore.FieldValue.delete() }, { merge: true });
+    return JSON.stringify(r); })()`));
+  ok('Player View: locked to him, no picker, only his attempts', pv.pm && pv.j === wi.j && !pv.picker && pv.recRows === pv.mine, pv);
+  ok('Player View: shared conclusions only, no editing', pv.shared && !pv.staff && !pv.edit, pv);
+  ok('Player View: no teammate names on the page or the review', !pv.otherNames.length && !pv.rvOther.length && pv.rvShared && !pv.rvStaff, pv);
+  ok('no page errors', errs.length === 0, errs.slice(0, 5));
+  const hosts = w => [...new Set(w.performance.getEntriesByType('resource').map(e => new URL(e.name).hostname))];
+  const allowed = ['127.0.0.1', 'www.gstatic.com', 'cdn.jsdelivr.net', 'fonts.googleapis.com', 'fonts.gstatic.com'];
+  ok('nothing left this machine except the SDK/font scripts; no live-project identifiers anywhere', [N, O].every(w => hosts(w).every(h => allowed.includes(h)) && !w.__GUARD.refusedInit.length && !w.__GUARD.blocked.some(b => /wlu-lacrosse-tracker|896246870043/.test(b))), [hosts(N), N.__GUARD.blocked.slice(0, 4)]);
+  const result = { at: new Date().toISOString(), pass: T.pass, fail: T.fail, results: T.results, audit: au, whatif: wi, pv };
+  document.getElementById('out').textContent = JSON.stringify(result, null, 1);
+  await fetch('/results/dev_tests.json', { method: 'POST', body: JSON.stringify(result, null, 1) });
+  window.__DONE = result;
+}
+run().catch(e => { document.getElementById('out').textContent = 'HARNESS ERROR ' + (e && e.stack || e); fetch('/results/dev_tests.json', { method: 'POST', body: JSON.stringify({ err: String(e && e.stack || e), results: T.results }) }); });
+</script>
+</body></html>
