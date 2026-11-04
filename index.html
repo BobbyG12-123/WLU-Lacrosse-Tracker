@@ -3088,7 +3088,7 @@ function stintById(sid, id) {
 
 // Which tracker build this page is. Shown in the footer on every device and stored in every save's audit record, so a
 // device (or a save) still running an older build can be told apart from this one.
-const BUILD_VERSION = '7a1-g3';
+const BUILD_VERSION = '7a1-g4';
 try { window.WLU_BUILD = BUILD_VERSION; document.getElementById('buildVersion').textContent = 'Build ' + BUILD_VERSION; } catch (e) {}
 // ---- Safe saves (Stage 3 PR 7a-1, M1 + M2 + M3) ----
 // Every shot / possession change (Log Shot, Backfill, Film Check, new entries, moves to another session, deletes) is an
@@ -15396,7 +15396,9 @@ function renderComparePlayers() {
   const selections = ['cp_player1','cp_player2','cp_player3'].map(id => document.getElementById(id).value).filter(Boolean);
   if (!selections.length) { wrap.innerHTML = '<p class="sans" style="color:var(--muted); font-size:13px;">Pick at least one player to compare.</p>'; return; }
   const rowsData = selections.map(sel => computeDeepDiveRowForSelection(seasonShots, sel));
-  let html = '<table class="shotlog"><thead><tr><th>Stat</th>' + rowsData.map(r => `<th>${r.label}</th>`).join('') + '</tr></thead><tbody>';
+  // Scoring Change link per player: this page's season and Sessions choice; Compare has no dates, so the default periods apply.
+  const scLink = sel => !isAdvSeason(cpSeason) || /^NAME:/.test(sel) ? '' : `<br><button type="button" class="lnk sc-go" style="font-size:11px;" ${scGoAttr({ from: 'Compare Players', season: cpSeason, subject: sel, ctx: offCtx(), dates: null, datesWords: 'Compare Players has no dates, so the default periods apply (the last 5 sessions with shots vs the 5 before).' })}>Scoring change &rsaquo;</button>`;
+  let html = '<table class="shotlog"><thead><tr><th>Stat</th>' + rowsData.map((r, i) => `<th>${r.label}${scLink(selections[i])}</th>`).join('') + '</tr></thead><tbody>';
   html += `<tr><td><strong>Shots</strong></td>` + rowsData.map(r => `<td><strong>${r.shots}</strong></td>`).join('') + '</tr>';
   DEEP_DIVE_SLICES.forEach((slice, i) => {
     html += `<tr><td>${slice.label}</td>` + rowsData.map(r => {
@@ -16123,7 +16125,9 @@ const SC_GROUP_WORDS = 'Inside = Doorstep + Crease; Low/GLE = GLE and Low, both 
 const SC_MIN_LOCATED = 10;   // located shots per period before a location split is attempted
 const SC_SMALL = 5;          // a location with fewer shots in a period is marked "small"
 const SC_SIZES = [3, 5, 10];
-const SC_ST = { type: null, barCtx: null, period: '5', custom: null, subject: 'team', grouping: 'groups' };
+// askType: opened from a page that combined session types, so the coach picks one (the panel never picks for him).
+// origin: where the panel was opened from (Brief, Compare), shown until a control is changed.
+const SC_ST = { type: null, barCtx: null, period: '5', custom: null, subject: 'team', grouping: 'groups', askType: false, origin: null };
 
 const scKeys = grouping => grouping === 'zones' ? ZONE_ORDER : SC_GROUPS;
 function scCellOf(x, grouping) { const z = shotZone(x); return z ? (grouping === 'zones' ? z : SC_GROUP_OF[z]) : null; }
@@ -16256,33 +16260,34 @@ function scSyncControls(season, pool) {
   // The top bar's Sessions choice sets this panel's type when it names one type (with or without data); on All the
   // panel keeps its own choice. A fresh start is Practice.
   const bar = offCtx();
-  if (SC_ST.barCtx !== bar) { SC_ST.barCtx = bar; if (SESSION_TYPES.includes(bar) || bar === SCRIM_UNTYPED) SC_ST.type = bar; }
-  if (!SC_ST.type) SC_ST.type = 'Practice';
-  setupPillGroup('scTypePills', offered.map(t => ({ value: t, label: `${t} · ${nSess(t)}` })), SC_ST.type, v => { if (v) SC_ST.type = v; renderScoringChange(); });
+  if (SC_ST.barCtx !== bar) { SC_ST.barCtx = bar; if (SESSION_TYPES.includes(bar) || bar === SCRIM_UNTYPED) { SC_ST.type = bar; SC_ST.askType = false; } }
+  if (!SC_ST.type && !SC_ST.askType) SC_ST.type = 'Practice';
+  setupPillGroup('scTypePills', offered.map(t => ({ value: t, label: `${t} · ${nSess(t)}` })), SC_ST.type || '', v => { if (v) { SC_ST.type = v; SC_ST.askType = false; SC_ST.origin = null; } renderScoringChange(); });
   setupPillGroup('scPeriodPills', SC_SIZES.map(n => ({ value: String(n), label: `Last ${n} vs ${n} before` })).concat([{ value: 'custom', label: 'Custom dates' }]), SC_ST.period, v => {
     if (v === 'custom' && !SC_ST.custom) {
       const per = scPeriods(scSessions(pool, SC_ST.type), SC_ST.period === 'custom' ? '5' : SC_ST.period);
       const f = l => l.length ? l[0].date : '', t = l => l.length ? l[l.length - 1].date : '';
       SC_ST.custom = { aFrom: f(per.A), aTo: t(per.A), bFrom: f(per.B), bTo: t(per.B) };
     }
-    if (v) SC_ST.period = v; renderScoringChange();
+    if (v) { SC_ST.period = v; SC_ST.origin = null; } renderScoringChange();
   });
   const players = {};
   pool.filter(s => sessionTypeOf(s) === SC_ST.type).forEach(s => { players[s.shooterJersey] = (players[s.shooterJersey] || 0) + 1; });
   let subj = Object.keys(players).sort((x, y) => players[y] - players[x]).map(j => ({ value: String(j), label: `#${j} ${nameFor(j, season)}` }));
   if (PLAYER_MODE) { subj = subj.filter(o => pmHas(o.label)); if (SC_ST.subject !== 'team' && !subj.some(o => o.value === SC_ST.subject)) SC_ST.subject = 'team'; }
-  if (SC_ST.subject !== 'team' && !players[SC_ST.subject]) SC_ST.subject = 'team';
-  setupPillGroup('scSubjectPills', [{ value: 'team', label: 'Team' }].concat(subj), SC_ST.subject, v => { SC_ST.subject = v || 'team'; if (SC_ST.subject !== 'team') SC_ST.grouping = 'groups'; renderScoringChange(); });
+  // A player chosen here or by a link stays chosen even with no shots of this type (an empty comparison, not Team).
+  if (SC_ST.subject !== 'team' && !players[SC_ST.subject] && (!PLAYER_MODE || pmHas(`#${SC_ST.subject} ${nameFor(SC_ST.subject, season)}`))) subj.push({ value: SC_ST.subject, label: `#${SC_ST.subject} ${nameFor(SC_ST.subject, season)} · no shots of this type` });
+  setupPillGroup('scSubjectPills', [{ value: 'team', label: 'Team' }].concat(subj), SC_ST.subject, v => { SC_ST.subject = v || 'team'; SC_ST.origin = null; if (SC_ST.subject !== 'team') SC_ST.grouping = 'groups'; renderScoringChange(); });
   const gOpts = [{ value: 'groups', label: '5 field groups' }].concat(SC_ST.subject === 'team' ? [{ value: 'zones', label: '13 zones (team detail)' }] : []);
   if (SC_ST.subject !== 'team') SC_ST.grouping = 'groups';
-  setupPillGroup('scGroupPills', gOpts, SC_ST.grouping, v => { SC_ST.grouping = v || 'groups'; renderScoringChange(); });
+  setupPillGroup('scGroupPills', gOpts, SC_ST.grouping, v => { SC_ST.grouping = v || 'groups'; SC_ST.origin = null; renderScoringChange(); });
   const row = document.getElementById('scCustomRow');
   row.style.display = SC_ST.period === 'custom' ? '' : 'none';
   if (SC_ST.period === 'custom') {
     const c = SC_ST.custom || {};
     [['scAFrom', 'aFrom'], ['scATo', 'aTo'], ['scBFrom', 'bFrom'], ['scBTo', 'bTo']].forEach(([id, k]) => {
       const el = document.getElementById(id); el.value = c[k] || '';
-      el.onchange = () => { SC_ST.custom = Object.assign({}, SC_ST.custom, { [k]: el.value }); renderScoringChange(); };
+      el.onchange = () => { SC_ST.custom = Object.assign({}, SC_ST.custom, { [k]: el.value }); SC_ST.origin = null; renderScoringChange(); };
     });
   }
 }
@@ -16294,13 +16299,20 @@ function renderScoringChange() {
   panel.style.display = '';
   const season = heatSeason, pool = scPool(season), body = document.getElementById('scBody');
   scSyncControls(season, pool);
+  const og = SC_ST.origin;
+  const originHtml = og ? `<p class="sans sc-origin" style="font-size:12.5px; margin:0 0 8px; padding:6px 10px; border-left:3px solid var(--gold); background:var(--card-2, transparent);">Opened from <b>${escapeHtml(og.from)}</b>: ${escapeHtml(og.subject && og.subject !== 'team' ? `#${og.subject} ${nameFor(og.subject, season)}` : 'Team')}, ${escapeHtml(season)}, ${escapeHtml(sessionCtxWords(og.ctx))}. ${escapeHtml(og.datesWords || '')}${SEASON_PART !== 'Full' ? ` Fall/Spring is set to ${escapeHtml(SEASON_PART)} here, so sessions outside it are left out.` : ''}</p>` : '';
+  if (SC_ST.askType) {
+    document.getElementById('scSub').textContent = 'Two periods of one session type side by side. Pick the session type above.';
+    body.innerHTML = originHtml + `<p class="sans sc-asktype" style="font-size:13px; margin:6px 0;"><b>Pick one session type above.</b> ${escapeHtml(og ? og.from : 'The page you came from')} combined ${escapeHtml(sessionCtxWords(og ? og.ctx : 'All'))}; this comparison uses one type at a time, and it won&rsquo;t choose one for you.</p>`;
+    return;
+  }
   const R = scCompare({ season, type: SC_ST.type, period: SC_ST.period, custom: SC_ST.custom, subject: SC_ST.subject, grouping: SC_ST.grouping });
   const typeWords = sessionCtxWords(SC_ST.type).replace(/ only$/, '');
   const who = SC_ST.subject === 'team' ? 'Team' : `#${SC_ST.subject} ${nameFor(SC_ST.subject, season)}`;
   document.getElementById('scSub').innerHTML = `Two periods of ${escapeHtml(typeWords)} side by side for <b>${escapeHtml(who)}</b>. Periods are whole sessions with logged WLU shots${SEASON_PART !== 'Full' ? ` in ${SEASON_PART} ${season}` : ` in ${season}`}; a player is compared over the team's sessions, so a missed session just means fewer shots. This panel picks its own session type: the top bar's Sessions choice sets it when that names one type.`;
   const per = R.per, A = R.a, B = R.b, D = R.dec;
   if (!R.sessions.length) {
-    body.innerHTML = `<p class="sans sc-empty" style="font-size:13px; margin:6px 0;"><b>No ${escapeHtml(typeWords)} with logged WLU shots in ${SEASON_PART !== 'Full' ? escapeHtml(SEASON_PART) + ' ' : ''}${season}.</b> There is nothing to compare for this session type. It stays selected; pick another type above to compare those sessions.</p>`;
+    body.innerHTML = originHtml + `<p class="sans sc-empty" style="font-size:13px; margin:6px 0;"><b>No ${escapeHtml(typeWords)} with logged WLU shots in ${SEASON_PART !== 'Full' ? escapeHtml(SEASON_PART) + ' ' : ''}${season}.</b> There is nothing to compare for this session type. It stays selected; pick another type above to compare those sessions.</p>`;
     return;
   }
   const sessList = l => l.length ? l.map(s => `${scDate(s.date)}${/_scrimmage_|_game_/.test(s.sid) ? ' ' + escapeHtml(s.sid.split('_').slice(2).join(' ')) : ''} (${s.n})`).join(', ') : '—';
@@ -16308,7 +16320,7 @@ function renderScoringChange() {
   if (per.wanted && per.A.length < per.wanted) notes.push(per.A.length ? `Only ${R.sessions.length} sessions of this type have shots, so period A has ${per.A.length} session${per.A.length === 1 ? '' : 's'}, not ${per.wanted}.` : `Only ${R.sessions.length} session${R.sessions.length === 1 ? '' : 's'} of this type ${R.sessions.length === 1 ? 'has' : 'have'} shots: there is no earlier period to compare yet.`);
   if (per.overlap) notes.push(`The periods share ${per.overlap} session${per.overlap === 1 ? '' : 's'}; shared shots count in both.`);
   if (SC_ST.period === 'custom' && (!per.A.length || !per.B.length)) notes.push(`Period ${!per.A.length ? 'A' : 'B'} has no ${escapeHtml(typeWords)} with shots in its dates.`);
-  let h = `<div class="sans" style="font-size:12.5px; line-height:1.55; margin-bottom:10px;">
+  let h = originHtml + `<div class="sans" style="font-size:12.5px; line-height:1.55; margin-bottom:10px;">
     <div><b>Period A</b> (earlier): ${per.A.length} session${per.A.length === 1 ? '' : 's'} · ${sessList(per.A)}</div>
     <div><b>Period B</b> (later): ${per.B.length} session${per.B.length === 1 ? '' : 's'} · ${sessList(per.B)}</div>
     <div class="n-note">Session (team shots in it). ${R.sessions.length} ${escapeHtml(typeWords)} with shots this season; ${per.label}.</div>
@@ -16348,11 +16360,10 @@ function renderScoringChange() {
       : (D.volume !== null ? [['shot volume', D.volume], ['scoring rate', D.rate]] : [['shots with a location (not split)', D.located]]);
     const parts = locParts.concat(A.unloc.N || B.unloc.N ? [['shots with no location', D.unlocated]] : []);
     const big = parts.slice().sort((x, y) => Math.abs(y[1]) - Math.abs(x[1]))[0];
-    const unlocDominates = (A.unloc.N || B.unloc.N) && (Math.abs(D.unlocated) > Math.abs(D.located) || (big && big[0] === 'shots with no location'));
     if (big && Math.abs(big[1]) >= 0.5) lead = `Largest part of the ${scNum(D.total, 0)}-goal change: <b>${big[0]}</b> (${scNum(big[1])} goals).${D.split || D.volume === null ? '' : ' A location split isn&rsquo;t supported for this selection.'}`;
     else if (big) lead = `No part of the change reaches half a goal.`;
-    if (unlocDominates) lead += ` <b>The location-based explanation can&rsquo;t account for most of the overall change:</b> goals on shots with no location changed by ${scNum(D.unlocated, 0)}, against ${scNum(D.located, 0)} on shots with a location.`;
-    else if (A.unloc.N || B.unloc.N) lead += ` The location parts cover only the ${A.loc.N + B.loc.N} shots with a location; the ${scNum(D.unlocated, 0)} on shots with no location isn&rsquo;t split.`;
+    // Factual wording (Bobby, Nov 4): parts can offset, so the largest part isn't called "most" of the change.
+    if (A.unloc.N || B.unloc.N) lead += ` Goals on shots without locations changed by ${scNum(D.unlocated, 0)}; goals on located shots changed by ${scNum(D.located, 0)}. The location breakdown covers only located shots.`;
     if (lead) lead += ' This describes what happened in these shots; it doesn&rsquo;t say why.';
   }
   br += `</tbody></table>`;
@@ -16395,13 +16406,39 @@ function renderScoringChange() {
   const nameOf = j => (PLAYER_MODE && !pmHas(`#${j} ${nameFor(j, season)}`)) ? 'Teammate' : `#${j} ${nameFor(j, season)}`;
   const recRows = (label, list) => list.slice().sort((x, y) => chronoKey(x).localeCompare(chronoKey(y))).map(s => {
     const z = shotZone(s);
-    return `<tr><td>${label}</td><td>${scDate(s.date)}</td><td style="text-align:left;">${escapeHtml(nameOf(s.shooterJersey))}</td><td style="text-align:left;">${z ? escapeHtml(z) : '—'}</td><td style="text-align:left;">${z ? escapeHtml(SC_GROUP_OF[z]) : '—'}</td><td>${s.goal === 1 ? 'Goal' : 'No goal'}</td><td>${s.shotQuality ? escapeHtml(String(s.shotQuality).replace(/^\d-/, '')) : '—'}</td></tr>`;
+    return `<tr><td>${label}</td><td>${scDate(s.date)}</td><td style="text-align:left;">${escapeHtml(nameOf(s.shooterJersey))}</td><td style="text-align:left;">${z ? escapeHtml(z) : '—'}</td><td style="text-align:left;">${z ? escapeHtml(SC_GROUP_OF[z]) : '—'}</td><td>${s.goal === 1 ? 'Goal' : 'No goal'}</td><td>${s.shotQuality ? escapeHtml(String(s.shotQuality).replace(/^\d-/, '')) : '—'}</td>
+      <td style="text-align:left;">${escapeHtml(scSid(s))}</td><td>${s.id}</td><td style="text-align:left; font-size:11px;">${s.eid ? escapeHtml(s.eid) : '—'}</td>
+      <td>${PLAYER_MODE ? '' : `<button type="button" class="lnk" data-scopen="${s.id}" data-sid="${escapeHtml(scSid(s))}" title="Opens this shot in the Log editor (as Shot Log Edit does). Nothing changes unless you save there.">Open &rsaquo;</button>`}</td></tr>`;
   }).join('');
   h += `<details class="collapsible" id="scRecords"><summary><p class="panel-sub" style="font-weight:700; color:var(--ink);">The ${A.N + B.N} shots behind these numbers</p></summary>
-    <div class="table-wrap" style="max-height:420px; overflow:auto;"><table class="shotlog dense sc-rec"><thead><tr><th>Period</th><th>Date</th><th style="text-align:left;">Shooter</th><th style="text-align:left;">Zone</th><th style="text-align:left;">Group</th><th>Result</th><th>Grade</th></tr></thead>
+    <div class="table-wrap" style="max-height:420px; overflow:auto;"><table class="shotlog dense sc-rec"><thead><tr><th>Period</th><th>Date</th><th style="text-align:left;">Shooter</th><th style="text-align:left;">Zone</th><th style="text-align:left;">Group</th><th>Result</th><th>Grade</th><th style="text-align:left;">Session ID</th><th>Shot #</th><th style="text-align:left;">Entry ID</th><th></th></tr></thead>
     <tbody>${recRows('A', R.shotsA)}${recRows('B', R.shotsB)}</tbody></table></div></details>`;
   body.innerHTML = h;
 }
+// Open a record: the Log editor, as Shot Log Edit and Reports open one (staff only; Player View shows no button).
+document.addEventListener('click', ev => {
+  const b = ev.target.closest('[data-scopen]'); if (!b || PLAYER_MODE) return;
+  startEditShot(parseInt(b.dataset.scopen, 10), 'playerView', b.dataset.sid);
+});
+// Links into this panel from the Head Coach Brief and Compare Players. o = { from, season, subject ('team' or a jersey),
+// ctx (the source's session choice), dates ({aFrom, aTo, bFrom, bTo}) or none, datesWords }. A source that combined
+// session types (All, or Scrimmage = both kinds) opens with no type picked and asks for one.
+const scGoAttr = o => `data-scgo="${escapeHtml(JSON.stringify(o))}"`;
+function scOpenFrom(o) {
+  const season = isAdvSeason(o.season) ? o.season : currentAdvSeason();
+  if (NAV_ST.season !== season) navSetGlobal(season, null);
+  const single = SESSION_TYPES.includes(o.ctx) || o.ctx === SCRIM_UNTYPED;
+  Object.assign(SC_ST, { type: single ? o.ctx : null, askType: !single, barCtx: offCtx(), subject: o.subject ? String(o.subject) : 'team', grouping: 'groups',
+    period: o.dates ? 'custom' : '5', custom: o.dates ? Object.assign({}, o.dates) : null, origin: Object.assign({}, o, { season }) });
+  goNav('trends', 'Scoring Change: What Moved');
+  renderScoringChange();
+}
+document.addEventListener('click', ev => {
+  const b = ev.target.closest('[data-scgo]'); if (!b) return;
+  ev.preventDefault(); ev.stopPropagation();
+  let o; try { o = JSON.parse(b.dataset.scgo); } catch (e) { return; }
+  scOpenFrom(o);
+});
 
 function renderGoalieTrends() {
   if (!document.getElementById('goalieTrendsUpGrid')) return;
@@ -20126,8 +20163,13 @@ function renderBrief() {
   if (!sl.season.S.length) { wrap.innerHTML = `<p class="view-intro">No ${escapeHtml(season)} shots logged yet. The brief fills in as you log.</p>`; return; }
   const vit = briefVitals(season, sl);
   const cand = briefCandidates(season, sl), things = cand.slice(0, 3);
-  const thingsHtml = things.map((t, i) => `<div class="bk"><span class="n">${i + 1}</span><div><b>${t.title}</b><span>${t.body}</span></div><button type="button" class="lnk" ${t.player ? `data-nprofile="${escapeHtml(t.player)}"` : `data-npage="${t.page}"${t.anchor ? ` data-nanchor="${escapeHtml(t.anchor)}"` : ''}`}>See why &rsaquo;</button></div>`).join('') + (things.length < 3 ? `<p class="bk-none">${things.length ? 'Nothing else is' : 'Nothing is'} beyond normal noise this week.</p>` : '');
-  const hc = briefHotCold(season), row = (m, hot) => `<button type="button" class="bhc" data-nprofile="${escapeHtml(m.j)}"><span class="nm">${who(m.j)}</span><span class="sc">${m.from} &rarr; <b>${m.to}</b></span><span class="dl ${hot ? 'up' : 'down'}">${m.d > 0 ? '+' : '−'}${Math.abs(m.d)}</span></button>`;
+  // Scoring Change links keep this page's season, Sessions choice and windows: rest of season vs the last BRIEF_DAYS days.
+  const scDay = (d, k) => { const t = new Date(d + 'T00:00:00'); t.setDate(t.getDate() + k); return localDateStr(t); };
+  const scDates = { aFrom: `${Number(season) - 1}-08-01`, aTo: scDay(sl.from, -1), bFrom: sl.from, bTo: localDateStr(new Date()) };
+  const scGo = (subject, label) => `<button type="button" class="lnk sc-go" ${scGoAttr({ from: 'Head Coach Brief', season, subject, ctx: NAV_ST.ctx || 'All', dates: scDates, datesWords: `Periods: the rest of the season (${scDate(scDates.aFrom)}–${scDate(scDates.aTo)}) vs the last ${BRIEF_DAYS} days (${scDate(scDates.bFrom)}–${scDate(scDates.bTo)}), as on the Brief.` })}>${label} &rsaquo;</button>`;
+  const thingsHtml = things.map((t, i) => `<div class="bk"><span class="n">${i + 1}</span><div><b>${t.title}</b><span>${t.body}</span></div><button type="button" class="lnk" ${t.player ? `data-nprofile="${escapeHtml(t.player)}"` : `data-npage="${t.page}"${t.anchor ? ` data-nanchor="${escapeHtml(t.anchor)}"` : ''}`}>See why &rsaquo;</button>${t.player ? scGo(t.player, 'Scoring change') : ''}</div>`).join('') + (things.length < 3 ? `<p class="bk-none">${things.length ? 'Nothing else is' : 'Nothing is'} beyond normal noise this week.</p>` : '')
+    + `<p class="bk-none" style="margin-top:6px;">${scGo('team', 'Team scoring change: rest of season vs last ' + BRIEF_DAYS + ' days')}</p>`;
+  const hc = briefHotCold(season), row = (m, hot) => `<button type="button" class="bhc" data-nprofile="${escapeHtml(m.j)}"><span class="nm">${who(m.j)}</span><span class="sc">${m.from} &rarr; <b>${m.to}</b></span><span class="dl ${hot ? 'up' : 'down'}">${m.d > 0 ? '+' : '−'}${Math.abs(m.d)}</span></button>${scGo(m.j, 'Scoring change')}`;
   const hcHtml = hc.n ? `<div class="bhc-grid"><div><p class="bhc-h up">&#9650; Heating up</p>${hc.up.map(m => row(m, true)).join('') || '<p class="bk-none">Nobody up yet.</p>'}</div><div><p class="bhc-h down">&#9660; Cooling off</p>${hc.down.map(m => row(m, false)).join('') || '<p class="bk-none">Nobody down yet.</p>'}</div></div>` : `<p class="bk-none">Nobody has ${BRIEF_HOT_MIN}+ shots in the last 14 days yet.</p>`;
   const lead = briefLeaders(season).map(([title, page, rows, players]) => `<div class="bl"><p class="bl-h"><span>${title}</span><button type="button" class="lnk" data-npage="${page}">All &rsaquo;</button></p>${rows.length ? rows.map(([j, v], i) => `<button type="button" class="bl-r${i === 0 ? ' first' : ''}" ${players ? `data-nprofile="${escapeHtml(j)}"` : `data-npage="${page}"`}><span class="rk">${i + 1}</span><span class="nm">${who(j)}</span><span class="v">${v}</span></button>`).join('') : '<p class="bk-none">Not enough logged yet.</p>'}</div>`).join('');
   const st = briefStandouts(season);

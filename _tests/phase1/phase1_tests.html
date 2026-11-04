@@ -244,8 +244,10 @@ async function run() {
     o.dom = lead(); o.d = { unloc: d.unlocated, located: d.located, total: d.total, recon: Math.abs(d.volume + (d.split ? d.mix + d.conversion : d.rate) + d.unlocated - d.total) }; undo();
     o.restored = lead() === o.none; return o; })()`);
   ok('no unlocated shots: the headline is about located parts only, no unlocated wording', /Largest part|No part/.test(hl.none) && !/no location/.test(hl.none), hl.none);
-  ok('a few unlocated shots: the headline says the location parts cover only shots with a location', /cover only the \d+ shots with a location/.test(hl.few) && !/can.t account/.test(hl.few), hl.few);
-  ok('unlocated shots dominate: the headline names them and says the location-based explanation can\'t account for most of the change', hl.d.unloc === hl.sign * hl.k && Math.abs(hl.d.unloc) > Math.abs(hl.d.located) && hl.dom.includes(`: shots with no location (${hl.sign > 0 ? '+' : '−'}${hl.k}.0 goals)`) && /location-based explanation can.t account for most of the overall change/.test(hl.dom) && hl.d.recon < EPS && hl.restored, hl);
+  const fact = (x, u, l) => x.includes(`Goals on shots without locations changed by ${u}; goals on located shots changed by ${l}. The location breakdown covers only located shots.`);
+  const sg = v => (v > 0 ? '+' : v < 0 ? '−' : '') + Math.abs(v);
+  ok('a few unlocated shots: the headline gives both changes in the factual wording', /Goals on shots without locations changed by [+−]?\d+; goals on located shots changed by [+−]?\d+\. The location breakdown covers only located shots\./.test(hl.few) && !/most of/.test(hl.few), hl.few);
+  ok('unlocated shots the largest part: named as the largest part, then the factual two-number sentence; no "most of the change" claim', hl.d.unloc === hl.sign * hl.k && hl.dom.includes(`: shots with no location (${hl.sign > 0 ? '+' : '−'}${hl.k}.0 goals)`) && fact(hl.dom, sg(hl.d.unloc), sg(hl.d.located)) && !/most of/.test(hl.dom) && hl.d.recon < EPS && hl.restored, hl);
 
   // ===== Finishing pass: per-100 labels and display rules =====
   const lb = nj(`(() => { const r0 = scCompare({ season: '2027', type: 'Practice', period: '5', subject: 'team', grouping: 'groups' }), v = r0.shotsB.slice(0, 5), sv = v.map(s => s.lateralYds); v.forEach(s => { s.lateralYds = null; });
@@ -253,6 +255,61 @@ async function run() {
       return { tile: [...b.querySelectorAll('div')].some(x => x.textContent.trim().startsWith('Goals per 100 shots (all shots)')), col: [...b.querySelectorAll('table.sc-break th')].map(x => x.textContent), tot: tot ? tot.textContent : '', text: b.textContent }; } finally { v.forEach((s, i) => { s.lateralYds = sv[i]; }); renderScoringChange(); } })()`);
   ok('all-shot and located-shot per 100 are labeled apart (tile = all shots; table column = located; total row gives both)', lb.tile && lb.col.includes('Per 100 located shots') && /Per 100: located shots [\d.]+ → [\d.]+ \(this column\); all shots [\d.]+ → [\d.]+/.test(lb.tot), lb);
   ok('the 10-shot minimum and the under-5 mark are stated as display rules, not reliability thresholds', (lb.text.match(/Display rules, not reliability thresholds/g) || []).length === 2 && /not tested differences/.test(lb.text));
+
+  // ===== Release items: record IDs, opening a record =====
+  const rc = nj(`(() => { Object.assign(SC_ST, { type: 'Practice', period: '5', custom: null, subject: 'team', grouping: 'groups', askType: false, origin: null }); renderScoringChange();
+    const r = scCompare({ season: '2027', type: 'Practice', period: '5', subject: 'team', grouping: 'groups' }), all = r.shotsA.concat(r.shotsB);
+    const rows = [...document.querySelectorAll('#scBody table.sc-rec tbody tr')].map(tr => [...tr.children].map(c => c.textContent.trim()));
+    const ths = [...document.querySelectorAll('#scBody table.sc-rec thead th')].map(x => x.textContent);
+    const byKey = new Map(all.map(s => [scSid(s) + ':' + s.id, s]));
+    const match = rows.every(c => { const s = byKey.get(c[7] + ':' + c[8]); return !!s && c[9] === (s.eid || '—') && c[0] === (r.shotsA.includes(s) ? 'A' : 'B'); });
+    const btns = document.querySelectorAll('#scBody [data-scopen]'), btn = btns[3], id = Number(btn.dataset.scopen), sid = btn.dataset.sid;
+    const w0 = window.__FAKE.__writes.length; btn.click();
+    const o = { editing: editingShotId, logActive: document.getElementById('logView').classList.contains('active'), writes: window.__FAKE.__writes.length - w0 };
+    exitEditMode(); renderScoringChange();
+    return { ths, match, n: rows.length, uniq: new Set(rows.map(c => c[7] + ':' + c[8])).size, total: all.length, btns: btns.length, o, id, sid, eids: all.filter(s => s.eid).length }; })()`);
+  ok('every record row shows its session ID, shot number and stable entry ID, matching the shot counted', same(rc.ths.slice(7, 10), ['Session ID', 'Shot #', 'Entry ID']) && rc.match && rc.n === rc.total && rc.uniq === rc.total && rc.eids === rc.total, { ths: rc.ths, n: rc.n, uniq: rc.uniq, total: rc.total, eids: rc.eids });
+  ok('"Open" uses the existing record opener (the Log editor, as Shot Log Edit does) on that exact shot, and writes nothing', rc.btns === rc.total && rc.o.editing === rc.id && rc.o.logActive && rc.o.writes === 0, rc.o);
+  const rpm = nj(`(() => { const j = String(scPool('2027')[0].shooterJersey), name = nameFor(j, '2027'); PLAYER_MODE = { name, names: [name], seasons: { '2027': j }, roles: ['player'] };
+    try { renderScoringChange(); return document.querySelectorAll('#scBody [data-scopen]').length; } finally { PLAYER_MODE = null; renderScoringChange(); } })()`);
+  ok('Player View shows no Open buttons (staff tool, as elsewhere)', rpm === 0, rpm);
+
+  // ===== Release items: links from the Head Coach Brief and Compare Players =====
+  const bl = nj(`(() => { const o = {}; NAV_ST.ctx = 'Practice'; renderBrief(); const bs = [...document.querySelectorAll('#briefWrap [data-scgo]')];
+    o.n = bs.length; const team = bs.find(b => JSON.parse(b.dataset.scgo).subject === 'team'); o.data = JSON.parse(team.dataset.scgo); o.from = briefSlices('2027').from;
+    team.click(); o.st = { type: SC_ST.type, ask: SC_ST.askType, period: SC_ST.period, custom: SC_ST.custom, subject: SC_ST.subject }; o.cur = NAV_ST.cur; o.season = heatSeason;
+    o.banner = (document.querySelector('#scBody .sc-origin') || {}).textContent || ''; o.periodA = document.getElementById('scBody').textContent.match(/Period A \(earlier\): \d+ session/);
+    o.inputs = ['scAFrom', 'scATo', 'scBFrom', 'scBTo'].map(id => document.getElementById(id).value);
+    NAV_ST.ctx = 'All'; renderBrief(); const all = [...document.querySelectorAll('#briefWrap [data-scgo]')].find(b => JSON.parse(b.dataset.scgo).subject === 'team'); all.click();
+    o.ask = { type: SC_ST.type, ask: SC_ST.askType, active: document.getElementById('scTypePills').dataset.value, text: document.getElementById('scBody').textContent, recs: document.querySelectorAll('#scBody table').length };
+    const pr = [...document.querySelectorAll('#scTypePills .pill')].find(b => b.dataset.value === 'Practice'); pr.click();
+    o.picked = { type: SC_ST.type, ask: SC_ST.askType, period: SC_ST.period, custom: SC_ST.custom, tables: document.querySelectorAll('#scBody table').length };
+    return o; })()`);
+  const wantDates = { aFrom: '2026-08-01', aTo: null, bFrom: bl.from, bTo: null };
+  ok('Brief → Scoring Change keeps season, session type and the Brief\'s dates (rest of season vs last 14 days)', bl.n >= 1 && bl.data.from === 'Head Coach Brief' && bl.data.season === '2027' && bl.data.ctx === 'Practice' && bl.data.dates.aFrom === wantDates.aFrom && bl.data.dates.bFrom === bl.from && bl.data.dates.aTo < bl.from
+    && bl.st.type === 'Practice' && !bl.st.ask && bl.st.period === 'custom' && same(bl.st.custom, bl.data.dates) && bl.st.subject === 'team' && bl.cur === 'trends' && bl.season === '2027' && same(bl.inputs, [bl.data.dates.aFrom, bl.data.dates.aTo, bl.data.dates.bFrom, bl.data.dates.bTo]) && /Opened from Head Coach Brief: Team, 2027, practices only/.test(bl.banner), bl);
+  ok('Brief on All sessions: the panel asks for one session type, picks none and shows no comparison', bl.ask.type === null && bl.ask.ask && bl.ask.active === '' && /Pick one session type above/.test(bl.ask.text) && /combined all session types/.test(bl.ask.text) && bl.ask.recs === 0, bl.ask);
+  ok('after picking a type, the comparison runs on the Brief\'s dates', bl.picked.type === 'Practice' && !bl.picked.ask && bl.picked.period === 'custom' && same(bl.picked.custom, bl.data.dates) && bl.picked.tables > 0, bl.picked);
+  const pb = nj(`(() => { const o = {}; NAV_ST.ctx = 'Practice'; const pool = scPool('2027'), c = {}; pool.filter(s => sessionTypeOf(s) === 'Practice').forEach(s => { c[s.shooterJersey] = (c[s.shooterJersey] || 0) + 1; });
+    const j = Object.keys(c).sort((a, b) => c[b] - c[a])[0]; o.j = j; renderBrief();
+    // A player link is built exactly as the flagged and Hot & Cold rows build it; take one if present, else the team link's data with this player.
+    const any = [...document.querySelectorAll('#briefWrap [data-scgo]')].map(b => JSON.parse(b.dataset.scgo)); o.players = any.filter(x => x.subject !== 'team').length;
+    const d = Object.assign({}, any.find(x => x.subject === 'team'), { subject: j }); scOpenFrom(d); o.st = { subject: SC_ST.subject, type: SC_ST.type, period: SC_ST.period };
+    o.pill = document.getElementById('scSubjectPills').dataset.value; o.only = scCompare({ season: '2027', type: 'Practice', period: 'custom', custom: SC_ST.custom, subject: j, grouping: 'groups' }).shotsB.every(s => String(s.shooterJersey) === j);
+    cpSeason = '2027'; populateComparePlayerSelects(); document.getElementById('cp_player1').value = j; document.getElementById('cp_player2').value = ''; document.getElementById('cp_player3').value = ''; renderComparePlayers();
+    const cb = document.querySelector('#comparePlayersWrap [data-scgo]'); o.cdata = cb ? JSON.parse(cb.dataset.scgo) : null; if (cb) cb.click();
+    o.cst = { subject: SC_ST.subject, type: SC_ST.type, period: SC_ST.period, custom: SC_ST.custom, ask: SC_ST.askType, cur: NAV_ST.cur, banner: (document.querySelector('#scBody .sc-origin') || {}).textContent || '' };
+    NAV_ST.ctx = 'Scrimmage'; renderComparePlayers(); document.querySelector('#comparePlayersWrap [data-scgo]').click(); o.cask = { ask: SC_ST.askType, type: SC_ST.type, subject: SC_ST.subject };
+    scOpenFrom({ from: 'Compare Players', season: '2027', subject: j, ctx: 'Game', dates: null }); o.game = { subject: SC_ST.subject, type: SC_ST.type, pill: document.getElementById('scSubjectPills').dataset.value, label: [...document.querySelectorAll('#scSubjectPills .pill')].map(b => b.textContent).find(t => t.startsWith('#' + j + ' ')), empty: !!document.querySelector('#scBody .sc-empty') };
+    NAV_ST.ctx = 'All'; Object.assign(SC_ST, { type: 'Practice', barCtx: 'All', askType: false, origin: null, period: '5', custom: null, subject: 'team' }); renderScoringChange(); return o; })()`);
+  ok('a Brief player link opens that player (not Team), same type and dates', pb.st.subject === pb.j && pb.pill === pb.j && pb.st.type === 'Practice' && pb.st.period === 'custom' && pb.only, pb);
+  ok('Compare Players → Scoring Change keeps the player, season and session type; no dates there, so the default periods (said in the banner)', pb.cdata && pb.cdata.from === 'Compare Players' && pb.cdata.season === '2027' && pb.cst.subject === pb.j && pb.cst.type === 'Practice' && pb.cst.period === '5' && pb.cst.custom === null && !pb.cst.ask && pb.cst.cur === 'trends' && /Compare Players has no dates, so the default periods apply/.test(pb.cst.banner), pb.cst);
+  ok('Compare on a combined choice (Scrimmage = both kinds): asks for one type, keeps the player', pb.cask.ask && pb.cask.type === null && pb.cask.subject === pb.j, pb.cask);
+  ok('a linked player with no shots of the type stays selected (empty state), not swapped for Team', pb.game.subject === pb.j && pb.game.type === 'Game' && pb.game.pill === pb.j && /no shots of this type/.test(pb.game.label || '') && pb.game.empty, pb.game);
+
+  // ===== Release items: build label =====
+  const bv = nj(`[BUILD_VERSION, [...document.querySelectorAll('*')].some(e => e.children.length === 0 && /Build 7a1-g4/.test(e.textContent))]`);
+  ok('release build label is 7a1-g4 (constant and footer)', bv[0] === '7a1-g4' && bv[1], bv);
 
   // ===== Safety =====
   ok('no page errors', errs.length === 0, errs.slice(0, 5));
