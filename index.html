@@ -16407,12 +16407,13 @@ function renderScoringChange() {
   const recRows = (label, list) => list.slice().sort((x, y) => chronoKey(x).localeCompare(chronoKey(y))).map(s => {
     const z = shotZone(s);
     return `<tr><td>${label}</td><td>${scDate(s.date)}</td><td style="text-align:left;">${escapeHtml(nameOf(s.shooterJersey))}</td><td style="text-align:left;">${z ? escapeHtml(z) : '—'}</td><td style="text-align:left;">${z ? escapeHtml(SC_GROUP_OF[z]) : '—'}</td><td>${s.goal === 1 ? 'Goal' : 'No goal'}</td><td>${s.shotQuality ? escapeHtml(String(s.shotQuality).replace(/^\d-/, '')) : '—'}</td>
-      <td style="text-align:left;">${escapeHtml(scSid(s))}</td><td>${s.id}</td><td style="text-align:left; font-size:11px;">${s.eid ? escapeHtml(s.eid) : '—'}</td>
+      <td style="text-align:left;">${escapeHtml(scSid(s))}</td><td>${s.id}</td><td style="text-align:left; font-size:11px;">${s.eid ? escapeHtml(s.eid) : '<span title="Logged before entries carried an entry ID; its session ID + shot # identify it.">— (older entry)</span>'}</td>
       <td>${PLAYER_MODE ? '' : `<button type="button" class="lnk" data-scopen="${s.id}" data-sid="${escapeHtml(scSid(s))}" title="Opens this shot in the Log editor (as Shot Log Edit does). Nothing changes unless you save there.">Open &rsaquo;</button>`}</td></tr>`;
   }).join('');
   h += `<details class="collapsible" id="scRecords"><summary><p class="panel-sub" style="font-weight:700; color:var(--ink);">The ${A.N + B.N} shots behind these numbers</p></summary>
     <div class="table-wrap" style="max-height:420px; overflow:auto;"><table class="shotlog dense sc-rec"><thead><tr><th>Period</th><th>Date</th><th style="text-align:left;">Shooter</th><th style="text-align:left;">Zone</th><th style="text-align:left;">Group</th><th>Result</th><th>Grade</th><th style="text-align:left;">Session ID</th><th>Shot #</th><th style="text-align:left;">Entry ID</th><th></th></tr></thead>
-    <tbody>${recRows('A', R.shotsA)}${recRows('B', R.shotsB)}</tbody></table></div></details>`;
+    <tbody>${recRows('A', R.shotsA)}${recRows('B', R.shotsB)}</tbody></table></div>
+    <p class="n-note" style="margin:4px 0 0;">Session ID + shot # identify every shot (a number that leaves a session is never reused there). Entry ID is the stable ID saved with each entry since the save-safety builds; it stays the same if the shot moves to another session. Older entries have none until they are moved. Open shows the shot in the Log editor; nothing changes unless you save there.</p></details>`;
   body.innerHTML = h;
 }
 // Open a record: the Log editor, as Shot Log Edit and Reports open one (staff only; Player View shows no button).

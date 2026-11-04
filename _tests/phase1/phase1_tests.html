@@ -262,13 +262,17 @@ async function run() {
     const rows = [...document.querySelectorAll('#scBody table.sc-rec tbody tr')].map(tr => [...tr.children].map(c => c.textContent.trim()));
     const ths = [...document.querySelectorAll('#scBody table.sc-rec thead th')].map(x => x.textContent);
     const byKey = new Map(all.map(s => [scSid(s) + ':' + s.id, s]));
-    const match = rows.every(c => { const s = byKey.get(c[7] + ':' + c[8]); return !!s && c[9] === (s.eid || '—') && c[0] === (r.shotsA.includes(s) ? 'A' : 'B'); });
+    const match = rows.every(c => { const s = byKey.get(c[7] + ':' + c[8]); return !!s && c[9] === (s.eid || '— (older entry)') && c[0] === (r.shotsA.includes(s) ? 'A' : 'B'); });
+    // An older entry with no entry ID (most real shots before the save-safety builds): shown as such, still traced by session + shot #.
+    const old = all[0], oldEid = old.eid; delete old.eid; renderScoringChange();
+    const oldRow = [...document.querySelectorAll('#scBody table.sc-rec tbody tr')].map(tr => [...tr.children].map(c => c.textContent.trim())).find(c => c[7] === scSid(old) && c[8] === String(old.id));
+    if (oldEid !== undefined) old.eid = oldEid; renderScoringChange();
     const btns = document.querySelectorAll('#scBody [data-scopen]'), btn = btns[3], id = Number(btn.dataset.scopen), sid = btn.dataset.sid;
     const w0 = window.__FAKE.__writes.length; btn.click();
     const o = { editing: editingShotId, logActive: document.getElementById('logView').classList.contains('active'), writes: window.__FAKE.__writes.length - w0 };
     exitEditMode(); renderScoringChange();
-    return { ths, match, n: rows.length, uniq: new Set(rows.map(c => c[7] + ':' + c[8])).size, total: all.length, btns: btns.length, o, id, sid, eids: all.filter(s => s.eid).length }; })()`);
-  ok('every record row shows its session ID, shot number and stable entry ID, matching the shot counted', same(rc.ths.slice(7, 10), ['Session ID', 'Shot #', 'Entry ID']) && rc.match && rc.n === rc.total && rc.uniq === rc.total && rc.eids === rc.total, { ths: rc.ths, n: rc.n, uniq: rc.uniq, total: rc.total, eids: rc.eids });
+    return { ths, match, n: rows.length, uniq: new Set(rows.map(c => c[7] + ':' + c[8])).size, total: all.length, btns: btns.length, o, id, sid, eids: all.filter(s => s.eid).length, oldRow: oldRow ? oldRow[9] : null }; })()`);
+  ok('every record row shows its session ID and shot number (unique) and its entry ID where one exists ("— (older entry)" otherwise), matching the shot counted', same(rc.ths.slice(7, 10), ['Session ID', 'Shot #', 'Entry ID']) && rc.match && rc.n === rc.total && rc.uniq === rc.total && rc.oldRow === '— (older entry)', { ths: rc.ths, n: rc.n, uniq: rc.uniq, total: rc.total, withEntryId: rc.eids, oldRow: rc.oldRow });
   ok('"Open" uses the existing record opener (the Log editor, as Shot Log Edit does) on that exact shot, and writes nothing', rc.btns === rc.total && rc.o.editing === rc.id && rc.o.logActive && rc.o.writes === 0, rc.o);
   const rpm = nj(`(() => { const j = String(scPool('2027')[0].shooterJersey), name = nameFor(j, '2027'); PLAYER_MODE = { name, names: [name], seasons: { '2027': j }, roles: ['player'] };
     try { renderScoringChange(); return document.querySelectorAll('#scBody [data-scopen]').length; } finally { PLAYER_MODE = null; renderScoringChange(); } })()`);
