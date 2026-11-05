@@ -284,6 +284,28 @@ async function run() {
   ok('Player View: a shared conclusion shows its evidence and the neutral note, not the estimate', pv.estShown && pv.neutral && pv.observed && !pv.estLine && !pv.estBtn && !pv.estNum, pv);
   ok('Player View: no teammate names', !pv.otherNames.length, pv.otherNames);
   ok('Player View: no What If link on this page (staff only, like its estimates)', pv.wiLink === false, pv.wiLink);
+  // ---- Switching into and out of Player View, while on the page ----
+  const SWITCH = `(async () => { const s = ms => new Promise(r => setTimeout(r, ms)), name = nameFor('20', '2027'), on = () => document.getElementById('develView').classList.contains('active');
+    const look = () => { const q = x => document.querySelector('#devWrap ' + x), t = q('textarea[data-dev-text]'), ids = new Set(devScope('2027', DEV.range, DEV.cat).filter(x => x.shooterJersey === DEV.j).map(x => x.id)); return { pm: !!PLAYER_MODE, view: on(), j: DEV.j, title: (q('.panel-title') || {}).textContent || '', picker: !!q('.pf-pick'), whatIf: !!q('[data-dev-act="whatif"]'), neu: !!q('[data-dev-act="note-new"]'), open: !!q('#devRecWrap [data-scopen]'), draft: t ? t.value : null, rows: document.querySelectorAll('#devRecWrap tbody tr').length, f: Object.assign({}, DEV.f) }; };
+    goNav('develop'); DEV.recOpen = true; DEV.cat = 'All'; DEV.range = 'Full'; DEV.only = null; DEV.j = '19'; DEV.f = { pressure: 'Open' }; DEV.edit = null; renderDevelop();
+    document.querySelector('#devWrap [data-dev-act="note-new"]').click(); const ta = document.querySelector('#devWrap textarea[data-dev-text]'); ta.value = 'TEST draft kept'; ta.dispatchEvent(new Event('input', { bubbles: true }));
+    const out = { staffBefore: look(), want19: devScope('2027', 'Full', 'All').filter(x => x.shooterJersey === '19' && x.contestLevel === 'Open').length, want20: devScope('2027', 'Full', 'All').filter(x => x.shooterJersey === '20').length };
+    pmPickerOpen(); await s(50); [...document.querySelectorAll('#pmPickerList .pm-pick')].find(x => x.textContent.includes(name)).click();
+    out.entered = look(); if (!on()) goNav('develop'); out.inPlayerView = look();
+    pmExit(); out.exited = look();
+    DEV.edit = null; DEV.msg = ''; DEV.f = {}; renderDevelop();
+    goNav('reports'); pmPickerOpen(); await s(50); [...document.querySelectorAll('#pmPickerList .pm-pick')].find(x => x.textContent.includes(name)).click(); out.otherPageLands = NAV_ST.cur; pmExit(); goNav('develop');
+    return JSON.stringify(out); })()`;
+  const sw = JSON.parse(await N.eval(SWITCH));
+  ok('staff view before switching: staff controls, on the chosen player', sw.staffBefore.j === '19' && sw.staffBefore.picker && sw.staffBefore.whatIf && sw.staffBefore.open && sw.staffBefore.draft === 'TEST draft kept', sw.staffBefore);
+  ok('staff to Player View: redrawn at once on that player, on this page', sw.entered.pm && sw.entered.view && sw.entered.j === '20' && /#20/.test(sw.entered.title), sw.entered);
+  ok('staff to Player View: no staff controls and no staff filters or draft', !sw.entered.picker && !sw.entered.whatIf && !sw.entered.neu && !sw.entered.open && sw.entered.draft === null && !Object.keys(sw.entered.f).length && sw.entered.rows === sw.want20, sw.entered);
+  ok('Player View to staff: redrawn at once with staff controls', !sw.exited.pm && sw.exited.view && sw.exited.picker && sw.exited.whatIf && sw.exited.open, sw.exited);
+  ok('Player View to staff: the staff player, filters and unsaved draft come back', sw.exited.j === '19' && sw.exited.f.pressure === 'Open' && sw.exited.rows === sw.want19 && sw.exited.draft === 'TEST draft kept' && /#19/.test(sw.exited.title), sw.exited);
+  ok('entering Player View from another page lands where it always has', sw.otherPageLands !== 'develop', sw.otherPageLands);
+  // The base build, for the record only (once the fix is on main this no longer shows the bug, so it can't decide pass or fail).
+  const swBase = JSON.parse(await O.eval(SWITCH));
+  T.summary = { baseAfterExit: { picker: swBase.exited.picker, whatIf: swBase.exited.whatIf, open: swBase.exited.open, j: swBase.exited.j } };
   // Unchanged after all that.
 
   }

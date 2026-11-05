@@ -3099,7 +3099,7 @@ function stintById(sid, id) {
 
 // Which tracker build this page is. Shown in the footer on every device and stored in every save's audit record, so a
 // device (or a save) still running an older build can be told apart from this one.
-const BUILD_VERSION = '7a1-g7';
+const BUILD_VERSION = '7a1-g8';
 try { window.WLU_BUILD = BUILD_VERSION; document.getElementById('buildVersion').textContent = 'Build ' + BUILD_VERSION; } catch (e) {}
 // ---- Safe saves (Stage 3 PR 7a-1, M1 + M2 + M3) ----
 // Every shot / possession change (Log Shot, Backfill, Film Check, new entries, moves to another session, deletes) is an
@@ -4883,6 +4883,8 @@ function pmPickerOpen() {
 }
 let PM_OBSERVER = null;
 function pmEnter(p) {
+  const onDevelop = document.getElementById('develView').classList.contains('active');
+  devOnPlayerMode(true);
   PLAYER_MODE = p;
   PLAYER_MODE.fogo = pmIsFogo(p.name) || FACEOFFS.some(f => Object.keys(p.seasons).some(s => p.seasons[s] === f.playerJersey && seasonForDate(f.date) === s));
   const ss = Object.keys(p.seasons).sort();
@@ -4901,7 +4903,8 @@ function pmEnter(p) {
     document.getElementById(id).classList.toggle('pm-off', !show[id]);
   });
   pmRerenderAll();
-  switchTab(isGoalie && !isPlayer ? 'profileView' : isGoalie ? 'goalieView' : (isPlayer ? 'playerView' : 'tableView'));
+  // Someone on Player Development stays there, seeing it as the player; every other page lands where it always has.
+  switchTab(onDevelop && isPlayer ? 'develView' : isGoalie && !isPlayer ? 'profileView' : isGoalie ? 'goalieView' : (isPlayer ? 'playerView' : 'tableView'));
   window.scrollTo(0, 0);
   if (!PM_OBSERVER) PM_OBSERVER = new MutationObserver(pmScheduleSweep);
   PM_OBSERVER.observe(document.body, { childList: true, subtree: true, characterData: true });
@@ -4910,6 +4913,7 @@ function pmEnter(p) {
 function pmExit() {
   if (PM_OBSERVER) PM_OBSERVER.disconnect();
   PLAYER_MODE = null;
+  devOnPlayerMode(false);
   ang3dPlayer = '';
   document.body.classList.remove('player-mode');
   document.querySelectorAll('.pm-off').forEach(el => el.classList.remove('pm-off'));
@@ -4942,6 +4946,7 @@ function pmRerenderAll() {
   renderProfile();   // the profile isn't redrawn by anything else, so it never shows the other mode's page
   renderFaceoffs();
   renderCompare();
+  renderDevelop();   // only draws if the page is open; its controls depend on the mode
 }
 let PM_SWEEP_PENDING = false;
 function pmScheduleSweep() {
@@ -20790,7 +20795,7 @@ function renderProfile() {
 // There is one What If tool, under Scoring Change. This page links to it and can save one of its results with a
 // conclusion; it has no simulator of its own. Session types come from sessionTypeOf, the same as every other page.
 const DEV_NONE = '__none__', DEV_SMALL = 8;
-const DEV = { saving: false, clipGen: 0, j: '', season: null, range: 'Full', cat: 'All', barCtx: null, barPart: null, f: {}, by: 'zone', only: null, onlyLabel: '', recOpen: false,
+const DEV = { staffView: null, saving: false, clipGen: 0, j: '', season: null, range: 'Full', cat: 'All', barCtx: null, barPart: null, f: {}, by: 'zone', only: null, onlyLabel: '', recOpen: false,
   clips: null, clipsBusy: false, clipsTick: null, clipsWait: [], notes: {}, notesSeason: null, notesUnsub: null, notesErr: '', edit: null, msg: '', delArm: null };
 const devKey = s => sessKey(s) + '#' + s.id;
 const devCatWords = c => c === 'All' ? 'all session types' : sessionCtxWords(c).replace(/ only$/, '');
@@ -20980,6 +20985,18 @@ function renderDevelop() {
   devRenderRecords(sel, season);
   devRenderNotes(season, j, sel, xm);
   devEnsureClips(season, () => devRecordsRefresh(season));
+}
+// Player View starts clean on the player's own attempts. Leaving it returns the staff selection: the player they were
+// on, the filters or saved records they had open, and any unsaved draft.
+function devOnPlayerMode(entering) {
+  if (entering) {
+    if (!DEV.staffView) DEV.staffView = { season: DEV.season, j: DEV.j, f: DEV.f, only: DEV.only, onlyLabel: DEV.onlyLabel, edit: DEV.edit, msg: DEV.msg };
+    Object.assign(DEV, { f: {}, only: null, onlyLabel: '', edit: null, msg: '', delArm: null });
+    return;
+  }
+  const V = DEV.staffView; DEV.staffView = null; if (!V) return;
+  DEV.delArm = null; DEV.j = V.j;
+  if (V.season === DEV.season) Object.assign(DEV, { f: V.f, only: V.only, onlyLabel: V.onlyLabel, edit: V.edit, msg: V.msg }); else Object.assign(DEV, { f: {}, only: null, onlyLabel: '', edit: null, msg: '' });
 }
 function devRecordsRefresh(season) {
   if (!document.getElementById('develView').classList.contains('active') || DEV.season !== season) return;
