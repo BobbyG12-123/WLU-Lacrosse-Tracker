@@ -3099,7 +3099,7 @@ function stintById(sid, id) {
 
 // Which tracker build this page is. Shown in the footer on every device and stored in every save's audit record, so a
 // device (or a save) still running an older build can be told apart from this one.
-const BUILD_VERSION = '7a1-g8';
+const BUILD_VERSION = '7a1-g9';
 try { window.WLU_BUILD = BUILD_VERSION; document.getElementById('buildVersion').textContent = 'Build ' + BUILD_VERSION; } catch (e) {}
 // ---- Safe saves (Stage 3 PR 7a-1, M1 + M2 + M3) ----
 // Every shot / possession change (Log Shot, Backfill, Film Check, new entries, moves to another session, deletes) is an
@@ -16796,6 +16796,270 @@ function scSyncControls(season, pool) {
   }
 }
 
+// ---------------- What If: possession scenarios (staff, opened on request) ----------------
+// A conditional calculation: what follows arithmetically if the coach's assumptions hold. Not a forecast, and not evidence
+// that a change would happen or cause more goals. No validated prediction exists for these scenarios.
+// Unit: a logged possession, counted the way Goals Added counts one (dsPossessions): a shot not tagged as a rebound starts one,
+// a rebound joins the shot before it, a goal ends it, and each no-shot record stands alone. A kept miss with no rebound tag
+// on the next shot is two logged possessions; the records can't tell them apart.
+// Baseline: Period B's logged outcome shares x the possessions chosen, at a fixed benchmark (goals per possession by the
+// first shot's location, rebounds included). Every result is scenario minus baseline, so an unchanged scenario gives exactly 0.
+const WP_MIN_POSS = 30;           // logged possessions in Period B before a number is shown (a display rule)
+const WP_SESS_POSS = 20;          // possessions a session needs to count in the support check (a display rule)
+const WP_SUPPORT_SESS = 2;        // sessions that must reach every changed share at once (a provisional rule)
+const WP_MAX_N = 2000;
+const WP_SEED = 20271105, WP_RUNS = 1000;
+const WP_NOLOC = 'No location';
+const WP_ST = { open: false, scope: 'records', bench: 'season', N: null, delta: 0, repl: null, mix: null, mixLoc: null, from: null, to: null, n: 0, sim: null };
+const WP_SIM_KEY = st => JSON.stringify([st.scope, st.bench, st.N, st.delta, st.repl, st.mix, st.mixLoc, st.from, st.to, st.n]);
+// One row per logged possession in a session. Uses the same grouping as Goals Added, on the Scoring Change shot pool.
+function wpRows(shots, poss, grouping) {
+  const shotBy = {}, possBy = {};
+  shots.forEach(s => { shotBy[dsKey('shot', s.id)] = s; }); poss.forEach(p => { possBy[dsKey('poss', p.id)] = p; });
+  return dsPossessions({ shots, poss }).map(g => {
+    const first = g.keys[0];
+    if (possBy[first]) { const p = possBy[first]; return { key: first, sid: scSid(p), date: p.date, kind: p.end === 'Turnover' ? 'TO' : 'NS', end: p.end || null, goal: 0, shots: 0, cat: null, man: p.manSituation || null }; }
+    const list = g.keys.map(k => shotBy[k]), s0 = list[0];
+    return { key: first, sid: scSid(s0), date: s0.date, kind: 'SHOT', end: null, goal: list.some(s => s.goal === 1) ? 1 : 0, shots: list.length, cat: scCellOf(s0, grouping) || WP_NOLOC, man: s0.manSituation || null };
+  });
+}
+// Sessions of this type that have shots (the panel's sessions), each with its possessions and whether its no-shot endings can be used.
+function wpSessions(season, type, grouping, scope) {
+  const pool = scPool(season).filter(s => sessionTypeOf(s) === type);
+  const poss = POSSESSIONS.filter(p => p.team !== 'OPP' && seasonForDate(p.date) === season && inPart(p, season) && sessionTypeOf(p) === type);
+  return scSessions(pool, type).map(x => {
+    const sh = pool.filter(s => scSid(s) === x.sid), po = poss.filter(p => scSid(p) === x.sid), track = trackStatus(x.sid, 'poss');
+    let why = null;
+    if (track === 'N') why = 'marked as possessions not tracked';
+    else if (track === 'P') why = 'marked as possessions partly tracked';
+    else if (!po.length && track !== 'C') why = 'no no-shot records, which may mean they weren’t tracked rather than a measured zero';
+    else if (scope === 'confirmed' && track !== 'C') why = 'completeness not confirmed in Session tracking';
+    return { sid: x.sid, date: x.date, shots: sh.length, noShot: po.length, track, why, rows: wpRows(sh, po, grouping) };
+  });
+}
+function wpTally(rows, keys) {
+  const t = { L: rows.length, G: 0, TO: 0, NS: 0, S: 0, shots: 0, cells: {}, unloc: { n: 0, g: 0 } };
+  keys.forEach(k => { t.cells[k] = { n: 0, g: 0 }; });
+  rows.forEach(r => {
+    t.G += r.goal;
+    if (r.kind === 'TO') t.TO++; else if (r.kind === 'NS') t.NS++;
+    else { t.S++; t.shots += r.shots; const c = r.cat === WP_NOLOC ? t.unloc : t.cells[r.cat]; c.n++; c.g += r.goal; }
+  });
+  return t;
+}
+// Session-to-session swing in goals beyond what the counts alone would give; fewer than WI_MIN_SESSIONS sessions gives no range.
+function wpSwing(sessions, keys, rateOf) {
+  if (sessions.length < WI_MIN_SESSIONS) return { S: sessions.length, usable: false, conv: null };
+  let x = 0, used = 0;
+  sessions.forEach(s => { let O = 0, E = 0, V = 0; s.rows.forEach(r => { if (r.kind !== 'SHOT') return; const c = rateOf(r.cat); O += r.goal; E += c; V += c * (1 - c); }); if (V > 0) { x += (O - E) ** 2 / V; used++; } });
+  return used < WI_MIN_SESSIONS ? { S: sessions.length, usable: false, conv: null } : { S: sessions.length, usable: true, conv: Math.max(1, x / (used - 1)) };
+}
+// The scenario's possession counts. Every step moves possessions between outcomes, so the total never changes.
+function wpScenario(base, keys, st, mixShares) {
+  const out = { TO: base.TO, NS: base.NS, unloc: base.unloc, cells: Object.assign({}, base.cells) }, shotKeys = keys.filter(k => base.cells[k] > 0);
+  const d = Number(st.delta) || 0, N = base.N;
+  if (d > 0) {
+    // More turnovers: they come out of shot possessions in proportion, including those with no location.
+    const S = base.unloc + shotKeys.reduce((t, k) => t + base.cells[k], 0), x = N * d / 100, f = S ? x / S : 0;
+    out.TO = base.TO + x; out.unloc = base.unloc * (1 - f); shotKeys.forEach(k => { out.cells[k] = base.cells[k] * (1 - f); });
+  } else if (d < 0) {
+    const a = N * -d / 100, r = st.repl;
+    out.TO = base.TO - a; out.NS = base.NS + a * (1 - r);
+    if (r > 0) keys.forEach(k => { if (mixShares[k]) out.cells[k] = base.cells[k] + a * r * mixShares[k]; });
+  }
+  return out;
+}
+// The whole calculation for one Scoring Change result; pure apart from reading the records (the tests call it directly).
+function wpCompute(R, st) {
+  const { season, type, grouping, keys, per } = R, sessions = wpSessions(season, type, grouping, st.scope), eligible = sessions.filter(s => !s.why);
+  const aIds = new Set(per.A.map(s => s.sid)), bIds = new Set(per.B.map(s => s.sid));
+  const rowsOf = ids => eligible.filter(s => ids.has(s.sid)).reduce((a, s) => a.concat(s.rows), []);
+  const rowsA = rowsOf(aIds), rowsB = rowsOf(bIds), A = wpTally(rowsA, keys), B = wpTally(rowsB, keys), season_ = wpTally(eligible.reduce((a, s) => a.concat(s.rows), []), keys);
+  const seasonRate = c => c.n ? c.g / c.n : null, cellOf = (T, k) => k === WP_NOLOC ? T.unloc : T.cells[k];
+  const rateOf = k => { const c = cellOf(season_, k), p = seasonRate(c); if (st.bench !== 'periodB') return p; if (p === null) return null; return wiBlend(cellOf(B, k), p); };
+  const varOf = k => { const r = rateOf(k), c = cellOf(st.bench === 'periodB' ? B : season_, k); if (r === null) return null; const den = st.bench === 'periodB' ? c.n + WI_K : c.n; return den ? r * (1 - r) / den : null; };
+  const benchName = st.bench === 'periodB' ? `Period B’s own goals per possession by location, each blended with ${WI_K} possessions’ worth of the team rate this season` : `Team, all eligible ${sessionCtxWords(type).replace(/ only$/, '')} this season: goals per possession by location`;
+  const C = { sessions, eligible, excluded: sessions.filter(s => s.why), rowsA, rowsB, A, B, season: season_, benchName, keys, rateOf, varOf };
+  const outBy = (why, extra) => Object.assign(C, { none: true, why }, extra || {});
+  if (R.subject !== 'team') return outBy('Possession scenarios are team only: a no-shot possession doesn’t belong to one shooter’s chances.', { teamOnly: true });
+  if (!eligible.length) return outBy(st.scope === 'confirmed' ? 'No estimate: no session of this type is confirmed complete for possessions in Session tracking.' : 'No estimate: no session of this type has usable no-shot records.');
+  if (B.L < WP_MIN_POSS) return outBy(`No estimate: this needs ${WP_MIN_POSS}+ logged possessions in eligible Period B sessions (has ${B.L}). That minimum is a display rule.`);
+  const Nlog = B.L, N = Math.max(1, Math.min(WP_MAX_N, Math.floor(Number(st.N) || Nlog))), f = N / Nlog;
+  const base = { N, TO: B.TO * f, NS: B.NS * f, unloc: B.unloc.n * f, cells: {} };
+  keys.forEach(k => { base.cells[k] = B.cells[k].n * f; });
+  const cats = keys.concat(B.unloc.n ? [WP_NOLOC] : []), missing = cats.filter(k => cellOf(B, k).n && rateOf(k) === null);
+  const baseGoals = cats.reduce((t, k) => t + (k === WP_NOLOC ? base.unloc : base.cells[k]) * (rateOf(k) || 0), 0);
+  Object.assign(C, { N, Nlog, base, cats, baseGoals, turnBase: 100 * B.TO / B.L, baseShare: { TO: B.TO / B.L } });
+  if (missing.length) return outBy(`No estimate: there’s no benchmark at ${missing.join(', ')}, and a missing rate isn’t treated as 0.`);
+  // Bounds on the controls.
+  const dMin = -Math.floor(100 * B.TO / B.L), dMax = Math.floor(100 * B.S / B.L), delta = Math.max(dMin, Math.min(dMax, Math.round(Number(st.delta) || 0)));
+  Object.assign(C, { dMin, dMax, delta });
+  // The mix replacement shots would take.
+  const shareOf = T => { const L = keys.reduce((t, k) => t + T.cells[k].n, 0), o = {}; keys.forEach(k => { if (L && T.cells[k].n) o[k] = T.cells[k].n / L; }); return L ? o : null; };
+  let mixShares = null;
+  if (st.mix === 'B') mixShares = shareOf(B); else if (st.mix === 'A') mixShares = shareOf(A); else if (st.mix === 'loc' && st.mixLoc && keys.includes(st.mixLoc)) mixShares = { [st.mixLoc]: 1 };
+  C.mixAvail = { A: !!shareOf(A), B: !!shareOf(B) };
+  const needsRepl = delta < 0, r = st.repl;
+  if (needsRepl && (r === null || r === undefined)) return Object.assign(C, { idle: true, why: 'Say what the avoided turnovers become: choose the share that turn into shot possessions. There’s no default, and the rest stay no-shot endings.' });
+  if (needsRepl && r > 0 && !mixShares) return Object.assign(C, { idle: true, why: st.mix === 'A' && !C.mixAvail.A ? 'Period A has no located possessions in eligible sessions. Choose another shot mix.' : 'Say what shot mix the new shot possessions take.' });
+  let scen = wpScenario(base, keys, Object.assign({}, st, { delta, repl: needsRepl ? r : 0 }), mixShares);
+  // Move shot possessions between locations, on top of the turnover change.
+  const from = keys.includes(st.from) ? st.from : null, to = keys.includes(st.to) && st.to !== from ? st.to : null;
+  const avail = from ? Math.floor(scen.cells[from] + 1e-9) : 0, n = from && to ? Math.max(0, Math.min(avail, Math.floor(Number(st.n) || 0))) : 0;
+  if (n) { scen = Object.assign({}, scen, { cells: Object.assign({}, scen.cells) }); scen.cells[from] -= n; scen.cells[to] += n; }
+  Object.assign(C, { from, to, n, avail, scen });
+  // What changed, and whether the benchmark can value it.
+  const dCat = {}; cats.forEach(k => { dCat[k] = (k === WP_NOLOC ? scen.unloc - base.unloc : scen.cells[k] - base.cells[k]); });
+  const dTO = scen.TO - base.TO, dNS = scen.NS - base.NS, shotCount = cats.reduce((t, k) => t + (k === WP_NOLOC ? scen.unloc : scen.cells[k]), 0);
+  const total = scen.TO + scen.NS + shotCount, vals = [scen.TO, scen.NS, shotCount].concat(cats.map(k => k === WP_NOLOC ? scen.unloc : scen.cells[k]));
+  C.balanced = Math.abs(total - N) < 1e-6 && vals.every(v => v >= -1e-9);
+  if (!C.balanced) return outBy('No estimate: these choices don’t leave a valid split of the possessions.');
+  const gaining = cats.filter(k => k !== WP_NOLOC && Math.abs(dCat[k]) > 1e-9);   // changed locations, up or down
+  const thin = gaining.filter(k => season_.cells[k].n < WI_BENCH_MIN);
+  if (thin.length) return outBy(`No estimate: the benchmark has too few possessions at ${thin.map(k => `${k} (${season_.cells[k].n})`).join(' and ')}; a changed location needs ${WI_BENCH_MIN}+. That minimum is a display rule.`);
+  const unchanged = !delta && !n;
+  const d = unchanged ? 0 : cats.reduce((t, k) => t + dCat[k] * rateOf(k), 0);
+  const vAvg = cats.reduce((t, k) => t + dCat[k] * dCat[k] * (varOf(k) || 0), 0), vOut = cats.reduce((t, k) => { const v = rateOf(k); return t + Math.abs(dCat[k]) * v * (1 - v); }, 0);
+  const swing = wpSwing(eligible, keys, k => seasonRate(cellOf(season_, k)) || 0), affected = (Math.abs(dTO) + Math.abs(dNS) + cats.reduce((t, k) => t + Math.abs(dCat[k]), 0)) / 2;
+  // Joint support: the turnover share and the shot mix (each location's share of located shot possessions) have to be
+  // reached in the same session, in the direction of the change. More or fewer shots at the same mix isn't a mix change.
+  const changed = [], located = T => keys.reduce((t, k) => t + T.cells[k], 0), locB = located(base), locS = located(scen);
+  if (delta) changed.push({ label: 'Logged turnovers per 100 logged possessions', kind: 'TO', to: scen.TO / N, dir: Math.sign(delta) });
+  keys.forEach(k => { const a = locB ? base.cells[k] / locB : 0, b = locS ? scen.cells[k] / locS : 0; if (Math.abs(b - a) >= 0.005) changed.push({ label: `${k} share of located shot possessions`, cat: k, to: b, dir: Math.sign(b - a) }); });
+  const sessShare = (s, c) => { if (c.kind === 'TO') return s.rows.length ? s.rows.filter(x => x.kind === 'TO').length / s.rows.length : 0; const L = s.rows.filter(x => x.kind === 'SHOT' && x.cat !== WP_NOLOC).length; return L ? s.rows.filter(x => x.cat === c.cat).length / L : 0; };
+  const big = eligible.filter(s => s.rows.length >= WP_SESS_POSS), reach = (s, c) => c.dir > 0 ? sessShare(s, c) >= c.to - 1e-12 : sessShare(s, c) <= c.to + 1e-12;
+  const alone = changed.map(c => ({ label: c.label, to: c.to, dir: c.dir, sessions: big.filter(s => reach(s, c)).length }));
+  const together = big.filter(s => changed.every(c => reach(s, c)));
+  const supported = !changed.length || together.length >= WP_SUPPORT_SESS;
+  const replNoEvidence = needsRepl && r > 0;
+  const range = unchanged ? { lo: 0, hi: 0, loNew: 0, hiNew: 0 } : (supported ? wiRange(d, vAvg, vOut, swing, 'conv') : { lo: null, hi: null, loNew: null, hiNew: null });
+  return Object.assign(C, { unchanged, d, per100: 100 * d / N, scenGoals: baseGoals + d, vAvg, vOut, swing, affected, dCat, dTO, dNS, changed, alone, together: together.map(s => s.sid), bigN: big.length, supported, replNoEvidence, range, actual: N === Nlog ? B.G : null });
+}
+// Illustration only. Each run draws the same random numbers for baseline and scenario, so only the change itself differs.
+function wpSimulate(C, seed, runs) {
+  let a = seed >>> 0;
+  const rand = () => { a = (a + 0x6D2B79F5) >>> 0; let t = a; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+  const N = C.N, line = T => { const o = [{ p: T.TO / N, v: 0 }, { p: T.NS / N, v: 0 }]; C.cats.forEach(k => o.push({ p: (k === WP_NOLOC ? T.unloc : T.cells[k]) / N, v: Math.min(1, C.rateOf(k)) })); return o; };
+  const lb = line(C.base), ls = line(C.scen), value = (L, u) => { let c = 0; for (let i = 0; i < L.length; i++) { c += L[i].p; if (u < c) return L[i].v; } return L[L.length - 1].v; };
+  const G = [], H = [], D = [];
+  for (let r = 0; r < runs; r++) {
+    let gb = 0, gs = 0;
+    for (let i = 0; i < N; i++) { const u = rand(), w = rand(); if (w < value(lb, u)) gb++; if (w < value(ls, u)) gs++; }
+    G.push(gb); H.push(gs); D.push(gs - gb);
+  }
+  const q = (x, p) => { const s = x.slice().sort((m, n) => m - n); return s[Math.min(s.length - 1, Math.floor(p * s.length))]; }, mean = x => x.reduce((t, v) => t + v, 0) / x.length;
+  return { seed, runs, N, base: { lo: q(G, 0.1), hi: q(G, 0.9), mean: mean(G) }, scen: { lo: q(H, 0.1), hi: q(H, 0.9), mean: mean(H) }, diff: { lo: q(D, 0.1), hi: q(D, 0.9), mean: mean(D) }, up: D.filter(v => v > 0).length / runs, same: D.filter(v => v === 0).length / runs };
+}
+function renderPossession() {
+  const el = document.getElementById('scWp'); if (!el) return;
+  if (PLAYER_MODE || !WI_LAST) { el.innerHTML = ''; return; }
+  const head = `<span class="wp-badge" style="display:inline-block; font-size:11px; font-weight:700; letter-spacing:.06em; padding:2px 8px; border-radius:4px; background:#6B4E16; color:#FFF; margin-right:8px;">CONDITIONAL</span>`;
+  const box = inner => `<div class="wp-tool" style="border:2px solid #6B4E16; border-left-width:6px; border-radius:10px; padding:10px 12px; margin-bottom:12px;">${inner}</div>`;
+  const title = `<p class="panel-sub" style="margin:0 0 4px; font-weight:700; color:var(--ink); font-size:15px;">${head}What If: possession scenarios</p>`;
+  if (!WP_ST.open) { el.innerHTML = box(`${title}<p class="sans" style="font-size:13px; margin:0 0 8px;">Separate from the blocks above. Follows your assumptions about turnovers and shot mix through a fixed number of logged possessions. Not a prediction.</p><button type="button" class="pill" data-wp="open">Show possession scenarios</button>`); return; }
+  const R = WI_LAST, keys = R.keys, C = wpCompute(R, WP_ST), typeWords = sessionCtxWords(R.type).replace(/ only$/, '');
+  const pill = (attr, v, cur, label, off) => `<button type="button" class="pill${cur === v ? ' active' : ''}" data-wp="${attr}" data-v="${escapeHtml(String(v))}"${off ? ' disabled' : ''}>${escapeHtml(label)}</button>`;
+  const num1 = v => v === null || v === undefined || !isFinite(v) ? '—' : v.toFixed(1), pct1 = (v, T) => T ? (100 * v / T).toFixed(1) + '%' : '—';
+  let h = title + `<p class="sans wp-label" style="font-size:13px; margin:0 0 8px;"><b>Conditional calculation: what follows arithmetically if your assumptions hold.</b> It isn&rsquo;t a forecast and it doesn&rsquo;t say a change could be made or would cause more goals. <b>Validated prediction: none.</b> No model has been validated for these scenarios. ${R.type === 'Game' ? '' : `This uses ${escapeHtml(typeWords)}, so it isn&rsquo;t a game forecast.`}</p>`;
+  if (C.teamOnly) { el.innerHTML = box(h + `<p class="sans wp-none" style="font-size:13px; margin:0;">${escapeHtml(C.why)} Choose Team above.</p>`); return; }
+  const ct = C.sessions.length, ce = C.eligible.length, cc = C.eligible.filter(s => s.track === 'C').length;
+  h += `<div class="control-group" style="margin-bottom:6px;"><label>Sessions used</label><div class="pill-row">${pill('scope', 'records', WP_ST.scope, 'Has no-shot records')}${pill('scope', 'confirmed', WP_ST.scope, 'Confirmed complete only')}</div></div>
+    <p class="sans wp-coverage" style="font-size:12.5px; margin:0 0 8px;"><b>Coverage:</b> ${ce} of ${ct} sessions used (${escapeHtml(typeWords)}); ${cc} of those ${cc === 1 ? 'is' : 'are'} confirmed complete for possessions in Session tracking.${ce > cc ? ` The other ${ce - cc} have no-shot records but nobody has confirmed every no-shot ending was logged, so logged turnover shares could be low. Those sessions stay labeled Not confirmed.` : ''}${C.excluded.length ? ` <b>Left out:</b> ${C.excluded.map(s => `${scDate(s.date)} (${s.shots} shots, ${escapeHtml(s.why)})`).join('; ')}.` : ''}</p>`;
+  if (C.none && C.B.L < WP_MIN_POSS || !C.base) { el.innerHTML = box(h + `<p class="sans wp-none" style="font-size:13px; margin:0 0 6px;">${escapeHtml(C.why || '')}</p>`); return; }
+  const B = C.B;
+  h += `<div class="control-group" style="margin-bottom:6px;"><label for="wpN">Logged possessions in the scenario</label><div class="pill-row" style="align-items:center;"><input id="wpN" type="number" min="1" max="${WP_MAX_N}" step="1" value="${C.N}" style="width:80px; font:14px var(--text); padding:5px 8px; border:1px solid var(--line); border-radius:6px;"><span class="sans" style="font-size:12.5px; margin-left:8px;">Period B logged ${C.Nlog}. Baseline and scenario use the same number; any other number is your assumption.</span></div></div>
+    <div class="control-group" style="margin-bottom:6px;"><label for="wpDelta">Change in logged turnovers per 100 logged possessions</label><div class="pill-row" style="align-items:center;"><button type="button" class="pill" data-wp="dminus" aria-label="One fewer">&minus;</button><input id="wpDelta" type="number" min="${C.dMin}" max="${C.dMax}" step="1" value="${C.delta || 0}" style="width:68px; font:14px var(--text); padding:5px 8px; border:1px solid var(--line); border-radius:6px;"><button type="button" class="pill" data-wp="dplus" aria-label="One more">+</button><span class="sans" style="font-size:12.5px; margin-left:8px;">Period B: ${B.TO} logged turnovers in ${B.L} logged possessions (${(100 * B.TO / B.L).toFixed(1)} per 100).</span></div></div>`;
+  if ((C.delta || 0) < 0) {
+    h += `<div class="control-group" style="margin-bottom:6px;"><label>Avoided logged turnovers that become shot possessions</label><div class="pill-row wp-repl">${[0, 0.25, 0.5, 0.75, 1].map(v => pill('repl', v, WP_ST.repl, (v * 100) + '%')).join('')}</div></div>`;
+    if (WP_ST.repl > 0) h += `<div class="control-group" style="margin-bottom:6px;"><label>Shot mix for those possessions</label><div class="pill-row wp-mix">${pill('mix', 'B', WP_ST.mix, 'Period B’s mix', C.mixAvail && !C.mixAvail.B)}${pill('mix', 'A', WP_ST.mix, 'Period A’s mix', C.mixAvail && !C.mixAvail.A)}${pill('mix', 'loc', WP_ST.mix, 'One location')}</div></div>`;
+    if (WP_ST.repl > 0 && WP_ST.mix === 'loc') h += `<div class="control-group" style="margin-bottom:6px;"><label>Which location</label><div class="pill-row">${keys.map(k => pill('mixLoc', k, WP_ST.mixLoc, k)).join('')}</div></div>`;
+    h += `<p class="n-note" style="margin:0 0 6px;">The records can&rsquo;t show what an avoided turnover would have become, so this share and mix are your assumption, with nothing logged behind them.</p>`;
+  } else if ((C.delta || 0) > 0) h += `<p class="n-note" style="margin:0 0 6px;">Added turnovers come out of shot possessions in proportion, with no-location ones included.</p>`;
+  const mv = C.scen || null;
+  h += `<div class="control-group" style="margin-bottom:6px;"><label>Move shot possessions: from</label><div class="pill-row wp-from">${keys.filter(k => mv ? mv.cells[k] >= 1 : B.cells[k].n).map(k => pill('from', k, WP_ST.from, k)).join('')}</div></div>
+    <div class="control-group" style="margin-bottom:6px;"><label>To</label><div class="pill-row wp-to">${keys.filter(k => k !== WP_ST.from).map(k => pill('to', k, WP_ST.to, k)).join('')}</div></div>
+    <div class="control-group" style="margin-bottom:6px;"><label for="wpMove">How many</label><div class="pill-row" style="align-items:center;"><input id="wpMove" type="number" min="0" max="${C.avail || 0}" step="1" value="${C.n || 0}" style="width:68px; font:14px var(--text); padding:5px 8px; border:1px solid var(--line); border-radius:6px;"><span class="sans" style="font-size:12.5px; margin-left:8px;">${C.from ? `Up to ${C.avail}.` : 'Optional.'} Turnover and mix changes are checked together below.</span></div></div>
+    <div class="control-group" style="margin-bottom:8px;"><label>Finishing benchmark (held fixed)</label><div class="pill-row wp-bench">${pill('bench', 'season', WP_ST.bench, 'Team, this season')}${pill('bench', 'periodB', WP_ST.bench, 'Period B, blended')}</div></div>
+    <p class="n-note" style="margin:0 0 8px;"><b>Benchmark:</b> ${escapeHtml(C.benchName)}. Finishing doesn&rsquo;t change in any scenario. <button type="button" class="lnk" data-wp="reset">Back to no change</button></p>`;
+  if (C.none || C.idle) h += `<p class="sans ${C.none ? 'wp-none' : 'wp-idle'}" style="font-size:13px; margin:0 0 8px;">${escapeHtml(C.why)}</p>`;
+  else {
+    const X = C.range, rng = (lo, hi) => lo === null || lo === undefined ? '—' : `${scNum(lo)} to ${scNum(hi)}`;
+    if (!C.supported) h += `<p class="sans wp-hypo" style="font-size:13px; margin:0 0 6px; padding:6px 10px; border-left:4px solid #B0703A;"><b>HYPOTHETICAL.</b> Arithmetic only: ${C.together.length ? 'only 1 session' : 'no session'} with ${WP_SESS_POSS}+ possessions reached this turnover rate and shot mix at once (${WP_SUPPORT_SESS}+ needed; a provisional rule). No range is shown.</p>`;
+    const per100 = (g, n) => n ? (100 * g / n).toFixed(1) : '—', res = (cls, label, val, strong) => `<tr class="${cls}"${strong ? ' style="font-weight:700;"' : ''}><td style="text-align:left; white-space:normal;">${label}</td><td>${val}</td></tr>`, sec = label => `<tr><th colspan="2" style="text-align:left;">${label}</th></tr>`;
+    const bIds = new Set(R.per.B.map(s => s.sid)), usedB = C.eligible.filter(s => bIds.has(s.sid)), confB = usedB.filter(s => s.track === 'C').length;
+    const dT = C.delta || 0, mixWord = WP_ST.mix === 'B' ? 'Period B&rsquo;s shot mix' : WP_ST.mix === 'A' ? 'Period A&rsquo;s shot mix' : `all at ${escapeHtml(WP_ST.mixLoc || '')}`;
+    h += `<div class="wp-side" style="display:flex; gap:12px; flex-wrap:wrap; align-items:flex-start; margin-bottom:6px;"><div style="flex:1 1 420px; min-width:0;"><div class="table-wrap"><table class="shotlog dense wp-result"><tbody>
+      ${sec('Counted: what the records show, Period B')}
+      ${res('wp-actual', `Actual goals, on ${B.L} logged possessions`, B.G)}
+      ${res('wp-actual-100', 'Actual goals per 100 logged possessions', per100(B.G, B.L))}
+      ${sec('Benchmark-estimated: not counted goals')}
+      ${res('wp-base', `Baseline estimate, at ${C.N} logged possessions`, num1(C.baseGoals))}
+      ${res('wp-base-100', 'Baseline estimate per 100 logged possessions', per100(C.baseGoals, C.N))}
+      ${res('wp-scen', `Scenario estimate, at ${C.N} logged possessions`, num1(C.scenGoals))}
+      ${res('wp-scen-100', 'Scenario estimate per 100 logged possessions', per100(C.scenGoals, C.N))}
+      ${res('wp-change', 'Change (scenario minus baseline), goals', scNum(C.d), true)}
+      ${res('wp-change-100', 'Change per 100 logged possessions', scNum(C.per100), true)}
+      ${res('wp-aff', 'Logged possessions affected', num1(C.affected))}
+      ${res('wp-rng', 'Provisional range: average', rng(X.lo, X.hi))}
+      ${res('wp-rng-new', 'Provisional range: a new run', rng(X.loNew, X.hiNew))}
+      </tbody></table></div></div>
+      <div class="wp-assume sans" style="flex:1 1 300px; min-width:0; border:1px solid var(--line); border-radius:8px; padding:8px 10px; font-size:12.5px; line-height:1.5;"><b>Assumptions behind this result</b><ul style="margin:4px 0 0; padding-left:18px;">
+        <li>Logged possessions: ${C.N}${C.N === C.Nlog ? ' (Period B&rsquo;s count)' : ` (your number; Period B logged ${C.Nlog})`}.</li>
+        <li>Logged turnovers per 100: ${dT ? `${(100 * C.base.TO / C.N).toFixed(1)} &rarr; ${(100 * C.scen.TO / C.N).toFixed(1)}` : `${(100 * C.base.TO / C.N).toFixed(1)}, unchanged`}.</li>
+        ${dT < 0 ? `<li>Avoided turnovers: ${(100 * WP_ST.repl).toFixed(0)}% become shot possessions${WP_ST.repl > 0 ? `, ${mixWord}` : ''}; the rest stay no-shot endings. Your assumption, with nothing logged behind it.</li>` : ''}
+        ${dT > 0 ? '<li>Added turnovers come out of shot possessions in proportion.</li>' : ''}
+        <li>Moved: ${C.n ? `${C.n} shot possession${C.n === 1 ? '' : 's'} from ${escapeHtml(C.from)} to ${escapeHtml(C.to)}` : 'none'}.</li>
+        <li>Finishing: held fixed at the benchmark. ${escapeHtml(C.benchName)}.</li>
+        <li>Sessions: ${usedB.length} in Period B, ${confB} confirmed complete, ${usedB.length - confB} not confirmed.</li>
+        <li><b>Not assumed:</b> that every turnover was logged, or that a miss with no rebound tag on the next shot ended the possession.</li></ul></div></div>
+    <p class="sans wp-range-excl" style="font-size:12.5px; margin:4px 0 4px;"><b>What the ranges leave out:</b> whether logging is complete, and whether the proposed changes are achievable. They cover only the benchmark rates and, for a new run, variation on the changed possessions. ${!C.supported ? '' : C.swing && C.swing.usable ? `They&rsquo;re provisional, not validated, and widened by session swing (&times;${Math.sqrt(C.swing.conv).toFixed(2)}).` : `Measuring session swing takes ${WI_MIN_SESSIONS}+ eligible sessions, so there&rsquo;s no range here.`}</p>
+    <p class="n-note wp-read" style="margin:0 0 8px;">Change = scenario minus baseline, so no change gives 0. Baseline and scenario use the benchmark; neither is a count of goals. The counted numbers stay on Period B&rsquo;s logged possessions, whatever number you choose above.</p>`;
+    const row = (label, logged, b, s, rate, nB) => `<tr${Math.abs(s - b) > 1e-9 ? ' style="font-weight:700;"' : ''}><td style="text-align:left;">${escapeHtml(label)}</td><td>${logged === null ? '—' : logged}</td><td>${num1(b)}</td><td>${num1(s)}</td><td>${pct1(b, C.N)}</td><td>${pct1(s, C.N)}</td><td>${rate === null ? '—' : rate.toFixed(3)}</td><td>${nB === null ? '—' : nB}</td></tr>`;
+    const benchN = k => k === WP_NOLOC ? (WP_ST.bench === 'periodB' ? B.unloc.n : C.season.unloc.n) : (WP_ST.bench === 'periodB' ? B.cells[k].n : C.season.cells[k].n);
+    h += `<div class="table-wrap"><table class="shotlog dense wp-dist"><thead><tr><th style="text-align:left;">Possession outcome</th><th>Logged, Period B</th><th>Baseline</th><th>Scenario</th><th>Baseline share</th><th>Scenario share</th><th>Benchmark goals per logged possession</th><th>Benchmark n</th></tr></thead><tbody>
+      ${row('Turnover', B.TO, C.base.TO, C.scen.TO, null, null)}${row('Other no-shot ending', B.NS, C.base.NS, C.scen.NS, null, null)}
+      ${C.cats.map(k => row(`Shot possession: ${k}`, k === WP_NOLOC ? B.unloc.n : B.cells[k].n, k === WP_NOLOC ? C.base.unloc : C.base.cells[k], k === WP_NOLOC ? C.scen.unloc : C.scen.cells[k], C.rateOf(k), benchN(k))).join('')}
+      <tr style="font-weight:700;"><td style="text-align:left;">All possessions</td><td>${B.L}</td><td>${num1(C.N)}</td><td>${num1(C.N)}</td><td>100%</td><td>100%</td><td></td><td></td></tr></tbody></table></div>`;
+    if (C.changed.length) h += `<p class="sans wp-support" style="font-size:12.5px; margin:6px 0;"><b>Support check, all changes together (provisional rule, not a validated limit):</b> of ${C.bigN} eligible sessions with ${WP_SESS_POSS}+ possessions, ${C.together.length} reached every changed number at once. One at a time: ${C.alone.map(x => `${escapeHtml(x.label)} ${x.dir > 0 ? 'at or above' : 'at or below'} ${(100 * x.to).toFixed(1)}%: ${x.sessions}`).join('; ')}.${C.replNoEvidence ? ' This check looks at shares only; it can&rsquo;t test what avoided turnovers become.' : ''}</p>`;
+    const sim = WP_ST.sim && WP_ST.sim.key === WP_SIM_KEY(WP_ST) ? WP_ST.sim.res : null;
+    if (sim) h += `<p class="sans wp-sim" style="font-size:12.5px; margin:6px 0;"><b>Outcome variation, illustration only (${sim.runs} runs, seed ${sim.seed}, same random draws for both):</b> middle 80% of runs: baseline ${sim.base.lo} to ${sim.base.hi} goals, scenario ${sim.scen.lo} to ${sim.scen.hi} goals, change ${scNum(sim.diff.lo, 0)} to ${scNum(sim.diff.hi, 0)}. The scenario scored more in ${(100 * sim.up).toFixed(0)}% of runs and the same in ${(100 * sim.same).toFixed(0)}%. This assumes the benchmark rates and your assumptions are exactly right. More runs don&rsquo;t add evidence.</p>`;
+    else if (!C.unchanged) h += `<p style="margin:6px 0;"><button type="button" class="pill" data-wp="sim">Show outcome variation (illustration)</button></p>`;
+  }
+  // ---- Definition, limits, records ----
+  const man = C.rowsB.filter(r => r.man === 'Man-Up' || r.man === 'Man-Down').length, reb = B.shots - B.S;
+  h += `<p class="sans wp-unit" style="font-size:12.5px; margin:8px 0 4px;"><b>What counts as a logged possession here:</b> the Goals Added count. A shot not tagged as a rebound starts one, a tagged rebound joins the shot before it, a goal ends it, and each no-shot record stands alone. Period B: ${B.S} shot possessions on ${B.shots} shots (${reb} rebound shot${reb === 1 ? '' : 's'} joined) + ${B.TO + B.NS} no-shot records = ${B.L}. This is a count of what was logged, not of every possession played.</p>
+    <p class="sans wp-later" style="font-size:12.5px; margin:0 0 4px;"><b>How later shots in a possession count.</b> <b>Actual goals:</b> a goal on a tagged rebound counts once, on that logged possession. <b>Benchmark estimate:</b> that goal counts toward the location of the possession&rsquo;s first shot, so a location&rsquo;s rate includes rebound goals, and the rebound&rsquo;s own location isn&rsquo;t used. <b>In both:</b> a shot after a goal starts a new logged possession, even if tagged as a rebound, and a shot with no rebound tag starts a new logged possession at its own location.</p>
+    <p class="sans wp-limits" style="font-size:12.5px; margin:0 0 6px;"><b>Limits:</b> the records can&rsquo;t show whether the offense kept the ball after a miss when the next shot has no rebound tag. It&rsquo;s counted as a new logged possession, which doesn&rsquo;t mean the earlier one ended, so actual possessions may be fewer and worth more per possession than shown. Most turnovers have no recorded place in the session&rsquo;s order. ${man} of these logged possessions are man-up or man-down; the benchmark doesn&rsquo;t separate them. Opponent, lineup and defensive response aren&rsquo;t modeled.</p>
+    <details class="collapsible" id="wpSessions"><summary><p class="panel-sub" style="font-weight:700; color:var(--ink);">The ${ct} sessions, and which are used</p></summary><div class="table-wrap"><table class="shotlog dense wp-sess"><thead><tr><th>Date</th><th>Period</th><th>Shots</th><th>No-shot records</th><th>Logged possessions</th><th>Logged turnovers per 100</th><th>Actual goals</th><th>Actual goals per 100 logged possessions</th><th style="text-align:left;">Session tracking</th><th style="text-align:left;">Used?</th></tr></thead><tbody>${C.sessions.map(s => { const T = wpTally(s.rows, keys); return `<tr><td>${scDate(s.date)}</td><td>${R.per.A.some(x => x.sid === s.sid) ? 'A' : R.per.B.some(x => x.sid === s.sid) ? 'B' : '—'}</td><td>${s.shots}</td><td>${s.noShot}</td><td>${s.why ? '—' : T.L}</td><td>${s.why ? '—' : (100 * T.TO / T.L).toFixed(1)}</td><td>${T.G}</td><td>${s.why ? '—' : (100 * T.G / T.L).toFixed(1)}</td><td style="text-align:left;">${s.track === 'C' ? 'Complete' : s.track === 'P' ? 'Partial' : s.track === 'N' ? 'Not tracked' : 'Not confirmed'}</td><td style="text-align:left; white-space:normal;">${s.why ? `No: ${escapeHtml(s.why)}` : 'Yes'}</td></tr>`; }).join('')}</tbody></table></div></details>
+    <details class="collapsible" id="wpRecords"><summary><p class="panel-sub" style="font-weight:700; color:var(--ink);">The ${C.rowsB.length} Period B logged possessions behind the baseline</p></summary><div class="table-wrap" style="max-height:420px; overflow:auto;"><table class="shotlog dense wp-rec"><thead><tr><th>Date</th><th style="text-align:left;">Session</th><th>Record</th><th style="text-align:left;">Outcome</th><th style="text-align:left;">Location</th><th>Shots</th><th>Goal</th></tr></thead><tbody>${C.rowsB.map(r => `<tr><td>${scDate(r.date)}</td><td style="text-align:left;">${escapeHtml(r.sid)}</td><td>${escapeHtml(r.key)}</td><td style="text-align:left;">${r.kind === 'SHOT' ? 'Shot possession' : escapeHtml(r.end || 'No-shot')}</td><td style="text-align:left;">${r.cat ? escapeHtml(r.cat) : '—'}</td><td>${r.kind === 'SHOT' ? r.shots : '—'}</td><td>${r.kind === 'SHOT' ? r.goal : '—'}</td></tr>`).join('')}</tbody></table></div></details>`;
+  el.innerHTML = box(h);
+}
+document.addEventListener('click', ev => {
+  const b = ev.target.closest('[data-wp]'); if (!b || !WI_LAST || PLAYER_MODE) return;
+  const a = b.dataset.wp, v = b.dataset.v;
+  if (a === 'open') WP_ST.open = true;
+  else if (a === 'scope') WP_ST.scope = v;
+  else if (a === 'bench') WP_ST.bench = v;
+  else if (a === 'dminus') WP_ST.delta = (Number(WP_ST.delta) || 0) - 1;
+  else if (a === 'dplus') WP_ST.delta = (Number(WP_ST.delta) || 0) + 1;
+  else if (a === 'repl') WP_ST.repl = Number(v);
+  else if (a === 'mix') WP_ST.mix = v;
+  else if (a === 'mixLoc') WP_ST.mixLoc = v;
+  else if (a === 'from') { WP_ST.from = WP_ST.from === v ? null : v; if (WP_ST.to === WP_ST.from) WP_ST.to = null; WP_ST.n = 0; }
+  else if (a === 'to') WP_ST.to = WP_ST.to === v ? null : v;
+  else if (a === 'reset') Object.assign(WP_ST, { N: null, delta: 0, repl: null, mix: null, mixLoc: null, from: null, to: null, n: 0, sim: null });
+  else if (a === 'sim') { const C = wpCompute(WI_LAST, WP_ST); if (C.none || C.idle) return; WP_ST.sim = { key: WP_SIM_KEY(WP_ST), res: wpSimulate(C, WP_SEED, WP_RUNS) }; }
+  else return;
+  renderPossession();
+});
+document.addEventListener('change', ev => {
+  const id = ev.target && ev.target.id; if (!WI_LAST || PLAYER_MODE) return;
+  if (id === 'wpN') WP_ST.N = Number(ev.target.value) || null;
+  else if (id === 'wpDelta') WP_ST.delta = Number(ev.target.value) || 0;
+  else if (id === 'wpMove') WP_ST.n = Number(ev.target.value) || 0;
+  else return;
+  renderPossession();
+});
 // The shot records table, shared by Scoring Change and What If.
 function scRecRows(label, list, season) {
   const nameOf = j => (PLAYER_MODE && !pmHas(`#${j} ${nameFor(j, season)}`)) ? 'Teammate' : `#${j} ${nameFor(j, season)}`;
@@ -16918,13 +17182,13 @@ function renderScoringChange() {
   h += `<p class="sans" style="font-size:12.5px; margin:0 0 8px;"><b>Missing data:</b> shots with no location: A ${A.unloc.N} of ${A.N}, B ${B.unloc.N} of ${B.N}. Ungraded shots: A ${A.ungraded}, B ${B.ungraded}.</p>`;
   // ---- Records ----
   const recRows = (label, list) => scRecRows(label, list, season);
-  h += `<div id="scWi"></div><div id="scWm"></div>`;
+  h += `<div id="scWi"></div><div id="scWm"></div><div id="scWp"></div>`;
   h += `<details class="collapsible" id="scRecords"><summary><p class="panel-sub" style="font-weight:700; color:var(--ink);">The ${A.N + B.N} shots behind these numbers</p></summary>
     <div class="table-wrap" style="max-height:420px; overflow:auto;"><table class="shotlog dense sc-rec"><thead><tr><th>Period</th><th>Date</th><th style="text-align:left;">Shooter</th><th style="text-align:left;">Zone</th><th style="text-align:left;">Group</th><th>Result</th><th>Grade</th><th style="text-align:left;">Session ID</th><th>Shot #</th><th style="text-align:left;">Entry ID</th><th></th></tr></thead>
     <tbody>${recRows('A', R.shotsA)}${recRows('B', R.shotsB)}</tbody></table></div>
     <p class="n-note" style="margin:4px 0 0;">Session ID + shot # identify every shot (a number that leaves a session is never reused there). Entry ID is the stable ID saved with each entry since the save-safety builds; it stays the same if the shot moves to another session. Older entries have none until they are moved. Open shows the shot in the Log editor; nothing changes unless you save there.</p></details>`;
   body.innerHTML = h;
-  WI_LAST = R; renderWhatIf(); renderModeled();
+  WI_LAST = R; renderWhatIf(); renderModeled(); renderPossession();
 }
 // Open a record: the Log editor, as Shot Log Edit and Reports open one (staff only; Player View shows no button).
 document.addEventListener('click', ev => {

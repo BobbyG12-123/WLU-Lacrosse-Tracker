@@ -91,7 +91,7 @@ async function run() {
   const snapSrc = await (await fetch('analytics_snapshot.js')).text();
   const sa = JSON.parse(o(snapSrc)), sb = JSON.parse(n(snapSrc)), keys = [...new Set(Object.keys(sa).concat(Object.keys(sb)))], sdiff = keys.filter(k => JSON.stringify(sa[k]) !== JSON.stringify(sb[k]));
   ok('analytics snapshot identical to main', sdiff.length === 0 && keys.length > 0, { compared: keys.length, diff: sdiff.slice(0, 10) });
-  const bodyHtml = (w, subj) => w.eval(`(() => { SC_ST.subject = ${JSON.stringify(subj)}; renderScoringChange(); const d = document.createElement('div'); d.innerHTML = document.getElementById('scBody').innerHTML; ['#scWi', '#scWm'].forEach(q => { const x = d.querySelector(q); if (x) x.remove(); }); return d.innerHTML.replace(/scm\\d+_/g, 'scm_'); })()`);
+  const bodyHtml = (w, subj) => w.eval(`(() => { SC_ST.subject = ${JSON.stringify(subj)}; renderScoringChange(); const d = document.createElement('div'); d.innerHTML = document.getElementById('scBody').innerHTML; ['#scWi', '#scWm', '#scWp'].forEach(q => { const x = d.querySelector(q); if (x) x.remove(); }); return d.innerHTML.replace(/scm\\d+_/g, 'scm_'); })()`);
   const someJ = String(sess.flatMap(s => s.shots).reduce((m, s) => { m[s.j] = (m[s.j] || 0) + 1; return m; }, {}) && Object.entries(sess.flatMap(s => s.shots).reduce((m, s) => { m[s.j] = (m[s.j] || 0) + 1; return m; }, {})).sort((x, y) => y[1] - x[1])[0][0]);
   ok('Scoring Change itself is unchanged apart from the added What If block: Team', bodyHtml(O, 'team') === bodyHtml(N, 'team'));
   ok('Scoring Change itself is unchanged apart from the added What If block: a player', bodyHtml(O, someJ) === bodyHtml(N, someJ));
@@ -264,7 +264,7 @@ async function run() {
   const t5 = txt();
   ok('method choices are labeled: 8-shot blend, 6-session minimum, none validated', /Method choices \(our settings, none validated\)/.test(t5) && /blended with 8 shots/.test(t5) && /range needs 6\+ sessions/.test(t5));
   ok('explains that the season benchmark includes the periods being compared', /season benchmark includes the periods being compared/.test(t5));
-  ok('final build label is 7a1-g6', nj('BUILD_VERSION') === '7a1-g6');
+  const WANT = (await (await fetch('BUILD_LABEL.txt')).text()).trim(); ok(`build label is the pinned ${WANT} (constant and footer)`, /^7a1-g\d+$/.test(WANT) && nj('BUILD_VERSION') === WANT && n(`document.getElementById('buildVersion').textContent`) === 'Build ' + WANT);
 
   // ===== Records =====
   n(`Object.assign(SC_ST, { period: '5', custom: null, subject: ${JSON.stringify(someJ)} }); renderScoringChange(); const d = document.getElementById('wiRecords'); d.open = true; d.dispatchEvent(new Event('toggle'));`);

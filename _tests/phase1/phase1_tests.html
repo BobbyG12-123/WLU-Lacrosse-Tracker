@@ -312,8 +312,8 @@ async function run() {
   ok('a linked player with no shots of the type stays selected (empty state), not swapped for Team', pb.game.subject === pb.j && pb.game.type === 'Game' && pb.game.pill === pb.j && /no shots of this type/.test(pb.game.label || '') && pb.game.empty, pb.game);
 
   // ===== Release items: build label =====
-  const bv = nj(`[BUILD_VERSION, [...document.querySelectorAll('*')].some(e => e.children.length === 0 && /Build 7a1-g6/.test(e.textContent))]`);
-  ok('release build label is 7a1-g6 (constant and footer)', bv[0] === '7a1-g6' && bv[1], bv);
+  const bv = nj(`[BUILD_VERSION, [...document.querySelectorAll('*')].some(e => e.children.length === 0 && e.textContent.trim() === 'Build ' + BUILD_VERSION)]`);
+  const WANT = (await (await fetch('BUILD_LABEL.txt')).text()).trim(); ok(`build label is the pinned ${WANT} (constant and footer)`, /^7a1-g\d+$/.test(WANT) && bv[0] === WANT && bv[1], bv);
 
   // ===== Safety =====
   ok('no page errors', errs.length === 0, errs.slice(0, 5));
