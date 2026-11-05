@@ -18830,7 +18830,7 @@ function fcResolveMarks() {
 function fcPlan() {
   fcResolveMarks();
   const lists = { shot: fcLogged('shot'), oppshot: fcLogged('oppshot') }, used = new Set(), items = [];
-  Object.values(FC.st).forEach(s => { if (s.s === 'm') used.add(s.id); });
+  Object.values(FC.st).forEach(s => { if (s.s === 'm' || s.s === 'n') used.add(s.id); });   // a shot logged from a clip ('n') is that clip's shot too
   const ptr = { shot: 0, oppshot: 0 }, cnt = { shot: 0, oppshot: 0, turnover: 0 };
   FC.drafts.forEach(d => {
     const st = FC.st[d.id] || null, it = { d, st, n: ++cnt[d.kind] };
