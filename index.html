@@ -16210,6 +16210,246 @@ function scCompare(opts) {
   return { season, type: opts.type, sessions, per, shotsA, shotsB, a, b, dec, keys, grouping: opts.grouping, subject: opts.subject };
 }
 
+// ---------------- What If (Phase 2, first package: counted calculations, no shot model) ----------------
+// Historical arithmetic on logged shots, under Scoring Change, using its session type, periods, subject and locations.
+// Not a forecast, and not evidence a change caused more goals. Every result is "what-if minus baseline", so an unchanged
+// scenario gives exactly zero. Attempts stay fixed.
+//   Team, earlier conversion: Period B's located shots x Period A's conversion by location; baseline = Period B's own.
+//     Both rates are blended the same way (g + K x season rate) / (n + K), so a 0-for-8 location isn't read as a 0% rate.
+//   Team, earlier location mix: Period B's shot count at Period A's shares, vs Period B's shares, at fixed season conversion.
+//   Player vs teammates: the player's goals vs the same shots at teammates' conversion by location, same period's sessions.
+//   Move shots: the coach moves N Period B shots between two locations, at a fixed benchmark conversion.
+// Ranges are provisional. They are about two standard errors of the counts, widened by how much this season's sessions
+// swung (measured from the sessions themselves, never below 1), and they haven't been validated. The "average" range is
+// uncertainty in the estimated average; the "new run" range adds the variation in actual goals if those shots were taken again.
+const WI_K = 8;                // blending strength: shots' worth of the season rate in each blended location rate
+const WI_MIN_LOCATED = SC_MIN_LOCATED;   // located shots per period before a number is shown (a display rule)
+const WI_THIN = 20;            // a player period under this many located shots gets the offer of a longer comparison (a display rule)
+const WI_SUPPORT_MIN = 30;     // located shots a player needs to count in the observed-share support check (provisional)
+const WI_BENCH_MIN = 10;       // benchmark shots a moved-from or moved-to location needs (a display rule)
+const WI_MIN_SESSIONS = 6;     // sessions needed to measure session-to-session swing; fewer shows no range
+const WI_Z = 1.96;
+const WI_ST = { from: null, to: null, n: 0, longer: null };
+let WI_LAST = null;
+const wiLoc = list => list.filter(s => shotZone(s));
+// Everyone's shots of this type in the season (Fall/Spring included, as the panel's pool is), optionally without one player.
+function wiSeasonShots(season, type, without) {
+  return scPool(season).filter(s => sessionTypeOf(s) === type && (without === undefined || String(s.shooterJersey) !== String(without)));
+}
+// How much sessions swung beyond what shot counts alone would give, measured on this type's sessions. Two factors:
+// conv = goals vs each session's locations at season rates; mix = each session's locations valued at season rates.
+function wiSwing(shots, grouping) {
+  const located = wiLoc(shots), sum = scSummarize(located, grouping, null), keys = scKeys(grouping), L = sum.loc.N;
+  const rate = k => sum.cells[k].n ? sum.cells[k].g / sum.cells[k].n : 0, by = {};
+  located.forEach(s => { const id = scSid(s); (by[id] = by[id] || []).push(s); });
+  const ids = Object.keys(by), S = ids.length;
+  if (S < WI_MIN_SESSIONS || !L) return { S, usable: false, conv: null, mix: null };
+  const mean = keys.reduce((t, k) => t + sum.cells[k].n / L * rate(k), 0);
+  const varC = keys.reduce((t, k) => t + sum.cells[k].n / L * (rate(k) - mean) ** 2, 0);
+  let cx = 0, mx = 0;
+  ids.forEach(id => {
+    let O = 0, E = 0, V = 0;
+    by[id].forEach(s => { const c = rate(scCellOf(s, grouping)); O += s.goal === 1 ? 1 : 0; E += c; V += c * (1 - c); });
+    if (V > 0) cx += (O - E) ** 2 / V;
+    if (varC > 0) mx += (E - by[id].length * mean) ** 2 / (by[id].length * varC);
+  });
+  return { S, usable: true, conv: Math.max(1, cx / (S - 1)), mix: Math.max(1, mx / (S - 1)) };
+}
+function wiRange(d, vAvg, vOut, swing, kind) {
+  if (!swing.usable) return { lo: null, hi: null, loNew: null, hiNew: null };
+  const a = WI_Z * Math.sqrt(vAvg * swing[kind]), b = WI_Z * Math.sqrt(vAvg * swing[kind] + vOut * swing.conv);
+  return { lo: d - a, hi: d + a, loNew: d - b, hiNew: d + b };
+}
+const wiBlend = (c, prior) => (c.g + WI_K * prior) / (c.n + WI_K);
+const wiRate = c => c && c.n ? c.g / c.n : null;
+function wiLocatedShort(a, b) {
+  const short = [['A', a.loc.N], ['B', b.loc.N]].filter(x => x[1] < WI_MIN_LOCATED);
+  return short.length ? `No estimate: this needs ${WI_MIN_LOCATED}+ located shots in each period (${short.map(x => `Period ${x[0]} has ${x[1]}`).join(', ')}). That minimum is a display rule.` : null;
+}
+// Team: Period B's shots at Period A's conversion by location.
+function wiEarlierConversion(a, b, bench, keys, swing) {
+  const why = wiLocatedShort(a, b); if (why) return { none: true, why };
+  let base = 0, scen = 0, vAvg = 0, vOut = 0, raw = 0, seasonOnly = 0, rawOk = true;
+  const rows = keys.filter(k => b.cells[k].n).map(k => {
+    const A = a.cells[k], B = b.cells[k], prior = wiRate(bench.cells[k]) || 0, pa = wiBlend(A, prior), pb = wiBlend(B, prior);
+    base += B.n * pb; scen += B.n * pa;
+    if (A.n) { const w = A.n / (A.n + WI_K); vAvg += B.n * B.n * w * w * pa * (1 - pa) / A.n; raw += B.n * (A.g / A.n); } else { seasonOnly += B.n; rawOk = false; }
+    const w = B.n / (B.n + WI_K); vAvg += B.n * B.n * w * w * pb * (1 - pb) / B.n; vOut += B.n * pa * (1 - pa);
+    return { key: k, A, B, prior, pa, pb, goals: B.n * pa };
+  });
+  const d = scen - base, N = b.loc.N;
+  return { actual: b.loc.G, base, scen, d, per100: 100 * d / N, N, affected: N, seasonOnly, rawScen: rawOk ? raw : null, rows, ...wiRange(d, vAvg, vOut, swing, 'conv') };
+}
+// Team: Period B's shot count at Period A's location shares, at fixed season conversion.
+function wiEarlierMix(a, b, bench, keys, swing) {
+  const why = wiLocatedShort(a, b); if (why) return { none: true, why };
+  const N = b.loc.N, c = k => wiRate(bench.cells[k]) || 0, pA = k => a.cells[k].n / a.loc.N, pB = k => b.cells[k].n / N;
+  const base = keys.reduce((t, k) => t + b.cells[k].n * c(k), 0), scen = keys.reduce((t, k) => t + N * pA(k) * c(k), 0), d = scen - base;
+  const spread = p => { const m = keys.reduce((t, k) => t + p(k) * c(k), 0); return keys.reduce((t, k) => t + p(k) * (c(k) - m) ** 2, 0); };
+  const vAvg = N * N * (spread(pA) / a.loc.N + spread(pB) / N), vOut = keys.reduce((t, k) => t + N * pA(k) * c(k) * (1 - c(k)), 0);
+  const affected = keys.reduce((t, k) => t + Math.abs(pA(k) - pB(k)), 0) / 2 * N;
+  const rows = keys.filter(k => a.cells[k].n || b.cells[k].n).map(k => ({ key: k, A: a.cells[k], B: b.cells[k], shotsAtA: N * pA(k), rate: wiRate(bench.cells[k]) }));
+  return { actual: b.loc.G, base, scen, d, per100: 100 * d / N, N, affected, rows, ...wiRange(d, vAvg, vOut, swing, 'mix') };
+}
+// Player: the player's goals vs the same located shots at teammates' conversion in the same period's sessions.
+function wiTeammates(mine, rest, prior, keys, swing) {
+  if (mine.loc.N < WI_MIN_LOCATED) return { none: true, why: `No estimate: this needs ${WI_MIN_LOCATED}+ located shots by the player in the period (has ${mine.loc.N}). That minimum is a display rule.` };
+  if (rest.loc.N < WI_MIN_LOCATED) return { none: true, why: `No estimate: teammates have only ${rest.loc.N} located shots in the period (needs ${WI_MIN_LOCATED}+).` };
+  let scen = 0, vAvg = 0, vOut = 0, covered = 0, G = 0, uncovered = 0;
+  const rows = keys.filter(k => mine.cells[k].n).map(k => {
+    const M = mine.cells[k], T = rest.cells[k], P = prior.cells[k], pr = wiRate(P);
+    if (pr === null && !T.n) { uncovered += M.n; return { key: k, M, T, p: null, goals: null }; }
+    const p = wiBlend(T, pr === null ? T.g / T.n : pr), w = T.n / (T.n + WI_K);
+    scen += M.n * p; covered += M.n; G += M.g; vAvg += M.n * p * (1 - p) + (T.n ? M.n * M.n * w * w * p * (1 - p) / T.n : 0); vOut += M.n * p * (1 - p);
+    return { key: k, M, T, p, goals: M.n * p };
+  });
+  const d = G - scen;
+  return { actual: G, base: scen, d, per100: covered ? 100 * d / covered : null, N: covered, located: mine.loc.N, uncovered, rows, restN: rest.loc.N, ...wiRange(d, vAvg, vOut, swing, 'conv') };
+}
+// Observed shot shares: the highest share at a location from any player with enough located shots. Provisional, not a limit.
+function wiSupport(shots, grouping, to) {
+  const by = {}; wiLoc(shots).forEach(s => { const o = by[s.shooterJersey] = by[s.shooterJersey] || { n: 0, at: 0 }; o.n++; if (scCellOf(s, grouping) === to) o.at++; });
+  const big = Object.values(by).filter(o => o.n >= WI_SUPPORT_MIN);
+  if (!big.length) return { players: 0, max: null, at: null, n: null };
+  const top = big.reduce((m, o) => o.at / o.n > m.at / m.n ? o : m, big[0]);
+  return { players: big.length, max: top.at / top.n, at: top.at, n: top.n };
+}
+// Move N of Period B's located shots between two locations, at a fixed benchmark conversion. Attempts stay fixed.
+function wiMove(b, bench, keys, move, support) {
+  const { from, to } = move, L = b.loc.N, avail = from && b.cells[from] ? b.cells[from].n : 0, n = Math.max(0, Math.min(avail, Math.floor(Number(move.n) || 0)));
+  const dist = keys.map(k => { const orig = b.cells[k].n, prop = orig + (k === to ? n : 0) - (k === from ? n : 0), c = wiRate(bench.cells[k]);
+    return { key: k, orig, prop, origShare: L ? orig / L : null, propShare: L ? prop / L : null, rate: c, benchN: bench.cells[k].n, benchG: bench.cells[k].g }; });
+  const out = { n, avail, N: L, dist, from, to, support, actual: b.loc.G, propShare: L && to ? (b.cells[to].n + n) / L : null };
+  out.support_state = !to || !n ? null : support.max === null ? 'unknown' : out.propShare <= support.max + 1e-12 ? 'inside' : 'outside';
+  if (L < WI_MIN_LOCATED) { out.none = true; out.why = `No estimate: this needs ${WI_MIN_LOCATED}+ located shots in Period B (has ${L}). That minimum is a display rule.`; return out; }
+  if (!from || !to || from === to) { out.idle = true; out.why = 'Pick a location to move shots from and a different one to move them to.'; return out; }
+  if (!n) { out.idle = true; out.why = avail ? `Choose how many of the ${avail} ${from} shots move.` : `Period B has no ${from} shots to move.`; return out; }
+  const thin = [from, to].filter(k => bench.cells[k].n < WI_BENCH_MIN);
+  if (thin.length) { out.none = true; out.why = `No estimate: the benchmark has too few shots at ${thin.map(k => `${k} (${bench.cells[k].n})`).join(' and ')}; it needs ${WI_BENCH_MIN}+ at both locations. That minimum is a display rule.`; return out; }
+  if (out.support_state === 'unknown') { out.none = true; out.why = `No estimate: no player has ${WI_SUPPORT_MIN}+ located shots in this selection, so the observed-share support check can't run.`; return out; }
+  if (out.support_state === 'outside') { out.none = true; out.why = `No estimate: ${scPct(out.propShare)} of shots at ${to} is above the highest share any ${WI_SUPPORT_MIN}+-shot player has logged (${scPct(support.max)}). This is a provisional rule, not a validated limit.`; return out; }
+  const r = k => wiRate(bench.cells[k]), cf = r(from), ct = r(to), base = dist.reduce((t, x) => t + x.orig * (x.rate || 0), 0), scen = dist.reduce((t, x) => t + x.prop * (x.rate || 0), 0), d = scen - base;
+  const vAvg = n * n * (ct * (1 - ct) / bench.cells[to].n + cf * (1 - cf) / bench.cells[from].n), vOut = dist.reduce((t, x) => t + x.prop * (x.rate || 0) * (1 - (x.rate || 0)), 0);
+  return Object.assign(out, { base, scen, d, per100: 100 * d / L, affected: n, vAvg, vOut });
+}
+// A longer comparison a coach can choose: this type's sessions split into an earlier and a later half, keeping one date whole.
+function wiLongerSplit(sessions, subjectShots) {
+  if (sessions.length < 4) return null;
+  let cut = Math.ceil(sessions.length / 2);
+  while (cut < sessions.length && sessions[cut].date === sessions[cut - 1].date) cut++;
+  const A = sessions.slice(0, cut), B = sessions.slice(cut); if (!B.length) return null;
+  const count = list => { const ids = new Set(list.map(s => s.sid)); return wiLoc(subjectShots).filter(s => ids.has(scSid(s))).length; };
+  return { custom: { aFrom: A[0].date, aTo: A[A.length - 1].date, bFrom: B[0].date, bTo: B[B.length - 1].date }, nA: count(A), nB: count(B), sA: A.length, sB: B.length };
+}
+// The whole calculation for one Scoring Change result; pure apart from reading shots (the tests call it directly).
+function wiCompute(R, move) {
+  const { season, type, grouping, keys, subject, a, b } = R, team = subject === 'team';
+  const all = wiSeasonShots(season, type), benchShots = team ? all : wiSeasonShots(season, type, subject);
+  const bench = scSummarize(wiLoc(benchShots), grouping, null), swing = wiSwing(all, grouping);
+  const support = wiSupport(all, grouping, move && move.to);
+  const out = { team, swing, bench, benchN: bench.loc.N, benchShots, support, move: wiMove(b, bench, keys, move || {}, support) };
+  out.move.range = out.move.d === undefined ? { lo: null, hi: null, loNew: null, hiNew: null } : wiRange(out.move.d, out.move.vAvg, out.move.vOut, swing, 'conv');
+  if (team) { out.conv = wiEarlierConversion(a, b, bench, keys, swing); out.mix = wiEarlierMix(a, b, bench, keys, swing); return out; }
+  const period = (list, shots) => { const ids = new Set(list.map(s => s.sid)), rest = benchShots.filter(s => ids.has(scSid(s))); return { rest, res: wiTeammates(scSummarize(wiLoc(shots), grouping, null), scSummarize(wiLoc(rest), grouping, null), bench, keys, swing) }; };
+  out.pA = period(R.per.A, R.shotsA); out.pB = period(R.per.B, R.shotsB);
+  out.longer = wiLongerSplit(R.sessions, wiSeasonShots(season, type).filter(s => String(s.shooterJersey) === String(subject)));
+  return out;
+}
+const wiFmt = (v, d) => v === null || v === undefined || !isFinite(v) ? '—' : v.toFixed(d === undefined ? 1 : d);
+const wiRangeTxt = (lo, hi) => lo === null || lo === undefined ? '—' : `${scNum(lo)} to ${scNum(hi)}`;
+function wiRead(x) {
+  if (x.lo === null || x.lo === undefined) return `<b>Can&rsquo;t distinguish from no change.</b> No range: measuring session swing takes ${WI_MIN_SESSIONS}+ sessions of this type.`;
+  if (x.lo <= 0 && x.hi >= 0) return '<b>Can&rsquo;t distinguish from no change.</b>';
+  return 'The provisional average range excludes zero. This is arithmetic on past shots, not evidence of a cause.';
+}
+function wiResultRow(label, x, unit) {
+  if (x.none) return `<tr class="wi-none"><td style="text-align:left;">${label}</td><td colspan="${x.noScenCol ? 7 : 8}" style="text-align:left; white-space:normal;">${escapeHtml(x.why)}</td></tr>`;
+  return `<tr><td style="text-align:left; white-space:normal;">${label}</td><td>${x.actual}</td><td>${wiFmt(x.base)}</td>${x.noScenCol ? '' : `<td>${wiFmt(x.scen)}</td>`}<td><b>${scNum(x.d)}</b></td><td>${scNum(x.per100)}</td><td>${unit}</td><td>${wiRangeTxt(x.lo, x.hi)}</td><td>${wiRangeTxt(x.loNew, x.hiNew)}</td></tr><tr class="wi-read"><td colspan="${x.noScenCol ? 8 : 9}" style="text-align:left; white-space:normal; color:var(--muted);">${wiRead(x)}</td></tr>`;
+}
+const WI_HEAD = (c2, c3, c4) => `<thead><tr><th style="text-align:left;">Calculation</th><th>${c2}</th><th>${c3}</th>${c4 ? `<th>${c4}</th>` : ''}<th>Change (goals)</th><th>Change per 100 located shots</th><th>Shots affected</th><th title="Uncertainty in the estimated average. Provisional, not validated.">Provisional range: average</th><th title="Adds the variation in actual goals if these shots were taken again. Provisional, not validated.">Provisional range: a new run</th></tr></thead>`;
+function renderWhatIf() {
+  const el = document.getElementById('scWi'); if (!el || !WI_LAST) return;
+  const R = WI_LAST, keys = R.keys, season = R.season, who = R.subject === 'team' ? 'Team' : `#${R.subject} ${nameFor(R.subject, season)}`;
+  if (!keys.includes(WI_ST.from)) WI_ST.from = null;
+  if (!keys.includes(WI_ST.to)) WI_ST.to = null;
+  const X = wiCompute(R, { from: WI_ST.from, to: WI_ST.to, n: WI_ST.n }), M = X.move, typeWords = sessionCtxWords(R.type).replace(/ only$/, ''), partWords = SEASON_PART !== 'Full' ? `${SEASON_PART} ${season}` : season;
+  WI_ST.n = M.n;
+  const benchName = X.team ? `Team, all ${partWords} ${typeWords}` : `Teammates (without ${who}), all ${partWords} ${typeWords}`;
+  const f = v => Math.sqrt(v).toFixed(2);
+  let h = `<div class="wi-tool" style="border:2px solid var(--line); border-radius:10px; padding:10px 12px; margin-bottom:12px;">
+    <p class="panel-sub" style="margin:0 0 2px; font-weight:700; color:var(--ink); font-size:15px;">What If: historical calculations</p>
+    <p class="sans wi-label" style="font-size:13px; margin:0 0 8px;"><b>These are historical &ldquo;what if&rdquo; calculations on shots already logged. They are not forecasts, and they aren&rsquo;t evidence that a change caused more goals.</b> Uses the session type, periods, player and locations chosen above. Shot attempts stay fixed. No shot model: counted goals and shots only.</p>`;
+  if (WI_ST.longer && SC_ST.period === 'custom') h += `<p class="sans wi-longer-on" style="font-size:12.5px; margin:0 0 8px; padding:6px 10px; border-left:3px solid var(--gold);">You chose the longer comparison for the whole panel: Period A ${scDate(SC_ST.custom.aFrom)}&ndash;${scDate(SC_ST.custom.aTo)}, Period B ${scDate(SC_ST.custom.bFrom)}&ndash;${scDate(SC_ST.custom.bTo)}. <button type="button" class="lnk" data-wi="back">Go back to the earlier periods</button></p>`;
+  if (X.team) {
+    h += `<div class="table-wrap"><table class="shotlog dense wi-team">${WI_HEAD('Actual goals, Period B', 'Baseline estimate', 'What-if estimate')}<tbody>
+      ${wiResultRow('<b>Earlier conversion.</b> Changes: conversion by location goes to Period A&rsquo;s. Fixed: Period B&rsquo;s shots and locations.', X.conv, X.conv.none ? '' : `${X.conv.affected} of ${X.conv.N}`)}
+      ${wiResultRow('<b>Earlier location mix.</b> Changes: location shares go to Period A&rsquo;s. Fixed: Period B&rsquo;s shot count and the season conversion benchmark.', X.mix, X.mix.none ? '' : `about ${wiFmt(X.mix.affected, 0)} of ${X.mix.N}`)}
+      </tbody></table></div>`;
+    h += `<p class="n-note" style="margin:4px 0 8px;">Change = what-if minus baseline, so an unchanged scenario gives 0. <b>Benchmarks:</b> earlier conversion compares Period A&rsquo;s and Period B&rsquo;s own rates, each blended with ${WI_K} shots&rsquo; worth of the season rate at that location${!X.conv.none && X.conv.rawScen !== null ? ` (with no blending, the what-if estimate would be ${wiFmt(X.conv.rawScen)} against the ${X.conv.actual} actual goals)` : ''}${!X.conv.none && X.conv.seasonOnly ? `; ${X.conv.seasonOnly} Period B shots are at locations with no Period A shots, so they use the season rate alone` : ''}. Location mix uses ${escapeHtml(benchName)} (n=${X.benchN}).</p>`;
+    if (!X.conv.none) h += `<div class="table-wrap"><table class="shotlog dense wi-conv-detail"><thead><tr><th style="text-align:left;">Location</th><th>Period B shots</th><th>Period B goals</th><th>Period B conv.</th><th>Period A shots</th><th>Period A goals</th><th>Period A conv.</th><th>Season rate (n)</th><th>Blended A</th><th>Blended B</th><th>What-if goals</th></tr></thead><tbody>${X.conv.rows.map(r => `<tr><td style="text-align:left;">${escapeHtml(r.key)}</td><td>${r.B.n}</td><td>${r.B.g}</td><td>${scPct(wiRate(r.B))}</td><td>${r.A.n}</td><td>${r.A.g}</td><td>${scPct(wiRate(r.A))}</td><td>${scPct(wiRate(X.bench.cells[r.key]))} (${X.bench.cells[r.key].n})</td><td>${scPct(r.pa)}</td><td>${scPct(r.pb)}</td><td>${wiFmt(r.goals)}</td></tr>`).join('')}</tbody></table></div>`;
+    if (!X.mix.none) h += `<div class="table-wrap" style="margin-top:6px;"><table class="shotlog dense wi-mix-detail"><thead><tr><th style="text-align:left;">Location</th><th>Period A share (shots)</th><th>Period B share (shots)</th><th>Period B shots at Period A&rsquo;s share</th><th>Benchmark conv.</th></tr></thead><tbody>${X.mix.rows.map(r => `<tr><td style="text-align:left;">${escapeHtml(r.key)}</td><td>${scPct(r.A.n / R.a.loc.N)} (${r.A.n})</td><td>${scPct(r.B.n / R.b.loc.N)} (${r.B.n})</td><td>${wiFmt(r.shotsAtA)}</td><td>${scPct(r.rate)}</td></tr>`).join('')}</tbody></table></div>`;
+    const D = R.dec;
+    h += `<p class="sans wi-why" style="font-size:12.5px; margin:8px 0;"><b>Why these numbers differ from the Scoring Change breakdown above.</b> ${D && D.split ? `The breakdown shows conversion ${scNum(D.conversion)} and location mix ${scNum(D.mix)}, as Period B minus Period A. ` : ''}It splits the observed change exactly, using the average of both periods for shares, rates and shot counts, with raw rates. What If asks the reverse question from Period B&rsquo;s actual shots: change Period A&rsquo;s value in, keep Period B&rsquo;s shots, and report what-if minus baseline, so its signs run the other way. Earlier conversion also blends sparse rates, and earlier mix uses the season conversion benchmark rather than these two periods&rsquo; average. Both are correct for their own question; they aren&rsquo;t meant to match.</p>`;
+  } else {
+    const pr = (label, P) => wiResultRow(`<b>${label}.</b> Goals vs teammates&rsquo; conversion. Changes: conversion by location goes to teammates&rsquo; in the same sessions. Fixed: this player&rsquo;s shots and locations.`, Object.assign({}, P.res, { noScenCol: true }), P.res.none ? '' : `${P.res.N} of ${P.res.located}`);
+    h += `<p class="panel-sub wi-sub" style="margin:0 0 4px; font-weight:700; color:var(--ink);">${escapeHtml(who)} versus teammates</p>
+    <div class="table-wrap"><table class="shotlog dense wi-player">${WI_HEAD('Player&rsquo;s goals', 'At teammates&rsquo; conversion', null)}<tbody>${pr('Period A', X.pA)}${pr('Period B', X.pB)}</tbody></table></div>
+    <p class="n-note" style="margin:4px 0 8px;">Change = player&rsquo;s goals minus goals at teammates&rsquo; conversion. <b>Benchmark:</b> teammates in the same period&rsquo;s sessions (Period A n=${X.pA.rest.length}, Period B n=${X.pB.rest.length}), by location, each rate blended with ${WI_K} shots&rsquo; worth of ${escapeHtml(benchName)} (n=${X.benchN}). It doesn&rsquo;t adjust for catch or dodge, pressure, who the defender was, or the shot&rsquo;s grade, so it isn&rsquo;t a measure of skill.</p>`;
+    const det = (label, P) => P.res.none ? '' : P.res.rows.map(r => `<tr><td>${label}</td><td style="text-align:left;">${escapeHtml(r.key)}</td><td>${r.M.n}</td><td>${r.M.g}</td><td>${scPct(wiRate(r.M))}</td><td>${r.T.n}</td><td>${r.T.g}</td><td>${scPct(wiRate(r.T))}</td><td>${r.p === null ? '—' : scPct(r.p)}</td><td>${wiFmt(r.goals)}</td></tr>`).join('');
+    if (!X.pA.res.none || !X.pB.res.none) h += `<div class="table-wrap"><table class="shotlog dense wi-player-detail"><thead><tr><th>Period</th><th style="text-align:left;">Location</th><th>Player shots</th><th>Player goals</th><th>Player conv.</th><th>Teammate shots</th><th>Teammate goals</th><th>Teammate conv.</th><th>Blended teammate rate</th><th>Goals at that rate</th></tr></thead><tbody>${det('A', X.pA)}${det('B', X.pB)}</tbody></table></div>`;
+    const nA = wiLoc(R.shotsA).length, nB = wiLoc(R.shotsB).length;
+    if (Math.min(nA, nB) < WI_THIN && X.longer && Math.min(X.longer.nA, X.longer.nB) > Math.min(nA, nB) && !WI_ST.longer) h += `<p class="sans wi-longer-offer" style="font-size:12.5px; margin:8px 0; padding:6px 10px; border-left:3px solid var(--gold);"><b>This player&rsquo;s sample is thin</b> (${nA} and ${nB} located shots; the ${WI_THIN} mark is a display rule). A longer comparison is available if you choose it: Period A ${scDate(X.longer.custom.aFrom)}&ndash;${scDate(X.longer.custom.aTo)} (${X.longer.sA} sessions, ${X.longer.nA} located shots) vs Period B ${scDate(X.longer.custom.bFrom)}&ndash;${scDate(X.longer.custom.bTo)} (${X.longer.sB} sessions, ${X.longer.nB} located shots). <button type="button" class="pill" data-wi="longer">Use these dates</button> It changes the periods for this whole panel; your current periods stay until you click.</p>`;
+    h += `<p class="sans wi-why" style="font-size:12.5px; margin:8px 0;"><b>Why these numbers differ from the Scoring Change breakdown above.</b> The breakdown compares this player&rsquo;s Period A with their Period B. This compares the player with teammates on the same locations inside one period, so it answers a different question. <b>An earlier-conversion what-if isn&rsquo;t offered for individual players:</b> player samples don&rsquo;t support it yet.</p>`;
+  }
+  // ---- Move shots ----
+  const pill = (attr, v, cur, label) => `<button type="button" class="pill${cur === v ? ' active' : ''}" data-wi="${attr}" data-v="${escapeHtml(v)}">${escapeHtml(label)}</button>`;
+  h += `<p class="panel-sub" style="margin:10px 0 4px; font-weight:700; color:var(--ink);">Move shots in Period B</p>
+    <div class="control-group" style="margin-bottom:6px;"><label>From</label><div class="pill-row wi-from">${keys.filter(k => R.b.cells[k].n).map(k => pill('from', k, WI_ST.from, `${k} · ${R.b.cells[k].n}`)).join('')}</div></div>
+    <div class="control-group" style="margin-bottom:6px;"><label>To</label><div class="pill-row wi-to">${keys.filter(k => k !== WI_ST.from).map(k => pill('to', k, WI_ST.to, k)).join('')}</div></div>
+    <div class="control-group" style="margin-bottom:8px;"><label for="wiN">How many shots move</label><div class="pill-row" style="align-items:center;"><button type="button" class="pill" data-wi="minus" aria-label="One fewer shot">&minus;</button><input id="wiN" type="number" min="0" max="${M.avail}" step="1" value="${M.n}" style="width:68px; font:14px var(--text); padding:5px 8px; border:1px solid var(--line); border-radius:6px;"><button type="button" class="pill" data-wi="plus" aria-label="One more shot">+</button><span class="n-note">of ${M.avail}${WI_ST.from ? ' ' + escapeHtml(WI_ST.from) : ''} shots</span></div></div>`;
+  const bar = (share, color) => `<div style="height:6px; width:${share === null ? 0 : Math.min(100, share * 100).toFixed(1)}%; background:${color}; border-radius:3px; margin:1px 0;"></div>`;
+  h += `<div class="table-wrap"><table class="shotlog dense wi-dist"><thead><tr><th style="text-align:left;">Location</th><th>Original shots</th><th>Original share</th><th>Proposed shots</th><th>Proposed share</th><th style="min-width:110px;">Original / proposed</th><th>Benchmark conv.</th><th>Benchmark n</th></tr></thead><tbody>${M.dist.map(x => `<tr${x.prop !== x.orig ? ' style="font-weight:700;"' : ''}><td style="text-align:left;">${escapeHtml(x.key)}</td><td>${x.orig}</td><td>${scPct(x.origShare)}</td><td>${x.prop}</td><td>${scPct(x.propShare)}</td><td>${bar(x.origShare, '#8A94A6')}${bar(x.propShare, '#2F6A3C')}</td><td>${scPct(x.rate)}</td><td>${x.benchN}</td></tr>`).join('')}<tr style="font-weight:700;"><td style="text-align:left;">All located</td><td>${M.N}</td><td>${M.N ? '100%' : '—'}</td><td>${M.dist.reduce((t, x) => t + x.prop, 0)}</td><td>${M.N ? '100%' : '—'}</td><td></td><td></td><td>${X.benchN}</td></tr></tbody></table></div>
+    <p class="n-note" style="margin:4px 0 6px;"><b>Benchmark:</b> ${escapeHtml(benchName)}: conversion by location, held fixed.</p>`;
+  if (WI_ST.to) {
+    const st = M.support_state, sup = X.support;
+    h += `<p class="sans wi-support" style="font-size:12.5px; margin:0 0 6px;"><b>Support check (observed shot shares; provisional rule, not a validated limit):</b> ${sup.max === null ? `no player has ${WI_SUPPORT_MIN}+ located shots here.` : `the highest ${escapeHtml(WI_ST.to)} share from any of the ${sup.players} players with ${WI_SUPPORT_MIN}+ located shots is ${scPct(sup.max)} (${sup.at} of ${sup.n}).`} ${st === 'inside' ? `Proposed: ${scPct(M.propShare)}, inside that share. That doesn&rsquo;t mean these shots could be created.` : st === 'outside' ? `Proposed: ${scPct(M.propShare)}, above that share.` : ''}</p>`;
+  }
+  if (M.idle || M.none) h += `<p class="sans ${M.none ? 'wi-none' : 'wi-idle'}" style="font-size:13px; margin:0 0 6px;">${escapeHtml(M.why)}</p>`;
+  else {
+    const x = Object.assign({}, M, M.range);
+    h += `<div class="table-wrap"><table class="shotlog dense wi-move">${WI_HEAD('Actual goals, Period B', 'Baseline estimate', 'What-if estimate')}<tbody>${wiResultRow(`<b>Move ${M.n} ${escapeHtml(M.from)} shot${M.n === 1 ? '' : 's'} to ${escapeHtml(M.to)}.</b> Changes: where those shots came from. Fixed: total shots and the benchmark conversion.`, x, `${M.n} of ${M.N}`)}</tbody></table></div>
+    <p class="n-note" style="margin:4px 0 6px;">The baseline is Period B&rsquo;s locations at the benchmark, not the actual goals. It doesn&rsquo;t say the shots could be created, or count turnovers, defensive response or the shooter&rsquo;s own finishing.</p>`;
+  }
+  // ---- Method, coverage, records ----
+  const unloc = R.b.unloc.N, unlocA = R.a.unloc.N;
+  h += `<p class="sans wi-range-note" style="font-size:12.5px; margin:8px 0 4px;"><b>How to read the ranges (provisional, not validated).</b> &ldquo;Average&rdquo; is uncertainty in the estimated average. &ldquo;A new run&rdquo; is wider because it adds the variation in actual goals if those shots were taken again. ${X.swing.usable ? `Both are about two standard errors from the shot counts, widened by how much the season&rsquo;s ${X.swing.S} ${escapeHtml(typeWords)} swung: &times;${f(X.swing.conv)} for scoring, &times;${f(X.swing.mix)} for location mix. Those factors are measured from these same sessions.` : `There&rsquo;s no range here: measuring session swing takes ${WI_MIN_SESSIONS}+ sessions, and this selection has ${X.swing.S}.`} They don&rsquo;t cover goalies, defenders, health or how the shots were created.</p>
+    <p class="sans wi-coverage" style="font-size:12.5px; margin:0 0 6px;"><b>Coverage:</b> ${M.N} of ${R.b.N} Period B shots have a location${R.subject === 'team' ? `, ${R.a.loc.N} of ${R.a.N} in Period A` : `, ${R.a.loc.N} of ${R.a.N} in Period A`}. ${unloc || unlocA ? `Shots with no location (A ${unlocA}, B ${unloc}) stay as logged, outside these calculations.` : 'No shots are left out for a missing location.'}</p>
+    <details class="collapsible" id="wiRecords"><summary><p class="panel-sub" style="font-weight:700; color:var(--ink);">The ${X.benchShots.length} ${X.team ? 'team' : 'teammate'} shots behind the benchmark</p></summary><div class="table-wrap" style="max-height:420px; overflow:auto;"><table class="shotlog dense wi-rec"><thead><tr><th>Period</th><th>Date</th><th style="text-align:left;">Shooter</th><th style="text-align:left;">Zone</th><th style="text-align:left;">Group</th><th>Result</th><th>Grade</th><th style="text-align:left;">Session ID</th><th>Shot #</th><th style="text-align:left;">Entry ID</th><th></th></tr></thead><tbody id="wiRecBody"></tbody></table></div><p class="n-note" style="margin:4px 0 0;">A and B = in that period; Season = elsewhere in the season. The ${R.a.N + R.b.N} shots in the two periods for ${escapeHtml(who)} are in the list below.</p></details></div>`;
+  WI_LAST.benchShots = X.benchShots;
+  WI_LAST.longerOffer = X.longer || null;
+  el.innerHTML = h;
+}
+document.addEventListener('click', ev => {
+  const b = ev.target.closest('[data-wi]'); if (!b || !WI_LAST) return;
+  const a = b.dataset.wi;
+  if (a === 'from') { WI_ST.from = WI_ST.from === b.dataset.v ? null : b.dataset.v; if (WI_ST.to === WI_ST.from) WI_ST.to = null; WI_ST.n = 0; }
+  else if (a === 'to') WI_ST.to = WI_ST.to === b.dataset.v ? null : b.dataset.v;
+  else if (a === 'plus') WI_ST.n = (Number(WI_ST.n) || 0) + 1;
+  else if (a === 'minus') WI_ST.n = Math.max(0, (Number(WI_ST.n) || 0) - 1);
+  else if (a === 'longer') { if (!WI_LAST.longerOffer) return; WI_ST.longer = { period: SC_ST.period, custom: SC_ST.custom }; SC_ST.custom = Object.assign({}, WI_LAST.longerOffer.custom); SC_ST.period = 'custom'; SC_ST.origin = null; renderScoringChange(); return; }
+  else if (a === 'back') { if (!WI_ST.longer) return; SC_ST.period = WI_ST.longer.period; SC_ST.custom = WI_ST.longer.custom; WI_ST.longer = null; SC_ST.origin = null; renderScoringChange(); return; }
+  else return;
+  renderWhatIf();
+});
+document.addEventListener('change', ev => { if (ev.target && ev.target.id === 'wiN') { WI_ST.n = Number(ev.target.value) || 0; renderWhatIf(); } });
+// The benchmark's shots fill in when opened (a season's list is long).
+document.addEventListener('toggle', ev => {
+  if (!ev.target || ev.target.id !== 'wiRecords' || !ev.target.open || !WI_LAST) return;
+  const R = WI_LAST, ids = l => new Set(l.map(s => s.sid)), A = ids(R.per.A), B = ids(R.per.B), by = { A: [], B: [], Season: [] };
+  (R.benchShots || []).forEach(s => { const id = scSid(s); by[A.has(id) ? 'A' : B.has(id) ? 'B' : 'Season'].push(s); });
+  document.getElementById('wiRecBody').innerHTML = ['A', 'B', 'Season'].map(k => scRecRows(k, by[k], R.season)).join('');
+}, true);
+
 function scNum(v, d) {
   if (v === null || v === undefined || !isFinite(v)) return '—';
   const t = Math.abs(v).toFixed(d === undefined ? 1 : d);
@@ -16269,7 +16509,7 @@ function scSyncControls(season, pool) {
       const f = l => l.length ? l[0].date : '', t = l => l.length ? l[l.length - 1].date : '';
       SC_ST.custom = { aFrom: f(per.A), aTo: t(per.A), bFrom: f(per.B), bTo: t(per.B) };
     }
-    if (v) { SC_ST.period = v; SC_ST.origin = null; } renderScoringChange();
+    if (v) { SC_ST.period = v; SC_ST.origin = null; WI_ST.longer = null; } renderScoringChange();
   });
   const players = {};
   pool.filter(s => sessionTypeOf(s) === SC_ST.type).forEach(s => { players[s.shooterJersey] = (players[s.shooterJersey] || 0) + 1; });
@@ -16287,11 +16527,21 @@ function scSyncControls(season, pool) {
     const c = SC_ST.custom || {};
     [['scAFrom', 'aFrom'], ['scATo', 'aTo'], ['scBFrom', 'bFrom'], ['scBTo', 'bTo']].forEach(([id, k]) => {
       const el = document.getElementById(id); el.value = c[k] || '';
-      el.onchange = () => { SC_ST.custom = Object.assign({}, SC_ST.custom, { [k]: el.value }); SC_ST.origin = null; renderScoringChange(); };
+      el.onchange = () => { SC_ST.custom = Object.assign({}, SC_ST.custom, { [k]: el.value }); SC_ST.origin = null; WI_ST.longer = null; renderScoringChange(); };
     });
   }
 }
 
+// The shot records table, shared by Scoring Change and What If.
+function scRecRows(label, list, season) {
+  const nameOf = j => (PLAYER_MODE && !pmHas(`#${j} ${nameFor(j, season)}`)) ? 'Teammate' : `#${j} ${nameFor(j, season)}`;
+  return list.slice().sort((x, y) => chronoKey(x).localeCompare(chronoKey(y))).map(s => {
+    const z = shotZone(s);
+    return `<tr><td>${label}</td><td>${scDate(s.date)}</td><td style="text-align:left;">${escapeHtml(nameOf(s.shooterJersey))}</td><td style="text-align:left;">${z ? escapeHtml(z) : '—'}</td><td style="text-align:left;">${z ? escapeHtml(SC_GROUP_OF[z]) : '—'}</td><td>${s.goal === 1 ? 'Goal' : 'No goal'}</td><td>${s.shotQuality ? escapeHtml(String(s.shotQuality).replace(/^\d-/, '')) : '—'}</td>
+      <td style="text-align:left;">${escapeHtml(scSid(s))}</td><td>${s.id}</td><td style="text-align:left; font-size:11px;">${s.eid ? escapeHtml(s.eid) : '<span title="Logged before entries carried an entry ID; its session ID + shot # identify it.">— (older entry)</span>'}</td>
+      <td>${PLAYER_MODE ? '' : `<button type="button" class="lnk" data-scopen="${s.id}" data-sid="${escapeHtml(scSid(s))}" title="Opens this shot in the Log editor (as Shot Log Edit does). Nothing changes unless you save there.">Open &rsaquo;</button>`}</td></tr>`;
+  }).join('');
+}
 function renderScoringChange() {
   const panel = document.getElementById('scPanel');
   if (!panel) return;
@@ -16403,18 +16653,14 @@ function renderScoringChange() {
   // ---- Missing data ----
   h += `<p class="sans" style="font-size:12.5px; margin:0 0 8px;"><b>Missing data:</b> shots with no location: A ${A.unloc.N} of ${A.N}, B ${B.unloc.N} of ${B.N}. Ungraded shots: A ${A.ungraded}, B ${B.ungraded}.</p>`;
   // ---- Records ----
-  const nameOf = j => (PLAYER_MODE && !pmHas(`#${j} ${nameFor(j, season)}`)) ? 'Teammate' : `#${j} ${nameFor(j, season)}`;
-  const recRows = (label, list) => list.slice().sort((x, y) => chronoKey(x).localeCompare(chronoKey(y))).map(s => {
-    const z = shotZone(s);
-    return `<tr><td>${label}</td><td>${scDate(s.date)}</td><td style="text-align:left;">${escapeHtml(nameOf(s.shooterJersey))}</td><td style="text-align:left;">${z ? escapeHtml(z) : '—'}</td><td style="text-align:left;">${z ? escapeHtml(SC_GROUP_OF[z]) : '—'}</td><td>${s.goal === 1 ? 'Goal' : 'No goal'}</td><td>${s.shotQuality ? escapeHtml(String(s.shotQuality).replace(/^\d-/, '')) : '—'}</td>
-      <td style="text-align:left;">${escapeHtml(scSid(s))}</td><td>${s.id}</td><td style="text-align:left; font-size:11px;">${s.eid ? escapeHtml(s.eid) : '<span title="Logged before entries carried an entry ID; its session ID + shot # identify it.">— (older entry)</span>'}</td>
-      <td>${PLAYER_MODE ? '' : `<button type="button" class="lnk" data-scopen="${s.id}" data-sid="${escapeHtml(scSid(s))}" title="Opens this shot in the Log editor (as Shot Log Edit does). Nothing changes unless you save there.">Open &rsaquo;</button>`}</td></tr>`;
-  }).join('');
+  const recRows = (label, list) => scRecRows(label, list, season);
+  h += `<div id="scWi"></div>`;
   h += `<details class="collapsible" id="scRecords"><summary><p class="panel-sub" style="font-weight:700; color:var(--ink);">The ${A.N + B.N} shots behind these numbers</p></summary>
     <div class="table-wrap" style="max-height:420px; overflow:auto;"><table class="shotlog dense sc-rec"><thead><tr><th>Period</th><th>Date</th><th style="text-align:left;">Shooter</th><th style="text-align:left;">Zone</th><th style="text-align:left;">Group</th><th>Result</th><th>Grade</th><th style="text-align:left;">Session ID</th><th>Shot #</th><th style="text-align:left;">Entry ID</th><th></th></tr></thead>
     <tbody>${recRows('A', R.shotsA)}${recRows('B', R.shotsB)}</tbody></table></div>
     <p class="n-note" style="margin:4px 0 0;">Session ID + shot # identify every shot (a number that leaves a session is never reused there). Entry ID is the stable ID saved with each entry since the save-safety builds; it stays the same if the shot moves to another session. Older entries have none until they are moved. Open shows the shot in the Log editor; nothing changes unless you save there.</p></details>`;
   body.innerHTML = h;
+  WI_LAST = R; renderWhatIf();
 }
 // Open a record: the Log editor, as Shot Log Edit and Reports open one (staff only; Player View shows no button).
 document.addEventListener('click', ev => {
@@ -16431,6 +16677,7 @@ function scOpenFrom(o) {
   const single = SESSION_TYPES.includes(o.ctx) || o.ctx === SCRIM_UNTYPED;
   Object.assign(SC_ST, { type: single ? o.ctx : null, askType: !single, barCtx: offCtx(), subject: o.subject ? String(o.subject) : 'team', grouping: 'groups',
     period: o.dates ? 'custom' : '5', custom: o.dates ? Object.assign({}, o.dates) : null, origin: Object.assign({}, o, { season }) });
+  WI_ST.longer = null;
   goNav('trends', 'Scoring Change: What Moved');
   renderScoringChange();
 }
