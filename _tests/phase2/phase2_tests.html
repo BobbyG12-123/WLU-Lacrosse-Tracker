@@ -249,7 +249,8 @@ async function run() {
   const pgZ = nj(`(() => { const keep = wiSeasonShots, o = {}; const js = [...new Set(scPool('2027').filter(s => sessionTypeOf(s) === 'Practice').map(s => String(s.shooterJersey)))];
     const j = js.find(j => { const R = scCompare({ season: '2027', type: 'Practice', period: '5', subject: j, grouping: 'groups' }); return wiLoc(R.shotsB).length >= 10 && R.keys.some(k => !R.b.cells[k].n); }); o.j = j || null; if (!j) return o;
     const R0 = scCompare({ season: '2027', type: 'Practice', period: '5', subject: j, grouping: 'groups' }), other = R0.keys.filter(k => !R0.b.cells[k].n); o.located = R0.b.loc.N;
-    try { wiSeasonShots = (a, b, c) => keep(a, b, c).filter(s => String(s.shooterJersey) === j || other.includes(scCellOf(s, 'groups')));
+    const spot = scPool('2027').find(s => scCellOf(s, 'groups') === other[0]) || { lateralYds: 16, distanceYds: 10 };   // every teammate shot placed where the player has none, so plenty of shots but no benchmark for him
+    try { wiSeasonShots = (a, b, c) => keep(a, b, c).map(s => String(s.shooterJersey) === j ? s : Object.assign({}, s, { lateralYds: spot.lateralYds, distanceYds: spot.distanceYds }));
       Object.assign(SC_ST, { period: '5', custom: null, subject: j, grouping: 'groups' }); Object.assign(WI_ST, { from: null, to: null, n: 0, longer: null }); renderScoringChange();
       const x = wiCompute(WI_LAST, {}); o.res = x.pB.res; o.page = document.querySelector('#scWi .wi-player').textContent;
     } finally { wiSeasonShots = keep; } Object.assign(SC_ST, { subject: 'team' }); renderScoringChange(); return o; })()`);
