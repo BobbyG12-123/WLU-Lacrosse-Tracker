@@ -1,0 +1,338 @@
+<!doctype html>
+<html><head><meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; connect-src 'self'; style-src 'unsafe-inline'; frame-src 'self'; base-uri 'none'; form-action 'none'">
+<script src="guard_offline.js"></script>
+<script src="fake_firestore.js"></script>
+<title>TEST — Phase 2 What If (offline, in-memory database only)</title>
+<style>body{font:13px system-ui;margin:16px} iframe{width:48%;height:700px;border:1px solid #999}</style>
+</head><body>
+<h3>Phase 2 What If: main vs branch on the same export, in-memory database only</h3>
+<iframe id="fOld" src="tracker_main.html"></iframe><iframe id="fNew" src="tracker_branch.html"></iframe>
+<pre id="out">running…</pre>
+<script>
+const Q = new URLSearchParams(location.search), EXPORT = Q.get('export') || 'fixture.json', REAL = Q.get('real') === '1';
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+const T = { results: [], pass: 0, fail: 0 };
+const ok = (name, cond, info) => { T.results.push({ name, ok: !!cond, info: info === undefined ? null : info }); cond ? T.pass++ : T.fail++; };
+const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+const EPS = 1e-9, near = (a, b) => Math.abs(a - b) < EPS;
+
+// ---- Independent recomputation straight from the export (no tracker code) ----
+function zoneAtRef(L, D) {
+  const a = Math.abs(L), s = L < 0 ? 'Left' : 'Right';
+  if (Math.hypot(L, D) < 5 || (D < 6 && a < 3)) return 'Doorstep';
+  if (D < 3 && a >= 5) return 'GLE ' + s;
+  if (D < 6 && a >= 3 && a < 12) return 'Low ' + s;
+  if (a >= 12) return 'Wing ' + s;
+  if (D < 11 && a < 4) return 'Crease';
+  if (D >= 11 && a < 5) return 'Top Center';
+  if (D < 12 && a < 12) return 'Alley ' + s;
+  return 'Top ' + s;
+}
+const GROUP_REF = z => /^(Doorstep|Crease)$/.test(z) ? 'Inside' : /^(GLE|Low) /.test(z) ? 'Low/GLE' : /^Alley/.test(z) ? 'Alley' : /^Top/.test(z) ? 'Top' : 'Wing';
+async function boot() {
+  const exp = await (await fetch(EXPORT)).json();
+  const frames = { old: document.getElementById('fOld').contentWindow, neu: document.getElementById('fNew').contentWindow };
+  for (const k of Object.keys(frames)) {
+    const w = frames[k];
+    for (let i = 0; i < 60 && !(w.firebase && w.firebase.apps && w.firebase.apps.length && typeof w.init === 'function'); i++) await sleep(300);
+    const fake = makeFakeFirestore(exp.collections);
+    const real = w.firebase.firestore, f = function () { return fake; }; Object.keys(real).forEach(x => { f[x] = real[x]; }); f.FieldValue = real.FieldValue;
+    w.firebase.firestore = f; w.__FAKE = fake;
+    w.init().then(() => { w.__BOOT_DONE = true; }, e => { w.__BOOT_ERR = String(e && e.stack || e); });
+  }
+  for (let i = 0; i < 160 && !(frames.old.__appReady && frames.neu.__appReady); i++) await sleep(500);
+  await sleep(3000);
+  return { frames, exp };
+}
+
+// Independent count of the default selection from the raw export: sessions, rates, and each calculation.
+function refData(exp, COLS, type) {
+  const ix = c => COLS.indexOf(c), I = { s: ix('shooterJersey'), t: ix('team'), d: ix('date'), g: ix('goal'), L: ix('lateralYds'), D: ix('distanceYds') };
+  const typ = {}; const tr = (exp.collections.app || {}).session_tracking || {};
+  Object.keys(tr).filter(k => k.startsWith('typ_')).forEach(k => { try { typ[k.slice(4)] = JSON.parse(tr[k]); } catch (e) {} });
+  const typeOf = (sid, d) => d.context === 'Game' ? 'Game' : d.context === 'Practice' ? 'Practice' : d.context === 'Scrimmage' ? (typ[sid] ? typ[sid].type : (d.opponent ? 'Opponent scrimmage' : 'Type not recorded')) : null;
+  const sess = [];
+  for (const [sid, d] of Object.entries(exp.collections.sessions)) {
+    if (typeOf(sid, d) !== type) continue;
+    const shots = [];
+    for (const [k, v] of Object.entries(d)) {
+      if (!k.startsWith('s_')) continue;
+      const a = JSON.parse(v), dt = a[I.d];
+      if (!(dt >= '2026-08-01' && dt < '2027-08-01') || a[I.t] === 'OPP' || !a[I.s]) continue;
+      const loc = a[I.L] !== null && a[I.L] !== undefined && a[I.D] !== null && a[I.D] !== undefined;
+      shots.push({ j: String(a[I.s]), g: a[I.g] === 1 ? 1 : 0, k: loc ? GROUP_REF(zoneAtRef(a[I.L], a[I.D])) : null, sid });
+    }
+    if (shots.length) sess.push({ sid, date: d.date, shots });
+  }
+  return sess.sort((x, y) => (x.date + x.sid).localeCompare(y.date + y.sid));
+}
+const KEYS = ['Inside', 'Low/GLE', 'Alley', 'Top', 'Wing'];
+const refCells = list => { const c = {}; KEYS.forEach(k => { c[k] = { n: 0, g: 0 }; }); list.forEach(s => { if (s.k) { c[s.k].n++; c[s.k].g += s.g; } }); return c; };
+function refTeam(sess, K) {
+  const all = sess.flatMap(s => s.shots), A = sess.slice(-10, -5).flatMap(s => s.shots), B = sess.slice(-5).flatMap(s => s.shots), season = refCells(all), a = refCells(A), b = refCells(B);
+  const r = c => c.n ? c.g / c.n : 0, bl = (c, k) => (c.g + K * r(season[k])) / (c.n + K);
+  const LA = KEYS.reduce((t, k) => t + a[k].n, 0), LB = KEYS.reduce((t, k) => t + b[k].n, 0);
+  const convBase = KEYS.reduce((t, k) => t + b[k].n * bl(b[k], k), 0), convScen = KEYS.reduce((t, k) => t + b[k].n * bl(a[k], k), 0);
+  const mixBase = KEYS.reduce((t, k) => t + b[k].n * r(season[k]), 0), mixScen = KEYS.reduce((t, k) => t + LB * a[k].n / LA * r(season[k]), 0);
+  return { convBase, convScen, mixBase, mixScen, LA, LB, a, b, season };
+}
+async function run() {
+  const { frames, exp } = await boot();
+  const O = frames.old, N = frames.neu, o = src => O.eval(src), n = src => N.eval(src), nj = src => JSON.parse(n(`JSON.stringify(${src})`));
+  const errs = []; N.addEventListener('error', e => errs.push(String(e.message)));
+  ok('both builds booted', O.__appReady && N.__appReady, [O.__BOOT_ERR || null, N.__BOOT_ERR || null]);
+  const writes0 = N.__FAKE.__writes.length;
+  const COLS = nj('COLS'), sess = refData(exp, COLS, 'Practice'), DEF = `{ season: '2027', type: 'Practice', period: '5', subject: 'team', grouping: 'groups' }`;
+  n(`window.__R = o => scCompare(o); heatSeason = '2027'; NAV_ST.ctx = 'All'; SEASON_PART = 'Full'; Object.assign(SC_ST, { type: 'Practice', barCtx: 'All', askType: false, period: '5', custom: null, subject: 'team', grouping: 'groups', origin: null }); Object.assign(WI_ST, { from: null, to: null, n: 0, longer: null }); renderScoringChange();`);
+  o(`heatSeason = '2027'; NAV_ST.ctx = 'All'; SEASON_PART = 'Full'; Object.assign(SC_ST, { type: 'Practice', barCtx: 'All', askType: false, period: '5', custom: null, subject: 'team', grouping: 'groups', origin: null }); renderScoringChange();`);
+
+  // ===== Nothing already released changed =====
+  const snapSrc = await (await fetch('analytics_snapshot.js')).text();
+  const sa = JSON.parse(o(snapSrc)), sb = JSON.parse(n(snapSrc)), keys = [...new Set(Object.keys(sa).concat(Object.keys(sb)))], sdiff = keys.filter(k => JSON.stringify(sa[k]) !== JSON.stringify(sb[k]));
+  ok('analytics snapshot identical to main', sdiff.length === 0 && keys.length > 0, { compared: keys.length, diff: sdiff.slice(0, 10) });
+  const bodyHtml = (w, subj) => w.eval(`(() => { SC_ST.subject = ${JSON.stringify(subj)}; renderScoringChange(); const d = document.createElement('div'); d.innerHTML = document.getElementById('scBody').innerHTML; const x = d.querySelector('#scWi'); if (x) x.remove(); return d.innerHTML.replace(/scm\\d+_/g, 'scm_'); })()`);
+  const someJ = String(sess.flatMap(s => s.shots).reduce((m, s) => { m[s.j] = (m[s.j] || 0) + 1; return m; }, {}) && Object.entries(sess.flatMap(s => s.shots).reduce((m, s) => { m[s.j] = (m[s.j] || 0) + 1; return m; }, {})).sort((x, y) => y[1] - x[1])[0][0]);
+  ok('Scoring Change itself is unchanged apart from the added What If block: Team', bodyHtml(O, 'team') === bodyHtml(N, 'team'));
+  ok('Scoring Change itself is unchanged apart from the added What If block: a player', bodyHtml(O, someJ) === bodyHtml(N, someJ));
+  n(`SC_ST.subject = 'team'; renderScoringChange();`); o(`SC_ST.subject = 'team'; renderScoringChange();`);
+
+  // ===== Independent numbers =====
+  const X = nj(`(() => { const R = scCompare(${DEF}), x = wiCompute(R, {}); return { conv: x.conv, mix: x.mix, swing: x.swing, benchN: x.benchN, per: [R.per.A.map(s => s.sid), R.per.B.map(s => s.sid)] }; })()`);
+  const Rf = refTeam(sess, 8), near = (a, b, e) => Math.abs(a - b) < (e || 1e-9);
+  ok('default periods match an independent count', JSON.stringify(X.per) === JSON.stringify([sess.slice(-10, -5).map(s => s.sid), sess.slice(-5).map(s => s.sid)]), X.per);
+  ok('earlier conversion: baseline and what-if match an independent calculation', near(X.conv.base, Rf.convBase) && near(X.conv.scen, Rf.convScen), { got: [X.conv.base, X.conv.scen], want: [Rf.convBase, Rf.convScen] });
+  ok('earlier mix: baseline and what-if match an independent calculation', near(X.mix.base, Rf.mixBase) && near(X.mix.scen, Rf.mixScen), { got: [X.mix.base, X.mix.scen], want: [Rf.mixBase, Rf.mixScen] });
+  ok('per 100 = change / located shots in Period B, for both', near(X.conv.per100, 100 * X.conv.d / Rf.LB) && near(X.mix.per100, 100 * X.mix.d / Rf.LB));
+  // Player vs teammates, independently, on the busiest player's Period B
+  const B5 = sess.slice(-5).flatMap(s => s.shots), allS = sess.flatMap(s => s.shots);
+  const mine = refCells(B5.filter(s => s.j === someJ)), rest = refCells(B5.filter(s => s.j !== someJ)), season = refCells(allS.filter(s => s.j !== someJ));
+  const wantE = KEYS.reduce((t, k) => mine[k].n ? t + mine[k].n * (rest[k].g + 8 * (season[k].n ? season[k].g / season[k].n : 0)) / (rest[k].n + 8) : t, 0), wantG = KEYS.reduce((t, k) => t + mine[k].g, 0);
+  const P = nj(`(() => { const x = wiCompute(scCompare({ season: '2027', type: 'Practice', period: '5', subject: ${JSON.stringify(someJ)}, grouping: 'groups' }), {}); return { r: x.pB.res, restAll: x.benchShots.some(s => String(s.shooterJersey) === ${JSON.stringify(someJ)}), restP: x.pB.rest.length }; })()`);
+  ok('player vs teammates: goals and benchmark match an independent calculation', P.r.none ? true : near(P.r.base, wantE) && P.r.actual === wantG, { got: [P.r.base, P.r.actual], want: [wantE, wantG] });
+  ok('the teammate benchmark leaves the player out', P.restAll === false);
+
+  // ===== Invariants =====
+  const inv = nj(`(() => {
+    const R = scCompare(${DEF}), S = wiSwing(wiSeasonShots('2027', 'Practice'), 'groups'), bench = scSummarize(wiLoc(wiSeasonShots('2027', 'Practice')), 'groups', null), k = R.keys;
+    const c0 = wiEarlierConversion(R.b, R.b, bench, k, S), m0 = wiEarlierMix(R.b, R.b, bench, k, S), t0 = wiTeammates(R.b, R.b, R.b, k, S);
+    const sup = { players: 2, max: 1, at: 10, n: 10 };   // a stated share, so this runs whether or not the data has a 30+-shot player
+    const move = n => wiMove(R.b, bench, k, { from: 'Alley', to: 'Inside', n }, sup), m1 = move(1), m00 = move(0), mAll = move(1e6), same = wiMove(R.b, bench, k, { from: 'Alley', to: 'Alley', n: 3 }, sup);
+    const total = m => m.dist.reduce((t, x) => t + x.prop, 0);
+    const rA = bench.cells.Inside.g / bench.cells.Inside.n, rF = bench.cells.Alley.g / bench.cells.Alley.n;
+    return { c0: c0.d, m0: m0.d, t0: t0.d, m00idle: !!m00.idle, m00d: m00.d === undefined, sameIdle: !!same.idle, oneTotal: total(m1), allN: mAll.n, avail: mAll.avail, L: R.b.loc.N, oneD: m1.d, want: rA - rF, allTotal: total(mAll),
+      swap: wiEarlierMix(R.a, R.b, bench, k, S).d + wiEarlierMix(R.b, R.a, bench, k, S).per100 * 0, conv: wiEarlierConversion(R.a, R.b, bench, k, S).affected };
+  })()`);
+  ok('unchanged scenario gives exactly zero: earlier conversion with Period A = Period B', inv.c0 === 0, inv.c0);
+  ok('unchanged scenario gives exactly zero: earlier mix with Period A = Period B', Math.abs(inv.m0) < 1e-9, inv.m0);
+  ok('unchanged scenario gives exactly zero: player against an identical teammate pool', Math.abs(inv.t0) < 1e-9, inv.t0);
+  ok('moving 0 shots makes no estimate and asks how many', inv.m00idle && inv.m00d);
+  ok('moving to the same location makes no estimate', inv.sameIdle);
+  ok('attempts stay fixed: moved shots leave the total unchanged', inv.oneTotal === inv.L && inv.allTotal === inv.L, inv);
+  ok('moved shots can\'t exceed what the location has', inv.allN === inv.avail, inv);
+  ok('moving 1 shot changes goals by exactly the benchmark rate gap (hand check)', typeof inv.oneD === 'number' && near(inv.oneD, inv.want, 1e-9), inv);
+  ok('earlier conversion covers every located Period B shot', inv.conv === inv.L, inv);
+
+  // ===== Every selection: well-formed, no invented numbers =====
+  const sweep = nj(`(() => { let tot = 0, bad = [], none = 0, est = 0; const js = ['team'].concat([...new Set(scPool('2027').map(s => String(s.shooterJersey)))]);
+    ['Practice', 'Intra-squad', 'Opponent scrimmage', 'Game'].forEach(type => ['3', '5', '10'].forEach(period => js.forEach(subject => ['groups', 'zones'].forEach(grouping => { if (grouping === 'zones' && subject !== 'team') return;
+      const R = scCompare({ season: '2027', type, period, subject, grouping }); if (!R.sessions.length) return; tot++;
+      const X = wiCompute(R, { from: R.keys[0], to: R.keys[1], n: 2 });
+      (X.team ? [X.conv, X.mix] : [X.pA.res, X.pB.res]).concat([Object.assign({}, X.move, X.move.range)]).forEach((r, i) => {
+        if (r.none || r.idle) { none++; if (r.d !== undefined || !r.why) bad.push(['none-has-number', type, period, subject, i]); return; } est++;
+        if (![r.d, r.per100].every(v => typeof v === 'number' && isFinite(v)) || (!r.movedOnly && !(typeof r.base === 'number' && isFinite(r.base)))) bad.push(['nan', type, period, subject, i, r.d]);
+        if (r.movedOnly && (r.base !== null || r.scen !== null || r.loNew !== null)) bad.push(['moved-only totals', type, period, subject, i]);
+        if (r.lo !== null && !(r.lo <= r.d && r.d <= r.hi)) bad.push(['range', type, period, subject, i, r.lo, r.d, r.hi]);
+        if (r.lo !== null && !r.movedOnly && !(r.loNew <= r.lo && r.hi <= r.hiNew)) bad.push(['new-run', type, period, subject, i, r.lo, r.hi, r.loNew, r.hiNew]);
+        if (r.lo !== null && r.hi - r.lo <= 0) bad.push(['zero-width', type, period, subject, i, r.d]);
+      }); })))); return { tot, none, est, bad: bad.slice(0, 8) }; })()`);
+  ok(`${sweep.tot} selections: every result is a finite number with its range around it, or has no number and says why; the new-run range is never narrower`, sweep.bad.length === 0 && sweep.tot > 50, sweep);
+
+  // ===== Page: labels and required items =====
+  const txt = () => n(`document.getElementById('scWi').textContent`);
+  const t0 = txt();
+  ok('labeled as historical what-if calculations, not forecasts or evidence of cause', /historical .what if. calculations/i.test(t0) && /not forecasts/.test(t0) && /aren.t evidence that a change caused more goals/.test(t0));
+  ok('explains why the numbers differ from Scoring Change, with its numbers', /Why these numbers differ/.test(t0) && /shows conversion .* and location mix/.test(t0));
+  ok('ranges say provisional, not validated, and separate the estimated average from actual goals', /Provisional range: average/.test(t0) && /Provisional range: a new run/.test(t0) && /provisional, not validated/.test(t0) && /uncertainty in the estimated average/i.test(t0) && /variation in actual goals/.test(t0));
+  ok('never claims a 95% or confidence interval', !/95\s?%|confidence interval|statistically significant/i.test(t0));
+  ok('says the session-swing factors come from these same sessions', /measured from these same sessions/.test(t0));
+  ok('shows benchmark, totals, per 100, shots affected and coverage', /Benchmarks?:/.test(t0) && /Actual goals, Period B/.test(t0) && /Change per 100 located shots/.test(t0) && /Shots affected/.test(t0) && /Coverage:/.test(t0));
+  const rd = nj(`(() => { const e = { lo: -1, hi: 1 }, x = { lo: 1, hi: 2 }, m = { lo: null, hi: null }; return [wiRead(e), wiRead(x), wiRead(m)]; })()`);
+  ok('"Can\'t distinguish from no change" when the range includes zero, or no range exists', /distinguish from no change/.test(rd[0]) && !/distinguish/.test(rd[1]) && /distinguish from no change/.test(rd[2]) && /not evidence of a cause/.test(rd[1]), rd);
+  ok('the wording on the page follows each result\'s own range', [['conv', X.conv], ['mix', X.mix]].every(([k, r]) => (r.lo <= 0 && r.hi >= 0) === (n(`[...document.querySelectorAll('#scWi .wi-team .wi-read')][${k === 'conv' ? 0 : 1}].textContent`).includes('distinguish'))), [X.conv.lo, X.conv.hi, X.mix.lo, X.mix.hi]);
+  const lowS = nj(`wiSwing(wiSeasonShots('2027', 'Opponent scrimmage'), 'groups')`);
+  ok(`too few sessions: no range, rather than a guessed one (Opponent scrimmage, ${lowS.S} sessions)`, lowS.usable === false && lowS.conv === null, lowS);
+
+  // ===== Team with too few shots =====
+  const thin = nj(`(() => { const R = scCompare(${DEF}), S = wiSwing(wiSeasonShots('2027', 'Practice'), 'groups'), b = scSummarize(wiLoc(wiSeasonShots('2027', 'Practice')), 'groups', null), small = scSummarize(wiLoc(R.shotsB).slice(0, 9), 'groups', null);
+    return { c: wiEarlierConversion(small, R.b, b, R.keys, S), m: wiEarlierMix(R.a, small, b, R.keys, S), t: wiTeammates(small, R.b, b, R.keys, S), t2: wiTeammates(R.b, small, b, R.keys, S), mv: wiMove(small, b, R.keys, { from: 'Inside', to: 'Alley', n: 1 }, { max: 1, players: 1 }) }; })()`);
+  ok('under 10 located shots: no number and a stated reason, for all four calculations', ['c', 'm', 't', 't2', 'mv'].every(k => thin[k].none && thin[k].d === undefined && /display rule|teammates have only/.test(thin[k].why)), thin);
+
+  // ===== Move shots through the page =====
+  const click = sel => n(`(() => { const b = document.querySelector(${JSON.stringify(sel)}); if (!b) return 'missing'; b.click(); return 'ok'; })()`);
+  const per0 = nj(`[SC_ST.period, SC_ST.custom, SC_ST.subject]`);
+  ok('move: starts idle, with original and proposed the same', /Pick a location/.test(txt()));
+  click('[data-wi="from"][data-v="Alley"]'); click('[data-wi="to"][data-v="Inside"]');
+  ok('move: asks how many after locations are picked', /Choose how many/.test(txt()), txt().slice(-300));
+  n(`WI_ST.n = 3; renderWhatIf();`);
+  const dist = nj(`[...document.querySelectorAll('#scWi .wi-dist tbody tr')].map(r => [...r.children].slice(0, 5).map(c => c.textContent))`);
+  const dA = dist.find(r => r[0] === 'Alley'), dI = dist.find(r => r[0] === 'Inside');
+  ok('move: the table shows original and proposed shots and shares', Number(dA[3]) === Number(dA[1]) - 3 && Number(dI[3]) === Number(dI[1]) + 3 && /%/.test(dA[2]) && /%/.test(dA[4]), { dA, dI });
+  ok('move: the support check is labeled provisional, not a validated limit', /Support check \(observed shot shares; provisional rule, not a validated limit\)/.test(txt()));
+  // A stated share, so the page's result path runs on any data (the fixture has no 30+-shot player).
+  n(`window.__ws = wiSupport; wiSupport = () => ({ players: 2, max: 0.5, at: 50, n: 100 }); renderWhatIf();`);
+  ok('move: inside the observed share gives a number, with the original and what-if estimates', n(`!!document.querySelector('#scWi .wi-move')`) && /inside that share/.test(txt()) && /Move 3 Alley shots to Inside/.test(txt()), txt().slice(-500));
+  ok('move: being inside isn\'t read as feasible', /doesn.t mean these shots could be created/.test(txt()));
+  n(`wiSupport = () => ({ players: 2, max: 0.01, at: 1, n: 100 }); renderWhatIf();`);
+  ok('move: above the observed share, the page shows no number and calls the rule provisional', !n(`!!document.querySelector('#scWi .wi-move')`) && /above that share/.test(txt()) && /provisional rule, not a validated limit/.test(n(`document.querySelector('#scWi p.wi-none').textContent`)));
+  n(`wiSupport = __ws; renderWhatIf();`);
+  // Find a move that goes past every player's share.
+  n(`(() => { const R = WI_LAST; WI_ST.from = 'Alley'; WI_ST.to = 'Wing'; WI_ST.n = 1e6; renderWhatIf(); })()`);
+  const out = nj(`(() => { const R = scCompare(${DEF}), x = wiCompute(R, { from: 'Alley', to: 'Wing', n: 1e6 }).move; return { none: x.none, why: x.why, d: x.d, st: x.support_state }; })()`);
+  ok('move: past the highest observed share, or with a thin benchmark, gives no number and says why', out.none && out.d === undefined && !n(`!!document.querySelector('#scWi .wi-move')`) && n(`document.querySelector('#scWi p.wi-none').textContent`) === out.why, out);
+  const over = nj(`(() => { const R = scCompare(${DEF}), b = scSummarize(wiLoc(wiSeasonShots('2027', 'Practice')), 'groups', null), m = wiMove(R.b, b, R.keys, { from: 'Alley', to: 'Inside', n: 1e6 }, { players: 2, max: 0.01, at: 1, n: 100 }); return { none: m.none, why: m.why, d: m.d, st: m.support_state }; })()`);
+  ok('move: above the highest share, the reason calls the rule provisional', over.none && over.st === 'outside' && over.d === undefined && /provisional rule, not a validated limit/.test(over.why), over);
+  const noSup = nj(`(() => { const R = scCompare(${DEF}), b = scSummarize(wiLoc(wiSeasonShots('2027', 'Practice')), 'groups', null), m = wiMove(R.b, b, R.keys, { from: 'Alley', to: 'Inside', n: 1 }, { players: 0, max: null }); return { none: m.none, why: m.why, d: m.d }; })()`);
+  ok('move: no 30+-shot player means no check and no number', noSup.none && noSup.d === undefined, noSup);
+  n(`Object.assign(WI_ST, { from: null, to: null, n: 0 }); renderWhatIf();`);
+  ok('What If controls leave the panel\'s period and player alone', JSON.stringify(nj(`[SC_ST.period, SC_ST.custom, SC_ST.subject]`)) === JSON.stringify(per0));
+
+  // ===== Player page: the longer comparison is the coach's choice =====
+  const counts = {}; B5.forEach(s => { counts[s.j] = (counts[s.j] || 0) + 1; });
+  const thinJ = nj(`(() => { const js = [...new Set(scPool('2027').filter(s => sessionTypeOf(s) === 'Practice').map(s => String(s.shooterJersey)))];
+    return js.find(j => { const R = scCompare({ season: '2027', type: 'Practice', period: '3', subject: j, grouping: 'groups' }), X = wiCompute(R, {}); const a = wiLoc(R.shotsA).length, b = wiLoc(R.shotsB).length; return Math.min(a, b) < 20 && X.longer && Math.min(X.longer.nA, X.longer.nB) > Math.min(a, b); }) || null; })()`);
+  ok('found a player with a thin sample and a longer option', !!thinJ, thinJ);
+  n(`Object.assign(SC_ST, { period: '3', custom: null, subject: ${JSON.stringify(thinJ)}, grouping: 'groups' }); WI_ST.longer = null; renderScoringChange();`);
+  const before = nj(`[SC_ST.period, SC_ST.custom]`), tP = txt();
+  ok('thin player: the longer comparison is offered with its dates and samples', n(`!!document.querySelector('#scWi .wi-longer-offer')`) && /Period A \d+\/\d+.\d+\/\d+ \(\d+ sessions, \d+ located shots\) vs Period B/.test(tP), tP.slice(0, 400));
+  ok('thin player: the selected periods don\'t change until it\'s chosen', before[0] === '3' && before[1] === null, before);
+  click('[data-wi="longer"]');
+  const aft = nj(`({ p: SC_ST.period, c: SC_ST.custom, on: !!document.querySelector('#scWi .wi-longer-on'), offer: !!document.querySelector('#scWi .wi-longer-offer'), a: document.getElementById('scAFrom').value, row: document.getElementById('scCustomRow').style.display, pill: document.getElementById('scPeriodPills').dataset.value })`);
+  ok('choosing it sets those dates in the panel\'s own date controls and says so', aft.p === 'custom' && aft.on && !aft.offer && aft.a === aft.c.aFrom && aft.row !== 'none' && aft.pill === 'custom', aft);
+  click('[data-wi="back"]');
+  ok('"go back" restores the earlier periods', JSON.stringify(nj(`[SC_ST.period, SC_ST.custom]`)) === JSON.stringify(before));
+  const split = nj(`wiLongerSplit([{ sid: 'a', date: '2026-09-01' }, { sid: 'b', date: '2026-09-02' }, { sid: 'c', date: '2026-09-02' }, { sid: 'd', date: '2026-09-03' }], [])`);
+  ok('the longer split keeps one date whole, so periods can\'t overlap', split.custom.aTo === '2026-09-02' && split.custom.bFrom === '2026-09-03' && split.sA === 3 && split.sB === 1, split);
+  const tp = txt();
+  ok('player page: compares with teammates and states the limits', /versus teammates/.test(tp) && /isn.t a measure of skill/.test(tp));
+  ok('player page: no individual earlier-conversion estimate; it says why', /earlier-conversion what-if isn.t offered for individual players/.test(tp) && !n(`!!document.querySelector('#scWi .wi-team')`));
+
+  // ===== Reproduced missing-data cases =====
+  const miss = nj(`(() => { const S = { S: 15, usable: true, conv: 1, mix: 1 }, keys = SC_GROUPS, C = o => { const c = {}; let N = 0, G = 0; keys.forEach(k => { c[k] = o[k] ? { n: o[k][0], g: o[k][1] } : { n: 0, g: 0 }; N += c[k].n; G += c[k].g; }); return { cells: c, loc: { N, G }, unloc: { N: 0, G: 0 }, N, G }; };
+    const twelve = C({ Wing: [12, 4] }), rest = C({ Inside: [40, 20], Alley: [40, 12] }), prior = C({ Inside: [90, 45], Alley: [80, 24] });
+    const zero = wiTeammates(twelve, rest, prior, keys, S);
+    const under = wiTeammates(C({ Wing: [3, 1], Inside: [9, 4] }), rest, prior, keys, S);
+    const part = wiTeammates(C({ Wing: [3, 2], Inside: [12, 6] }), rest, prior, keys, S);
+    const html = r => wiResultRow('x', Object.assign({}, r, { noScenCol: true }), 'y');
+    const b = C({ Alley: [20, 6], Inside: [15, 7], Wing: [10, 3] }), bench = C({ Alley: [80, 24], Inside: [90, 45] }), sup = { players: 2, max: 0.9, at: 9, n: 10 };
+    const moved = wiMove(b, bench, keys, { from: 'Alley', to: 'Inside', n: 5 }, sup), range = wiMoveRange(moved, S);
+    const full = wiMove(C({ Alley: [20, 6], Inside: [15, 7] }), bench, keys, { from: 'Alley', to: 'Inside', n: 5 }, sup), fullR = wiMoveRange(full, S);
+    const fromMissing = wiMove(b, bench, keys, { from: 'Wing', to: 'Inside', n: 2 }, sup);
+    return { zero, zeroHtml: html(zero), under, part, moved, range, full, fullR, fromMissing, conv: wiEarlierConversion(b, b, bench, keys, S), mix: wiEarlierMix(b, b, bench, keys, S) }; })()`);
+  ok('case 1: 12 shots with no teammate benchmark gives "No estimate", not a 0 difference or a zero-width range', miss.zero.none && miss.zero.d === undefined && miss.zero.lo === undefined && miss.zero.covered === 0 && /^No estimate: none of the player's 12 located shots/.test(miss.zero.why), miss.zero);
+  ok('case 1: the row shows the reason and no numbers', /No estimate/.test(miss.zeroHtml) && !/>0\.0</.test(miss.zeroHtml), miss.zeroHtml);
+  ok('the minimum applies to covered shots: 12 located but 9 covered gives no estimate', miss.under.none && miss.under.covered === 9 && /9 of the player's 12/.test(miss.under.why), miss.under);
+  ok('partial coverage: totals are on covered shots, and exclusions are counted', miss.part.N === 12 && miss.part.located === 15 && miss.part.actual === 6 && miss.part.uncovered === 3 && miss.part.uncoveredG === 2 && miss.part.uncoveredKeys.join() === 'Wing' && near(miss.part.per100, 100 * miss.part.d / 12), miss.part);
+  ok('case 2: a missing unchanged rate isn\'t 0%: totals and the new-run range are withheld', miss.moved.movedOnly && miss.moved.base === null && miss.moved.scen === null && miss.range.loNew === null && miss.range.hiNew === null && miss.moved.missing[0].key === 'Wing' && miss.moved.missing[0].n === 10, [miss.moved, miss.range]);
+  ok('case 2: the supported moved-shot difference stays, from the two moved rates only', near(miss.moved.d, 5 * (45 / 90 - 24 / 80)) && miss.range.lo < miss.moved.d && miss.moved.d < miss.range.hi, [miss.moved.d, miss.range]);
+  ok('case 2: with every rate present, totals return and match the same difference', !miss.full.movedOnly && near(miss.full.d, miss.moved.d) && near(miss.full.scen - miss.full.base, miss.full.d) && near(miss.full.base, 20 * 0.3 + 15 * 0.5) && miss.fullR.loNew !== null, miss.full);
+  ok('a moved-from location with no benchmark gives no estimate', miss.fromMissing.none && miss.fromMissing.d === undefined && /Wing \(0\)/.test(miss.fromMissing.why), miss.fromMissing);
+  ok('team calculations: a missing rate gives no estimate, never 0%', miss.conv.none && miss.mix.none && /isn't treated as 0%/.test(miss.conv.why) && /isn't treated as 0%/.test(miss.mix.why), [miss.conv, miss.mix]);
+  // Both cases through the real page, on real page functions: remove the benchmark at one location.
+  const pgM = nj(`(() => { const keep = wiSeasonShots, ks = wiSupport, o = {}; try { wiSupport = () => ({ players: 2, max: 0.9, at: 9, n: 10 }); wiSeasonShots = (a, b, c) => keep(a, b, c).filter(s => scCellOf(s, 'groups') !== 'Wing');
+      Object.assign(SC_ST, { period: '5', custom: null, subject: 'team', grouping: 'groups' }); Object.assign(WI_ST, { from: 'Alley', to: 'Inside', n: 3, longer: null }); renderScoringChange();
+      const root = document.getElementById('scWi'), row = root.querySelector('.wi-move tbody tr'), dist = [...root.querySelectorAll('.wi-dist tbody tr')].find(r => r.children[0].textContent === 'Wing'); o.cells = [...row.children].map(c => c.textContent); o.scope = (root.querySelector('.wi-moved-only') || {}).textContent; o.wing = dist ? dist.children[6].textContent : null; o.limit = /reflects uncertainty in the benchmark conversion rates only, not whether the proposed shots are attainable/.test(row.parentElement.textContent); o.team = root.querySelector('.wi-team').textContent;
+    } finally { wiSeasonShots = keep; wiSupport = ks; } Object.assign(WI_ST, { from: null, to: null, n: 0 }); renderScoringChange(); return o; })()`);
+  ok('case 2 on the page: baseline, what-if and new-run range show —, the moved-shot change stays, and the scope is stated', pgM.cells[2] === '—' && pgM.cells[3] === '—' && pgM.cells[8] === '—' && pgM.cells[4] !== '—' && pgM.cells[7] !== '—' && /Scope: the 3 moved shots only/.test(pgM.scope) && /at Wing/.test(pgM.scope), pgM);
+  ok('case 2 on the page: the Wing benchmark shows —, not 0%', pgM.wing === '—', pgM.wing);
+  ok('the move-shot range\'s limitation sits beside the result', pgM.limit);
+  const pgZ = nj(`(() => { const keep = wiSeasonShots, o = {}; const js = [...new Set(scPool('2027').filter(s => sessionTypeOf(s) === 'Practice').map(s => String(s.shooterJersey)))];
+    const j = js.find(j => { const R = scCompare({ season: '2027', type: 'Practice', period: '5', subject: j, grouping: 'groups' }); return wiLoc(R.shotsB).length >= 10 && R.keys.some(k => !R.b.cells[k].n); }); o.j = j || null; if (!j) return o;
+    const R0 = scCompare({ season: '2027', type: 'Practice', period: '5', subject: j, grouping: 'groups' }), other = R0.keys.filter(k => !R0.b.cells[k].n); o.located = R0.b.loc.N;
+    const spot = scPool('2027').find(s => scCellOf(s, 'groups') === other[0]) || { lateralYds: 16, distanceYds: 10 };   // every teammate shot placed where the player has none, so plenty of shots but no benchmark for him
+    try { wiSeasonShots = (a, b, c) => keep(a, b, c).map(s => String(s.shooterJersey) === j ? s : Object.assign({}, s, { lateralYds: spot.lateralYds, distanceYds: spot.distanceYds }));
+      Object.assign(SC_ST, { period: '5', custom: null, subject: j, grouping: 'groups' }); Object.assign(WI_ST, { from: null, to: null, n: 0, longer: null }); renderScoringChange();
+      const x = wiCompute(WI_LAST, {}); o.res = x.pB.res; o.page = document.querySelector('#scWi .wi-player').textContent;
+    } finally { wiSeasonShots = keep; } Object.assign(SC_ST, { subject: 'team' }); renderScoringChange(); return o; })()`);
+  ok('case 1 on the page: no teammate benchmark at the player\'s locations shows "No estimate"', pgZ.j && pgZ.res.none && pgZ.res.covered === 0 && pgZ.res.d === undefined && /No estimate/.test(pgZ.page), pgZ);
+  const t3 = (n(`Object.assign(SC_ST, { subject: ${JSON.stringify(someJ)} }); renderScoringChange();`), txt());
+  ok('player page: covered goals and shots, and what is excluded, are stated', /Covered:|No estimate/.test(t3) && (/Covered: \d+ goals on \d+ of \d+ located shots/.test(t3) || /No estimate/.test(t3)));
+  n(`Object.assign(WI_ST, { from: 'Alley', to: 'Inside', n: 1 }); window.__ws = wiSupport; wiSupport = () => ({ players: 2, max: 0.95, at: 95, n: 100 }); renderWhatIf();`);
+  const t4 = txt();
+  ok('player Move Shots names teammate rates and makes no claim about finishing or creating shots', /uses teammates. conversion rates\. It makes no claim about .*finishing or ability to create these shots/.test(t4), t4.slice(-700));
+  n(`wiSupport = __ws; Object.assign(WI_ST, { from: null, to: null, n: 0 }); SC_ST.subject = 'team'; renderScoringChange();`);
+  const t5 = txt();
+  ok('method choices are labeled: 8-shot blend, 6-session minimum, none validated', /Method choices \(our settings, none validated\)/.test(t5) && /blended with 8 shots/.test(t5) && /range needs 6\+ sessions/.test(t5));
+  ok('explains that the season benchmark includes the periods being compared', /season benchmark includes the periods being compared/.test(t5));
+  ok('final build label is 7a1-g5', nj('BUILD_VERSION') === '7a1-g5');
+
+  // ===== Records =====
+  n(`Object.assign(SC_ST, { period: '5', custom: null, subject: ${JSON.stringify(someJ)} }); renderScoringChange(); const d = document.getElementById('wiRecords'); d.open = true; d.dispatchEvent(new Event('toggle'));`);
+  await sleep(100);
+  const recP = nj(`(() => { const rows = [...document.querySelectorAll('#wiRecBody tr')], x = wiCompute(WI_LAST, {}); return { n: rows.length, want: x.benchShots.length, him: rows.filter(r => r.children[2].textContent.startsWith(${JSON.stringify('#' + someJ + ' ')})).length, labels: [...new Set(rows.map(r => r.children[0].textContent))], open: rows.filter(r => r.querySelector('[data-scopen]')).length }; })()`);
+  ok('player benchmark records: every teammate shot listed, none by the player, marked by period', recP.n === recP.want && recP.n > 0 && recP.him === 0 && recP.labels.includes('A') && recP.labels.includes('B'), recP);
+  ok('records open in the Log editor for staff, as in Scoring Change', recP.open === recP.n, recP);
+  n(`SC_ST.subject = 'team'; renderScoringChange(); const d2 = document.getElementById('wiRecords'); d2.open = true; d2.dispatchEvent(new Event('toggle'));`);
+  await sleep(100);
+  const recT = nj(`(() => { const rows = document.querySelectorAll('#wiRecBody tr').length, x = wiCompute(WI_LAST, {}); return { rows, want: x.benchShots.length, types: [...new Set(x.benchShots.map(s => sessionTypeOf(s)))], n: x.benchN }; })()`);
+  ok('team benchmark records match the benchmark, one session type only', recT.rows === recT.want && recT.types.length === 1 && recT.types[0] === 'Practice', recT);
+  ok('the Scoring Change records table is still there, unchanged in count', n(`document.querySelectorAll('#scRecords .sc-rec tbody tr').length`) === nj(`(() => { const R = scCompare(${DEF}); return R.shotsA.length + R.shotsB.length; })()`));
+
+  // ===== Session types, grouping =====
+  const types = nj(`(() => { const out = {}; ['Practice', 'Opponent scrimmage'].forEach(t => { const R = scCompare({ season: '2027', type: t, period: '3', subject: 'team', grouping: 'groups' }), x = wiCompute(R, {}); out[t] = [...new Set(x.benchShots.map(s => sessionTypeOf(s)))]; }); return out; })()`);
+  ok('a benchmark never mixes session types', types.Practice.join() === 'Practice' && types['Opponent scrimmage'].join().replace('Opponent scrimmage', '') === '', types);
+  n(`SC_ST.grouping = 'zones'; renderScoringChange();`);
+  ok('13-zone detail: What If follows the Locations control', n(`[...document.querySelectorAll('#scWi .wi-from .pill, #scWi .wi-to .pill')].some(b => /Doorstep|Crease/.test(b.textContent))`));
+  n(`SC_ST.grouping = 'groups'; renderScoringChange();`);
+  const fall = nj(`(() => { const p = SEASON_PART; SEASON_PART = 'Fall'; const x = wiSeasonShots('2027', 'Practice').every(s => inPart(s, '2027')); SEASON_PART = p; return x; })()`);
+  ok('Fall/Spring applies to the benchmark, like the panel\'s pool', fall === true);
+
+  // ===== Player View =====
+  const pv = nj(`(() => { const j = String(scPool('2027')[0].shooterJersey), name = nameFor(j, '2027'), r = { name };
+    const all = [...new Set(scPool('2027').map(s => String(s.shooterJersey)))].filter(k => k !== j).map(k => nameFor(k, '2027')).filter(x => x && x.length > 3);   // read before Player View masks them
+    PLAYER_MODE = { name, names: [name], seasons: { '2027': j }, roles: ['player'] };
+    try { Object.assign(SC_ST, { subject: 'team', period: '5', custom: null, grouping: 'groups' }); renderScoringChange(); const d = document.getElementById('wiRecords'); d.open = true; d.dispatchEvent(new Event('toggle'));
+      const rows = [...document.querySelectorAll('#wiRecBody tr')], names = rows.map(x => x.children[2].textContent); r.n = rows.length; r.others = names.filter(x => x !== 'Teammate' && !x.includes(name)).length; r.mates = names.filter(x => x === 'Teammate').length; r.open = rows.filter(x => x.querySelector('[data-scopen]')).length;
+      SC_ST.subject = j; renderScoringChange(); r.page = document.getElementById('scWi').textContent; r.mateNames = all.length; r.leak = all.filter(x => r.page.includes(x)).slice(0, 3); delete r.page;
+    } catch (e) { r.err = String(e); } finally { PLAYER_MODE = null; SC_ST.subject = 'team'; renderScoringChange(); } return r; })()`);
+  ok('Player View: benchmark records name no teammate and have no Open button', !pv.err && pv.n > 0 && pv.others === 0 && pv.mates > 0 && pv.open === 0, pv);
+  ok('Player View: the What If block names no teammate', !pv.err && pv.mateNames > 0 && pv.leak.length === 0, pv);
+
+  // ===== Placebo diagnostics on the real export (reported; a same-data check, not a validation) =====
+  if (REAL) {
+    T.summary = nj(`(() => {
+      const shots = wiSeasonShots('2027', 'Practice'), S = wiSwing(shots, 'groups'), sids = [...new Set(shots.map(scSid))];
+      let seed = 4242; const rnd = () => { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 4294967296; };
+      const shuf = a => { const p = a.slice(); for (let j = p.length - 1; j > 0; j--) { const m = Math.floor(rnd() * (j + 1)); [p[j], p[m]] = [p[m], p[j]]; } return p; };
+      const sum = l => scSummarize(wiLoc(l), 'groups', null), bench = sum(shots), keys = scKeys('groups');
+      let c = 0, m = 0, it = 2000;
+      for (let i = 0; i < it; i++) { const p = shuf(sids), A = new Set(p.slice(0, 5)), B = new Set(p.slice(5, 10)), a = sum(shots.filter(s => A.has(scSid(s)))), b = sum(shots.filter(s => B.has(scSid(s))));
+        const x = wiEarlierConversion(a, b, bench, keys, S), y = wiEarlierMix(a, b, bench, keys, S); if (x.lo <= 0 && x.hi >= 0) c++; if (y.lo <= 0 && y.hi >= 0) m++; }
+      // Pseudo-player: real location counts, shots drawn from teammates, so there's no true difference from them.
+      const counts = {}; shots.forEach(s => { counts[s.shooterJersey] = (counts[s.shooterJersey] || 0) + 1; });
+      const js = Object.keys(counts).filter(j => counts[j] >= 30); let pc = 0, pn = 0, widths = [];
+      js.forEach(j => { const mineAll = wiLoc(shots.filter(s => String(s.shooterJersey) === j)), others = wiLoc(shots.filter(s => String(s.shooterJersey) !== j)); const by = {}; others.forEach(s => (by[scCellOf(s, 'groups')] = by[scCellOf(s, 'groups')] || []).push(s));
+        for (let i = 0; i < 300; i++) { const take = new Set(); mineAll.forEach(s => { const l = by[scCellOf(s, 'groups')] || []; if (l.length) take.add(l[Math.floor(rnd() * l.length)]); }); const me = [...take]; if (me.length < 10) continue; const rest = others.filter(s => !take.has(s)), r = wiTeammates(sum(me), sum(rest), sum(rest), keys, S); if (r.none) continue; pn++; widths.push((r.hi - r.lo) / 2 * 100 / r.N); if (r.lo <= 0 && r.hi >= 0) pc++; } });
+      const w = widths.sort((a, b) => a - b)[Math.floor(widths.length / 2)];
+      const R = scCompare(${DEF}), X = wiCompute(R, {});
+      const players = [...new Set(shots.map(s => String(s.shooterJersey)))].map(j => { const Rj = scCompare({ season: '2027', type: 'Practice', period: '5', subject: j, grouping: 'groups' }), x = wiCompute(Rj, {}).pB.res; return x; }).filter(x => !x.none);
+      const mv = (() => { const x = wiCompute(R, { from: 'Alley', to: 'Inside', n: 5 }), m = Object.assign({}, x.move, x.move.range); return { st: m.support_state, why: m.why || null, prop: m.propShare, max: x.support.max, players: x.support.players, base: m.base, scen: m.scen, d: m.d, per100: m.per100, lo: m.lo, hi: m.hi, loNew: m.loNew, hiNew: m.hiNew }; })();
+      const sc = (s => [s.conv, s.mix].map(v => +Math.sqrt(v).toFixed(2)))(S);
+      return { swingFactors: sc, sessions: S.S, placeboConv: +(c / it).toFixed(3), placeboMix: +(m / it).toFixed(3), placeboPlayerPseudo: +(pc / pn).toFixed(3), pseudoRuns: pn, medianPlayerAvgRangePer100: +w.toFixed(1),
+        conv: { actual: X.conv.actual, base: +X.conv.base.toFixed(1), scen: +X.conv.scen.toFixed(1), d: +X.conv.d.toFixed(1), per100: +X.conv.per100.toFixed(1), lo: +X.conv.lo.toFixed(1), hi: +X.conv.hi.toFixed(1), loNew: +X.conv.loNew.toFixed(1), hiNew: +X.conv.hiNew.toFixed(1), raw: X.conv.rawScen },
+        mix: { base: +X.mix.base.toFixed(1), scen: +X.mix.scen.toFixed(1), d: +X.mix.d.toFixed(1), per100: +X.mix.per100.toFixed(1), lo: +X.mix.lo.toFixed(1), hi: +X.mix.hi.toFixed(1), loNew: +X.mix.loNew.toFixed(1), hiNew: +X.mix.hiNew.toFixed(1), affected: +X.mix.affected.toFixed(0) },
+        move5: mv, decomposition: { conv: +R.dec.conversion.toFixed(1), mix: +R.dec.mix.toFixed(1) }, playersWithEstimate: players.length, playersDistinct: players.filter(x => x.lo > 0 || x.hi < 0).length, playersMedianPer100: +players.map(x => (x.hi - x.lo) / 2 * 100 / x.N).sort((a, b) => a - b)[players.length >> 1].toFixed(1) };
+    })()`);
+  }
+
+  // ===== Safety =====
+  ok('no page errors', errs.length === 0, errs.slice(0, 5));
+  ok('no network access attempted', N.__GUARD.blocked.length === 0 && O.__GUARD.blocked.length === 0, [N.__GUARD.blocked.slice(0, 3), O.__GUARD.blocked.slice(0, 3)]);
+  ok('What If writes nothing (in-memory writes unchanged since boot)', N.__FAKE.__writes.length === writes0, N.__FAKE.__writes.slice(writes0, writes0 + 5));
+  const result = { at: new Date().toISOString(), export: EXPORT, real: REAL, pass: T.pass, fail: T.fail, results: T.results, summary: T.summary };
+  document.getElementById('out').textContent = JSON.stringify(result, null, 1);
+  await fetch('/results/' + (REAL ? 'phase2_real' : 'phase2_tests') + '.json', { method: 'POST', body: JSON.stringify(result, null, 1) });
+}
+run().catch(e => { document.getElementById('out').textContent = 'HARNESS ERROR ' + (e && e.stack || e); fetch('/results/' + (REAL ? 'phase2_real' : 'phase2_tests') + '.json', { method: 'POST', body: JSON.stringify({ err: String(e && e.stack || e), pass: T.pass, fail: T.fail + 1, results: T.results }) }); });
+</script>
+</body></html>
