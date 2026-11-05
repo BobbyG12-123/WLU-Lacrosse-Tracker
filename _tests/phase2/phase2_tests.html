@@ -264,7 +264,7 @@ async function run() {
   const t5 = txt();
   ok('method choices are labeled: 8-shot blend, 6-session minimum, none validated', /Method choices \(our settings, none validated\)/.test(t5) && /blended with 8 shots/.test(t5) && /range needs 6\+ sessions/.test(t5));
   ok('explains that the season benchmark includes the periods being compared', /season benchmark includes the periods being compared/.test(t5));
-  ok('final build label is 7a1-g5', nj('BUILD_VERSION') === '7a1-g5');
+  ok('final build label is 7a1-g6', nj('BUILD_VERSION') === '7a1-g6');
 
   // ===== Records =====
   n(`Object.assign(SC_ST, { period: '5', custom: null, subject: ${JSON.stringify(someJ)} }); renderScoringChange(); const d = document.getElementById('wiRecords'); d.open = true; d.dispatchEvent(new Event('toggle'));`);

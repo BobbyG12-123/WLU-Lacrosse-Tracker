@@ -18,6 +18,10 @@ What is checked:
 - No number when: the model fails, too few subject shots, too few held-out shots of the session type, a thin or missed from
   or to situation (checked alone, so a rare one can't hide in a group), a missed gap between them, or a share above the
   observed-share check. Every selection gives a finite number with ranges, or no number and a reason.
+- Resulting shots: a targeted case where both categories are common but the combination is absent gives no estimate and
+  lists it; partial support caps the shots and averages only supported ones; a held-fixed field not logged is excluded.
+- The range: the discrepancy part is the larger of the observed miss and chance, and never moves the estimate. Later-session
+  disagreement and the Low/GLE caution sit beside the result, without treating a counted gap as the true effect.
 - Wording, separation from counted results, screen weakness, records, staff-only. No page errors, no network, no writes.
 
 This folder starts with `_`, so GitHub Pages doesn't publish it.
