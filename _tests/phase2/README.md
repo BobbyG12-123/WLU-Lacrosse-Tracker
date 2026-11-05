@@ -20,8 +20,12 @@ What is checked:
 - Wording: historical, not a forecast, not evidence of cause; ranges provisional and not validated; no 95% or confidence
   claim; the average range kept apart from variation in actual goals; "Can't distinguish from no change"; why the numbers
   differ from Scoring Change.
-- No number under 10 located shots, with too few benchmark shots, above the observed-share support check, or when no
-  30+-shot player exists. No range under 6 sessions. No individual earlier-conversion estimate.
+- No number under 10 located shots (for a player, 10 with a teammate benchmark), with too few benchmark shots, above the
+  observed-share support check, or when no 30+-shot player exists. No range under 6 sessions. No individual
+  earlier-conversion estimate.
+- Missing data: a player with no teammate benchmark gets "No estimate", never 0 with a zero-width range. Partial coverage
+  states covered and excluded goals and shots. A missing rate is never 0%: Move Shots withholds full totals and the
+  new-run range, and keeps the moved-shot difference with its scope stated.
 - A longer comparison changes nothing until it's chosen, shows its dates, and can be undone.
 - Records, session-type separation, Fall/Spring, Player View masking. No page errors, no network, no writes.
 
