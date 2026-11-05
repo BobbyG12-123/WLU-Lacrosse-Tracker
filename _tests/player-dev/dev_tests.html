@@ -1,0 +1,316 @@
+<!doctype html>
+<html><head><meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; connect-src 'self'; style-src 'unsafe-inline'; frame-src 'self'; base-uri 'none'; form-action 'none'">
+<script src="guard_offline.js"></script>
+<script src="fake_firestore.js"></script>
+<title>TEST — Player Development (offline, in-memory database only)</title>
+<style>body{font:13px system-ui;margin:16px} iframe{width:48%;height:700px;border:1px solid #999}</style>
+</head><body>
+<h3>Player Development tests: main vs this branch on the same synthetic fixture, in-memory database, no network</h3>
+<iframe id="fOld" src="tracker_main.html"></iframe><iframe id="fNew" src="tracker_branch.html"></iframe>
+<pre id="out">running…</pre>
+<script>
+const Q = new URLSearchParams(location.search), EXPORT = Q.get('export') || 'fixture.json', REAL = Q.get('real') === '1';
+const near = (a, b, e) => Math.abs(a - b) < (e || 1e-9);
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+const T = { results: [], pass: 0, fail: 0 };
+const ok = (name, cond, info) => { console.log('TLOG ' + (cond ? 'ok ' : 'FAIL ') + name + (cond ? '' : ' ' + JSON.stringify(info === undefined ? null : info).slice(0, 200))); T.results.push({ name, ok: !!cond, info: info === undefined ? null : info }); cond ? T.pass++ : T.fail++; };
+async function boot() {
+  const exp = await (await fetch(EXPORT)).json();
+  const frames = { old: document.getElementById('fOld').contentWindow, neu: document.getElementById('fNew').contentWindow };
+  for (const k of Object.keys(frames)) {
+    const w = frames[k];
+    for (let i = 0; i < 60 && !(w.firebase && w.firebase.apps && w.firebase.apps.length && typeof w.init === 'function'); i++) await sleep(300);
+    const fake = makeFakeFirestore(exp.collections);
+    const real = w.firebase.firestore, f = function () { return fake; }; Object.keys(real).forEach(x => { f[x] = real[x]; }); f.FieldValue = real.FieldValue;
+    w.firebase.firestore = f; w.__FAKE = fake;
+    w.init().then(() => { w.__BOOT_DONE = true; }, e => { w.__BOOT_ERR = String(e && e.stack || e); });
+  }
+  for (let i = 0; i < 160 && !(frames.old.__appReady && frames.neu.__appReady); i++) await sleep(500);
+  await sleep(3000);
+  // Pin the season the fixture is in, whatever today's date is.
+  Object.values(frames).forEach(w => { try { w.eval(`navSetGlobal('2027')`); } catch (e) { /* main may differ */ } });
+  return { frames, exp };
+}
+async function run() {
+  const { frames, exp } = await boot();
+  const O = frames.old, N = frames.neu, E = s => N.eval(s);
+  const errs = []; N.addEventListener('error', e => errs.push(String(e.message)));
+  const M = exp.meta || {}; if (!REAL) ok('fixture is synthetic', M.synthetic === true, M);
+  ok('both builds booted', O.__appReady && N.__appReady, [O.__BOOT_ERR || null, N.__BOOT_ERR || null]);
+  // ---- Regression: every analytics number in the snapshot identical ----
+  const snapSrc = await (await fetch('analytics_snapshot.js')).text();
+  const a = JSON.parse(O.eval(snapSrc)), b = JSON.parse(N.eval(snapSrc)), keys = new Set(Object.keys(a).concat(Object.keys(b)));
+  const diff = [...keys].filter(q => JSON.stringify(a[q]) !== JSON.stringify(b[q]));
+  ok('analytics snapshot identical to main', diff.length === 0, { compared: keys.size, diff: diff.slice(0, 10) });
+  // ---- Regression: Reports practice + week pages render the same HTML as main for every period ----
+  const rptHtml = (w, mode) => w.eval(`(() => { const out = {}; goNav('reports'); navPick('rptModePills', '${mode === 'practice' ? 'Practice' : 'Week'}'); rptMode = '${mode}'; rptPlayer = ''; rptGroup = '';
+    const ps = rptPeriods(rptMode, true); ps.forEach(p => { rptKey = p.key; renderReports(); out[p.key] = ['rptScore','rptTeam','rptFullTeam','rptPlayer','rptSheet'].map(id => document.getElementById(id).innerHTML).join('|'); }); return JSON.stringify(out); })()`);
+  for (const mode of ['practice', 'week']) {
+    const ro = JSON.parse(rptHtml(O, mode)), rn = JSON.parse(rptHtml(N, mode));
+    const d = Object.keys(ro).filter(k => ro[k] !== rn[k]);
+    ok(`Reports ${mode} pages identical to main (${Object.keys(ro).length} periods)`, d.length === 0 && Object.keys(ro).length === Object.keys(rn).length, d.slice(0, 5));
+  }
+  // A player's practice report too.
+  const prow = w => w.eval(`(() => { rptMode = 'practice'; navPick('rptModePills','Practice'); const p = rptPeriods('practice', true)[0]; rptKey = p.key; renderReports(); const j = [...document.querySelectorAll('#rptPlayerSelect option')].map(o => o.value).filter(Boolean)[0]; rptPlayer = j; renderReports(); const h = ['rptScore','rptPlayer','rptSheet'].map(id => document.getElementById(id).innerHTML).join('|'); rptPlayer = ''; return h; })()`);
+  ok('Reports practice player report identical to main', prow(O) === prow(N));
+  // ---- Nothing released changed; no simulator came back ----
+  const fnSame = ['scOpenFrom','renderScoringChange','wiCompute','wiMove','wiSwing','wiRange','wmModel','wmCell','wmEstimate','wmCompute','wmSupport','wmProfileOf','wmLater','renderWhatIf','renderModeled','fitXg2','xgForShot','sessionTypeOf','sessionCtxOk'];
+  const fnDiff = fnSame.filter(f => O.eval(f + '.toString()') !== N.eval(f + '.toString()'));
+  ok('the What If tool and the functions it relies on are identical to main', fnDiff.length === 0, fnDiff);
+  const SETSC = `heatSeason = '2027'; NAV_ST.ctx = 'All'; SEASON_PART = 'Full'; Object.assign(SC_ST, { type: 'Practice', barCtx: 'All', askType: false, period: '5', custom: null, subject: 'team', grouping: 'groups', origin: null }); goNav('trends'); renderScoringChange(); document.getElementById('scBody').innerHTML`;
+  ok('Scoring Change with What If renders the same as main', O.eval(SETSC) === N.eval(SETSC));
+  ok('#107’s simulator and Player review did not come back', E(`[typeof devModel, typeof devScenario, typeof devApply, typeof devCell, typeof renderPlayerReview, typeof rptReviewPeriods, typeof devCatKey].every(t => t === 'undefined') && DEV.wi === undefined && !document.getElementById('rptScoreTitle')`) === true);
+  ok('opening Player Development doesn’t fit the What If model', E(`WM_MODEL = null; goNav('develop'); WM_MODEL === null`) === true);
+  await sleep(300);
+  // ---- Session types: the shared definition, adding up to All ----
+  const ty = JSON.parse(E(`(() => { goNav('develop'); NAV_ST.ctx = 'All'; DEV.barCtx = 'All'; DEV.cat = 'All'; DEV.range = 'Full'; DEV.f = {}; DEV.only = null; DEV.j = devPlayers('2027')[0].j; renderDevelop();
+    const pills = [...document.querySelectorAll('#devWrap [data-dev-cat]')].map(b => [b.dataset.devCat, Number(b.textContent.split('·')[1])]);
+    const by = devTeamShots('2027').filter(s => s.shooterJersey === DEV.j), tally = {}; by.forEach(s => { const t = sessionTypeOf(s); tally[t] = (tally[t] || 0) + 1; });
+    const pool = scPool('2027'), allPlayers = devPlayers('2027').every(p => pool.filter(s => s.shooterJersey === p.j).length === devTeamShots('2027').filter(s => s.shooterJersey === p.j).length);
+    return JSON.stringify({ pills, tally, n: by.length, allPlayers, untyped: SCRIM_UNTYPED }); })()`));
+  const tyAll = ty.pills.find(p => p[0] === 'All')[1], tySum = ty.pills.filter(p => p[0] !== 'All').reduce((a, p) => a + p[1], 0);
+  ok('session pills add up to All, with sessionTypeOf’s counts', tyAll === ty.n && tySum === ty.n && ty.pills.filter(p => p[0] !== 'All').every(([t, c]) => (ty.tally[t] || 0) === c), ty);
+  ok('every player’s attempts match the shared Scoring Change pool', ty.allPlayers);
+  ok('the page offers the four shared session types', ['Practice', 'Intra-squad', 'Opponent scrimmage', 'Game'].every(t => ty.pills.some(p => p[0] === t)), ty.pills);
+  const bar = JSON.parse(E(`(() => { navSetGlobal('2027', 'Practice'); const a = DEV.cat, recs = devScope('2027', DEV.range, DEV.cat).every(s => sessionTypeOf(s) === 'Practice'); navSetGlobal('2027', 'All'); const b = DEV.cat; document.querySelector('#devWrap [data-dev-cat="All"]').click(); const c = DEV.cat; return JSON.stringify({ a, recs, b, c }); })()`));
+  ok('the top bar’s Sessions sets the page; All leaves the page’s choice (as in Scoring Change)', bar.a === 'Practice' && bar.recs && bar.b === 'Practice' && bar.c === 'All', bar);
+  if (!REAL) {
+  const prt = JSON.parse(E(`(() => { navSetPart('Fall'); const a = DEV.range, ok = devScope('2027', DEV.range, DEV.cat).every(s => inPart(s, '2027', 'Fall')); navSetPart('Full'); const c = DEV.range; document.querySelector('#devWrap [data-dev-range="Full"]').click(); return JSON.stringify({ a, ok, c, d: DEV.range, title: document.querySelector('#devRecBox .panel-title').textContent }); })()`));
+  ok('the top bar\u2019s Fall/Spring sets the page\u2019s dates the same way', prt.a === 'Fall' && prt.ok && prt.c === 'Fall' && prt.d === 'Full', prt);
+  // ---- Record keys unique ----
+  const ku = JSON.parse(E(`(() => { const l = devTeamShots('2027'), k = new Set(l.map(devKey)); return JSON.stringify([l.length, k.size]); })()`));
+  ok('every attempt has a unique session#shot key', ku[0] === ku[1] && ku[0] > 0, ku);
+  // ---- Clips: confirmed matches only ----
+  const cl = JSON.parse(await N.eval(`(async () => { devClipsInvalidate(); const C = await devLoadClips('2027'); return JSON.stringify({ n: C.map.size, keys: [...C.map.keys()], amb: [...C.amb], unresolved: C.unresolved, sids: C.sids.size, err: C.err }); })()`));
+  ok('clips: entry-id mark and number mark link; double claim flagged with no clip', cl.n === 2 && cl.keys.includes(M.eid_mark) && cl.keys.includes(M.num_mark) && cl.amb.length === 1 && cl.amb[0] === M.double_claim && !cl.err, cl);
+  const fc = exp.collections.app['filmcheck_2026-10-21'];
+  const st25 = Object.keys(fc).find(k => k.startsWith('st_') && JSON.parse(fc[k]).s === 'm'), lastId = Number(M.double_claim.split('#')[1]);
+  // With the wrong mark removed (in memory), the remaining one links its own clip.
+  const one = JSON.parse(await N.eval(`(async () => { const k = 'app/filmcheck_2026-10-21', w = __FAKE.__writes.length; await DB.doc(k).set({ ${JSON.stringify(st25)}: firebase.firestore.FieldValue.delete() }, { merge: true }); devClipsInvalidate(); const C = await devLoadClips('2027'); const c = C.map.get(${JSON.stringify(M.double_claim)});
+    const r = { linked: !!c, fileId: c ? c.fileId : null, amb: C.amb.size }; await DB.doc(k).set({ ${JSON.stringify(st25)}: ${JSON.stringify(fc[st25])} }, { merge: true }); devClipsInvalidate(); await devLoadClips('2027'); __FAKE.__writes.splice(w); return JSON.stringify(r); })()`));
+  ok('a single confirmed mark links its own clip to that session’s shot', one.linked && one.fileId === M.clip24_file && one.amb === 0, one);
+  // Film Check fix: a shot logged from a clip ('n') must not be offered to a later clip. Main offers it (the bug).
+  const st24 = Object.keys(fc).find(k => k.startsWith('st_') && JSON.parse(fc[k]).s === 'n').slice(3);
+  const offer = w => JSON.parse(w.eval(`(() => { const doc = ${JSON.stringify({ drafts: fc.drafts })}; const keep = Object.assign({}, FC); Object.assign(FC, { key: '2026-10-21', date: '2026-10-21', context: 'Practice', opponent: null, drafts: fcValidDrafts(JSON.parse(doc.drafts)), st: { ${JSON.stringify(st24)}: { s: 'n', id: ${lastId} } } });
+    const plan = fcPlan(), offered = plan.items.filter(it => it.offer && it.offer.id === ${lastId}).map(it => it.d.id); Object.assign(FC, keep); return JSON.stringify(offered); })()`));
+  const oOld = offer(O), oNew = offer(N);
+  ok('Film Check: the fix already on main still holds here (a shot logged from a clip isn\u2019t offered to another)', oOld.length === 0 && oNew.length === 0, { main: oOld, branch: oNew });
+  ok('Film Check: fcPlan is main\u2019s, not re-patched', O.eval('fcPlan.toString()') === N.eval('fcPlan.toString()'));
+  // Same shot number in another session must not pick up the clip.
+  const iso = JSON.parse(E(`(() => { const s = devTeamShots('2027').find(x => sessKey(x) !== '2026-10-21_practice' && sessKey(x) !== '2026-10-19_practice' && x.id === ${lastId - 1000} || (sessKey(x) === '2026-10-14_practice')); return JSON.stringify(devClipCell(s).includes('Clip') ? 'LEAK' : 'ok'); })()`));
+  ok('no clip on shots outside the marked session', iso === 'ok');
+  // A mark whose shot number belongs to another session never links (numbers are only looked up in the clip's own session).
+  const xs = JSON.parse(await N.eval(`(async () => { const w = __FAKE.__writes.length, other = devTeamShots('2027').find(x => sessKey(x) === '2026-10-14_practice'); const doc = (await DB.doc('app/filmcheck_2026-10-19').get()).data(); const drafts = JSON.parse(doc.drafts); const free = drafts.find(d => !doc['st_' + d.id]);
+    await DB.doc('app/filmcheck_2026-10-19').set({ ['st_' + free.id]: JSON.stringify({ s: 'm', id: other.id }) }, { merge: true }); devClipsInvalidate(); const C = await devLoadClips('2027'); const r = { linkedOther: C.map.has(devKey(other)), unresolved: C.unresolved };
+    await DB.doc('app/filmcheck_2026-10-19').set({ ['st_' + free.id]: firebase.firestore.FieldValue.delete() }, { merge: true }); devClipsInvalidate(); await devLoadClips('2027'); __FAKE.__writes.splice(w); return JSON.stringify(r); })()`));
+  ok('a mark naming another session’s shot number links nothing', !xs.linkedOther && xs.unresolved === 1, xs);
+  // Ambiguity: two marks on one shot -> no clip.
+  const amb = JSON.parse(await N.eval(`(async () => { const d = __FAKE; const k = 'filmcheck_2026-10-19'; const doc = (await DB.doc('app/' + k).get()).data(); const st = Object.keys(doc).filter(x => x.startsWith('st_')); const one = JSON.parse(doc[st.find(x => !JSON.parse(doc[x]).eid)]); const drafts = JSON.parse(doc.drafts); const other = drafts.find(x => x.kind === 'shot' && !st.includes('st_' + x.id));
+    const saved = __FAKE.__writes.length; await DB.doc('app/' + k).set({ ['st_' + other.id]: JSON.stringify(one) }, { merge: true }); devClipsInvalidate(); const C = await devLoadClips('2027'); const key = '2026-10-19_practice#' + one.id; const r = { amb: C.amb.has(key), linked: C.map.has(key) };
+    await DB.doc('app/' + k).set({ ['st_' + other.id]: firebase.firestore.FieldValue.delete() }, { merge: true }); devClipsInvalidate(); await devLoadClips('2027'); __FAKE.__writes.splice(saved); return JSON.stringify(r); })()`));
+  ok('a shot claimed by two clips gets no clip', amb.amb && !amb.linked, amb);
+  // ---- Page renders ----
+  E(`DEV.recOpen = true; goNav('develop')`); await sleep(400);
+  const pg = JSON.parse(E(`JSON.stringify({ title: document.querySelector('#develView .panel-title') && document.querySelector('#develView .panel-title').textContent, hasExplorer: !!document.getElementById('devByWrap'), recRows: document.querySelectorAll('#devRecWrap tbody tr').length, j: DEV.j, mine: devScope('2027', DEV.range, DEV.cat).filter(s => s.shooterJersey === DEV.j).length })`));
+  ok('Player Development page renders with his attempts listed', pg.hasExplorer && pg.recRows === pg.mine && pg.mine > 0, pg);
+  // Breakdown rows add up to the selection, for every dimension; benchmark excludes him.
+  const bd = JSON.parse(E(`(() => { const out = []; const xm = xgModelFor('2027'), team = devScope('2027','Full','All'), mine = team.filter(s => s.shooterJersey === DEV.j), rest = team.filter(s => s.shooterJersey !== DEV.j);
+    DEV_DIMS.forEach(d => { const vals = d.opts(team).concat([DEV_NONE]); const n = vals.reduce((a, v) => a + mine.filter(s => v === DEV_NONE ? !d.of(s) : d.of(s) === v).length, 0); out.push([d.k, n, mine.length]); });
+    return JSON.stringify({ out, restHasHim: rest.some(s => s.shooterJersey === DEV.j) }); })()`));
+  ok('each breakdown covers every attempt exactly once (Not logged included)', bd.out.every(([, n, m]) => n === m), bd.out);
+  ok('benchmark (rest of the team) excludes him', !bd.restHasHim);
+  // Filter pill click narrows; Not logged works.
+  const fl = JSON.parse(E(`(() => { const b = document.querySelector('#devWrap [data-dev-f="pressure|Open"]'); b.click(); const n1 = document.querySelectorAll('#devRecWrap tbody tr').length; const want = devScope('2027', DEV.range, DEV.cat).filter(s => s.shooterJersey === DEV.j && s.contestLevel === 'Open').length;
+    document.querySelector('#devWrap [data-dev-f="pressure|${'__none__'}"]').click(); const n2 = document.querySelectorAll('#devRecWrap tbody tr').length; const want2 = devScope('2027', DEV.range, DEV.cat).filter(s => s.shooterJersey === DEV.j && !['Open','Light','Heavy'].includes(s.contestLevel)).length;
+    document.querySelector('#devWrap [data-dev-act="clear"]').click(); return JSON.stringify([n1, want, n2, want2]); })()`));
+  ok('filters: Open and Not logged pick the right attempts', fl[0] === fl[1] && fl[2] === fl[3], fl);
+  // ---- Finding 3: Film Check corrections refresh the clip matches ----
+  const cc = JSON.parse(await N.eval(`(async () => { const s = ms => new Promise(r => setTimeout(r, ms)); const out = {}; const k = ${JSON.stringify(M.double_claim)}, w0 = __FAKE.__writes.length;
+    devClipsInvalidate(); await devLoadClips('2027'); out.before = { amb: DEV.clips.amb.has(k), linked: DEV.clips.map.has(k) };
+    // (a) The coach fixes it in Film Check: clear the wrong mark through Film Check's own save.
+    fcOpen('2026-10-21'); await s(300); await fcStatusWrite(${JSON.stringify(st25.slice(3))}, null); out.dropped = DEV.clips === null;
+    if (FC.unsub) { FC.unsub(); FC.unsub = null; }
+    const until = async () => { for (let i = 0; i < 40 && !(DEV.clips && DEV.clips.season === '2027'); i++) await s(100); return { busy: DEV.clipsBusy, gen: DEV.clipGen, wait: (DEV.clipsWait || []).length, loaded: !!DEV.clips }; };
+    goNav('develop'); DEV.j = '20'; renderDevelop(); await s(400); out.state = await until();
+    const fixed = devTeamShots('2027').find(x => devKey(x) === k); out.cell = !!fixed && devClipCell(fixed).includes(${JSON.stringify(M.clip24_file)});
+    // and on screen: open that shooter's page and look at his attempts list
+    DEV.j = fixed.shooterJersey; DEV.f = {}; DEV.only = null; renderDevelop(); await s(300); out.onScreen = document.getElementById('devRecWrap').innerHTML.includes(${JSON.stringify(M.clip24_file)}); DEV.j = '20'; renderDevelop(); out.after = { amb: DEV.clips && DEV.clips.amb.has(k), linked: DEV.clips && DEV.clips.map.has(k) };
+    // (b) Another coach puts the wrong mark back while this page is closed; opening the page reads it fresh.
+    goNav('reports'); await DB.doc('app/filmcheck_2026-10-21').set({ ${JSON.stringify(st25)}: ${JSON.stringify(fc[st25])} }, { merge: true }); goNav('develop'); await until(); out.reopen = { amb: DEV.clips && DEV.clips.amb.has(k) };
+    // (c) A load overtaken by a change is thrown away.
+    devClipsInvalidate(); const p = devLoadClips('2027'); devClipsInvalidate(); const r = await p; out.stale = { returned: r, kept: DEV.clips };
+    // (d) Re-check link.
+    await devLoadClips('2027'); const btn = document.querySelector('#devWrap [data-dev-act="clips-recheck"]'); out.recheckBtn = !!btn; if (btn) btn.click(); out.recheckDropped = DEV.clips === null || DEV.clipsBusy;
+    await s(500); __FAKE.__writes.splice(w0); return JSON.stringify(out); })()`));
+  ok('clip cache: Film Check’s own save drops the cached matches', cc.dropped, cc);
+  ok('clip cache: after the fix the page shows the clip, no duplicate warning', cc.before.amb && !cc.before.linked && cc.after.linked && !cc.after.amb && cc.cell && cc.onScreen, cc);
+  ok('clip cache: a change made elsewhere shows when the page is opened again', cc.reopen.amb, cc.reopen);
+  ok('clip cache: a load overtaken by a change is discarded', cc.stale.returned === null && cc.stale.kept === null, cc.stale);
+  ok('clip cache: Re-check link reloads', cc.recheckBtn && cc.recheckDropped, cc);
+  // ---- Conclusions: in-memory database only ----
+  const w0 = N.__FAKE.__writes.length;
+  const nt = JSON.parse(await N.eval(`(async () => { const s = ms => new Promise(r => setTimeout(r, ms)); const q = x => document.querySelector('#devWrap ' + x);
+    document.querySelector('#devWrap [data-dev-f="dodge|Off the dodge"]').click();
+    q('[data-dev-act="note-new"]').click(); const ta = q('textarea[data-dev-text]'); ta.value = 'TEST conclusion: dodges <b>going</b> well'; ta.dispatchEvent(new Event('input', { bubbles: true }));
+    q('[data-dev-area="skill"]').click(); q('[data-dev-act="note-save"]').click(); await s(800);
+    const doc = (await DB.doc('app/devnotes_2027').get()).data() || {}; const ids = Object.keys(doc).filter(k => k.startsWith('n_')); const saved = ids.length ? JSON.parse(doc[ids[0]]) : null;
+    const listed = document.querySelectorAll('#devNotesWrap .dev-note').length;
+    // Edit.
+    const id = ids[0].slice(2); document.querySelector('#devWrap [data-dev-act="note-edit"][data-id="' + id + '"]').click(); const ta2 = q('textarea[data-dev-text]'); ta2.value = 'TEST edited'; ta2.dispatchEvent(new Event('input', { bubbles: true })); q('[data-dev-act="note-save"]').click(); await s(800);
+    const after = JSON.parse((await DB.doc('app/devnotes_2027').get()).data()['n_' + id]);
+    // Conflict: another coach edits while this one has it open.
+    document.querySelector('#devWrap [data-dev-act="note-edit"][data-id="' + id + '"]').click(); await DB.doc('app/devnotes_2027').set({ ['n_' + id]: JSON.stringify(Object.assign({}, after, { text: 'OTHER COACH', ed: '2099-01-01T00:00:00Z' })) }, { merge: true }); await s(200);
+    const ta3 = q('textarea[data-dev-text]'); ta3.value = 'TEST mine'; ta3.dispatchEvent(new Event('input', { bubbles: true })); q('[data-dev-act="note-save"]').click(); await s(800);
+    const conf = JSON.parse((await DB.doc('app/devnotes_2027').get()).data()['n_' + id]).text; const msg = (q('[data-dev-msg]') || {}).textContent;
+    q('[data-dev-act="note-cancel"]').click();
+    // Show these records.
+    document.querySelector('#devWrap [data-dev-act="note-show"][data-id="' + id + '"]').click(); await s(200); const shown = DEV.only ? DEV.only.size : -1, rows = document.querySelectorAll('#devRecWrap tbody tr').length;
+    document.querySelector('#devWrap [data-dev-act="only-clear"]').click();
+    // Delete (two taps).
+    document.querySelector('#devWrap [data-dev-act="note-del"][data-id="' + id + '"]').click(); document.querySelector('#devWrap [data-dev-act="note-del"][data-id="' + id + '"]').click(); await s(800);
+    const gone = !((await DB.doc('app/devnotes_2027').get()).data() || {})['n_' + id];
+    return JSON.stringify({ saved, listed, edited: [after.text, !!after.ed, after.at === saved.at], conflictKept: conf, msg, shown, rows, gone, evN: saved && saved.ev.n, evKeys: saved && saved.ev.recs.length }); })()`));
+  ok('conclusion saved with its evidence (records + filters), text cleaned', nt.saved && nt.saved.text === 'TEST conclusion: dodges bgoing/b well' && nt.saved.area === 'skill' && nt.evN === nt.evKeys && nt.evN > 0 && nt.saved.ev.recs.every(r => r.length === 3 && r[2]) && nt.saved.ev.f.dodge === 'Off the dodge', nt.saved);
+  ok('conclusion listed on the page', nt.listed >= 1, nt.listed);
+  ok('edit keeps author/date, sets edited', nt.edited[0] === 'TEST edited' && nt.edited[1] && nt.edited[2], nt.edited);
+  ok('edit refused when another coach changed it', nt.conflictKept === 'OTHER COACH' && /Another coach/.test(nt.msg || ''), nt.msg);
+  ok('“Show these records” opens exactly the saved records', nt.shown === nt.evKeys && nt.rows === nt.evKeys, [nt.shown, nt.rows]);
+  ok('delete removes it', nt.gone);
+  const wr = N.__FAKE.__writes.slice(w0);
+  ok('the feature writes only app/devnotes_<season> (in-memory)', wr.length > 0 && wr.every(x => x.coll === 'app' && x.id === 'devnotes_2027'), wr.map(x => x.id + ':' + x.keys.join(',')).slice(0, 8));
+
+  // ---- Finding 2: every record is kept, with stable ids, and later changes are flagged ----
+  const big = JSON.parse(await N.eval(`(async () => { const s = ms => new Promise(r => setTimeout(r, ms)); const q = x => document.querySelector('#devWrap ' + x);
+    goNav('develop'); DEV.j = '20'; DEV.range = 'Full'; DEV.cat = 'All'; DEV.f = {}; DEV.only = null; renderDevelop();
+    q('[data-dev-act="note-new"]').click(); const ta = q('textarea[data-dev-text]'); ta.value = 'TEST all of his attempts'; ta.dispatchEvent(new Event('input', { bubbles: true })); q('[data-dev-act="note-save"]').click(); await s(800);
+    const doc = (await DB.doc('app/devnotes_2027').get()).data(); const id = Object.keys(doc).filter(k => k.startsWith('n_')).map(k => k.slice(2)).find(i => JSON.parse(doc['n_' + i]).text === 'TEST all of his attempts'); const n = JSON.parse(doc['n_' + id]);
+    const out = { n: n.ev.n, recs: n.ev.recs.length, withEid: n.ev.recs.filter(r => r[1]).length };
+    q('[data-dev-act="note-show"][data-id="' + id + '"]').click(); await s(200); out.shown = DEV.only.size; out.rows = document.querySelectorAll('#devRecWrap tbody tr').length; q('[data-dev-act="only-clear"]').click();
+    // Change the log underneath it (in memory): edit one shot, renumber one that has an entry id, delete one without.
+    const mine = devTeamShots('2027').filter(x => x.shooterJersey === '20'); const ed = mine[0], rn = mine.find(x => eidOf(x) && x !== ed), dl = mine.find(x => !eidOf(x) && x !== ed);
+    const tup = o => JSON.stringify(objToTuple(o)); const sd = x => 'sessions/' + sessKey(x);
+    await DB.doc(sd(ed)).set({ ['s_' + ed.id]: tup(Object.assign({}, ed, { contestLevel: ed.contestLevel === 'Open' ? 'Heavy' : 'Open' })) }, { merge: true });
+    const newId = 99001; await DB.doc(sd(rn)).set({ ['s_' + rn.id]: firebase.firestore.FieldValue.delete(), ['s_' + newId]: tup(Object.assign({}, rn, { id: newId })) }, { merge: true });
+    await DB.doc(sd(dl)).set({ ['s_' + dl.id]: firebase.firestore.FieldValue.delete() }, { merge: true }); await s(1200);
+    const R = devResolveRecs(devNoteClean(n).ev.recs, '2027'); out.res = { found: R.found.length, edited: R.edited, renumbered: R.renumbered, gone: R.gone, followed: R.found.some(x => x.id === newId) };
+    renderDevelop(); const t = [...document.querySelectorAll('#devNotesWrap .dev-note')].find(d => d.textContent.includes('TEST all of his attempts')); out.line = t ? t.textContent.slice(0, 900) : null;
+    q('[data-dev-act="note-show"][data-id="' + id + '"]').click(); await s(200); out.shownAfter = DEV.only.size; out.banner = (document.querySelector('#devWrap .model-note') || {}).textContent || ''; q('[data-dev-act="only-clear"]').click();
+    return JSON.stringify(out); })()`));
+  ok('evidence: all 450 records saved (no 400 cap), with entry ids where shots have them', big.n === big.recs && big.recs === 450 && big.withEid > 0, big);
+  ok('evidence: “Show these records” reproduces all of them', big.shown === 450 && big.rows === 450, [big.shown, big.rows]);
+  ok('evidence: edit, renumber (followed by entry id) and delete are each detected', big.res.edited === 1 && big.res.renumbered === 1 && big.res.followed && big.res.gone === 1 && big.res.found === 449, big.res);
+  ok('evidence: the conclusion says it changed since it was written', big.line && /Changed since it was written/.test(big.line) && /1 edited/.test(big.line) && /1 renumbered/.test(big.line) && /1 deleted/.test(big.line), big.line);
+  ok('evidence: showing the records after the changes includes the renumbered shot and notes the rest', big.shownAfter === 449 && /edited since/.test(big.banner) && /no longer in the log/.test(big.banner), [big.shownAfter, big.banner]);
+  // ---- Explorer numbers ----
+  const ex = JSON.parse(E(`(() => { goNav('develop'); DEV.j = '20'; DEV.range = 'Full'; DEV.cat = 'All'; DEV.only = null; DEV.f = { pressure: 'Open' }; renderDevelop();
+    const tiles = [...document.querySelectorAll('#devWrap .view-tiles > *')].map(t => t.textContent.replace(/\\s+/g, ' ').trim());
+    const team = devTeamShots('2027').filter(s => s.contestLevel === 'Open'), me = team.filter(s => s.shooterJersey === '20'), rest = team.filter(s => s.shooterJersey !== '20'), g = l => l.filter(s => s.goal === 1).length, xm = xgModelFor('2027'), p100 = 100 * (g(me) - xgSum(me, xm)) / me.length, rp100 = 100 * (g(rest) - xgSum(rest, xm)) / rest.length;
+    DEV.f = { pressure: 'Open', hand: 'Left' }; renderDevelop(); const none = [...document.querySelectorAll('#devWrap .view-tiles > *')].map(t => t.textContent.replace(/\\s+/g, ' ').trim()); DEV.f = {}; renderDevelop();
+    return JSON.stringify({ tiles, n: me.length, g: g(me), p100, rn: rest.length, rg: g(rest), rp100, none, noneN: devTeamShots('2027').filter(s => s.shooterJersey === '20' && s.contestLevel === 'Open' && getHandedness(s) === 'Left').length }); })()`));
+  const sg = v => (v >= 0 ? '+' : '−') + Math.abs(v).toFixed(1);
+  ok('Explorer tiles equal a separate hand count (attempts, goals, per 100, named benchmark with n)', ex.tiles[0].includes(String(ex.n)) && ex.tiles[1].includes(String(ex.g)) && ex.tiles[2].includes(sg(ex.p100)) && ex.tiles[3].includes(`${ex.rg}/${ex.rn}`) && ex.tiles[3].includes(sg(ex.rp100)) && /Rest of the team, same filters/.test(ex.tiles[3]), ex);
+  ok('Explorer: a filter with no attempts shows a dash, not a zero', ex.noneN === 0 && ex.none[1].includes('—') && ex.none[2].includes('—'), ex.none);
+  // ---- What If: the page links to the shared tool ----
+  const lk = JSON.parse(await N.eval(`(async () => { const s = ms => new Promise(r => setTimeout(r, ms)); WM_MODEL = null; goNav('develop'); DEV.j = '20'; DEV.cat = 'Practice'; DEV.range = 'Fall'; DEV.f = { pressure: 'Open' }; renderDevelop();
+    document.querySelector('#devWrap [data-dev-act="whatif"]').click(); await s(200); const r = { nav: NAV_ST.cur, subject: SC_ST.subject, type: SC_ST.type, period: SC_ST.period, ask: SC_ST.askType, origin: (document.querySelector('#scBody .sc-origin') || {}).textContent || '', wiSubject: WI_LAST && WI_LAST.subject, model: WM_MODEL === null };
+    goNav('develop'); DEV.cat = 'All'; DEV.range = 'Full'; DEV.f = {}; renderDevelop(); document.querySelector('#devWrap [data-dev-act="whatif"]').click(); await s(200); r.allAsk = SC_ST.askType; r.allType = SC_ST.type; return JSON.stringify(r); })()`));
+  ok('What If opens for this player and session type, on the tool’s own default periods', lk.subject === '20' && lk.wiSubject === '20' && lk.type === 'Practice' && lk.period === '5' && !lk.ask && /Player Development/.test(lk.origin), lk);
+  ok('it says the Explorer’s dates and filters don’t carry over', /don.t carry over/.test(lk.origin), lk.origin);
+  ok('from All sessions it asks for a type, as other links do', lk.allAsk === true && lk.allType === null, lk);
+  ok('following the link doesn’t fit the model until a coach opens the modeled block', lk.model === true, lk);
+  // ---- Saving a What If result with a conclusion ----
+  const w1 = N.__FAKE.__writes.length;
+  const att = JSON.parse(await N.eval(`(async () => { const s = ms => new Promise(r => setTimeout(r, ms)), q = x => document.querySelector('#devWrap ' + x), out = {};
+    const openFor = () => { Object.assign(SC_ST, { type: 'Practice', askType: false, barCtx: offCtx(), subject: '20', grouping: 'groups', period: '5', custom: null, origin: null }); goNav('trends'); renderScoringChange(); };
+    openFor(); WM_ST.open = false; Object.assign(WI_ST, { from: null, to: null, n: 0 });
+    goNav('develop'); DEV.j = '20'; DEV.cat = 'Practice'; DEV.range = 'Full'; DEV.f = {}; DEV.only = null; DEV.edit = null; renderDevelop();
+    q('[data-dev-act="note-new"]').click(); out.noneOffered = devWhatIfResults('20', '2027').length; out.noneText = /None to save yet/.test(document.getElementById('devNotesWrap').textContent);
+    // A real Move Shots result from the shared tool: the first pair that gives a number.
+    openFor(); const keys = WI_LAST.keys; let pick = null; for (const f of keys) for (const t of keys) { if (f === t || pick) continue; const c = WI_LAST.b.cells[f].n; if (!c) continue; const M = wiCompute(WI_LAST, { from: f, to: t, n: 1 }).move; if (M.d !== undefined) pick = { from: f, to: t, n: 1 }; }
+    out.pick = pick; Object.assign(WI_ST, pick); renderWhatIf(); const M = wiCompute(WI_LAST, pick).move; out.toolD = M.d; out.toolLo = M.range.lo;
+    // A real modeled result too, if the synthetic data gives one.
+    WM_ST.open = true; let mp = null; for (const lv of WM_LEVERS) { const vals = lv.k === 'loc' ? WI_LAST.keys : lv.opts; for (const f of vals) for (const t of vals) { if (f === t || mp) continue; const X = wmCompute(WI_LAST, { lever: lv.k, from: f, to: t, n: 1 }).res; if (X.est) mp = { lever: lv.k, from: f, to: t, n: 1, d: X.d, warnDisagree: !!(X.later && X.later.material), low: !!(X.lowCaution && X.lowCaution.length) }; } }
+    out.mp = mp; if (mp) Object.assign(WM_ST, { lever: mp.lever, from: mp.from, to: mp.to, n: 1 }); renderModeled();
+    goNav('develop'); await s(100); out.form = !!q('textarea[data-dev-text]'); const opts = [...document.querySelectorAll('#devWrap [data-dev-wiuse]')].map(b => b.textContent); out.opts = opts;
+    const ta = q('textarea[data-dev-text]'); ta.value = 'TEST with an estimate'; ta.dispatchEvent(new Event('input', { bubbles: true }));
+    q('[data-dev-wiuse="' + (mp ? 1 : 0) + '"]').click(); q('input[data-dev-shared]').checked = true; q('input[data-dev-shared]').dispatchEvent(new Event('change', { bubbles: true })); q('[data-dev-act="note-save"]').click(); await s(800);
+    const doc = (await DB.doc('app/devnotes_2027').get()).data(), id = Object.keys(doc).filter(k => k.startsWith('n_')).map(k => k.slice(2)).find(i => JSON.parse(doc['n_' + i]).text === 'TEST with an estimate'), n = JSON.parse(doc['n_' + id]);
+    out.id = id; out.sc = n.sc; out.shared = n.shared; const card = [...document.querySelectorAll('#devNotesWrap .dev-note')].find(d => d.textContent.includes('TEST with an estimate')); out.card = card.textContent.replace(/\\s+/g, ' ');
+    // Re-open: same result, computed by the tool.
+    Object.assign(WM_ST, { open: false, lever: null, from: null, to: null, n: 0 }); Object.assign(WI_ST, { from: null, to: null, n: 0 });
+    card.querySelector('[data-dev-act="note-whatif"]').click(); await s(250); out.reopen = { nav: NAV_ST.cur, subject: SC_ST.subject, type: SC_ST.type, period: SC_ST.period, custom: SC_ST.custom, wm: Object.assign({}, WM_ST), wi: Object.assign({}, WI_ST), dNow: n.sc.kind === 'modeled' ? (WM_LAST && WM_LAST.d) : wiCompute(WI_LAST, WI_ST).move.d, origin: (document.querySelector('#scBody .sc-origin') || {}).textContent || '' };
+    // Another player's What If is never offered; a "No estimate" move can't be saved.
+    out.otherOffered = devWhatIfResults('19', '2027').length;
+    Object.assign(WI_ST, { from: pick.from, to: pick.to, n: 0 }); WM_ST.open = false; out.idleOffered = devWhatIfResults('20', '2027').length;
+    return JSON.stringify(out); })()`));
+  ok('no What If result yet: nothing to save, and it says how', att.noneOffered === 0 && att.noneText, att);
+  ok('the saved estimate is the shared tool’s own number, with its range', att.sc && (att.mp ? near(att.sc.d, att.mp.d) && att.sc.kind === 'modeled' : near(att.sc.d, att.toolD) && att.sc.kind === 'counted'), { sc: att.sc, mp: att.mp, tool: att.toolD });
+  ok('a modeled result was available to test (real tool output, not a stub)', !!att.mp, att.opts);
+  ok('the conclusion separates the coach’s read, what was observed and the estimate', /Coach.s conclusion:/.test(att.card) && /Observed:/.test(att.card) && /Estimate \(What If/.test(att.card) && /not a forecast/.test(att.card), att.card);
+  ok('re-open returns to the same move and periods, and the tool recomputes the same number', att.reopen.nav === 'trends' && att.reopen.subject === '20' && att.reopen.type === 'Practice' && att.reopen.period === 'custom' && att.reopen.custom.bTo === att.sc.dates.bTo && near(att.reopen.dNow, att.sc.d) && /coaching conclusion/.test(att.reopen.origin), att.reopen);
+  ok('another player’s What If isn’t offered; a move with no estimate can’t be saved', att.otherOffered === 0 && att.idleOffered === 0, att);
+  // Hostile text in a saved estimate can't reach the page as markup.
+  const xs2 = JSON.parse(await N.eval(`(async () => { const s = ms => new Promise(r => setTimeout(r, ms)), bad = '<img src=x onerror=window.__XSS=1>'; goNav('develop'); DEV.j = '20'; renderDevelop();
+    const base = { j: '20', text: 'TEST hostile', area: 'other', shared: false, by: bad, at: '2026-11-05T00:00:00Z', ed: '', ev: { range: 'Full', cat: 'All', f: { zone: bad }, recs: [], n: 0, g: 0, xg: 0 }, sc: { kind: 'counted', lever: 'loc', from: bad, to: bad, n: 1, d: 1, per100: 1, N: 10, lo: 0, hi: 2, type: bad, dates: {}, saved: '2026-11-05', warn: [bad] } };
+    await DB.doc('app/devnotes_2027').set({ n_TESThostile: JSON.stringify(base) }, { merge: true }); await s(300); const imgs = document.querySelectorAll('#devNotesWrap img').length, xss = !!window.__XSS, shown = document.getElementById('devNotesWrap').textContent.includes('TEST hostile');
+    await DB.doc('app/devnotes_2027').set({ n_TESThostile: firebase.firestore.FieldValue.delete() }, { merge: true }); await s(200); return JSON.stringify({ imgs, xss, shown }); })()`));
+  ok('saved text can’t inject markup', xs2.shown && xs2.imgs === 0 && !xs2.xss, xs2);
+  // Zero attempts: refused, because a conclusion must trace to records.
+  const z0 = JSON.parse(await N.eval(`(async () => { const s = ms => new Promise(r => setTimeout(r, ms)), q = x => document.querySelector('#devWrap ' + x); goNav('develop'); DEV.j = '20'; DEV.cat = 'All'; DEV.f = { pressure: 'Open', hand: 'Left' }; DEV.edit = null; DEV.only = null; renderDevelop(); const n0 = Object.keys((await DB.doc('app/devnotes_2027').get()).data() || {}).length;
+    q('[data-dev-act="note-new"]').click(); const ta = q('textarea[data-dev-text]'); ta.value = 'TEST no records'; ta.dispatchEvent(new Event('input', { bubbles: true })); q('[data-dev-act="note-save"]').click(); await s(400); const msg = q('[data-dev-msg]').textContent, n1 = Object.keys((await DB.doc('app/devnotes_2027').get()).data() || {}).length; q('[data-dev-act="note-cancel"]').click(); DEV.f = {}; renderDevelop(); return JSON.stringify({ msg, same: n0 === n1 }); })()`));
+  ok('a conclusion with no attempts behind it is refused', z0.same && /at least one attempt/.test(z0.msg), z0);
+  // Backups include conclusions.
+  const ex2 = JSON.parse(await N.eval(`(async () => { const o = await exportAllDataCollect('test'); return JSON.stringify({ has: !!o.collections.app.devnotes_2027 }); })()`));
+  ok('Export All Data includes the conclusions', ex2.has, ex2);
+  const wr1 = N.__FAKE.__writes.slice(w1).filter(x => !(x.coll === 'app' && x.id === 'devnotes_2027'));
+  ok('saving and re-opening What If results writes nothing else', wr1.length === 0, wr1.map(x => x.coll + '/' + x.id));
+  // ---- Player View ----
+  const pv = JSON.parse(await N.eval(`(async () => { const s = ms => new Promise(r => setTimeout(r, ms)); const j = '20', name = nameFor(j, '2027');
+    const base = { j, area: 'selection', by: 'TEST', at: '2026-11-02T00:00:00Z', ed: '', ev: { range: 'Full', cat: 'All', f: {}, recs: [], n: 0, g: 0, xg: 0 }, sc: null };
+    await DB.doc('app/devnotes_2027').set({ n_TESTshared1: JSON.stringify(Object.assign({}, base, { text: 'SHARED one', shared: true })), n_TESTstaff1: JSON.stringify(Object.assign({}, base, { text: 'STAFF one', shared: false })) }, { merge: true }); await s(300);
+    pmPickerOpen(); await s(100); const b = [...document.querySelectorAll('#pmPickerList .pm-pick')].find(x => x.textContent.includes(name)); if (!b) return JSON.stringify({ err: 'no picker button for ' + name }); b.click(); await s(400);
+    goNav('develop'); await s(500);
+    const wrap = document.getElementById('devNotesWrap'), r = { pm: !!PLAYER_MODE, j: DEV.j, picker: !!document.querySelector('#devWrap .pf-pick'), shared: wrap.textContent.includes('SHARED one'), staff: wrap.textContent.includes('STAFF one'), edit: !!document.querySelector('#devWrap [data-dev-act="note-edit"]'), neu: !!document.querySelector('#devWrap [data-dev-act="note-new"]'), recRows: document.querySelectorAll('#devRecWrap tbody tr').length, mine: devScope('2027', DEV.range, DEV.cat).filter(x => x.shooterJersey === j).length, open: !!document.querySelector('#devRecWrap [data-scopen]'), estShown: wrap.textContent.includes('TEST with an estimate'), estLine: /Estimate \\(What If/.test(wrap.textContent), estBtn: !!document.querySelector('#devWrap [data-dev-act="note-whatif"]'), model: WM_ST.open && !!document.querySelector('#scWm .wm-result') };
+    const others = (ROSTERS['2027'] || []).map(x => x.name).filter(n => n && n !== name && !pmHas(n)); r.otherNames = others.filter(n => document.getElementById('develView').textContent.includes(n));
+    r.wiLink = !!document.querySelector('#devWrap [data-dev-act="whatif"]');
+    pmExit(); await s(300); r.after = !!PLAYER_MODE;
+    await DB.doc('app/devnotes_2027').set({ n_TESTshared1: firebase.firestore.FieldValue.delete(), n_TESTstaff1: firebase.firestore.FieldValue.delete() }, { merge: true });
+    return JSON.stringify(r); })()`));
+  ok('Player View: locked to him, no picker, only his attempts, no Log editor button', pv.pm && pv.j === '20' && !pv.picker && pv.recRows === pv.mine && !pv.open, pv);
+  ok('Player View: shared conclusions only, no editing', pv.shared && !pv.staff && !pv.edit && !pv.neu, pv);
+  ok('Player View: a shared conclusion shows without its What If estimate', pv.estShown && !pv.estLine && !pv.estBtn, pv);
+  ok('Player View: no teammate names', !pv.otherNames.length, pv.otherNames);
+  ok('Player View: no What If link on this page (staff only, like its estimates)', pv.wiLink === false, pv.wiLink);
+  // Unchanged after all that.
+
+  }
+  // ---- Real backup, read-only: the situations the fixture stands in for ----
+  if (REAL) {
+    const w = N.__FAKE.__writes.length;
+    const rr = JSON.parse(await N.eval(`(async () => { const s = ms => new Promise(r => setTimeout(r, ms)), team = devTeamShots('2027'), out = { n: team.length, types: {} }; team.forEach(x => { const t = sessionTypeOf(x); out.types[t] = (out.types[t] || 0) + 1; });
+      devClipsInvalidate(); const C = await devLoadClips('2027'); out.confirmed = C.map.size; out.amb = [...C.amb]; out.unresolved = C.unresolved;
+      const ps = devPlayers('2027'); out.players = ps.length; out.cover = true; out.errs = 0; goNav('develop');
+      for (const p of ps) { DEV.j = p.j; DEV.cat = 'All'; DEV.range = 'Full'; DEV.f = {}; DEV.only = null; renderDevelop(); const m = team.filter(x => x.shooterJersey === p.j); if (document.querySelectorAll('#devRecWrap tbody tr').length !== m.length) out.cover = false; DEV_DIMS.forEach(d => { const vals = d.opts(team).concat([DEV_NONE]), c = vals.reduce((a, v) => a + m.filter(x => v === DEV_NONE ? !d.of(x) : d.of(x) === v).length, 0); if (c !== m.length) out.cover = false; }); }
+      const dblKey = [...C.amb][0], dbl = dblKey ? team.find(x => devKey(x) === dblKey) : null; if (dbl) { DEV.j = dbl.shooterJersey; renderDevelop(); await s(300); out.dblCell = devClipCell(dbl).includes('2 clips claim it'); out.dblLink = /drive\\.google/.test(devClipCell(dbl)); out.dblSid = sessKey(dbl); out.dblShot = dbl.id; }
+      out.s6288 = team.filter(x => x.id === 6288).length; return JSON.stringify(out); })()`));
+    T.summary = rr;
+    ok('real data: session types add to the total, with the 9/25 Alumni shots under Opponent scrimmage', Object.values(rr.types).reduce((a, v) => a + v, 0) === rr.n && !rr.types['Type not recorded'] && rr.types['Opponent scrimmage'] === 109, rr.types);
+    ok('real data: every player’s records and breakdowns cover every attempt once', rr.cover && rr.players > 0, rr.players);
+    ok('real data: the 10/21 double claim on #6135 shows no clip and says why', rr.amb.length === 1 && rr.dblCell && !rr.dblLink && rr.dblSid === '2026-10-21_practice' && rr.dblShot === 6135, rr);
+    ok('real data: the page wrote nothing', N.__FAKE.__writes.length === w, N.__FAKE.__writes.length - w);
+    const unchanged = JSON.stringify(exp.collections.app['filmcheck_2026-10-21']) === JSON.stringify((await N.eval(`DB.doc('app/filmcheck_2026-10-21').get().then(d => JSON.stringify(d.data()))`).then(JSON.parse)));
+    ok('real data: the 10/21 clip marks are untouched', unchanged);
+  }
+  ok('no page errors', errs.length === 0, errs.slice(0, 5));
+  const hosts = w => [...new Set(w.performance.getEntriesByType('resource').map(e => new URL(e.name).hostname))];
+  const allowed = ['127.0.0.1', 'www.gstatic.com', 'cdn.jsdelivr.net', 'fonts.googleapis.com', 'fonts.gstatic.com'];
+  ok('nothing left this machine except the SDK/font scripts; no live-project identifiers anywhere', [N, O].every(w => hosts(w).every(h => allowed.includes(h)) && !w.__GUARD.refusedInit.length && !w.__GUARD.blocked.some(b => /wlu-lacrosse-tracker|896246870043/.test(b))), [hosts(N), N.__GUARD.blocked.slice(0, 4)]);
+  const result = { at: new Date().toISOString(), pass: T.pass, fail: T.fail, results: T.results, summary: T.summary || null };
+  document.getElementById('out').textContent = JSON.stringify(result, null, 1);
+  await fetch(REAL ? '/results/dev_real.json' : '/results/dev_tests.json', { method: 'POST', body: JSON.stringify(result, null, 1) });
+  window.__DONE = result;
+}
+run().catch(e => { document.getElementById('out').textContent = 'HARNESS ERROR ' + (e && e.stack || e); fetch(REAL ? '/results/dev_real.json' : '/results/dev_tests.json', { method: 'POST', body: JSON.stringify({ err: String(e && e.stack || e), results: T.results }) }); });
+</script>
+</body></html>
