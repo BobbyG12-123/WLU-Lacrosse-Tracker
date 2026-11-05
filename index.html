@@ -16393,7 +16393,7 @@ function renderWhatIf() {
   const benchName = X.team ? `Team, all ${partWords} ${typeWords}` : `Teammates (without ${who}), all ${partWords} ${typeWords}`;
   const f = v => Math.sqrt(v).toFixed(2);
   let h = `<div class="wi-tool" style="border:2px solid var(--line); border-radius:10px; padding:10px 12px; margin-bottom:12px;">
-    <p class="panel-sub" style="margin:0 0 2px; font-weight:700; color:var(--ink); font-size:15px;">What If: historical calculations</p>
+    <p class="panel-sub" style="margin:0 0 2px; font-weight:700; color:var(--ink); font-size:15px;"><span class="wi-badge" style="display:inline-block; font-size:11px; font-weight:700; letter-spacing:.06em; padding:2px 8px; border-radius:4px; background:var(--line); color:var(--ink); margin-right:8px;">COUNTED</span>What If: historical calculations</p>
     <p class="sans wi-label" style="font-size:13px; margin:0 0 8px;"><b>These are historical &ldquo;what if&rdquo; calculations on shots already logged. They are not forecasts, and they aren&rsquo;t evidence that a change caused more goals.</b> Uses the session type, periods, player and locations chosen above. Shot attempts stay fixed. No shot model: counted goals and shots only.</p>`;
   if (WI_ST.longer && SC_ST.period === 'custom') h += `<p class="sans wi-longer-on" style="font-size:12.5px; margin:0 0 8px; padding:6px 10px; border-left:3px solid var(--gold);">You chose the longer comparison for the whole panel: Period A ${scDate(SC_ST.custom.aFrom)}&ndash;${scDate(SC_ST.custom.aTo)}, Period B ${scDate(SC_ST.custom.bFrom)}&ndash;${scDate(SC_ST.custom.bTo)}. <button type="button" class="lnk" data-wi="back">Go back to the earlier periods</button></p>`;
   if (X.team) {
@@ -16467,6 +16467,188 @@ document.addEventListener('toggle', ev => {
   const R = WI_LAST, ids = l => new Set(l.map(s => s.sid)), A = ids(R.per.A), B = ids(R.per.B), by = { A: [], B: [], Season: [] };
   (R.benchShots || []).forEach(s => { const id = scSid(s); by[A.has(id) ? 'A' : B.has(id) ? 'B' : 'Season'].push(s); });
   document.getElementById('wiRecBody').innerHTML = ['A', 'B', 'Season'].map(k => scRecRows(k, by[k], R.season)).join('');
+}, true);
+
+// ---------------- What If: modeled estimates (staff, opened on request) ----------------
+// A separate block from the historical calculations. It replays Period B's located shots through the objective shot model
+// (Efficiency > xG Model, fitXg2: logged facts, never the grade) with ONE change, on a number of shots the coach picks.
+// Change = N x the average change per eligible shot, so it never pretends to know which shots would move.
+// Before any number:
+//   the model beats the base rate on sessions it never saw, both leaving each session out and using only earlier sessions;
+//   its held-out predictions aren't off for the selected session type (a practice check isn't used for other types);
+//   the from and to situations EACH have enough team shots of that type, with held-out predictions within 2 standard errors,
+//   and the gap between them isn't missed by more than that; a rare from-situation can't hide inside a larger group;
+//   the proposed share passes the observed-share support check (provisional, shared idea with Move Shots).
+// Passing means the data doesn't contradict the model here. It doesn't show the change is possible or would help.
+// Ranges (provisional, not validated): average = how much the estimate moves when a session is left out, plus how far held-out
+// predictions could be off at the two situations, widened by session swing. New run adds variation in actual goals.
+const WM_MIN_SESS = 6, WM_MIN_SHOTS = 80, WM_TYPE_MIN = 80, WM_CELL_MIN = 25, WM_Z = 2, WM_POS_MAX = 40;
+const WM_ST = { open: false, lever: null, from: null, to: null, n: 0 };
+let WM_MODEL = null, WM_LAST = null;
+const WM_LEVERS = [
+  { k: 'loc', label: 'Location', of: (s, g) => scCellOf(s, g) },
+  { k: 'pressure', label: 'Pressure', of: s => ['Open', 'Light', 'Heavy'].includes(s.contestLevel) ? s.contestLevel : null, opts: ['Open', 'Light', 'Heavy'], set: (p, v) => Object.assign({}, p, { contest: v }) },
+  { k: 'dodge', label: 'Catch or dodge', of: s => s.offDodge === 1 ? 'Off the dodge' : s.offDodge === 0 ? 'Off the catch' : null, opts: ['Off the catch', 'Off the dodge'], set: (p, v) => Object.assign({}, p, { dodge: v === 'Off the dodge' ? 1 : 0 }) },
+  { k: 'release', label: 'Release', of: s => SHOT_MECHANISM_OPTIONS.includes(s.shotMechanism) ? s.shotMechanism : null, opts: SHOT_MECHANISM_OPTIONS, set: (p, v) => Object.assign({}, p, { plane: v }) },
+];
+const wmLever = k => WM_LEVERS.find(l => l.k === k);
+function wmSig(shots) { return xgHash(shots.map(s => [scSid(s), s.id, s.goal, s.lateralYds, s.distanceYds, s.offDodge, s.rightHanded, s.shotMechanism, s.contestLevel, s.shotQuality, s.transition, s.manSituation, s.rebound, s.bounceShot, s.context].join(',')).join(';')) + ':' + shots.length; }
+// The model and its audit. Every session is held out whole; a second test predicts each session from earlier sessions only.
+function wmModel(season) {
+  const shots = advShots(season).filter(s => !s.seed && s.shooterJersey && s.team !== 'OPP' && xg2Usable(s)).sort((a, b) => a.id - b.id), sig = season + ':' + wmSig(shots);
+  if (WM_MODEL && WM_MODEL.sig === sig) return WM_MODEL;
+  const sids = [...new Set(shots.map(scSid))].sort(), R = { sig, season, shots, sids, ok: false, folds: [] };
+  if (shots.length < WM_MIN_SHOTS || sids.length < WM_MIN_SESS) { R.why = `The model check needs ${WM_MIN_SESS}+ sessions and ${WM_MIN_SHOTS}+ located shots; ${season} has ${sids.length} session${sids.length === 1 ? '' : 's'} and ${shots.length} shots.`; return (WM_MODEL = R); }
+  R.model = fitXg2(shots);
+  const oof = new Map(), oofG = new Map(), oofB = new Map(), y = s => s.goal === 1 ? 1 : 0, cl = p => Math.max(1e-4, Math.min(1 - 1e-4, p));
+  sids.forEach(sid => {
+    const train = shots.filter(s => scSid(s) !== sid), test = shots.filter(s => scSid(s) === sid), m = fitXg2(train), gm = fitGradeOnly(train), b = train.filter(s => s.goal === 1).length / train.length;
+    test.forEach(s => { oof.set(s, predictXg2(m, xg2Profile(s))); oofG.set(s, gm(s)); oofB.set(s, b); });
+    R.folds.push({ sid, m, n: test.length });
+  });
+  const ll = (get, l) => -l.reduce((a, s) => a + (y(s) ? Math.log(cl(get(s))) : Math.log(1 - cl(get(s)))), 0) / l.length;
+  const br = get => shots.reduce((a, s) => a + (get(s) - y(s)) ** 2, 0) / shots.length, mp = M => s => M.get(s);
+  Object.assign(R, { oof, goals: shots.filter(s => s.goal === 1).length, llModel: ll(mp(oof), shots), llGrade: ll(mp(oofG), shots), llBase: ll(mp(oofB), shots), brModel: br(mp(oof)), brGrade: br(mp(oofG)), brBase: br(mp(oofB)) });
+  R.skill = 1 - R.llModel / R.llBase; R.skillGrade = 1 - R.llGrade / R.llBase;
+  R.sessWins = sids.filter(sid => { const t = shots.filter(s => scSid(s) === sid); return ll(mp(oof), t) < ll(mp(oofB), t); }).length;
+  // Earlier sessions only: each session from the (WM_MIN_SESS + 1)th on, predicted from the sessions dated before it.
+  const dated = sids.map(sid => ({ sid, date: shots.find(s => scSid(s) === sid).date })).sort((a, b) => (a.date + a.sid).localeCompare(b.date + b.sid));
+  const fwM = new Map(), fwB = new Map();
+  dated.slice(WM_MIN_SESS).forEach(d => {
+    const train = shots.filter(s => s.date < d.date), test = shots.filter(s => scSid(s) === d.sid); if (train.length < WM_MIN_SHOTS) return;
+    const m = fitXg2(train), b = train.filter(s => s.goal === 1).length / train.length; test.forEach(s => { fwM.set(s, predictXg2(m, xg2Profile(s))); fwB.set(s, b); });
+  });
+  const fw = [...fwM.keys()]; R.forwardN = fw.length; R.forwardSkill = fw.length ? 1 - ll(mp(fwM), fw) / ll(mp(fwB), fw) : null;
+  R.calib = [[0, 0.15], [0.15, 0.3], [0.3, 0.45], [0.45, 0.6], [0.6, 1.01]].map(([lo, hi]) => { const b = shots.filter(s => oof.get(s) >= lo && oof.get(s) < hi); return { lo, hi, n: b.length, pred: b.length ? b.reduce((a, s) => a + oof.get(s), 0) / b.length : null, act: b.length ? b.filter(s => s.goal === 1).length / b.length : null }; });
+  R.ok = R.skill > 0 && R.forwardSkill !== null && R.forwardSkill > 0;
+  if (!R.ok) R.why = R.forwardSkill === null ? 'There are too few sessions to test the model on later sessions.' : `On sessions it never saw, the model didn't beat the team's base rate (left-out sessions ${(R.skill * 100).toFixed(1)}%, later sessions ${(R.forwardSkill * 100).toFixed(1)}%).`;
+  return (WM_MODEL = R);
+}
+// Held-out goals vs predictions among team shots of one session type in one situation.
+function wmCell(R, type, pred) {
+  const l = R.shots.filter(s => sessionTypeOf(s) === type && pred(s)), E = l.reduce((a, s) => a + R.oof.get(s), 0), V = l.reduce((a, s) => { const p = R.oof.get(s); return a + p * (1 - p); }, 0), G = l.filter(s => s.goal === 1).length;
+  const z = V > 0 ? (G - E) / Math.sqrt(V) : null;
+  return { n: l.length, g: G, e: E, v: V, z, ok: l.length >= WM_CELL_MIN && z !== null && Math.abs(z) <= WM_Z };
+}
+const wmCellWhy = c => c.n < WM_CELL_MIN ? `only ${c.n} team shot${c.n === 1 ? '' : 's'} (needs ${WM_CELL_MIN}+)` : `held-out predictions miss by more than ${WM_Z} standard errors (${c.g} goals vs ${c.e.toFixed(1)} predicted)`;
+// Team shots' logged spots at the destination, evenly thinned: a location is a spread of spots, not one point.
+function wmSpots(R, type, grouping, to) {
+  const l = R.shots.filter(s => sessionTypeOf(s) === type && scCellOf(s, grouping) === to).map(s => ({ lat: s.lateralYds, dist: s.distanceYds })).sort((a, b) => a.dist - b.dist || a.lat - b.lat);
+  if (l.length <= WM_POS_MAX) return l;
+  return Array.from({ length: WM_POS_MAX }, (_, i) => l[Math.floor(i * l.length / WM_POS_MAX)]);
+}
+// Observed shares among all players with enough located shots: the highest share at this lever's value. Provisional.
+function wmSupport(shots, of, to) {
+  const by = {}; wiLoc(shots).forEach(s => { const v = of(s); if (v === null) return; const o = by[s.shooterJersey] = by[s.shooterJersey] || { n: 0, at: 0 }; o.n++; if (v === to) o.at++; });
+  const big = Object.values(by).filter(o => o.n >= WI_SUPPORT_MIN); if (!big.length) return { players: 0, max: null, at: null, n: null };
+  const top = big.reduce((m, o) => o.at / o.n > m.at / m.n ? o : m, big[0]);
+  return { players: big.length, max: top.at / top.n, at: top.at, n: top.n };
+}
+// One modeled change. o = { season, type, grouping, shots (Period B, the subject's), lever, from, to, n, swing, support }.
+function wmEstimate(R, o) {
+  const L = wiLoc(o.shots), lv = wmLever(o.lever), out = { located: L.length };
+  const stop = why => Object.assign(out, { none: true, why }), idle = why => Object.assign(out, { idle: true, why });
+  if (L.length < WI_MIN_LOCATED) return stop(`No estimate: this needs ${WI_MIN_LOCATED}+ located shots in Period B (has ${L.length}). That minimum is a display rule.`);
+  if (!R.model) return stop(`No estimate: ${R.why}`);
+  if (!R.ok) return stop(`No estimate: ${R.why}`);
+  const tc = wmCell(R, o.type, () => true); out.typeCheck = tc;
+  if (tc.n < WM_TYPE_MIN) return stop(`No estimate: the model has only ${tc.n} held-out ${o.type} shots to check against (needs ${WM_TYPE_MIN}+), and a check on other session types isn't used here.`);
+  if (!tc.ok) return stop(`No estimate: for ${o.type}, held-out predictions miss by more than ${WM_Z} standard errors (${tc.g} goals vs ${tc.e.toFixed(1)} predicted).`);
+  if (!lv) return idle('Pick what changes.');
+  const of = s => lv.of(s, o.grouping), logged = L.filter(s => of(s) !== null), elig = logged.filter(s => of(s) === o.from);
+  Object.assign(out, { logged: logged.length, notLogged: L.length - logged.length, avail: elig.length, shares: {} });
+  const n = Math.max(0, Math.min(elig.length, Math.floor(Number(o.n) || 0))); out.n = n; out.eligible = elig;
+  if (!o.from || !o.to || o.from === o.to) return idle('Pick what it changes from and a different value to change it to.');
+  if (!n) return idle(elig.length ? `Choose how many of the ${elig.length} eligible shots change.` : 'Period B has no eligible shots for this change.');
+  const cf = wmCell(R, o.type, s => of(s) === o.from), ct = wmCell(R, o.type, s => of(s) === o.to); Object.assign(out, { cf, ct });
+  if (!cf.ok) return stop(`No estimate: from ${o.from}, ${wmCellWhy(cf)}.`);
+  if (!ct.ok) return stop(`No estimate: to ${o.to}, ${wmCellWhy(ct)}.`);
+  const seGap = Math.sqrt(cf.v / (cf.n * cf.n) + ct.v / (ct.n * ct.n)), zGap = ((ct.g - ct.e) / ct.n - (cf.g - cf.e) / cf.n) / seGap; Object.assign(out, { seGap, zGap });
+  if (Math.abs(zGap) > WM_Z) return stop(`No estimate: the model misses the gap between ${o.from} and ${o.to} by more than ${WM_Z} standard errors on held-out shots.`);
+  const sup = o.support, prop = (logged.filter(s => of(s) === o.to).length + n) / logged.length; Object.assign(out, { support: sup, propShare: prop, curShare: logged.filter(s => of(s) === o.to).length / logged.length });
+  if (sup.max === null) return stop(`No estimate: no player has ${WI_SUPPORT_MIN}+ located shots in this selection, so the observed-share support check can't run.`);
+  if (prop > sup.max + 1e-12) return stop(`No estimate: ${scPct(prop)} of shots at ${o.to} is above the highest share any ${WI_SUPPORT_MIN}+-shot player has logged (${scPct(sup.max)}). This is a provisional rule, not a validated limit.`);
+  const spots = o.lever === 'loc' ? wmSpots(R, o.type, o.grouping, o.to) : null, P = predictXg2;
+  const after = p => spots ? spots.map(q => Object.assign({}, p, q)) : [lv.set(p, o.to)];
+  const profs = elig.map(s => { const p = xg2Profile(s); return { p, q: after(p) }; });
+  const meanChange = m => profs.reduce((a, x) => a + x.q.reduce((t, q) => t + P(m, q) - P(m, x.p), 0) / x.q.length, 0) / profs.length;
+  const per = meanChange(R.model), d = n * per, base = L.reduce((a, s) => a + P(R.model, xg2Profile(s)), 0);
+  const th = R.folds.map(f => n * meanChange(f.m)), G = th.length, tb = th.reduce((a, v) => a + v, 0) / G, jack = Math.sqrt((G - 1) / G * th.reduce((a, v) => a + (v - tb) ** 2, 0));
+  const vp = p => { const v = P(R.model, p); return v * (1 - v); };
+  const vChange = profs.reduce((a, x) => a + x.q.reduce((t, q) => t + vp(q) - vp(x.p), 0) / x.q.length, 0) / profs.length;
+  const vOut = L.reduce((a, s) => a + vp(xg2Profile(s)), 0) + n * vChange, sw = o.swing;
+  const calib = n * n * seGap * seGap * (sw.usable ? sw.conv : 1);
+  Object.assign(out, { est: true, actual: L.filter(s => s.goal === 1).length, base, scen: base + d, d, per, per100: 100 * d / L.length, jack, calibSd: Math.sqrt(calib), spots: spots ? spots.length : null, gapPts: 100 * WM_Z * seGap });
+  if (!sw.usable) return Object.assign(out, { lo: null, hi: null, loNew: null, hiNew: null });
+  const a = WI_Z * Math.sqrt(jack * jack + calib), b = WI_Z * Math.sqrt(jack * jack + calib + Math.max(0, vOut) * sw.conv);
+  return Object.assign(out, { lo: d - a, hi: d + a, loNew: d - b, hiNew: d + b });
+}
+function wmCompute(Rc, st) {
+  const R = wmModel(Rc.season), lv = wmLever(st.lever), all = wiSeasonShots(Rc.season, Rc.type);
+  return { R, res: wmEstimate(R, { season: Rc.season, type: Rc.type, grouping: Rc.grouping, shots: Rc.shotsB, lever: st.lever, from: st.from, to: st.to, n: st.n, swing: wiSwing(all, Rc.grouping), support: lv && st.to ? wmSupport(all, s => lv.of(s, Rc.grouping), st.to) : { players: 0, max: null } }) };
+}
+function renderModeled() {
+  const el = document.getElementById('scWm'); if (!el) return;
+  if (PLAYER_MODE || !WI_LAST) { el.innerHTML = ''; return; }
+  const Rc = WI_LAST, head = `<span class="wm-badge" style="display:inline-block; font-size:11px; font-weight:700; letter-spacing:.06em; padding:2px 8px; border-radius:4px; background:#1F4E8C; color:#FFF; margin-right:8px;">MODELED</span>`;
+  const box = inner => `<div class="wm-tool" style="border:2px solid #1F4E8C; border-left-width:6px; border-radius:10px; padding:10px 12px; margin-bottom:12px;">${inner}</div>`;
+  if (!WM_ST.open) { el.innerHTML = box(`<p class="panel-sub" style="margin:0 0 4px; font-weight:700; color:var(--ink); font-size:15px;">${head}What If: modeled estimates</p><p class="sans" style="font-size:13px; margin:0 0 8px;">Separate from the historical calculations above, which count logged goals. These come from a shot model and aren&rsquo;t counted goals.</p><button type="button" class="pill" data-wm="open">Show modeled estimates</button>`); return; }
+  const lv = wmLever(WM_ST.lever), vals = lv ? (lv.k === 'loc' ? Rc.keys : lv.opts) : [];
+  if (!vals.includes(WM_ST.from)) WM_ST.from = null;
+  if (!vals.includes(WM_ST.to)) WM_ST.to = null;
+  const C = wmCompute(Rc, WM_ST), R = C.R, X = C.res, season = Rc.season, who = Rc.subject === 'team' ? 'Team' : `#${Rc.subject} ${nameFor(Rc.subject, season)}`;
+  if (X.n !== undefined) WM_ST.n = X.n;
+  const pill = (attr, v, cur, label) => `<button type="button" class="pill${cur === v ? ' active' : ''}" data-wm="${attr}" data-v="${escapeHtml(v)}">${escapeHtml(label)}</button>`;
+  const L = wiLoc(Rc.shotsB), count = v => L.filter(s => lv.of(s, Rc.grouping) === v).length;
+  let h = `<p class="panel-sub" style="margin:0 0 4px; font-weight:700; color:var(--ink); font-size:15px;">${head}What If: modeled estimates</p>
+    <p class="sans wm-label" style="font-size:13px; margin:0 0 8px;"><b>Modeled expected goals, not counted goals.</b> A shot model replays ${escapeHtml(who)}&rsquo;s Period B shots with one change. It estimates what an average shooter on our team scores in the new situation. It isn&rsquo;t a forecast, and it isn&rsquo;t evidence that the change would cause more goals: the model learns from shots that were taken, so it shows an association. It can&rsquo;t say whether the shot can be created, or how a defense or goalie would respond.</p>
+    <div class="control-group" style="margin-bottom:6px;"><label>What changes</label><div class="pill-row wm-lever">${WM_LEVERS.map(l => pill('lever', l.k, WM_ST.lever, l.label)).join('')}</div></div>`;
+  if (lv) h += `<div class="control-group" style="margin-bottom:6px;"><label>From</label><div class="pill-row wm-from">${vals.filter(v => count(v)).map(v => pill('from', v, WM_ST.from, `${v} · ${count(v)}`)).join('')}</div></div>
+    <div class="control-group" style="margin-bottom:6px;"><label>To</label><div class="pill-row wm-to">${vals.filter(v => v !== WM_ST.from).map(v => pill('to', v, WM_ST.to, v)).join('')}</div></div>
+    <div class="control-group" style="margin-bottom:8px;"><label for="wmN">How many shots change</label><div class="pill-row" style="align-items:center;"><button type="button" class="pill" data-wm="minus" aria-label="One fewer shot">&minus;</button><input id="wmN" type="number" min="0" max="${X.avail || 0}" step="1" value="${X.n || 0}" style="width:68px; font:14px var(--text); padding:5px 8px; border:1px solid var(--line); border-radius:6px;"><button type="button" class="pill" data-wm="plus" aria-label="One more shot">+</button><span class="n-note">of ${X.avail === undefined ? 0 : X.avail} eligible</span></div></div>`;
+  if (X.none || X.idle) h += `<p class="sans ${X.none ? 'wm-none' : 'wm-idle'}" style="font-size:13px; margin:0 0 8px;">${escapeHtml(X.why)}</p>`;
+  if (X.est) {
+    h += `<div class="table-wrap"><table class="shotlog dense wm-result"><thead><tr><th style="text-align:left;">Modeled change</th><th>Counted goals, Period B</th><th>Modeled baseline (expected goals)</th><th>Modeled what-if (expected goals)</th><th>Change (expected goals)</th><th>Change per 100 located shots</th><th>Change per changed shot</th><th>Shots changed</th><th title="Provisional, not validated.">Provisional range: average</th><th title="Provisional, not validated.">Provisional range: a new run</th></tr></thead><tbody>
+      <tr><td style="text-align:left; white-space:normal;"><b>${X.n} shot${X.n === 1 ? '' : 's'}: ${escapeHtml(WM_ST.from)} to ${escapeHtml(WM_ST.to)}.</b> Everything else stays as logged.</td><td>${X.actual}</td><td>${wiFmt(X.base)}</td><td>${wiFmt(X.scen)}</td><td><b>${scNum(X.d)}</b></td><td>${scNum(X.per100)}</td><td>${scNum(X.per, 3)}</td><td>${X.n} of ${X.located}</td><td>${wiRangeTxt(X.lo, X.hi)}</td><td>${wiRangeTxt(X.loNew, X.hiNew)}</td></tr>
+      <tr class="wm-read"><td colspan="10" style="text-align:left; white-space:normal; color:var(--muted);">${X.lo === null ? `<b>Can&rsquo;t distinguish from no change.</b> No range: measuring session swing takes ${WI_MIN_SESSIONS}+ sessions of this type.` : X.lo <= 0 && X.hi >= 0 ? '<b>Can&rsquo;t distinguish from no change.</b>' : 'The provisional average range excludes zero. This is what the model says, not evidence of a cause.'} <b>Limit:</b> the ranges cover the model&rsquo;s estimate and how far its held-out predictions could be off. They don&rsquo;t cover whether the shots are attainable.</td></tr></tbody></table></div>
+      <p class="n-note" style="margin:4px 0 6px;">Applied as ${X.n} &times; the average change across all ${X.avail} eligible shots, so it doesn&rsquo;t pick which shots would change.${X.spots ? ` Each eligible shot is replayed at ${X.spots} logged team spots at ${escapeHtml(WM_ST.to)}.` : ''} The baseline is the model&rsquo;s estimate for the same shots, not the counted goals. It isn&rsquo;t the grade-based expected goals in the Scoring Change view above, so those numbers won&rsquo;t match.</p>`;
+    if (WM_ST.lever === 'loc') { const b = scSummarize(wiLoc(wiSeasonShots(season, Rc.type, Rc.subject === 'team' ? undefined : Rc.subject)), Rc.grouping, null), f = wiRate(b.cells[WM_ST.from]), t = wiRate(b.cells[WM_ST.to]); if (f !== null && t !== null) h += `<p class="sans wm-compare" style="font-size:12.5px; margin:0 0 6px;"><b>Why this differs from Move Shots above:</b> the historical calculation gives ${scNum(X.n * (t - f))} goals for ${X.n} shots using raw counted rates, which include how those shots happened to be taken. The model holds each shot&rsquo;s other logged facts fixed and gives ${scNum(X.d)}.</p>`; }
+  }
+  if (X.cf && X.ct) { const cr = (l, c) => `<tr><td style="text-align:left;">${escapeHtml(l)}</td><td>${c.n}</td><td>${c.g}</td><td>${c.e.toFixed(1)}</td><td>${c.z === null ? '—' : scNum(c.z, 1)}</td><td>${c.ok ? 'Passes' : 'Doesn&rsquo;t pass'}</td></tr>`;
+    h += `<div class="table-wrap"><table class="shotlog dense wm-check"><thead><tr><th style="text-align:left;">Team ${escapeHtml(Rc.type)} shots, held-out check</th><th>Shots</th><th>Goals</th><th>Predicted</th><th>Standard errors off</th><th>Screen</th></tr></thead><tbody>${cr('From ' + WM_ST.from, X.cf)}${cr('To ' + WM_ST.to, X.ct)}</tbody></table></div>
+    ${X.seGap ? `<p class="n-note wm-power" style="margin:4px 0 6px;">Gap between them: ${scNum(X.zGap, 1)} standard errors off. <b>This screen is weak on these samples:</b> the model could miss this gap by up to about ${(100 * WM_Z * X.seGap).toFixed(0)} goals per 100 shots and still pass. Passing means the data doesn&rsquo;t contradict the model here, nothing more.</p>` : ''}`; }
+  if (X.support && WM_ST.to) h += `<p class="sans wm-support" style="font-size:12.5px; margin:0 0 6px;"><b>Support check (observed shot shares; provisional rule, not a validated limit):</b> ${X.support.max === null ? `no player has ${WI_SUPPORT_MIN}+ located shots here.` : `the highest ${escapeHtml(WM_ST.to)} share from any of the ${X.support.players} players with ${WI_SUPPORT_MIN}+ located shots is ${scPct(X.support.max)} (${X.support.at} of ${X.support.n}). Now ${scPct(X.curShare)}; proposed ${scPct(X.propShare)}.`}</p>`;
+  if (X.logged !== undefined) h += `<p class="sans wm-coverage" style="font-size:12.5px; margin:0 0 6px;"><b>Coverage:</b> ${X.logged} of ${X.located} located Period B shots have this field logged${X.notLogged ? `; ${X.notLogged} don&rsquo;t, and they stay as logged` : ''}. ${Rc.b.unloc.N ? `${Rc.b.unloc.N} shots have no location, so the model can&rsquo;t replay them.` : 'No shots are left out for a missing location.'}</p>`;
+  // ---- The model check ----
+  if (R.model) {
+    const pc = v => `${(v * 100).toFixed(1)}%`;
+    h += `<details class="collapsible" id="wmAudit"><summary><p class="panel-sub" style="font-weight:700; color:var(--ink);">Model check: ${R.ok ? 'passes the minimum' : 'doesn&rsquo;t pass, so estimates are off'}</p></summary><div class="sans wm-audit" style="font-size:12.5px; line-height:1.55;">
+      <p style="margin:4px 0;">${R.shots.length} located ${escapeHtml(season)} team shots, ${R.goals} goals, ${R.sids.length} sessions. Skill = how much better than the team&rsquo;s base rate, on sessions the model never saw (log loss); 0% = no better.</p>
+      ${rptMiniTable(['Model', 'Skill, leaving each session out', 'Skill, earlier sessions only', 'Brier score (lower is better)'], [['Objective model, used here (no grade)', `<b>${pc(R.skill)}</b>`, R.forwardSkill === null ? '—' : `<b>${pc(R.forwardSkill)}</b> (${R.forwardN} shots)`, R.brModel.toFixed(4)], ['Grade only (Gold / Silver / Bronze, + practice vs game)', pc(R.skillGrade), '—', R.brGrade.toFixed(4)], ['Team base rate', '0.0%', '0.0%', R.brBase.toFixed(4)]])}
+      <p style="margin:6px 0;">The objective model beat the base rate in ${R.sessWins} of ${R.sids.length} left-out sessions.${R.skillGrade > R.skill ? ` <b>The grade alone predicts better</b> (${pc(R.skillGrade)} vs ${pc(R.skill)}). A coach&rsquo;s grade takes in parts of a look the logged facts don&rsquo;t, and it can&rsquo;t be held fixed while the look changes, so these estimates reflect only what the logged facts explain.` : ''}</p>
+      <p style="margin:6px 0 2px;"><b>Predicted vs actual on left-out sessions</b></p>${rptMiniTable(['Predicted chance', 'Shots', 'Predicted', 'Went in'], R.calib.filter(c => c.n).map(c => [`${Math.round(c.lo * 100)}–${Math.min(100, Math.round(c.hi * 100))}%`, String(c.n), scPct(c.pred), scPct(c.act)]))}
+      <p class="n-note wm-method" style="margin:6px 0 0;"><b>Method choices (our settings, none validated):</b> the check needs ${WM_MIN_SESS}+ sessions and ${WM_MIN_SHOTS}+ located shots; ${WM_TYPE_MIN}+ held-out shots of the selected session type; ${WM_CELL_MIN}+ team shots of that type in both the from and to situations; predictions within ${WM_Z} standard errors; a range needs ${WI_MIN_SESSIONS}+ sessions. Passing is a minimum, not proof. The model is fit on every located ${escapeHtml(season)} team shot, including these periods and every session type, and it treats scrimmages like practices. ${R.shots.some(s => s.context === 'Game') ? '' : 'It has seen no game shots yet. '}The xG Model page&rsquo;s own test mixes shots from one session into its training and test sets, so its skill number can read higher.</p></div></details>`;
+  }
+  if (X.eligible && X.eligible.length) h += `<details class="collapsible" id="wmRecords"><summary><p class="panel-sub" style="font-weight:700; color:var(--ink);">The ${X.eligible.length} eligible shots behind this estimate</p></summary><div class="table-wrap" style="max-height:420px; overflow:auto;"><table class="shotlog dense wm-rec"><thead><tr><th>Period</th><th>Date</th><th style="text-align:left;">Shooter</th><th style="text-align:left;">Zone</th><th style="text-align:left;">Group</th><th>Result</th><th>Grade</th><th style="text-align:left;">Session ID</th><th>Shot #</th><th style="text-align:left;">Entry ID</th><th></th></tr></thead><tbody id="wmRecBody"></tbody></table></div></details>`;
+  WM_LAST = X;
+  el.innerHTML = box(h);
+}
+document.addEventListener('click', ev => {
+  const b = ev.target.closest('[data-wm]'); if (!b || !WI_LAST || PLAYER_MODE) return;
+  const a = b.dataset.wm;
+  if (a === 'open') WM_ST.open = true;
+  else if (a === 'lever') Object.assign(WM_ST, { lever: WM_ST.lever === b.dataset.v ? null : b.dataset.v, from: null, to: null, n: 0 });
+  else if (a === 'from') { WM_ST.from = WM_ST.from === b.dataset.v ? null : b.dataset.v; if (WM_ST.to === WM_ST.from) WM_ST.to = null; WM_ST.n = 0; }
+  else if (a === 'to') WM_ST.to = WM_ST.to === b.dataset.v ? null : b.dataset.v;
+  else if (a === 'plus') WM_ST.n = (Number(WM_ST.n) || 0) + 1;
+  else if (a === 'minus') WM_ST.n = Math.max(0, (Number(WM_ST.n) || 0) - 1);
+  else return;
+  renderModeled();
+});
+document.addEventListener('change', ev => { if (ev.target && ev.target.id === 'wmN') { WM_ST.n = Number(ev.target.value) || 0; renderModeled(); } });
+document.addEventListener('toggle', ev => {
+  if (!ev.target || ev.target.id !== 'wmRecords' || !ev.target.open || !WM_LAST || !WI_LAST) return;
+  document.getElementById('wmRecBody').innerHTML = scRecRows('B', WM_LAST.eligible, WI_LAST.season);
 }, true);
 
 function scNum(v, d) {
@@ -16673,13 +16855,13 @@ function renderScoringChange() {
   h += `<p class="sans" style="font-size:12.5px; margin:0 0 8px;"><b>Missing data:</b> shots with no location: A ${A.unloc.N} of ${A.N}, B ${B.unloc.N} of ${B.N}. Ungraded shots: A ${A.ungraded}, B ${B.ungraded}.</p>`;
   // ---- Records ----
   const recRows = (label, list) => scRecRows(label, list, season);
-  h += `<div id="scWi"></div>`;
+  h += `<div id="scWi"></div><div id="scWm"></div>`;
   h += `<details class="collapsible" id="scRecords"><summary><p class="panel-sub" style="font-weight:700; color:var(--ink);">The ${A.N + B.N} shots behind these numbers</p></summary>
     <div class="table-wrap" style="max-height:420px; overflow:auto;"><table class="shotlog dense sc-rec"><thead><tr><th>Period</th><th>Date</th><th style="text-align:left;">Shooter</th><th style="text-align:left;">Zone</th><th style="text-align:left;">Group</th><th>Result</th><th>Grade</th><th style="text-align:left;">Session ID</th><th>Shot #</th><th style="text-align:left;">Entry ID</th><th></th></tr></thead>
     <tbody>${recRows('A', R.shotsA)}${recRows('B', R.shotsB)}</tbody></table></div>
     <p class="n-note" style="margin:4px 0 0;">Session ID + shot # identify every shot (a number that leaves a session is never reused there). Entry ID is the stable ID saved with each entry since the save-safety builds; it stays the same if the shot moves to another session. Older entries have none until they are moved. Open shows the shot in the Log editor; nothing changes unless you save there.</p></details>`;
   body.innerHTML = h;
-  WI_LAST = R; renderWhatIf();
+  WI_LAST = R; renderWhatIf(); renderModeled();
 }
 // Open a record: the Log editor, as Shot Log Edit and Reports open one (staff only; Player View shows no button).
 document.addEventListener('click', ev => {

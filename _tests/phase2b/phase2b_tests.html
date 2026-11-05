@@ -1,0 +1,182 @@
+<!doctype html>
+<html><head><meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; connect-src 'self'; style-src 'unsafe-inline'; frame-src 'self'; base-uri 'none'; form-action 'none'">
+<script src="guard_offline.js"></script>
+<script src="fake_firestore.js"></script>
+<title>TEST — Modeled What If (offline, in-memory database only)</title>
+<style>body{font:13px system-ui;margin:16px} iframe{width:48%;height:700px;border:1px solid #999}</style>
+</head><body>
+<h3>Modeled What If: main vs branch on the same export, in-memory database only</h3>
+<iframe id="fOld" src="tracker_main.html"></iframe><iframe id="fNew" src="tracker_branch.html"></iframe>
+<pre id="out">running…</pre>
+<script>
+const Q = new URLSearchParams(location.search), EXPORT = Q.get('export') || 'fixture.json', REAL = Q.get('real') === '1';
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+const T = { results: [], pass: 0, fail: 0 };
+const ok = (name, cond, info) => { T.results.push({ name, ok: !!cond, info: info === undefined ? null : info }); cond ? T.pass++ : T.fail++; };
+const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+const EPS = 1e-9, near = (a, b) => Math.abs(a - b) < EPS;
+
+async function boot() {
+  const exp = await (await fetch(EXPORT)).json();
+  const frames = { old: document.getElementById('fOld').contentWindow, neu: document.getElementById('fNew').contentWindow };
+  for (const k of Object.keys(frames)) {
+    const w = frames[k];
+    for (let i = 0; i < 60 && !(w.firebase && w.firebase.apps && w.firebase.apps.length && typeof w.init === 'function'); i++) await sleep(300);
+    const fake = makeFakeFirestore(exp.collections);
+    const real = w.firebase.firestore, f = function () { return fake; }; Object.keys(real).forEach(x => { f[x] = real[x]; }); f.FieldValue = real.FieldValue;
+    w.firebase.firestore = f; w.__FAKE = fake;
+    w.init().then(() => { w.__BOOT_DONE = true; }, e => { w.__BOOT_ERR = String(e && e.stack || e); });
+  }
+  for (let i = 0; i < 160 && !(frames.old.__appReady && frames.neu.__appReady); i++) await sleep(500);
+  await sleep(3000);
+  return { frames, exp };
+}
+
+async function run() {
+  const { frames, exp } = await boot();
+  const O = frames.old, N = frames.neu, o = src => O.eval(src), n = src => N.eval(src), nj = src => JSON.parse(n(`JSON.stringify(${src})`));
+  const near = (a, b, e) => Math.abs(a - b) < (e || 1e-9);
+  const errs = []; N.addEventListener('error', e => errs.push(String(e.message)));
+  ok('both builds booted', O.__appReady && N.__appReady, [O.__BOOT_ERR || null, N.__BOOT_ERR || null]);
+  const writes0 = N.__FAKE.__writes.length;
+  const SET = `heatSeason = '2027'; NAV_ST.ctx = 'All'; SEASON_PART = 'Full'; Object.assign(SC_ST, { type: 'Practice', barCtx: 'All', askType: false, period: '5', custom: null, subject: 'team', grouping: 'groups', origin: null });`;
+  n(SET + ` WM_MODEL = null; renderScoringChange();`); o(SET + ` renderScoringChange();`);
+  const DEF = `{ season: '2027', type: 'Practice', period: '5', subject: 'team', grouping: 'groups' }`;
+
+  // ===== Nothing already released changed; nothing runs until asked =====
+  const snapSrc = await (await fetch('analytics_snapshot.js')).text();
+  const sa = JSON.parse(o(snapSrc)), sb = JSON.parse(n(snapSrc)), keys = [...new Set(Object.keys(sa).concat(Object.keys(sb)))], sdiff = keys.filter(k => JSON.stringify(sa[k]) !== JSON.stringify(sb[k]));
+  ok('analytics snapshot identical to main', sdiff.length === 0 && keys.length > 0, sdiff.slice(0, 8));
+  const clean = w => w.eval(`(() => { const d = document.createElement('div'); d.innerHTML = document.getElementById('scBody').innerHTML; ['#scWm'].forEach(q => { const x = d.querySelector(q); if (x) x.remove(); }); const b = d.querySelector('.wi-badge'); if (b) b.remove(); return d.innerHTML.replace(/scm\\d+_/g, 'scm_').replace(/<div id="scWi">/, '<div id="scWi">'); })()`);
+  ok('Scoring Change and the historical block are unchanged, apart from the Counted tag', clean(O) === clean(N));
+  ok('the model isn\'t fit until a coach opens modeled estimates', n(`WM_MODEL === null`) === true);
+  ok('closed, it says it is separate and shows no estimate', /Separate from the historical calculations/.test(n(`document.getElementById('scWm').textContent`)) && !n(`!!document.querySelector('#scWm .wm-result')`));
+  n(`document.querySelector('[data-wm="open"]').click();`);
+  ok('opening it fits the model and shows the MODELED tag and label', n(`WM_MODEL !== null`) === true && /MODELED/.test(n(`document.querySelector('#scWm .wm-badge').textContent`)) && /Modeled expected goals, not counted goals/.test(n(`document.getElementById('scWm').textContent`)));
+  ok('the historical block carries its own COUNTED tag, and stays above', /COUNTED/.test(n(`document.querySelector('#scWi .wi-badge').textContent`)) && n(`!!(document.getElementById('scWi').compareDocumentPosition(document.getElementById('scWm')) & Node.DOCUMENT_POSITION_FOLLOWING)`) === true);
+
+  // ===== Model audit =====
+  const AU = nj(`(() => { const R = wmModel('2027'); const h = R.sids[3], t = R.shots.filter(s => scSid(s) !== h), m = fitXg2(t), f = R.folds.find(x => x.sid === h);
+    const held = R.shots.filter(s => scSid(s) === h)[0]; return { ok: R.ok, why: R.why || null, skill: R.skill, skillGrade: R.skillGrade, forward: R.forwardSkill, forwardN: R.forwardN, wins: R.sessWins, sess: R.sids.length, shots: R.shots.length, foldSame: JSON.stringify(f.m.w) === JSON.stringify(m.w), foldN: f.n === R.shots.length - t.length, oofIsFold: predictXg2(f.m, xg2Profile(held)) === R.oof.get(held), seeds: R.shots.filter(s => s.seed || s.team === 'OPP').length }; })()`);
+  ok('each fold is fit without its whole session, and held-out predictions come from that fold', AU.foldSame && AU.foldN && AU.oofIsFold, AU);
+  ok('the model uses WLU shots only, no seed shots', AU.seeds === 0, AU);
+  if (REAL) { ok('real data: audit matches #107\'s published figures (7.4% vs 11.5%, 17 of 18)', near(AU.skill * 100, 7.42, 0.01) && near(AU.skillGrade * 100, 11.54, 0.01) && AU.wins === 17 && AU.sess === 18, AU); }
+  const FW = nj(`(() => { const R = wmModel('2027'), sh = R.shots, d = [...new Set(sh.map(s => s.date))].sort(); return { ok: typeof R.forwardSkill === 'number', n: R.forwardN, lastDate: d[d.length - 1] }; })()`);
+  ok('the later-sessions test ran', FW.ok && FW.n > 0, FW);
+
+  // A forced pass for the rule tests, so they run whatever the synthetic data's model does.
+  n(`window.__okR = () => Object.assign({}, wmModel('2027'), { ok: true }); window.__S = { S: 15, usable: true, conv: 1, mix: 1 }; window.__SUP = { players: 3, max: 0.9, at: 90, n: 100 }; window.__B = () => scCompare(${DEF}).shotsB;
+    window.__E = (o) => wmEstimate(__okR(), Object.assign({ season: '2027', type: 'Practice', grouping: 'groups', shots: __B(), swing: __S, support: __SUP }, o));`);
+  const pick = nj(`(() => { const R = __okR(), c = v => wmCell(R, 'Practice', s => WM_LEVERS[1].of(s) === v); const lv = ['Open', 'Light', 'Heavy'].map(v => [v, c(v)]).filter(x => x[1].ok).map(x => x[0]); const lc = SC_GROUPS.filter(k => wmCell(R, 'Practice', s => scCellOf(s, 'groups') === k).ok); return { lv, lc }; })()`);
+  ok('synthetic or real data offers at least two situations that pass, so the number path is exercised', pick.lv.length >= 2 && pick.lc.length >= 2, pick);
+  const [pf, pt] = [pick.lv[pick.lv.length - 1], pick.lv[0]], [lf, lt] = [pick.lc[pick.lc.length - 1], pick.lc[0]];
+
+  // ===== Hand checks and invariants =====
+  const hc = nj(`(() => { const a = __E({ lever: 'pressure', from: ${JSON.stringify(pf)}, to: ${JSON.stringify(pt)}, n: 2 }), a2 = __E({ lever: 'pressure', from: ${JSON.stringify(pf)}, to: ${JSON.stringify(pt)}, n: 4 });
+    const R = wmModel('2027'), B = wiLoc(__B()), el = B.filter(s => WM_LEVERS[1].of(s) === ${JSON.stringify(pf)}), m = R.model, chg = el.reduce((t, s) => { const p = xg2Profile(s); return t + predictXg2(m, Object.assign({}, p, { contest: ${JSON.stringify(pt)} })) - predictXg2(m, p); }, 0) / el.length, base = B.reduce((t, s) => t + predictXg2(m, xg2Profile(s)), 0);
+    const zero = __E({ lever: 'pressure', from: ${JSON.stringify(pf)}, to: ${JSON.stringify(pt)}, n: 0 }), same = __E({ lever: 'pressure', from: ${JSON.stringify(pf)}, to: ${JSON.stringify(pf)}, n: 2 }), big = __E({ lever: 'pressure', from: ${JSON.stringify(pf)}, to: ${JSON.stringify(pt)}, n: 1e6 });
+    return { a: { d: a.d, base: a.base, scen: a.scen, n: a.n, located: a.located, per100: a.per100, lo: a.lo, hi: a.hi, loNew: a.loNew, hiNew: a.hiNew, jack: a.jack, calibSd: a.calibSd, none: a.none, why: a.why }, a2d: a2.d, chg, baseH: base, L: B.length, zero: { idle: zero.idle, d: zero.d }, same: { idle: same.idle, d: same.d }, bigN: big.n, avail: big.avail, el: el.length }; })()`);
+  ok('modeled change = shots changed x average change per eligible shot (recomputed by hand)', near(hc.a.d, 2 * hc.chg) && near(hc.a.base, hc.baseH) && near(hc.a.scen - hc.a.base, hc.a.d), hc);
+  ok('twice the shots gives twice the change', near(hc.a2d, 2 * hc.a.d));
+  ok('zero shots or the same value is no change and no estimate', hc.zero.idle && hc.zero.d === undefined && hc.same.idle && hc.same.d === undefined, hc);
+  ok('attempts stay fixed, and shots changed can\'t exceed those eligible', hc.a.located === hc.L && hc.bigN === hc.avail && hc.avail === hc.el, hc);
+  ok('per 100 uses all located Period B shots', near(hc.a.per100, 100 * hc.a.d / hc.L));
+  ok('the average range includes the model-fit part and the held-out-miss part, and the new-run range is wider', near(hc.a.hi - hc.a.d, 1.96 * Math.sqrt(hc.a.jack ** 2 + hc.a.calibSd ** 2)) && hc.a.loNew < hc.a.lo && hc.a.hiNew > hc.a.hi && hc.a.hi > hc.a.lo, hc.a);
+  const loc = nj(`(() => { const R = __okR(), a = __E({ lever: 'loc', from: ${JSON.stringify(lf)}, to: ${JSON.stringify(lt)}, n: 1 }), sp = wmSpots(R, 'Practice', 'groups', ${JSON.stringify(lt)}), el = wiLoc(__B()).filter(s => scCellOf(s, 'groups') === ${JSON.stringify(lf)}); const chg = el.reduce((t, s) => { const p = xg2Profile(s); return t + sp.reduce((u, q) => u + predictXg2(R.model, Object.assign({}, p, q)) - predictXg2(R.model, p), 0) / sp.length; }, 0) / el.length; const n = R.shots.filter(s => sessionTypeOf(s) === 'Practice' && scCellOf(s, 'groups') === ${JSON.stringify(lt)}).length; return { d: a.d, chg, spots: sp.length, n, allIn: sp.every(q => scCellOf({ lateralYds: q.lat, distanceYds: q.dist }, 'groups') === ${JSON.stringify(lt)}), distinct: new Set(sp.map(q => q.lat + ',' + q.dist)).size, why: a.why }; })()`);
+  ok('a location move averages over logged spots there, not one point, and every spot is in that location', near(loc.d, loc.chg) && loc.spots === Math.min(40, loc.n) && loc.allIn && loc.distinct > 1, loc);
+
+  // ===== Support problems from the assessment =====
+  const gt = nj(`(() => { const base = { lever: 'pressure', from: ${JSON.stringify(pf)}, to: ${JSON.stringify(pt)}, n: 2 }, R = wmModel('2027'), bad = Object.assign({}, R, { ok: false, why: 'stated reason' }), S = o => wmEstimate(o, { season: '2027', type: 'Practice', grouping: 'groups', shots: __B(), swing: __S, support: __SUP, lever: 'pressure', from: ${JSON.stringify(pf)}, to: ${JSON.stringify(pt)}, n: 2 });
+    const thin = __E({ lever: 'loc', from: ${JSON.stringify(lf)}, to: 'NoSuchPlace', n: 1 }), noM = S(Object.assign({}, R, { model: null, why: 'too few' })), fail = S(bad);
+    const out = __E(Object.assign({}, base, { support: { players: 2, max: 0.0001, at: 0, n: 100 } })), noSup = __E(Object.assign({}, base, { support: { players: 0, max: null } }));
+    const few = __E(Object.assign({}, base, { shots: wiLoc(__B()).slice(0, 5) })), oppType = __E(Object.assign({}, base, { type: 'Game', shots: __B() }));
+    const nr = __E(Object.assign({}, base, { swing: { S: 3, usable: false, conv: null, mix: null } }));
+    return { thin, noM, fail, out, noSup, few, oppType, nr: { d: nr.d, lo: nr.lo, loNew: nr.loNew, est: nr.est } }; })()`);
+  ['noM', 'fail', 'out', 'noSup', 'few', 'oppType'].forEach(k => { const r = gt[k]; ok(`no number and a stated reason: ${k}`, r.none && r.d === undefined && /^No estimate/.test(r.why), r.why); });
+  ok('a thin destination gives no number (0 team shots there)', gt.thin.none && gt.thin.d === undefined && /only 0 team shots/.test(gt.thin.why), gt.thin.why);
+  ok('the moved share above every player\'s gives no number, and calls the rule provisional', /provisional rule, not a validated limit/.test(gt.out.why), gt.out.why);
+  ok('a session type with too few held-out shots gets no number: another type\'s check isn\'t borrowed', /isn't used here/.test(gt.oppType.why), gt.oppType.why);
+  ok('too few sessions: the estimate stays and there is no range', gt.nr.est && gt.nr.lo === null && gt.nr.loNew === null, gt.nr);
+  const hide = nj(`(() => { const R = wmModel('2027'), of = s => scCellOf(s, 'groups'); const tiny = SC_GROUPS.concat(ZONE_ORDER).filter(() => true); const zs = ZONE_ORDER.map(z => [z, wmCell(R, 'Practice', s => scCellOf(s, 'zones') === z)]); const thinZ = zs.filter(x => x[1].n < 25 && x[1].n > 0).map(x => x[0]), okZ = zs.filter(x => x[1].ok).map(x => x[0]); if (!thinZ.length || !okZ.length) return { skip: true, zs: zs.map(x => [x[0], x[1].n]) }; const shots = wiLoc(scPool('2027').filter(s => sessionTypeOf(s) === 'Practice')); const a = wmEstimate(__okR(), { season: '2027', type: 'Practice', grouping: 'zones', shots, swing: __S, support: __SUP, lever: 'loc', from: thinZ[0], to: okZ[0], n: 1 }); return { a: { none: a.none, why: a.why, d: a.d }, from: thinZ[0] }; })()`);
+  ok('a rare from-situation is checked alone; it can\'t hide in a pooled group (#107\'s gap)', hide.skip ? false : hide.a.none && hide.a.d === undefined && /^No estimate: from/.test(hide.a.why), hide);
+  const gap = nj(`(() => { const R = wmModel('2027'), shots = R.shots.filter(s => sessionTypeOf(s) === 'Practice'), A = shots.filter(s => scCellOf(s, 'groups') === ${JSON.stringify(lf)}), B = shots.filter(s => scCellOf(s, 'groups') === ${JSON.stringify(lt)}); const fake = new Map(R.oof); const v = s => R.oof.get(s); const sA = A.reduce((a, s) => a + Math.sqrt(v(s) * (1 - v(s)) / A.length), 0); const bump = (l, d) => l.forEach(s => fake.set(s, Math.min(0.99, Math.max(0.01, (s.goal === 1 ? 1 : 0) * 0 + v(s) + d))));
+      const ca = wmCell(R, 'Practice', s => A.includes(s)); const cb = wmCell(R, 'Practice', s => B.includes(s)); const need = 1.6 * Math.sqrt(ca.v) / ca.n; bump(A, ((ca.g - ca.e) / ca.n) + need); bump(B, ((cb.g - cb.e) / cb.n) - 1.6 * Math.sqrt(cb.v) / cb.n);
+      const res = wmEstimate(Object.assign({}, R, { ok: true, oof: fake }), { season: '2027', type: 'Practice', grouping: 'groups', shots: __B(), swing: __S, support: __SUP, lever: 'loc', from: ${JSON.stringify(lf)}, to: ${JSON.stringify(lt)}, n: 1 }); return { none: res.none, why: res.why, d: res.d, zf: res.cf && res.cf.z, zt: res.ct && res.ct.z, zg: res.zGap }; })()`);
+  ok('each situation can pass while the gap between them is missed: that gives no number', gap.none && gap.d === undefined && /misses the gap/.test(gap.why), gap);
+  const nl = nj(`(() => { const list = wiLoc(__B()).map((s, i) => i < 4 ? Object.assign({}, s, { contestLevel: null }) : s), a = __E({ lever: 'pressure', from: ${JSON.stringify(pf)}, to: ${JSON.stringify(pt)}, n: 1, shots: list }); return { logged: a.logged, notLogged: a.notLogged, located: a.located, none: a.none, why: a.why }; })()`);
+  ok('a field that wasn\'t logged isn\'t changed, and it\'s counted', nl.notLogged === 4 && nl.logged === nl.located - 4, nl);
+
+  // ===== The page =====
+  const page = () => n(`document.getElementById('scWm').textContent`);
+  n(`window.__mk = wmModel, window.__sp = wmSupport; wmModel = s => { const r = __mk(s); return r.model ? Object.assign(r, { ok: true }) : r; }; wmSupport = () => __SUP; Object.assign(WM_ST, { open: true, lever: 'pressure', from: ${JSON.stringify(pf)}, to: ${JSON.stringify(pt)}, n: 2 }); renderModeled();`);
+  const t = page();
+  ok('page: a result shows counted goals, modeled baseline and what-if, per 100, per changed shot, shots changed', n(`!!document.querySelector('#scWm .wm-result')`) && /Counted goals, Period B/.test(t) && /Modeled baseline \(expected goals\)/.test(t) && /Modeled what-if \(expected goals\)/.test(t) && /Change per 100 located shots/.test(t) && /Change per changed shot/.test(t) && /Shots changed/.test(t), t.slice(0, 400));
+  ok('page: not a forecast, not evidence of cause, an association, nothing about attainability', /isn.t a forecast/.test(t) && /isn.t evidence that the change would cause more goals/.test(t) && /shows an association/.test(t) && /can.t say whether the shot can be created/.test(t));
+  ok('page: range limitation sits beside the result', /Limit:.*don.t cover whether the shots are attainable/.test(n(`document.querySelector('#scWm .wm-read').textContent`)));
+  ok('page: ranges provisional, split, no 95% or confidence claim', /Provisional range: average/.test(t) && /Provisional range: a new run/.test(t) && !/95\s?%|confidence interval|statistically significant/i.test(t));
+  ok('page: the screen says how weak it is, and what passing means', /This screen is weak on these samples/.test(t) && /could miss this gap by up to about \d+ goals per 100/.test(t) && /doesn.t contradict the model here/.test(t), t.slice(-600));
+  ok('page: says it isn\'t the grade-based expected goals above', /isn.t the grade-based expected goals/.test(t));
+  ok('page: the support check is labeled provisional, and coverage is stated', /provisional rule, not a validated limit/.test(t) && /Coverage: \d+ of \d+ located/.test(t));
+  ok('page: model check names the grade result and every setting, none validated', /Method choices \(our settings, none validated\)/.test(t) && /(grade alone predicts better|Grade only)/.test(t) && /fit on every located 2027 team shot, including these periods and every session type/.test(t) && /no game shots yet/.test(t));
+  n(`Object.assign(WM_ST, { lever: 'loc', from: ${JSON.stringify(lf)}, to: ${JSON.stringify(lt)}, n: 1 }); renderModeled();`);
+  ok('page: a location change explains why it differs from Move Shots', /Why this differs from Move Shots above/.test(page()), page().slice(0, 300));
+  const recs = nj(`(() => { const d = document.getElementById('wmRecords'); d.open = true; d.dispatchEvent(new Event('toggle')); const rows = document.querySelectorAll('#wmRecBody tr').length; return { rows, want: WM_LAST.eligible.length }; })()`);
+  ok('page: records of the eligible shots open and count right', recs.rows === recs.want && recs.rows > 0, recs);
+  const ctl = nj(`[SC_ST.period, SC_ST.subject, SC_ST.grouping, WI_ST.from, WI_ST.n]`);
+  n(`document.querySelector('[data-wm="plus"]').click();`);
+  ok('modeled controls don\'t change the panel or the historical controls', JSON.stringify(nj(`[SC_ST.period, SC_ST.subject, SC_ST.grouping, WI_ST.from, WI_ST.n]`)) === JSON.stringify(ctl) && nj(`WM_ST.n`) === 2);
+
+  // ===== Player and Player View =====
+  const j = nj(`(() => { const c = {}; __B().forEach(s => { c[s.shooterJersey] = (c[s.shooterJersey] || 0) + 1; }); return String(Object.entries(c).sort((a, b) => b[1] - a[1])[0][0]); })()`);
+  n(`SC_ST.subject = ${JSON.stringify(j)}; WM_ST.lever = null; renderScoringChange();`);
+  ok('a player sees "an average shooter on our team", not a claim about the player', /estimates what an average shooter on our team scores/.test(page()));
+  const pv = nj(`(() => { const name = nameFor(${JSON.stringify(j)}, '2027'); PLAYER_MODE = { name, names: [name], seasons: { '2027': ${JSON.stringify(j)} }, roles: ['player'] }; try { WM_ST.open = true; renderScoringChange(); return { html: document.getElementById('scWm').innerHTML, wi: document.getElementById('scWi').innerHTML.length }; } finally { PLAYER_MODE = null; SC_ST.subject = 'team'; renderScoringChange(); } })()`);
+  ok('Player View: modeled estimates are staff-only, historical block stays', pv.html === '' && pv.wi > 100, pv.html.slice(0, 100));
+  n(`wmModel = __mk; wmSupport = __sp; WM_MODEL = null;`);
+
+  // ===== A model that fails the check =====
+  const fail = nj(`(() => { const r = wmModel('2027'), keep = wmModel; wmModel = () => Object.assign({}, r, { ok: false, why: 'On sessions it never saw, the model did not beat the base rate.' }); Object.assign(WM_ST, { open: true, lever: 'pressure', from: ${JSON.stringify(pf)}, to: ${JSON.stringify(pt)}, n: 2 }); renderModeled(); const o = { none: !!document.querySelector('#scWm .wm-none'), res: !!document.querySelector('#scWm .wm-result'), txt: document.querySelector('#scWm .wm-none') ? document.querySelector('#scWm .wm-none').textContent : '' }; wmModel = keep; Object.assign(WM_ST, { lever: null, from: null, to: null, n: 0 }); renderModeled(); return o; })()`);
+  ok('a model that fails the check turns estimates off on the page, and says why', fail.none && !fail.res && /^No estimate/.test(fail.txt), fail);
+
+  // ===== Every selection =====
+  const sweep = nj(`(() => { let tot = 0, est = 0, none = 0, bad = []; const js = ['team'].concat([...new Set(scPool('2027').map(s => String(s.shooterJersey)))]);
+    ['Practice', 'Opponent scrimmage', 'Game'].forEach(type => js.forEach(subject => { const Rc = scCompare({ season: '2027', type, period: '5', subject, grouping: 'groups' }); if (!Rc.sessions.length) return;
+      WM_LEVERS.forEach(l => { const vals = l.k === 'loc' ? Rc.keys : l.opts; vals.forEach(from => vals.forEach(to => { if (from === to) return; [1, 5].forEach(k => { tot++; const r = wmCompute(Rc, { lever: l.k, from, to, n: k }).res;
+        if (r.est) { est++; if (![r.d, r.base, r.scen, r.per100, r.jack].every(v => typeof v === 'number' && isFinite(v))) bad.push(['nan', type, subject, l.k, from, to]); if (r.lo !== null && !(r.loNew < r.lo && r.lo < r.d && r.d < r.hi && r.hi < r.hiNew)) bad.push(['range', type, subject, l.k, from, to, r.lo, r.d, r.hi]); if (r.n !== Math.min(k, r.avail)) bad.push(['n', r.n, r.avail]); }
+        else { none++; if (r.d !== undefined || !r.why) bad.push(['no-number', type, subject, l.k, from, to]); } }); })); }); }));
+    return { tot, est, none, bad: bad.slice(0, 6) }; })()`);
+  ok(`${sweep.tot} changes across types and players: a finite number with its ranges, or no number and a reason`, sweep.bad.length === 0 && sweep.tot > 500, sweep);
+
+  // ===== Real-data diagnostics (reported, not pass/fail; same-season data, not a validation) =====
+  if (REAL) {
+    T.summary = nj(`(() => { const R = wmModel('2027'), season = '2027', out = { audit: { skill: +(R.skill * 100).toFixed(2), grade: +(R.skillGrade * 100).toFixed(2), forward: +(R.forwardSkill * 100).toFixed(2), forwardN: R.forwardN, ok: R.ok } };
+      const Rc = scCompare(${DEF}), Show = (lever, from, to, k, c) => { const r = wmCompute(c || Rc, { lever, from, to, n: k }).res; return r.est ? { d: +r.d.toFixed(2), per: +r.per.toFixed(3), base: +r.base.toFixed(1), jack: +r.jack.toFixed(2), calib: +r.calibSd.toFixed(2), lo: +r.lo.toFixed(1), hi: +r.hi.toFixed(1), loNew: +r.loNew.toFixed(1), hiNew: +r.hiNew.toFixed(1), prop: +r.propShare.toFixed(3), max: +r.support.max.toFixed(3), pts: +r.gapPts.toFixed(0) } : { why: r.why }; };
+      out.teamAlleyInside5 = Show('loc', 'Alley', 'Inside', 5); out.teamAlleyInsideAll = Show('loc', 'Alley', 'Inside', 1000); out.teamHeavyOpen5 = Show('pressure', 'Heavy', 'Open', 5); out.teamLightOpen5 = Show('pressure', 'Light', 'Open', 5); out.teamDodgeCatch5 = Show('dodge', 'Off the dodge', 'Off the catch', 5); out.teamSideOver5 = Show('release', 'Sidearm', 'Overhand', 5); out.teamTopInside5 = Show('loc', 'Top', 'Inside', 5);
+      // Grid: 10 players with 30+ shots in the season, team; all-shot moves (the case #107 passed) and 5-shot moves.
+      const sh = wiSeasonShots(season, 'Practice'), c = {}; sh.forEach(s => { c[s.shooterJersey] = (c[s.shooterJersey] || 0) + 1; }); const big = Object.keys(c).filter(j => c[j] >= 30);
+      const tally = {}; const reason = r => r.est ? (r.lo <= 0 && r.hi >= 0 ? 'estimate: cannot distinguish' : 'estimate: range excludes zero') : r.idle ? 'nothing to change' : /located shots in Period B/.test(r.why) ? 'too few shots by subject' : /above the highest share/.test(r.why) ? 'above observed share' : /misses the gap/.test(r.why) ? 'gap missed' : /team shot/.test(r.why) ? 'too few team shots' : /miss by more/.test(r.why) ? 'situation missed' : 'other';
+      const moves = {}; ['Alley', 'Inside', 'Low/GLE', 'Top', 'Wing'].forEach(k => { moves[k] = 0; });
+      let doorAll = { est: 0, none: 0 }, ranges = [], news = [], jk = [];
+      big.forEach(j => { const Rj = scCompare({ season, type: 'Practice', period: '10', subject: j, grouping: 'groups' }); WM_LEVERS.forEach(l => { const vals = l.k === 'loc' ? Rj.keys : l.opts; vals.forEach(from => vals.forEach(to => { if (from === to) return; const r = wmCompute(Rj, { lever: l.k, from, to, n: 3 }).res, key = reason(r); tally[key] = (tally[key] || 0) + 1; if (r.est) { ranges.push((r.hi - r.lo) / 2); news.push((r.hiNew - r.loNew) / 2); jk.push(1.96 * r.jack); } })); });
+        ['Alley', 'Low/GLE', 'Top'].forEach(from => { const r = wmCompute(Rj, { lever: 'loc', from, to: 'Inside', n: 1000 }).res; if (r.idle) return; if (r.est) doorAll.est++; else doorAll.none++; }); });
+      const med = a => a.length ? +a.slice().sort((x, y) => x - y)[a.length >> 1].toFixed(2) : null;
+      out.players = big.length; out.playerGrid3Shots = tally; out.medAvgRange = med(ranges); out.medNewRun = med(news); out.medFitPartOnly = med(jk); out.moveAllToInside = doorAll;
+      // Later sessions, untouched: fit on earlier practices, then compare the model's gap with the counted gap in the last 5.
+      const pr = [...new Set(sh.map(scSid))].sort(), last = new Set(pr.slice(-5)), train = R.shots.filter(s => !last.has(scSid(s))), m = fitXg2(train), test = R.shots.filter(s => last.has(scSid(s)));
+      const pairs = []; WM_LEVERS.forEach(l => { const vals = l.k === 'loc' ? SC_GROUPS : l.opts; vals.forEach(a => vals.forEach(b => { if (a >= b) return; const of = s => l.of(s, 'groups'), A = test.filter(s => of(s) === a), B = test.filter(s => of(s) === b); if (A.length < 25 || B.length < 25) return; const rate = x => x.filter(s => s.goal === 1).length / x.length, ra = rate(A), rb = rate(B), obs = rb - ra; const spots = l.k === 'loc' ? train.filter(s => of(s) === b).map(s => ({ lat: s.lateralYds, dist: s.distanceYds })) : null; const gapM = A.reduce((t, s) => { const p = xg2Profile(s); return t + (spots ? spots.reduce((u, q) => u + predictXg2(m, Object.assign({}, p, q)) - predictXg2(m, p), 0) / spots.length : predictXg2(m, l.set(p, b)) - predictXg2(m, p)); }, 0) / A.length; const se = Math.sqrt(ra * (1 - ra) / A.length + rb * (1 - rb) / B.length), z = (obs - gapM) / se; pairs.push({ k: l.k, a, b, nA: A.length, nB: B.length, obs: +(obs * 100).toFixed(1), model: +(gapM * 100).toFixed(1), z: +z.toFixed(2) }); })); });
+      out.laterSessions = { pairs: pairs.length, within2SE: pairs.filter(p => Math.abs(p.z) <= 2).length, sameSign: pairs.filter(p => Math.sign(p.obs) === Math.sign(p.model)).length, list: pairs };
+      return out; })()`);
+  }
+
+  // ===== Safety =====
+  ok('no page errors', errs.length === 0, errs.slice(0, 5));
+  ok('no network access attempted', N.__GUARD.blocked.length === 0 && O.__GUARD.blocked.length === 0, [N.__GUARD.blocked.slice(0, 3), O.__GUARD.blocked.slice(0, 3)]);
+  ok('modeled estimates write nothing (in-memory writes unchanged since boot)', N.__FAKE.__writes.length === writes0, N.__FAKE.__writes.slice(writes0, writes0 + 5));
+  const result = { at: new Date().toISOString(), export: EXPORT, real: REAL, pass: T.pass, fail: T.fail, results: T.results, summary: T.summary };
+  document.getElementById('out').textContent = JSON.stringify(result, null, 1);
+  await fetch('/results/' + (REAL ? 'phase2b_real' : 'phase2b_tests') + '.json', { method: 'POST', body: JSON.stringify(result, null, 1) });
+}
+run().catch(e => { document.getElementById('out').textContent = 'HARNESS ERROR ' + (e && e.stack || e); fetch('/results/' + (REAL ? 'phase2b_real' : 'phase2b_tests') + '.json', { method: 'POST', body: JSON.stringify({ err: String(e && e.stack || e), pass: T.pass, fail: T.fail + 1, results: T.results }) }); });
+</script>
+</body></html>

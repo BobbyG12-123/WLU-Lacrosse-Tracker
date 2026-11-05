@@ -91,7 +91,7 @@ async function run() {
   const snapSrc = await (await fetch('analytics_snapshot.js')).text();
   const sa = JSON.parse(o(snapSrc)), sb = JSON.parse(n(snapSrc)), keys = [...new Set(Object.keys(sa).concat(Object.keys(sb)))], sdiff = keys.filter(k => JSON.stringify(sa[k]) !== JSON.stringify(sb[k]));
   ok('analytics snapshot identical to main', sdiff.length === 0 && keys.length > 0, { compared: keys.length, diff: sdiff.slice(0, 10) });
-  const bodyHtml = (w, subj) => w.eval(`(() => { SC_ST.subject = ${JSON.stringify(subj)}; renderScoringChange(); const d = document.createElement('div'); d.innerHTML = document.getElementById('scBody').innerHTML; const x = d.querySelector('#scWi'); if (x) x.remove(); return d.innerHTML.replace(/scm\\d+_/g, 'scm_'); })()`);
+  const bodyHtml = (w, subj) => w.eval(`(() => { SC_ST.subject = ${JSON.stringify(subj)}; renderScoringChange(); const d = document.createElement('div'); d.innerHTML = document.getElementById('scBody').innerHTML; ['#scWi', '#scWm'].forEach(q => { const x = d.querySelector(q); if (x) x.remove(); }); return d.innerHTML.replace(/scm\\d+_/g, 'scm_'); })()`);
   const someJ = String(sess.flatMap(s => s.shots).reduce((m, s) => { m[s.j] = (m[s.j] || 0) + 1; return m; }, {}) && Object.entries(sess.flatMap(s => s.shots).reduce((m, s) => { m[s.j] = (m[s.j] || 0) + 1; return m; }, {})).sort((x, y) => y[1] - x[1])[0][0]);
   ok('Scoring Change itself is unchanged apart from the added What If block: Team', bodyHtml(O, 'team') === bodyHtml(N, 'team'));
   ok('Scoring Change itself is unchanged apart from the added What If block: a player', bodyHtml(O, someJ) === bodyHtml(N, someJ));
