@@ -9,6 +9,7 @@ cd "$(dirname "$0")"
 BASE=${1:-origin/main}
 CHROME=${CHROME:-"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"}
 for f in build_offline.py guard_offline.js fake_firestore.js make_fixture.py serve.py analytics_snapshot.js; do cp ../phase0/$f .; done
+cp ../BUILD_LABEL.txt .   # the one pinned build label; update it when the label changes
 python3 make_fixture.py ../../index.html fixture.json
 git -C ../.. show "$BASE:index.html" > main_index.html
 python3 build_offline.py main_index.html tracker_main.html

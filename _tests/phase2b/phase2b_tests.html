@@ -48,7 +48,7 @@ async function run() {
   const snapSrc = await (await fetch('analytics_snapshot.js')).text();
   const sa = JSON.parse(o(snapSrc)), sb = JSON.parse(n(snapSrc)), keys = [...new Set(Object.keys(sa).concat(Object.keys(sb)))], sdiff = keys.filter(k => JSON.stringify(sa[k]) !== JSON.stringify(sb[k]));
   ok('analytics snapshot identical to main', sdiff.length === 0 && keys.length > 0, sdiff.slice(0, 8));
-  const clean = w => w.eval(`(() => { const d = document.createElement('div'); d.innerHTML = document.getElementById('scBody').innerHTML; ['#scWm'].forEach(q => { const x = d.querySelector(q); if (x) x.remove(); }); const b = d.querySelector('.wi-badge'); if (b) b.remove(); return d.innerHTML.replace(/scm\\d+_/g, 'scm_').replace(/<div id="scWi">/, '<div id="scWi">'); })()`);
+  const clean = w => w.eval(`(() => { const d = document.createElement('div'); d.innerHTML = document.getElementById('scBody').innerHTML; ['#scWm', '#scWp'].forEach(q => { const x = d.querySelector(q); if (x) x.remove(); }); const b = d.querySelector('.wi-badge'); if (b) b.remove(); return d.innerHTML.replace(/scm\\d+_/g, 'scm_').replace(/<div id="scWi">/, '<div id="scWi">'); })()`);
   ok('Scoring Change and the historical block are unchanged, apart from the Counted tag', clean(O) === clean(N));
   // The synthetic fixture logs no release at all; give its shots one, in memory, so the held-fixed rules can run. Real data is left as is.
   if (!REAL) n(`SHOTS.forEach(s => { if (!s.shotMechanism) s.shotMechanism = ['Overhand', 'Overhand', 'Sidearm', 'Underhand'][s.id % 4]; });`);
@@ -212,7 +212,7 @@ async function run() {
       return out; })()`);
   }
 
-  ok('release build label is 7a1-g6', nj('BUILD_VERSION') === '7a1-g6' && n(`document.getElementById('buildVersion').textContent`) === 'Build 7a1-g6');
+  const WANT = (await (await fetch('BUILD_LABEL.txt')).text()).trim(); ok(`build label is the pinned ${WANT} (constant and footer)`, /^7a1-g\d+$/.test(WANT) && nj('BUILD_VERSION') === WANT && n(`document.getElementById('buildVersion').textContent`) === 'Build ' + WANT);
 
   // ===== Safety =====
   ok('no page errors', errs.length === 0, errs.slice(0, 5));

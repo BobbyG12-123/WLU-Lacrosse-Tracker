@@ -10,3 +10,4 @@ fake_firestore.js
 make_fixture.py
 serve.py
 analytics_snapshot.js
+BUILD_LABEL.txt

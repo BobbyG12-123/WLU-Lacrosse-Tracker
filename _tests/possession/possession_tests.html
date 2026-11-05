@@ -1,0 +1,248 @@
+<!doctype html>
+<html><head><meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; connect-src 'self'; style-src 'unsafe-inline'; frame-src 'self'; base-uri 'none'; form-action 'none'">
+<script src="guard_offline.js"></script>
+<script src="fake_firestore.js"></script>
+<title>TEST — Possession scenarios (offline, in-memory database only)</title>
+<style>body{font:13px system-ui;margin:16px} iframe{width:48%;height:700px;border:1px solid #999}</style>
+</head><body>
+<iframe id="fOld" src="tracker_main.html"></iframe><iframe id="fNew" src="tracker_branch.html"></iframe>
+<pre id="out">running…</pre>
+<script>
+const Q = new URLSearchParams(location.search), EXPORT = Q.get('export') || 'fixture.json', REAL = Q.get('real') === '1';
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+const T = { results: [], pass: 0, fail: 0 };
+const ok = (name, cond, info) => { T.results.push({ name, ok: !!cond, info: info === undefined ? null : info }); cond ? T.pass++ : T.fail++; };
+async function boot() {
+  const exp = await (await fetch(EXPORT)).json();
+  const frames = { old: document.getElementById('fOld').contentWindow, neu: document.getElementById('fNew').contentWindow };
+  for (const k of Object.keys(frames)) {
+    const w = frames[k];
+    for (let i = 0; i < 60 && !(w.firebase && w.firebase.apps && w.firebase.apps.length && typeof w.init === 'function'); i++) await sleep(300);
+    const fake = makeFakeFirestore(exp.collections);
+    const real = w.firebase.firestore, f = function () { return fake; }; Object.keys(real).forEach(x => { f[x] = real[x]; }); f.FieldValue = real.FieldValue;
+    w.firebase.firestore = f; w.__FAKE = fake;
+    w.init().then(() => { w.__BOOT_DONE = true; }, e => { w.__BOOT_ERR = String(e && e.stack || e); });
+  }
+  for (let i = 0; i < 160 && !(frames.old.__appReady && frames.neu.__appReady); i++) await sleep(500);
+  await sleep(3000);
+  return { frames };
+}
+async function run() {
+  const { frames } = await boot();
+  const O = frames.old, N = frames.neu, n = src => N.eval(src), nj = src => JSON.parse(n(`JSON.stringify(${src})`));
+  const near = (a, b, e) => Math.abs(a - b) < (e || 1e-9);
+  const errs = []; N.addEventListener('error', e => errs.push(String(e.message)));
+  ok('both builds booted', O.__appReady && N.__appReady, [O.__BOOT_ERR || null, N.__BOOT_ERR || null]);
+  const writes0 = N.__FAKE.__writes.length;
+  const SET = `heatSeason = '2027'; NAV_ST.ctx = 'All'; SEASON_PART = 'Full'; Object.assign(SC_ST, { type: 'Practice', barCtx: 'All', askType: false, period: '5', custom: null, subject: 'team', grouping: 'groups', origin: null }); `;
+  n(SET + `renderScoringChange();`); O.eval(SET + `renderScoringChange();`);
+
+  // ===== Nothing released changed =====
+  const snapSrc = await (await fetch('analytics_snapshot.js')).text();
+  const sa = JSON.parse(O.eval(snapSrc)), sb = JSON.parse(n(snapSrc)), keys = [...new Set(Object.keys(sa).concat(Object.keys(sb)))], sdiff = keys.filter(k => JSON.stringify(sa[k]) !== JSON.stringify(sb[k]));
+  ok('analytics snapshot identical to main', sdiff.length === 0 && keys.length > 0, sdiff.slice(0, 8));
+  const clean = w => w.eval(`(() => { const d = document.createElement('div'); d.innerHTML = document.getElementById('scBody').innerHTML; const x = d.querySelector('#scWp'); if (x) x.remove(); return d.innerHTML.replace(/scm\\d+_/g, 'scm_'); })()`);
+  ok('Scoring Change, What If and modeled blocks render the same as main', clean(O) === clean(N));
+  ok('closed: a label and a button, no number, nothing computed', /Not a prediction/.test(n(`document.getElementById('scWp').textContent`)) && !n(`!!document.querySelector('#scWp .wp-result')`));
+
+  // ===== Hand-built sessions: swap the records in, restore after =====
+  const HAND = `(() => {
+    const S0 = SHOTS, P0 = POSSESSIONS, T0 = TRACKING, out = {};
+    const tmpl = S0.find(s => s.team !== 'OPP' && s.shooterJersey && shotZone(s) && seasonForDate(s.date) === '2027'), p0 = P0.find(p => p.team !== 'OPP');
+    const zoneFor = g => { const hit = S0.find(s => s.team !== 'OPP' && scCellOf(s, 'groups') === g); return hit; };
+    let id = 900000;
+    const shot = (date, g, goal, reb) => Object.assign({}, zoneFor(g), { id: id++, date, context: 'Practice', opponent: null, team: 'WLU', goal, rebound: reb ? 'Yes' : null, shooterJersey: '7', _sid: date + '_practice', manSituation: 'Even' });
+    const poss = (date, end) => Object.assign({}, p0, { id: id++, date, context: 'Practice', opponent: null, team: 'WLU', end, _sid: date + '_practice', manSituation: 'Even' });
+    const [g1, g2] = SC_GROUPS; out.g1 = g1; out.g2 = g2;
+    const dates = ['2026-09-01','2026-09-02','2026-09-03','2026-09-04','2026-09-05','2026-09-06','2026-09-07','2026-09-08'];
+    try {
+      // Rebound cases on one session.
+      const D = dates[0], a = shot(D, g1, 1), b = shot(D, g1, 0, true), c = shot(D, g1, 0), e = shot(D, g1, 1, true), f = shot(D, g1, 0, true), t = poss(D, 'Turnover'), u = poss(D, 'Failed clear');
+      const rows = wpRows([a, b, c, e, f], [t, u], 'groups'), tl = wpTally(rows, SC_GROUPS);
+      { const m = shot(D, g1, 0), r2 = shot(D, g2, 1, true), un = shot(D, g2, 0), rw = wpRows([m, r2, un], [], 'groups'), tw = wpTally(rw, SC_GROUPS); out.later = { L: tw.L, g1G: tw.cells[g1].g, g1N: tw.cells[g1].n, g2G: tw.cells[g2].g, g2N: tw.cells[g2].n }; }
+      { const x = shot(D, g1, 1), y = shot(D, g1, 0, true), tp = teamPossessions({ shots: [x, y], oppShots: [], poss: [], xgOf: () => 0 }); out.counters = { efficiency: tp.length, goalsAdded: wpRows([x, y], [], 'groups').length }; }
+      out.reb = { L: tl.L, G: tl.G, S: tl.S, shots: tl.shots, TO: tl.TO, NS: tl.NS, maxGoal: Math.max(...rows.map(r => r.goal)) };
+      // Eight sessions: each g1 8 possessions 4 goals, g2 8 possessions 2 goals, 8 turnovers, 1 other ending.
+      let sh = [], po = [];
+      dates.forEach(d => { for (let i = 0; i < 8; i++) { sh.push(shot(d, g1, i < 4 ? 1 : 0)); sh.push(shot(d, g2, i < 2 ? 1 : 0)); po.push(poss(d, 'Turnover')); } po.push(poss(d, 'End of period')); });
+      SHOTS = sh; POSSESSIONS = po; TRACKING = {};
+      const R = scCompare({ season: '2027', type: 'Practice', period: '3', subject: 'team', grouping: 'groups' }), st = x => Object.assign({ scope: 'records', bench: 'season', N: null, delta: 0, repl: null, mix: null, mixLoc: null, from: null, to: null, n: 0 }, x), run = x => wpCompute(R, st(x));
+      const pack = C => ({ none: !!C.none, idle: !!C.idle, why: C.why || null, N: C.N, base: C.baseGoals, scen: C.scenGoals, d: C.d, per100: C.per100, aff: C.affected, sup: C.supported, lo: C.range && C.range.lo, loNew: C.range && C.range.loNew, TO: C.scen && C.scen.TO, NS: C.scen && C.scen.NS, g1: C.scen && C.scen.cells[g1], g2: C.scen && C.scen.cells[g2], L: C.B && C.B.L, conv: C.swing && C.swing.conv, unchanged: C.unchanged, tog: C.together && C.together.length, alone: C.alone, actual: C.actual });
+      out.none = pack(run({})); // 3 sessions x 25 = 75 possessions, 18 goals
+      out.scaled = pack(run({ N: 150 }));
+      out.idle = pack(run({ delta: -4 }));
+      out.noMix = pack(run({ delta: -4, repl: 0.5 }));
+      out.r0 = pack(run({ delta: -4, repl: 0 }));
+      out.r50 = pack(run({ delta: -4, repl: 0.5, mix: 'B' }));
+      out.rLoc = pack(run({ delta: -4, repl: 1, mix: 'loc', mixLoc: g1 }));
+      out.more = pack(run({ delta: 4 }));
+      out.move = pack(run({ from: g2, to: g1, n: 3 }));
+      out.move2 = pack(run({ N: 150, from: g2, to: g1, n: 6 }));
+      out.joint = pack(run({ delta: -4, repl: 1, mix: 'loc', mixLoc: g1, from: g2, to: g1, n: 3 }));
+      out.periodB = pack(run({ bench: 'periodB' }));
+      out.overmove = pack(run({ from: g2, to: g1, n: 500 }));
+      // The turnover and mix changes are each reached by real sessions, but never in the same one.
+      const sv = SHOTS, pv = POSSESSIONS;
+      SHOTS = sv.filter(s => !(s.date === dates[0] && scCellOf(s, 'groups') === g2 && s.goal === 0 && s.id % 2)); // more g1 share, same turnovers
+      POSSESSIONS = pv.filter(p => !(p.date === dates[1] && p.end === 'Turnover' && p.id % 2));                 // fewer turnovers, same mix
+      { const R2 = scCompare({ season: '2027', type: 'Practice', period: '3', subject: 'team', grouping: 'groups' }), c0 = wpCompute(R2, st({})), tgt = -2, mv = 2, Cj = wpCompute(R2, st({ delta: tgt, repl: 0, from: g2, to: g1, n: mv }));
+        out.split = { sup: Cj.supported, tog: Cj.together, alone: Cj.alone, lo: Cj.range.lo, d: Cj.d, none: !!Cj.none, s0: c0.B.TO / c0.B.L }; }
+      SHOTS = sv; POSSESSIONS = pv;
+      // Which sessions are used.
+      const del = dates[6]; SHOTS = sv; POSSESSIONS = pv.filter(p => p.date !== del);
+      { const R3 = scCompare({ season: '2027', type: 'Practice', period: '3', subject: 'team', grouping: 'groups' }), c = wpCompute(R3, st({})); out.noRec = { ex: c.excluded.map(s => s.sid), bL: c.B.L, why: (c.excluded[0] || {}).why };
+        TRACKING = { [del + '_practice']: { confirmed: true, cats: { poss: 'C' } } }; const c2 = wpCompute(R3, st({})); out.confirmedZero = { ex: c2.excluded.length, bL: c2.B.L, TO: c2.B.TO };
+        const c3 = wpCompute(R3, st({ scope: 'confirmed' })); out.confOnly = { el: c3.eligible.length, bL: c3.B.L, none: !!c3.none };
+        TRACKING = { [dates[7] + '_practice']: { confirmed: true, cats: { poss: 'N' } }, [dates[5] + '_practice']: { confirmed: true, cats: { poss: 'P' } } }; POSSESSIONS = pv; const c4 = wpCompute(R3, st({})); out.marked = c4.excluded.map(s => s.why); TRACKING = {}; }
+      SHOTS = sv; POSSESSIONS = pv;
+      // Too few, thin, player, seeded.
+      const R4 = scCompare({ season: '2027', type: 'Practice', period: '3', subject: '7', grouping: 'groups' }); out.player = { none: !!wpCompute(R4, st({})).none, why: wpCompute(R4, st({})).why };
+      SHOTS = sv.filter(s => s.date === dates[7]); POSSESSIONS = pv.filter(p => p.date === dates[7] && p.id % 5 === 0);
+      { const R5 = scCompare({ season: '2027', type: 'Practice', period: '3', subject: 'team', grouping: 'groups' }), c = wpCompute(R5, st({})); out.few = { none: !!c.none, why: c.why, L: c.B.L }; }
+      SHOTS = sv.filter(s => dates.slice(5).includes(s.date)); POSSESSIONS = pv.filter(p => dates.slice(5).includes(p.date));
+      { const R6 = scCompare({ season: '2027', type: 'Practice', period: '3', subject: 'team', grouping: 'groups' }), c = wpCompute(R6, st({ delta: -4, repl: 0.5, mix: 'B' })); out.fewSess = { usable: c.swing.usable, lo: c.range.lo, d: c.d, sup: c.supported }; }
+      const g3 = SC_GROUPS[2]; SHOTS = sv; POSSESSIONS = pv;
+      { const c = run({ delta: -4, repl: 1, mix: 'loc', mixLoc: g3 }); out.thin = { none: !!c.none, why: c.why }; }
+      const Cs = run({ delta: -4, repl: 0.5, mix: 'B' }), Cu = run({}), a1 = wpSimulate(Cs, 42, 500), a2 = wpSimulate(Cs, 42, 500), a3 = wpSimulate(Cs, 43, 500), un = wpSimulate(Cu, 42, 300), big = wpSimulate(Cs, 42, 4000);
+      out.sim = { same: JSON.stringify(a1) === JSON.stringify(a2), diffSeed: JSON.stringify(a1) !== JSON.stringify(a3), unDiff: [un.diff.lo, un.diff.hi, un.diff.mean, un.same], mean: big.diff.mean, d: Cs.d };
+    } finally { SHOTS = S0; POSSESSIONS = P0; TRACKING = T0; }
+    return JSON.stringify(out);
+  })()`;
+  const H = JSON.parse(n(HAND));
+  const v1 = 0.5, v2 = 0.25;
+  ok('rebound on a goal starts a new possession; a rebound after a miss joins it; a goal is never double-counted', H.reb.L === 6 && H.reb.G === 2 && H.reb.S === 4 && H.reb.shots === 5 && H.reb.TO === 1 && H.reb.NS === 1 && H.reb.maxGoal === 1, H.reb);
+  ok('later shots: a rebound goal counts once, at the first shot\'s location; an untagged shot is its own logged possession', H.later.L === 2 && H.later.g1N === 1 && H.later.g1G === 1 && H.later.g2G === 0 && H.later.g2N === 1, H.later);
+  ok('separate finding recorded: on a rebound after a goal, Efficiency counts 1 and this count 2', H.counters.efficiency === 1 && H.counters.goalsAdded === 2, H.counters);
+  ok('Efficiency\'s possession code is the same as main (not changed in this package)', O.eval('teamPossessions.toString()') === n('teamPossessions.toString()') && O.eval('renderEffPossession.toString()') === n('renderEffPossession.toString()'));
+  ok('no change: exactly 0, and baseline = actual on hand counts', H.none.d === 0 && H.none.L === 75 && near(H.none.base, 18) && H.none.actual === 18 && H.none.lo === 0, H.none);
+  ok('other possessions: still exactly 0; no actual goals; baseline scales', H.scaled.d === 0 && near(H.scaled.base, 36) && H.scaled.actual === null, H.scaled);
+  ok('avoided turnovers with no stated replacement give no number', H.idle.idle && H.idle.d === undefined && /no default/.test(H.idle.why), H.idle);
+  ok('new shots with no stated mix give no number', H.noMix.idle && H.noMix.d === undefined, H.noMix);
+  ok('0% replacement: they stay no-shot endings, change exactly 0, total balances', H.r0.d === 0 && near(H.r0.TO, 21) && near(H.r0.NS, 6) && near(H.r0.TO + H.r0.NS + H.r0.g1 + H.r0.g2, 75), H.r0);
+  ok('50% at Period B mix: hand calculation', near(H.r50.d, 3 * 0.5 * (v1 + v2) / 2) && near(H.r50.per100, 100 * 0.5625 / 75) && near(H.r50.g1, 24.75) && near(H.r50.NS, 4.5), H.r50);
+  ok('100% at one location: hand calculation', near(H.rLoc.d, 3 * v1) && near(H.rLoc.g1, 27), H.rLoc);
+  ok('more turnovers: taken from shots in proportion, goals fall by hand calculation, total balances', near(H.more.d, -(3 / 48) * (24 * v1 + 24 * v2)) && near(H.more.TO, 27) && near(H.more.TO + H.more.NS + H.more.g1 + H.more.g2, 75), H.more);
+  ok('move: n x (rate to - rate from), total fixed', near(H.move.d, 3 * (v1 - v2)) && near(H.move.g1 + H.move.g2, 48), H.move);
+  ok('twice the possessions and twice the move: twice the change, same per 100', near(H.move2.d, 2 * H.move.d) && near(H.move2.per100, H.move.per100), [H.move2, H.move]);
+  ok('turnover and move together: both applied in one balanced split', near(H.joint.d, 3 * v1 + 3 * (v1 - v2)) && near(H.joint.TO + H.joint.NS + H.joint.g1 + H.joint.g2, 75), H.joint);
+  ok('Period B benchmark: no change still exactly 0', H.periodB.d === 0, H.periodB);
+  ok('a move is capped at what is available', H.overmove.g2 === 0 && near(H.overmove.g1, 48), H.overmove);
+  ok('each change reached alone but not together: hypothetical, no range', H.split.sup === false && H.split.tog.length < 2 && H.split.lo === null && H.split.alone.every(a => a.sessions >= 1) && !H.split.none, H.split);
+  ok('a session with no no-shot records is left out, with the reason', H.noRec.ex.length === 1 && /measured zero/.test(H.noRec.why) && H.noRec.bL === 2 * 25, H.noRec);
+  ok('confirmed complete with no no-shot records is used, as a measured zero', H.confirmedZero.ex === 0 && H.confirmedZero.bL === 2 * 25 + 16, H.confirmedZero);
+  ok('confirmed only: uses only confirmed sessions', H.confOnly.el === 1 && H.confOnly.bL === 16 && H.confOnly.none, H.confOnly);
+  ok('marked not tracked or partly tracked are left out', H.marked.length === 2 && H.marked.some(w => /not tracked/.test(w)) && H.marked.some(w => /partly/.test(w)), H.marked);
+  ok('a player selection gets a team-only message and no number', H.player.none && /team only/.test(H.player.why), H.player);
+  ok('too few possessions: no number, says why', H.few.none && /30\+/.test(H.few.why), H.few);
+  ok('fewer than 6 sessions: a change, but no range', H.fewSess.usable === false && H.fewSess.lo === null && H.fewSess.d > 0, H.fewSess);
+  ok('a location with too thin a benchmark gives no number', H.thin.none && /too few possessions/.test(H.thin.why), H.thin);
+  ok('illustration: seed reproduces, a new seed differs', H.sim.same && H.sim.diffSeed, H.sim);
+  ok('illustration: no change gives exactly 0 in every paired run', H.sim.unDiff[0] === 0 && H.sim.unDiff[1] === 0 && H.sim.unDiff[2] === 0 && H.sim.unDiff[3] === 1, H.sim.unDiff);
+  ok('illustration: average change agrees with the direct calculation', Math.abs(H.sim.mean - H.sim.d) < 0.15, [H.sim.mean, H.sim.d]);
+
+  // ===== This export: counts and invariants =====
+  const REC = `(() => { const out = { types: {} }; ['Practice', 'Opponent scrimmage', 'Intra-squad', 'Game'].forEach(type => { const R = scCompare({ season: '2027', type, period: '5', subject: 'team', grouping: 'groups' }), C = wpCompute(R, { scope: 'records', bench: 'season', N: null, delta: 0, repl: null, mix: null, mixLoc: null, from: null, to: null, n: 0 });
+      const bIds = new Set(R.per.B.map(s => s.sid)), usedB = C.eligible.filter(s => bIds.has(s.sid)), goalsUsed = R.shotsB.filter(s => usedB.some(u => u.sid === scSid(s))).reduce((t, s) => t + (s.goal === 1 ? 1 : 0), 0), shotsUsed = R.shotsB.filter(s => usedB.some(u => u.sid === scSid(s))).length;
+      const noShot = usedB.reduce((t, s) => t + s.noShot, 0), joined = C.B.shots - C.B.S;
+      const sameAsGA = C.sessions.every(s => { const sess = LIVE_SESSIONS[s.sid]; if (!sess) return true; if ((sess.shots || []).some(x => x.team !== 'OPP' && !x.shooterJersey)) return true; const ga = dsPossessions(sess).map(p => p.pk).sort().join(), mine = s.rows.map(r => r.key).sort().join(); return ga === mine; });
+      out.types[type] = { sessions: C.sessions.length, eligible: C.eligible.length, excluded: C.excluded.map(s => s.sid), L: C.B.L, G: C.B.G, goalsUsed, shotsUsed, shots: C.B.shots, noShot, joined, TO: C.B.TO, NS: C.B.NS, S: C.B.S, d: C.d, none: !!C.none, sameAsGA, A_L: C.A.L, oneGoal: C.rowsB.every(r => r.goal <= 1) }; });
+    return JSON.stringify(out); })()`;
+  const RC = JSON.parse(n(REC));
+  const usable = Object.entries(RC.types).filter(([, t]) => t.sessions);
+  ok('every type: goals in possessions = goals in the shots of the sessions used', usable.every(([, t]) => t.G === t.goalsUsed), RC.types);
+  ok('every type: shots reconcile, and possessions = shot possessions + no-shot records', usable.every(([, t]) => t.shots === t.shotsUsed && t.L === t.S + t.noShot && t.S === t.shots - t.joined && t.TO + t.NS === t.noShot), RC.types);
+  ok('every type: no possession has more than one goal', usable.every(([, t]) => t.oneGoal), RC.types);
+  ok('the grouping is the Goals Added grouping', usable.every(([, t]) => t.sameAsGA), RC.types);
+  ok('every type with possessions: no change gives exactly 0', usable.filter(([, t]) => !t.none).every(([, t]) => t.d === 0) && usable.some(([, t]) => !t.none), RC.types);
+
+  const FUZZ = `(() => { let seed = 7; const r = k => { seed = (seed * 1664525 + 1013904223) >>> 0; return seed % k; }; const out = { runs: 0, nums: 0, none: 0, idle: 0, bad: [] };
+    ['Practice', 'Opponent scrimmage'].forEach(type => ['groups', 'zones'].forEach(grouping => { const R = scCompare({ season: '2027', type, period: ['3', '5', '10'][r(3)], subject: 'team', grouping }), k = R.keys;
+      for (let i = 0; i < 400; i++) { const st = { scope: r(4) ? 'records' : 'confirmed', bench: r(2) ? 'season' : 'periodB', N: r(3) ? null : 1 + r(400), delta: r(3) ? r(61) - 40 : 0, repl: r(5) ? [0, .25, .5, .75, 1][r(5)] : null, mix: ['B', 'A', 'loc', null][r(4)], mixLoc: k[r(k.length)], from: r(2) ? k[r(k.length)] : null, to: r(2) ? k[r(k.length)] : null, n: r(40) };
+        const C = wpCompute(R, st); out.runs++; if (C.none) { out.none++; if (!C.why) out.bad.push(['no reason', st]); continue; } if (C.idle) { out.idle++; if (C.d !== undefined) out.bad.push(['idle with number', st]); continue; }
+        out.nums++; const cs = C.cats.map(k2 => k2 === WP_NOLOC ? C.scen.unloc : C.scen.cells[k2]), tot = C.scen.TO + C.scen.NS + cs.reduce((t, v) => t + v, 0);
+        if (Math.abs(tot - C.N) > 1e-6 || cs.concat([C.scen.TO, C.scen.NS]).some(v => v < -1e-9 || !isFinite(v))) out.bad.push(['counts', st, tot, C.N]);
+        if (!isFinite(C.d) || !isFinite(C.per100) || !isFinite(C.scenGoals) || Math.abs(C.scenGoals - C.baseGoals - C.d) > 1e-9) out.bad.push(['values', st]);
+        if (Math.abs(C.per100 - 100 * C.d / C.N) > 1e-9) out.bad.push(['per100', st]);
+        if (!C.delta && !C.n && C.d !== 0) out.bad.push(['unchanged', st, C.d]);
+        if (!C.supported && C.range.lo !== null) out.bad.push(['range on unsupported', st]);
+        if (C.range.lo !== null && !(C.range.lo <= C.d && C.d <= C.range.hi && C.range.loNew <= C.range.lo && C.range.hiNew >= C.range.hi)) out.bad.push(['range order', st]);
+      } })); out.bad = out.bad.slice(0, 6); return JSON.stringify(out); })()`;
+  const fz = JSON.parse(n(FUZZ));
+  ok('1,600 random selections: balanced, finite, reasons given, ranges ordered', fz.runs === 1600 && fz.bad.length === 0 && fz.nums > 100, fz);
+
+  // ===== The page =====
+  const whatIfBefore = n(`document.getElementById('scWi').innerHTML`), wmBefore = n(`document.getElementById('scWm').innerHTML`);
+  n(`document.querySelector('[data-wp="open"]').click();`);
+  const txt = () => n(`document.getElementById('scWp').textContent`);
+  const t1 = txt();
+  ok('open: labeled conditional; says no validated prediction exists and it isn’t a game forecast', /CONDITIONAL/.test(t1) && /Conditional calculation/.test(t1) && /Validated prediction: none/.test(t1) && /isn’t a game forecast/.test(t1), t1.slice(0, 400));
+  ok('open: unchanged shows the result table with a 0 change', n(`!!document.querySelector('#scWp .wp-result')`) && /^(\+|−|-)?0(\.0)?$/.test(n(`document.querySelector('#scWp .wp-change td:last-child').textContent`).trim()), n(`document.querySelector('#scWp .wp-change td:last-child').textContent`));
+  const cell = c => n(`document.querySelector('#scWp .${c} td:last-child').textContent`).trim(), cv = nj(`(() => { const C = wpCompute(WI_LAST, WP_ST); return { G: C.B.G, L: C.B.L, base: C.baseGoals, N: C.N }; })()`);
+  ok('actual and benchmark-estimated goals per 100 logged possessions are separate rows with their own numbers', cell('wp-actual') === String(cv.G) && cell('wp-actual-100') === (100 * cv.G / cv.L).toFixed(1) && cell('wp-base-100') === (100 * cv.base / cv.N).toFixed(1) && /Counted/.test(t1) && /Benchmark-estimated: not counted goals/.test(t1), [cell('wp-actual-100'), cell('wp-base-100')]);
+  ok('how later shots count is explained for each calculation', /How later shots in a possession count/.test(t1) && /Actual goals:/.test(t1) && /Benchmark estimate:/.test(t1) && /first shot/.test(t1) && /no rebound tag/.test(t1));
+  ok('assumptions sit beside the result, and say what is not assumed', n(`document.querySelector('#scWp .wp-side .wp-assume') && document.querySelector('#scWp .wp-side .wp-result') ? 1 : 0`) === 1 && /Not assumed:.*every turnover was logged.*ended the possession/.test(n(`document.querySelector('#scWp .wp-assume').textContent`)));
+  ok('the ranges say they leave out logging completeness and whether changes are achievable', /whether logging is complete, and whether the proposed changes are achievable/.test(n(`document.querySelector('#scWp .wp-range-excl').textContent`)));
+  ok('the unit is always named as logged possessions', !/per 100 possessions/i.test(t1) && /per 100 logged possessions/.test(t1) && /not of every possession played/.test(t1));
+  ok('unconfirmed sessions are labeled, nothing is marked complete, and the confirmed-only choice is there', /Not confirmed/.test(t1) && n(`!!document.querySelector('#scWp [data-wp="scope"][data-v="confirmed"]')`) && !/TRACKING\s*=|trk_/.test(n('renderPossession.toString() + wpCompute.toString() + wpSessions.toString()')));
+  const WANT = (await (await fetch('BUILD_LABEL.txt')).text()).trim();
+  ok(`build label is the pinned ${WANT} (constant and footer)`, /^7a1-g\d+$/.test(WANT) && nj('BUILD_VERSION') === WANT && n(`document.getElementById('buildVersion').textContent`) === 'Build ' + WANT);
+  ok('open: coverage, the possession definition, limits, sessions and records are shown', /Coverage:/.test(t1) && /What counts as a logged possession/.test(t1) && /kept the ball/.test(t1) && n(`!!document.querySelector('#wpSessions table') && !!document.querySelector('#wpRecords table')`), t1.slice(0, 200));
+  const rowsShown = n(`document.querySelectorAll('#wpRecords tbody tr').length`), wantRows = n(`wpCompute(WI_LAST, WP_ST).rowsB.length`);
+  ok('records table lists every Period B possession', rowsShown === wantRows && rowsShown > 0, [rowsShown, wantRows]);
+  const setDelta = v => n(`(() => { const i = document.getElementById('wpDelta'); i.value = ${v}; i.dispatchEvent(new Event('change', { bubbles: true })); })()`);
+  setDelta(-2);
+  ok('page: turnovers down asks for the replacement and shows no number', n(`!!document.querySelector('#scWp .wp-idle')`) && !n(`!!document.querySelector('#scWp .wp-result')`) && n(`!!document.querySelector('#scWp .wp-repl')`));
+  n(`document.querySelector('#scWp [data-wp="repl"][data-v="0.5"]').click();`);
+  ok('page: then asks for the mix', n(`!!document.querySelector('#scWp .wp-idle')`) && n(`!!document.querySelector('#scWp .wp-mix')`));
+  n(`document.querySelector('#scWp [data-wp="mix"][data-v="B"]').click();`);
+  ok('page: then shows the result and the joint support check', n(`!!document.querySelector('#scWp .wp-result')`) && /all changes together/.test(txt()) && /nothing logged behind them/.test(txt()), txt().slice(0, 300));
+  ok('page: the assumptions name the turnover change, replacement share and mix', /50% become shot possessions, Period B’s shot mix/.test(n(`document.querySelector('#scWp .wp-assume').textContent`)) && /→/.test(n(`document.querySelector('#scWp .wp-assume').textContent`)), n(`document.querySelector('#scWp .wp-assume').textContent`).slice(0, 300));
+  n(`document.querySelector('#scWp [data-wp="sim"]').click();`);
+  const s1 = n(`document.querySelector('#scWp .wp-sim').textContent`);
+  ok('page: illustration is labeled, with its seed, and says runs add no evidence', /illustration only/.test(s1) && /seed 20271105/.test(s1) && /More runs don’t add evidence/.test(s1), s1);
+  n(`renderPossession();`);
+  ok('page: illustration stays the same on redraw', n(`document.querySelector('#scWp .wp-sim').textContent`) === s1);
+  setDelta(-3);
+  ok('page: a changed assumption drops the old illustration', !n(`!!document.querySelector('#scWp .wp-sim')`));
+  ok('controls leave the counted and modeled blocks alone', n(`document.getElementById('scWi').innerHTML`) === whatIfBefore && n(`document.getElementById('scWm').innerHTML`) === wmBefore);
+  n(`document.querySelector('#scWp [data-wp="reset"]').click();`);
+  ok('page: back to no change', n(`WP_ST.delta === 0 && WP_ST.repl === null`) === true);
+  const pv = nj(`(() => { const j = SHOTS.find(s => s.team !== 'OPP' && s.shooterJersey && seasonForDate(s.date) === '2027').shooterJersey, name = nameFor(j, '2027'); PLAYER_MODE = { name, names: [name], seasons: { '2027': j }, roles: ['player'] }; renderPossession(); const e = document.getElementById('scWp').innerHTML; PLAYER_MODE = null; renderPossession(); return { e }; })()`);
+  ok('Player View shows nothing from this block', pv.e === '', pv.e.slice(0, 100));
+  const subj = nj(`(() => { const j = SHOTS.find(s => s.team !== 'OPP' && s.shooterJersey && seasonForDate(s.date) === '2027').shooterJersey; SC_ST.subject = j; renderScoringChange(); const out = { t: document.getElementById('scWp').textContent, res: !!document.querySelector('#scWp .wp-result') }; SC_ST.subject = 'team'; renderScoringChange(); return out; })()`);
+  ok('a player selection on the page: team-only message, no number', /team only/.test(subj.t) && !subj.res, subj.t.slice(0, 200));
+  const banned = t1.match(/\b(will score|proves?|guarantee|caused more goals by|Entry|entry)\b/g);
+  ok('wording avoids prediction claims and the reserved term', !banned, banned);
+  ok('no writes to the database', N.__FAKE.__writes.length === writes0, N.__FAKE.__writes.slice(writes0, writes0 + 3));
+  ok('no page errors', errs.length === 0, errs.slice(0, 3));
+
+  // ===== Diagnostics, real export only: don't decide pass or fail =====
+  if (REAL) {
+    T.summary = JSON.parse(n(`(() => {
+      const st = x => Object.assign({ scope: 'records', bench: 'season', N: null, delta: 0, repl: null, mix: null, mixLoc: null, from: null, to: null, n: 0 }, x), out = {};
+      const sum = { ...{} }; const P = scCompare({ season: '2027', type: 'Practice', period: '5', subject: 'team', grouping: 'groups' }), C = wpCompute(P, st({}));
+      out.practice = { sessions: C.sessions.length, used: C.eligible.length, confirmed: C.eligible.filter(s => s.track === 'C').length, B: { L: C.B.L, G: C.B.G, TO: C.B.TO, NS: C.B.NS, S: C.B.S, shots: C.B.shots }, baseline: +C.baseGoals.toFixed(2), swing: C.swing && C.swing.conv, cats: C.cats.map(k => [k, C.B.cells[k] ? C.B.cells[k].n : C.B.unloc.n, +C.rateOf(k).toFixed(3), C.season.cells[k] ? C.season.cells[k].n : C.season.unloc.n]) };
+      const show = x => { const c = wpCompute(P, st(x)); return c.none || c.idle ? { why: c.why } : { d: +c.d.toFixed(2), per100: +c.per100.toFixed(2), lo: c.range.lo && +c.range.lo.toFixed(2), hi: c.range.hi && +c.range.hi.toFixed(2), loNew: c.range.loNew && +c.range.loNew.toFixed(2), hiNew: c.range.hiNew && +c.range.hiNew.toFixed(2), sup: c.supported, tog: c.together.length, of: c.bigN, alone: c.alone.map(a => [a.label, a.sessions]) }; };
+      out.ex = { to5r50B: show({ delta: -5, repl: .5, mix: 'B' }), to5r100B: show({ delta: -5, repl: 1, mix: 'B' }), to5r0: show({ delta: -5, repl: 0 }), to10r50B: show({ delta: -10, repl: .5, mix: 'B' }), to20r100in: show({ delta: -20, repl: 1, mix: 'loc', mixLoc: 'Inside' }), mv10: show({ from: 'Top', to: 'Inside', n: 10 }), joint: show({ delta: -5, repl: .5, mix: 'B', from: 'Top', to: 'Inside', n: 10 }) };
+      const Op = scCompare({ season: '2027', type: 'Opponent scrimmage', period: '5', subject: 'team', grouping: 'groups' }), Co = wpCompute(Op, st({})); out.opp = { sessions: Co.sessions.map(s => [s.sid, s.shots, s.noShot, s.track, !!s.why]), L: Co.B.L, G: Co.B.G, TO: Co.B.TO };
+      // Rebound-after-goal: the two groupers.
+      let tp = 0, ds = 0; C.sessions.concat(Co.sessions).forEach(s => { const sess = LIVE_SESSIONS[s.sid]; if (!sess) return; ds += dsPossessions(sess).filter(p => p.keys.some(k => k[0] === 's')).length; }); out.gaShotPoss = ds;
+      // Separate finding: where the Efficiency count and the Goals Added count disagree (Efficiency isn't changed here).
+      const fin = []; Object.keys(LIVE_SESSIONS).filter(sid => /^2026-(09|1[0-2])/.test(sid)).forEach(sid => { const sess = LIVE_SESSIONS[sid], sh = (sess.shots || []).filter(s => s.team !== 'OPP').map(s => Object.assign({}, s, { _sid: sid })), po = (sess.poss || []).filter(p => p.team !== 'OPP').map(p => Object.assign({}, p, { _sid: sid })); const a = teamPossessions({ shots: sh, oppShots: [], poss: po, xgOf: () => 0 }).length, b = dsPossessions({ shots: sh, poss: po }).length; if (a !== b) fin.push([sid, a, b]); }); out.countFinding = fin;
+      // Leave one session out: benchmark from the other sessions, predict this session's goals from its own logged outcomes.
+      const E = C.eligible, keys = P.keys; let cov = 0, cov90 = 0, sq = 0, sqBase = 0, Orow = [];
+      const mean = E.reduce((t, s) => t + wpTally(s.rows, keys).G / wpTally(s.rows, keys).L, 0) / E.length;
+      E.forEach(s => { const others = E.filter(x => x !== s), T = wpTally(others.reduce((a, x) => a.concat(x.rows), []), keys), rate = k => { const c = k === WP_NOLOC ? T.unloc : T.cells[k]; return c.n ? c.g / c.n : T.G / T.S; };
+        const phi = wpSwing(others, keys, rate), Ts = wpTally(s.rows, keys); let P1 = 0, V = 0, Ve = 0; s.rows.filter(r => r.kind === 'SHOT').forEach(r => { const v = rate(r.cat); P1 += v; V += v * (1 - v); });
+        keys.concat([WP_NOLOC]).forEach(k => { const c = k === WP_NOLOC ? T.unloc : T.cells[k], m = k === WP_NOLOC ? Ts.unloc.n : Ts.cells[k].n; if (c.n) Ve += m * m * rate(k) * (1 - rate(k)) / c.n; });
+        const f = phi.usable ? phi.conv : 1, half = 1.96 * Math.sqrt(f * (V + Ve)); cov += Math.abs(Ts.G - P1) <= half ? 1 : 0; sq += (Ts.G - P1) ** 2; sqBase += (Ts.G - mean * Ts.L) ** 2; Orow.push([s.date, Ts.L, Ts.G, +P1.toFixed(1), +half.toFixed(1), +f.toFixed(2)]); });
+      out.backtest = { sessions: E.length, within: cov, rmse: +Math.sqrt(sq / E.length).toFixed(2), rmseFlatRate: +Math.sqrt(sqBase / E.length).toFixed(2), rows: Orow };
+      return JSON.stringify(out); })()`));
+  }
+  const result = { at: new Date().toISOString(), pass: T.pass, fail: T.fail, results: T.results, summary: T.summary || null };
+  await fetch('/results/' + (REAL ? 'possession_real' : 'possession_tests') + '.json', { method: 'POST', body: JSON.stringify(result) });
+  document.getElementById('out').textContent = JSON.stringify(result, null, 1);
+}
+run().catch(async e => { const r = { err: String(e && e.stack || e), pass: T.pass, fail: T.fail + 1, results: T.results }; await fetch('/results/' + (REAL ? 'possession_real' : 'possession_tests') + '.json', { method: 'POST', body: JSON.stringify(r) }); });
+</script></body></html>
