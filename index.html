@@ -20790,7 +20790,7 @@ function renderProfile() {
 // There is one What If tool, under Scoring Change. This page links to it and can save one of its results with a
 // conclusion; it has no simulator of its own. Session types come from sessionTypeOf, the same as every other page.
 const DEV_NONE = '__none__', DEV_SMALL = 8;
-const DEV = { clipGen: 0, j: '', season: null, range: 'Full', cat: 'All', barCtx: null, barPart: null, f: {}, by: 'zone', only: null, onlyLabel: '', recOpen: false,
+const DEV = { saving: false, clipGen: 0, j: '', season: null, range: 'Full', cat: 'All', barCtx: null, barPart: null, f: {}, by: 'zone', only: null, onlyLabel: '', recOpen: false,
   clips: null, clipsBusy: false, clipsTick: null, clipsWait: [], notes: {}, notesSeason: null, notesUnsub: null, notesErr: '', edit: null, msg: '', delArm: null };
 const devKey = s => sessKey(s) + '#' + s.id;
 const devCatWords = c => c === 'All' ? 'all session types' : sessionCtxWords(c).replace(/ only$/, '');
@@ -21075,7 +21075,7 @@ function devNotesListen(season) {
     Object.keys(d).forEach(k => { if (!k.startsWith('n_') || typeof d[k] !== 'string' || !DEV_NOTE_ID.test(k.slice(2))) return; try { const n = devNoteClean(JSON.parse(d[k])); if (n) o[k.slice(2)] = n; } catch (e) { /* skip a bad note */ } });
     DEV.notes = o; DEV.notesErr = '';
     if (document.getElementById('develView').classList.contains('active')) devRefreshNotes();
-  }, e => { console.error('dev notes', e); DEV.notesErr = 'Couldn’t load conclusions.'; if (document.getElementById('develView').classList.contains('active')) devRefreshNotes(); });
+  }, e => { console.error('dev notes', e); DEV.notesErr = 'Couldn’t load conclusions, so saved ones may be missing here.'; DEV.notesSeason = null; DEV.notesUnsub = null; if (document.getElementById('develView').classList.contains('active')) devRefreshNotes(); });
 }
 function devCurrentSel() { const season = DEV.season; if (!season || !DEV.j) return null; const mine = devScope(season, DEV.range, DEV.cat).filter(s => s.shooterJersey === DEV.j); return { mine, sel: devSelected(mine) }; }
 // Evidence for a note: the explorer's current view and the records in it.
@@ -21087,8 +21087,9 @@ function devEvidenceLine(n, season) {
   const changed = bits.length || ng !== ev.g ? ` <b style="color:var(--gold-ink);">Changed since it was written:</b> ${bits.join(', ') || 'results differ'}; today ${R.found.length} of ${ev.n} records, ${ng} goals. Re-check the conclusion.` : ` All ${ev.n} records unchanged.`;
   return `<b>Observed:</b> ${ev.n} attempt${ev.n === 1 ? '' : 's'} (${escapeHtml(where)}) &mdash; ${ev.g} goals, ${num(ev.xg, 1)} expected (standard grade-based xG) when saved.${changed}`;
 }
-// Estimates stay with the staff: a saved What If result isn't shown in Player View, even on a shared conclusion.
-function devNoteWi(id, n) { return n.sc && !PLAYER_MODE ? `<p class="n-note dev-note-wi" style="font-size:12px; font-style:normal;"><b>Estimate (What If, ${escapeHtml(devWiName(n.sc))}, saved ${escapeHtml(n.sc.saved || '—')}; not re-checked):</b> ${devWiLine(n.sc)} <button type="button" class="lnk print-hide" data-dev-act="note-whatif" data-id="${escapeHtml(id)}">Re-open in What If</button></p>` : ''; }
+// Player View shows a neutral note in place of a saved What If result, even on a shared conclusion. This is a display
+// restriction: Firestore rules give staff accounts the whole document, and they don't distinguish Player View.
+function devNoteWi(id, n) { if (n.sc && PLAYER_MODE) return '<p class="n-note dev-note-wi" style="font-size:12px; font-style:normal;">An additional model estimate is available in coach review.</p>'; return n.sc ? `<p class="n-note dev-note-wi" style="font-size:12px; font-style:normal;"><b>Estimate (What If, ${escapeHtml(devWiName(n.sc))}, saved ${escapeHtml(n.sc.saved || '—')}; not re-checked):</b> ${devWiLine(n.sc)} <button type="button" class="lnk print-hide" data-dev-act="note-whatif" data-id="${escapeHtml(id)}">Re-open in What If</button></p>` : ''; }
 function devNotesFor(j, staffAll) { return Object.entries(DEV.notes).filter(([, n]) => n.j === j && (staffAll || n.shared)).sort((a, b) => (b[1].at || '').localeCompare(a[1].at || '')); }
 function devRenderNotes(season, j, sel, xm) {
   const w = document.getElementById('devNotesWrap'); if (!w) return;
@@ -21109,13 +21110,13 @@ function devRenderNotes(season, j, sel, xm) {
       form = `<div class="dev-note dev-edit"><p class="sans" style="font-size:13px; margin:0 0 6px;"><b>${E.id ? 'Edit conclusion' : 'New conclusion'}</b></p>
         ${devPills('data-dev-area', DEV_AREAS, E.area)}
         <textarea data-dev-text rows="4" maxlength="1200" style="width:100%; margin-top:8px; font:13px var(--text);" placeholder="What the records show and what to work on, in plain words.">${escapeHtml(E.text)}</textarea>
-        <label class="sans" style="font-size:12.5px; display:block; margin:6px 0; text-transform:none; letter-spacing:0;"><input type="checkbox" data-dev-shared${E.shared ? ' checked' : ''}> Share with him (shows in Player View, without any What If estimate)</label>
+        <label class="sans" style="font-size:12.5px; display:block; margin:6px 0; text-transform:none; letter-spacing:0;"><input type="checkbox" data-dev-shared${E.shared ? ' checked' : ''}> Share with him (Player View shows the observed evidence; a What If estimate shows only as a note that one exists)</label>
         <p class="n-note" style="font-size:12px; font-style:normal;"><b>Observed:</b> ${ev.n} attempt${ev.n === 1 ? '' : 's'} &mdash; ${escapeHtml(devRangeLabel(ev.range))}, ${escapeHtml(devCatWords(ev.cat))}, ${escapeHtml(devFilterLabel(ev.f))}; ${ev.g} goals, ${num(ev.xg, 1)} expected.
         <button type="button" class="pill" data-dev-act="note-ev">Use the current selection instead</button></p>${wiPick}
         <button type="button" class="btn" data-dev-act="note-save">Save</button> <button type="button" class="btn secondary" data-dev-act="note-cancel">Cancel</button> <span class="n-note" data-dev-msg>${escapeHtml(DEV.msg)}</span></div>`;
     } else form = `<p><button type="button" class="btn secondary" data-dev-act="note-new">New conclusion from this selection</button> <span class="n-note">Saves the ${sel.length} attempt${sel.length === 1 ? '' : 's'} shown above with it.</span></p>`;
   }
-  w.innerHTML = `<p class="panel-sub">Each conclusion is saved with the attempts behind it, so it can be checked again later. ${PLAYER_MODE ? '' : 'Staff see every one; a conclusion marked Share also shows in Player View.'}</p>${DEV.notesErr ? `<p class="n-note">${escapeHtml(DEV.notesErr)}</p>` : ''}${form}${list.map(item).join('') || `<p class="n-note">${PLAYER_MODE ? 'No conclusions shared yet.' : 'No conclusions for him yet.'}</p>`}`;
+  w.innerHTML = `<p class="panel-sub">Each conclusion is saved with the attempts behind it, so it can be checked again later. ${PLAYER_MODE ? '' : 'Staff see every one; a conclusion marked Share also shows in Player View.'}</p>${DEV.notesErr ? `<p class="n-note">${escapeHtml(DEV.notesErr)}</p>` : ''}${!E && DEV.msg ? `<p class="n-note" data-dev-msg>${escapeHtml(DEV.msg)}</p>` : ''}${form}${list.map(item).join('') || `<p class="n-note">${PLAYER_MODE ? 'No conclusions shared yet.' : 'No conclusions for him yet.'}</p>`}`;
 }
 async function devSaveNote() {
   const E = DEV.edit; if (!E || PLAYER_MODE || !DB) return;
@@ -21126,21 +21127,26 @@ async function devSaveNote() {
   const prev = E.id ? E.base : null;   // the note as it was when this edit was opened
   const rec = { j: prev ? prev.j : DEV.j, text, area: E.area, shared: !!E.shared, by: prev ? prev.by : dpWho(), at: prev ? prev.at : now, ed: prev ? now : '', ev: E.ev, sc: E.sc || null };
   if (!DEV_NOTE_ID.test(id)) { DEV.msg = 'Couldn’t save (bad id).'; return devRefreshNotes(); }
-  DEV.msg = 'Saving…'; devRefreshNotes();
+  if (DEV.saving) return;   // a second tap on Save must not make a second conclusion
+  DEV.saving = true; DEV.msg = 'Saving…'; devRefreshNotes();
   let conflict = false;
   const ok = await dbChange('app/devnotes_' + season, cur => {
+    conflict = false;   // the database can run this more than once
     // An edit is refused if another coach changed or deleted the note since it was opened here.
     if (E.id) { let s = null; try { s = devNoteClean(JSON.parse(cur[field] || 'null')); } catch (e) { s = null; } if (!s || JSON.stringify(s) !== JSON.stringify(prev)) { conflict = true; return null; } }
     return Object.assign({}, cur, { [field]: JSON.stringify(rec) });
   });
+  DEV.saving = false;
   if (conflict) { DEV.msg = 'Another coach changed or deleted this conclusion since you opened it. Cancel and open it again.'; return devRefreshNotes(); }
-  if (!ok) { DEV.msg = 'Couldn’t save. Check the connection and try again.'; return devRefreshNotes(); }
+  if (!ok) { DEV.msg = 'Not saved. Your draft is still here. Check the connection and your sign-in, then try again.'; return devRefreshNotes(); }
   DEV.notes[id] = devNoteClean(rec); DEV.edit = null; DEV.msg = ''; devRefreshNotes();
 }
 async function devDeleteNote(id) {
-  if (PLAYER_MODE || !DB || !DEV.notes[id]) return;
+  if (PLAYER_MODE || !DB || !DEV.notes[id] || DEV.saving) return;
+  DEV.saving = true;
   const ok = await dbChange('app/devnotes_' + DEV.season, cur => { const o = Object.assign({}, cur); delete o['n_' + id]; return o; });
-  if (ok) delete DEV.notes[id]; else DEV.msg = 'Couldn’t delete. Try again.';
+  DEV.saving = false;
+  if (ok) { delete DEV.notes[id]; DEV.msg = ''; } else DEV.msg = 'Not deleted. The conclusion is still saved. Check the connection and your sign-in, then try again.';
   DEV.delArm = null; devRefreshNotes();
 }
 function devRefreshNotes() { const S = devCurrentSel(); if (S) devRenderNotes(DEV.season, DEV.j, S.sel, xgModelFor(DEV.season)); }

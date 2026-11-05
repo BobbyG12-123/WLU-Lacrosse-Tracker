@@ -13,7 +13,8 @@ python3 make_fixture.py ../../index.html fixture.json
 git -C ../.. show "$BASE:index.html" > main_index.html
 python3 build_offline.py main_index.html tracker_main.html
 python3 build_offline.py ../../index.html tracker_branch.html
-URL="http://127.0.0.1:8770/dev_tests.html"; OUT=results/dev_tests.json
+# NOREG=1 skips the comparisons with the base (analytics, Reports, Scoring Change) when only this page's code changed.
+URL="http://127.0.0.1:8770/dev_tests.html${NOREG:+?noreg=1}"; OUT=results/dev_tests.json
 if [ -n "${REAL_EXPORT:-}" ]; then cp "$REAL_EXPORT" real_export.json; URL="$URL?export=real_export.json&real=1"; OUT=results/dev_real.json; fi
 rm -rf results chrome_profile; mkdir -p results
 python3 serve.py & SRV=$!

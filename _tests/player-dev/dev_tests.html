@@ -10,7 +10,7 @@
 <iframe id="fOld" src="tracker_main.html"></iframe><iframe id="fNew" src="tracker_branch.html"></iframe>
 <pre id="out">running…</pre>
 <script>
-const Q = new URLSearchParams(location.search), EXPORT = Q.get('export') || 'fixture.json', REAL = Q.get('real') === '1';
+const Q = new URLSearchParams(location.search), NOREG = Q.get('noreg') === '1', EXPORT = Q.get('export') || 'fixture.json', REAL = Q.get('real') === '1';
 const near = (a, b, e) => Math.abs(a - b) < (e || 1e-9);
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const T = { results: [], pass: 0, fail: 0 };
@@ -38,6 +38,7 @@ async function run() {
   const errs = []; N.addEventListener('error', e => errs.push(String(e.message)));
   const M = exp.meta || {}; if (!REAL) ok('fixture is synthetic', M.synthetic === true, M);
   ok('both builds booted', O.__appReady && N.__appReady, [O.__BOOT_ERR || null, N.__BOOT_ERR || null]);
+  if (!NOREG) {
   // ---- Regression: every analytics number in the snapshot identical ----
   const snapSrc = await (await fetch('analytics_snapshot.js')).text();
   const a = JSON.parse(O.eval(snapSrc)), b = JSON.parse(N.eval(snapSrc)), keys = new Set(Object.keys(a).concat(Object.keys(b)));
@@ -54,12 +55,13 @@ async function run() {
   // A player's practice report too.
   const prow = w => w.eval(`(() => { rptMode = 'practice'; navPick('rptModePills','Practice'); const p = rptPeriods('practice', true)[0]; rptKey = p.key; renderReports(); const j = [...document.querySelectorAll('#rptPlayerSelect option')].map(o => o.value).filter(Boolean)[0]; rptPlayer = j; renderReports(); const h = ['rptScore','rptPlayer','rptSheet'].map(id => document.getElementById(id).innerHTML).join('|'); rptPlayer = ''; return h; })()`);
   ok('Reports practice player report identical to main', prow(O) === prow(N));
+  }
   // ---- Nothing released changed; no simulator came back ----
   const fnSame = ['scOpenFrom','renderScoringChange','wiCompute','wiMove','wiSwing','wiRange','wmModel','wmCell','wmEstimate','wmCompute','wmSupport','wmProfileOf','wmLater','renderWhatIf','renderModeled','fitXg2','xgForShot','sessionTypeOf','sessionCtxOk'];
   const fnDiff = fnSame.filter(f => O.eval(f + '.toString()') !== N.eval(f + '.toString()'));
   ok('the What If tool and the functions it relies on are identical to main', fnDiff.length === 0, fnDiff);
   const SETSC = `heatSeason = '2027'; NAV_ST.ctx = 'All'; SEASON_PART = 'Full'; Object.assign(SC_ST, { type: 'Practice', barCtx: 'All', askType: false, period: '5', custom: null, subject: 'team', grouping: 'groups', origin: null }); goNav('trends'); renderScoringChange(); document.getElementById('scBody').innerHTML`;
-  ok('Scoring Change with What If renders the same as main', O.eval(SETSC) === N.eval(SETSC));
+  if (!NOREG) ok('Scoring Change with What If renders the same as main', O.eval(SETSC) === N.eval(SETSC));
   ok('#107’s simulator and Player review did not come back', E(`[typeof devModel, typeof devScenario, typeof devApply, typeof devCell, typeof renderPlayerReview, typeof rptReviewPeriods, typeof devCatKey].every(t => t === 'undefined') && DEV.wi === undefined && !document.getElementById('rptScoreTitle')`) === true);
   ok('opening Player Development doesn’t fit the What If model', E(`WM_MODEL = null; goNav('develop'); WM_MODEL === null`) === true);
   await sleep(300);
@@ -271,7 +273,7 @@ async function run() {
     await DB.doc('app/devnotes_2027').set({ n_TESTshared1: JSON.stringify(Object.assign({}, base, { text: 'SHARED one', shared: true })), n_TESTstaff1: JSON.stringify(Object.assign({}, base, { text: 'STAFF one', shared: false })) }, { merge: true }); await s(300);
     pmPickerOpen(); await s(100); const b = [...document.querySelectorAll('#pmPickerList .pm-pick')].find(x => x.textContent.includes(name)); if (!b) return JSON.stringify({ err: 'no picker button for ' + name }); b.click(); await s(400);
     goNav('develop'); await s(500);
-    const wrap = document.getElementById('devNotesWrap'), r = { pm: !!PLAYER_MODE, j: DEV.j, picker: !!document.querySelector('#devWrap .pf-pick'), shared: wrap.textContent.includes('SHARED one'), staff: wrap.textContent.includes('STAFF one'), edit: !!document.querySelector('#devWrap [data-dev-act="note-edit"]'), neu: !!document.querySelector('#devWrap [data-dev-act="note-new"]'), recRows: document.querySelectorAll('#devRecWrap tbody tr').length, mine: devScope('2027', DEV.range, DEV.cat).filter(x => x.shooterJersey === j).length, open: !!document.querySelector('#devRecWrap [data-scopen]'), estShown: wrap.textContent.includes('TEST with an estimate'), estLine: /Estimate \\(What If/.test(wrap.textContent), estBtn: !!document.querySelector('#devWrap [data-dev-act="note-whatif"]'), model: WM_ST.open && !!document.querySelector('#scWm .wm-result') };
+    const wrap = document.getElementById('devNotesWrap'), r = { pm: !!PLAYER_MODE, j: DEV.j, picker: !!document.querySelector('#devWrap .pf-pick'), shared: wrap.textContent.includes('SHARED one'), staff: wrap.textContent.includes('STAFF one'), edit: !!document.querySelector('#devWrap [data-dev-act="note-edit"]'), neu: !!document.querySelector('#devWrap [data-dev-act="note-new"]'), recRows: document.querySelectorAll('#devRecWrap tbody tr').length, mine: devScope('2027', DEV.range, DEV.cat).filter(x => x.shooterJersey === j).length, open: !!document.querySelector('#devRecWrap [data-scopen]'), estShown: wrap.textContent.includes('TEST with an estimate'), estLine: /Estimate \\(What If/.test(wrap.textContent), neutral: wrap.textContent.includes('An additional model estimate is available in coach review.'), estNum: /expected goals|Move Shots|provisional/i.test(wrap.textContent), observed: /Observed:/.test(wrap.textContent), estBtn: !!document.querySelector('#devWrap [data-dev-act="note-whatif"]'), model: WM_ST.open && !!document.querySelector('#scWm .wm-result') };
     const others = (ROSTERS['2027'] || []).map(x => x.name).filter(n => n && n !== name && !pmHas(n)); r.otherNames = others.filter(n => document.getElementById('develView').textContent.includes(n));
     r.wiLink = !!document.querySelector('#devWrap [data-dev-act="whatif"]');
     pmExit(); await s(300); r.after = !!PLAYER_MODE;
@@ -279,7 +281,7 @@ async function run() {
     return JSON.stringify(r); })()`));
   ok('Player View: locked to him, no picker, only his attempts, no Log editor button', pv.pm && pv.j === '20' && !pv.picker && pv.recRows === pv.mine && !pv.open, pv);
   ok('Player View: shared conclusions only, no editing', pv.shared && !pv.staff && !pv.edit && !pv.neu, pv);
-  ok('Player View: a shared conclusion shows without its What If estimate', pv.estShown && !pv.estLine && !pv.estBtn, pv);
+  ok('Player View: a shared conclusion shows its evidence and the neutral note, not the estimate', pv.estShown && pv.neutral && pv.observed && !pv.estLine && !pv.estBtn && !pv.estNum, pv);
   ok('Player View: no teammate names', !pv.otherNames.length, pv.otherNames);
   ok('Player View: no What If link on this page (staff only, like its estimates)', pv.wiLink === false, pv.wiLink);
   // Unchanged after all that.
