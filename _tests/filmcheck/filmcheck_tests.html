@@ -1,0 +1,93 @@
+<!doctype html>
+<html><head><meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; connect-src 'self'; style-src 'unsafe-inline'; frame-src 'self'; base-uri 'none'">
+<script src="guard_offline.js"></script>
+<script src="fake_firestore.js"></script>
+<title>TEST: Film Check regression (offline, in-memory database only)</title>
+<style>body{font:13px system-ui;margin:16px} iframe{width:48%;height:600px;border:1px solid #999}</style>
+</head><body>
+<iframe id="fOld" src="tracker_main.html"></iframe><iframe id="fNew" src="tracker_branch.html"></iframe>
+<pre id="out">running…</pre>
+<script>
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+const T = { results: [], pass: 0, fail: 0 };
+const ok = (name, cond, info) => { T.results.push({ name, ok: !!cond, info: info === undefined ? null : info }); cond ? T.pass++ : T.fail++; };
+async function boot() {
+  const exp = await (await fetch('fixture.json')).json();
+  const frames = { old: document.getElementById('fOld').contentWindow, neu: document.getElementById('fNew').contentWindow };
+  for (const w of Object.values(frames)) {
+    for (let i = 0; i < 60 && !(w.firebase && w.firebase.apps && w.firebase.apps.length && typeof w.init === 'function'); i++) await sleep(300);
+    const fake = makeFakeFirestore(exp.collections), real = w.firebase.firestore, f = function () { return fake; };
+    Object.keys(real).forEach(x => { f[x] = real[x]; }); f.FieldValue = real.FieldValue;
+    w.firebase.firestore = f; w.__FAKE = fake; w.init();
+  }
+  for (let i = 0; i < 160 && !(frames.old.__appReady && frames.neu.__appReady); i++) await sleep(500);
+  await sleep(1500);
+  return frames;
+}
+// A helper put in each build: three shot clips (and one opponent clip) on one practice, marks given per test.
+const SETUP = `window.__fc = (st, opts) => {
+  const o = opts || {}, date = '2026-10-21';
+  Object.assign(FC, { key: date, date, context: 'Practice', opponent: null, st: st || {}, idx: 0, draft: null, mode: null, pick: null, msg: '', choosing: false, editing: null, addTo: null, busy: false });
+  const clip = (id, kind, t) => ({ id, kind, fileId: 'synthetic_file_id_0000000000', t, clipStart: t, clipEnd: t + 5, filmShotTime: t + 1, shotInClip: 1 });
+  FC.drafts = [clip('c1', 'shot', 10), clip('c2', 'shot', 20), clip('c3', 'shot', 30), clip('o1', 'oppshot', 40)];
+  return { logged: fcLogged('shot').map(s => s.id), opp: fcLogged('oppshot').map(s => s.id) };
+};
+window.__plan = () => { const p = fcPlan(); return { offers: Object.fromEntries(p.items.map(i => [i.d.id, i.offer ? i.offer.id : null])), linked: Object.fromEntries(p.items.map(i => [i.d.id, i.shot ? i.shot.id : null])), used: [...p.used] }; };`;
+async function run() {
+  const F = await boot(), O = F.old, N = F.neu;
+  const errs = []; N.addEventListener('error', e => errs.push(String(e.message)));
+  [O, N].forEach(w => w.eval(SETUP));
+  const J = (w, src) => JSON.parse(w.eval(`JSON.stringify(${src})`));
+  ok('both builds booted', O.__appReady && N.__appReady);
+  const L = J(N, `__fc({})`);
+  ok('the test session has at least 3 logged shots', L.logged.length >= 3, L);
+  const [x, y, z] = L.logged, last = L.logged[L.logged.length - 1];
+  const scen = st => `(__fc(${JSON.stringify(st)}), __plan())`;
+
+  // ===== The bug itself =====
+  const mark = { c1: { s: 'n', id: x } };
+  const pO = J(O, scen(mark)), pN = J(N, scen(mark));
+  ok('the base shows the bug: the shot logged from clip 1 is offered to clip 2', pO.offers.c2 === x, pO);
+  ok('fixed: the shot logged from clip 1 is not offered to clip 2 or clip 3', pN.offers.c2 !== x && pN.offers.c3 !== x, pN);
+  ok('fixed: clip 2 is offered the next unused shot', pN.offers.c2 === y, pN);
+  // Marked out of order: clip 2 logged the shot that clip 3 would otherwise reach.
+  const pS = J(N, scen({ c2: { s: 'n', id: y } }));
+  ok('a logged shot is also skipped when an earlier clip reaches it first', pS.offers.c1 === x && pS.offers.c3 !== y, pS);
+  const allN = {}; ['c1', 'c2'].forEach((c, i) => { allN[c] = { s: 'n', id: L.logged[L.logged.length - 1 - i] }; });
+  const lastTwoOnly = J(N, scen(Object.assign({}, allN, { c3: { s: 'x' } })));
+  ok('a clip marked as logged never appears as anyone\'s offer', !Object.values(lastTwoOnly.offers).includes(last) && !Object.values(lastTwoOnly.offers).includes(L.logged[L.logged.length - 2]), lastTwoOnly);
+
+  // ===== The chooser and the save guard =====
+  // The real rendered chooser, read from the page: every pill it offers for clip 2.
+  const chooser = w => J(w, `(() => { __fc(${JSON.stringify(mark)}); FC.idx = 1; FC.mode = 'match'; const it = fcPlan().items[1]; FC.draft = fcNewDraft(it); FC.choosing = true; renderFilmCheck();
+    const box = [...document.querySelectorAll('.bf-box')].find(b => /Which logged shot is it/.test(b.textContent)); return { shown: !!box, list: box ? [...box.querySelectorAll('[data-fc="pickm"]')].map(b => Number(b.dataset.id)) : [] }; })()`);
+  ok('fixed: the shot isn\'t in clip 2\'s "Which logged shot is it?" list (the base lists it)', chooser(O).list.includes(x) && chooser(N).shown && chooser(N).list.includes(y) && !chooser(N).list.includes(x), { base: chooser(O), branch: chooser(N) });
+  const save = async w => { const before = w.__FAKE.__writes.length;
+    const r = await w.eval(`(async () => { __fc(${JSON.stringify(mark)}); FC.idx = 1; FC.mode = 'match'; const it = fcPlan().items[1]; FC.draft = fcNewDraft(it); FC.pick = ${x}; await fcSave(); return { msg: FC.msg, st: Object.keys(FC.st) }; })()`);
+    return { msg: r.msg, st: r.st, wrote: w.__FAKE.__writes.slice(before).length }; };
+  const sv = await save(N);
+  ok('fixed: picking that shot for clip 2 anyway is refused, with nothing written and no link made', /already matched/.test(sv.msg) && sv.wrote === 0 && !sv.st.includes('c2'), sv);
+
+  // ===== Existing behavior =====
+  const m = J(N, scen({ c1: { s: 'm', id: x } }));
+  ok('a matched clip still links its shot, and the next clip is offered the next shot', m.linked.c1 === x && m.offers.c2 === y, m);
+  const nolink = J(N, scen(mark));
+  ok('a logged clip\'s mark is kept as that clip\'s shot', nolink.used.includes(x), nolink);
+  const none = J(N, scen({}));
+  ok('with no marks, clips are offered shots in order (same as the base)', none.offers.c1 === x && none.offers.c2 === y && none.offers.c3 === z && JSON.stringify(none) === JSON.stringify(J(O, scen({}))), none);
+  const sk = J(N, scen({ c1: { s: 'x' } })), skO = J(O, scen({ c1: { s: 'x' } }));
+  ok('a clip marked "no shot" uses nothing (same as the base)', JSON.stringify(sk) === JSON.stringify(skO) && sk.offers.c2 === x, sk);
+  const opp = w => J(w, `(() => { __fc(${JSON.stringify(mark)}); LIVE_SESSIONS[fcSid()].shots.push({ id: 999001, team: 'OPP', date: '2026-10-21', context: 'Practice' }); const p = __plan(); LIVE_SESSIONS[fcSid()].shots.pop(); return p; })()`);
+  ok('opponent shots walk their own list: an opponent clip still gets its offer', opp(N).offers.o1 === 999001 && opp(N).offers.c2 === y, opp(N));
+
+  // ===== Safety =====
+  ok('no page errors', errs.length === 0, errs.slice(0, 5));
+  ok('no network access attempted', N.__GUARD.blocked.length === 0 && O.__GUARD.blocked.length === 0, [N.__GUARD.blocked.slice(0, 3), O.__GUARD.blocked.slice(0, 3)]);
+  const result = { at: new Date().toISOString(), pass: T.pass, fail: T.fail, results: T.results };
+  document.getElementById('out').textContent = JSON.stringify(result, null, 1);
+  await fetch('/results/filmcheck_tests.json', { method: 'POST', body: JSON.stringify(result) });
+}
+run().catch(e => { document.getElementById('out').textContent = 'HARNESS ERROR ' + (e && e.stack || e); fetch('/results/filmcheck_tests.json', { method: 'POST', body: JSON.stringify({ err: String(e && e.stack || e), pass: T.pass, fail: T.fail + 1, results: T.results }) }); });
+</script>
+</body></html>
