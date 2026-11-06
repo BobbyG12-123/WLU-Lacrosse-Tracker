@@ -156,6 +156,13 @@ function allGames(P, n, fn) { for (let s = 0; s < n; s++) { const L = sim(P, MS.
   ok('midfield lines get the minutes the rotation asks for, within 3 points', Math.abs(a / (a + b) - 0.6) < 0.03, { share: a / (a + b) });
 }
 
+{ // Regression, found in the holdout run: a loose ball at the horn with an extra man carried a spent shot clock into the next period.
+  const P = FX.params({ foul: 0.5 }, { foul: 0.5 }, { tempo: { looseMeanSec: 60 }, retention: { saveHeld: 0, loose: 0.5, wide: 0.5, blocked: 0.5 }, penalties: { personalMix: [0, 0, 1], technicalShare: 0 } });
+  let carried = 0, badClock = 0, afterLoose = 0;
+  allGames(P, 400, L => { L.forEach((e, i) => { if (e.type === 'possession_start' && e.source === 'period_carry') { carried++; if (e.clock <= 0) badClock++; const pe = [...L.slice(0, i)].reverse().find(x => x.type === 'period_end'), before = L.slice(Math.max(0, pe.seq - 3), pe.seq).map(x => x.type); if (before.includes('loose_ball') && !before.includes('ground_ball')) afterLoose++; } }); });
+  ok('a period never restarts holding the ball after a loose ball at the horn', carried > 20 && badClock === 0 && afterLoose === 0, { carried, badClock, afterLoose }, ['R4-3-E1']);
+}
+
 // ---------- 5. reproducibility, chunking, cancellation ----------
 { const P = FX.params({}, {}, { uncertainty: 'posterior' }), a = MS.runBatch(P, { seed: 77, games: 300, chunk: 300 }), b = MS.runBatch(P, { seed: 77, games: 300, chunk: 1 }), c = MS.runBatch(P, { seed: 77, games: 300, chunk: 17 }), d = MS.runBatch(P, { seed: 78, games: 300, chunk: 300 });
   const fp = r => JSON.stringify(r.games.map(x => x.ledgerHash));

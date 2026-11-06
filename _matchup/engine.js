@@ -51,7 +51,7 @@
   function simulateGame(P, seed) {
     const s = makeStreams(seed), W = drawWorld(P, s), ledger = [], score = [0, 0], A = P.teams;
     let time = 0, period = 0, left = 0, seq = 0, over = false, overtime = false;
-    let poss = null, pid = 0, clock = 0, needClear = false, carry = null;
+    let poss = null, pid = 0, clock = 0, needClear = false, carry = null, looseAtHorn = false;
     const box = [[], []], lineups = [null, null], fogos = [TEAM, TEAM];   // box[i] = penalties in order
     let penSerial = 0;
     const emit = (type, f) => { const e = Object.assign({ seq: seq++, type, t: time, period, left }, f); ledger.push(e); return e; };
@@ -150,7 +150,7 @@
       }
       if (outcome === 'save' && u() < (T.retentionShift ? 1 - keep(1 - R.saveHeld) : R.saveHeld)) { endPossession('defense_gain'); beginPossession(o, 'goalie_save', RULES.shotClockFullDs, true); return; }
       const d = gammaDs(P.tempo.looseMeanSec, s('time'));
-      if (d >= left) { tick(left); return; }
+      if (d >= left) { tick(left); looseAtHorn = true; return; }   // nobody holds a loose ball at the horn (4-3-a Exception 1)
       emit('loose_ball', { team: i, pid, outcome, ds: d });
       tick(d);
       const toShooters = u() < keep(outcome === 'blocked' ? R.blocked : R.loose);
@@ -200,7 +200,8 @@
       while (left > 0 && !over) { if (poss === null) faceoff(); else step(); }
       if (over) { emit('period_end', { reason: 'goal' }); return; }
       // 4-3-a Exception 1: an extra man at the horn with a team in possession restarts with the ball.
-      const a = shortBy(0), b = shortBy(1), manUp = a === b ? null : (a > b ? 1 : 0), holding = poss, heldClock = clock;
+      const a = shortBy(0), b = shortBy(1), manUp = a === b ? null : (a > b ? 1 : 0), holding = looseAtHorn ? null : poss, heldClock = clock;
+      looseAtHorn = false;
       endPossession('period_end');
       emit('period_end', { reason: 'horn' });
       carry = MS.nextPeriodStart(manUp, holding, heldClock);
