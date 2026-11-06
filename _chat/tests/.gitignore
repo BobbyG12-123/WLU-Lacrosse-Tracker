@@ -13,3 +13,4 @@ analytics_snapshot.js
 BUILD_LABEL.txt
 worker.js
 conversations.json
+__pycache__/

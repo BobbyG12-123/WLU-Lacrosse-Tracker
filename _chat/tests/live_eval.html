@@ -2,55 +2,91 @@
 <html><head><meta charset="utf-8">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; connect-src 'self'; style-src 'unsafe-inline'; frame-src 'self'">
 <script src="guard_offline.js"></script><script src="fake_firestore.js"></script><script src="harness.js"></script>
-<title>TEST: live evaluation (real model, synthetic data)</title><style>iframe{width:100%;height:600px;border:0}</style></head><body>
+<title>TEST: model comparison (real models, synthetic data)</title><style>iframe{width:100%;height:600px;border:0}</style></head><body>
 <iframe id="fNew" src="tracker_branch.html"></iframe><pre id="out">running…</pre>
 <script type="module">
-import { handle } from './worker.js';
-const R = { err: null, conversations: [], usage: { calls: 0, input: 0, output: 0, cache_read: 0, cache_write: 0 } };
-const done = async () => { const u = R.usage; u.cost = Math.round(100 * (u.input * 4 + u.output * 20 + u.cache_read * 0.2 + u.cache_write * 5) / 1e6) / 100; await fetch('results/live_eval.json', { method: 'POST', body: JSON.stringify(R) }); };
+import { handle, LedgerCore } from './worker.js';
+// Cheapest first within each question. Every question goes to each setup before the next question, so if the allowance runs out the
+// setups have answered the same questions. The spending limit itself lives in the local server (serve_chat.py), not on this page.
+const CONFIGS = [{ model: 'claude-haiku-5-5', effort: 'low' }, { model: 'claude-haiku-5-5', effort: 'medium' }, { model: 'claude-sonnet-5-5', effort: 'low' }];
+const RUN = new URLSearchParams(location.search).get('run');
+const R = { run: RUN, err: null, synthetic_only: true, record_rows_sent: false, complete: false, stopped_by_allowance: false, configs: [], conversations: [], ledger: null };
+const save = () => fetch('results/comparison.json', { method: 'POST', body: JSON.stringify(R) }).then(r => { if (!r.ok) throw new Error('could not save results'); });
+const median = a => { const s = a.slice().sort((x, y) => x - y); return s.length ? s[Math.floor(s.length / 2)] : null; };
+const ledgerNow = async () => (await fetch('/__ledger')).json();
 async function main() {
   const set = await (await fetch('conversations.json')).json(), exp = await (await fetch('fixture.json')).json();
   const N = await bootFrame('fNew', exp.collections), signer = await makeSigner(), tok = await signer.sign({});
-  const env = { ANTHROPIC_API_KEY: 'held-by-local-proxy', STAFF_EMAILS: STAFF, FIREBASE_PROJECT_ID: PROJECT, ALLOWED_ORIGINS: TEST_ORIGIN, RATE_PER_MINUTE: '1000' };
-  const deps = { apiUrl: '/anthropic/v1/messages', fetch: (u, o) => String(u).includes('jwk') ? Promise.resolve(signer.jwksResponse()) : fetch(u, o) };
+  // The page's own ledger is only there because the gateway code needs one. It has no real limit; the server's does.
+  const pageStore = new Map(), pageLedger = new LedgerCore({ get: async k => pageStore.get(k), put: async (k, v) => { pageStore.set(k, v); } }, { BUDGET_USD: '1000000', MAX_IN_FLIGHT: '10' });
+  const deps = { ledger: pageLedger, apiUrl: '/anthropic/v1/messages', fetch: (u, o) => {
+    if (String(u).includes('jwk')) return Promise.resolve(signer.jwksResponse());
+    if (String(u).includes('firestore')) return Promise.resolve(new Response('{}'));
+    return fetch(u, Object.assign({}, o, { headers: Object.assign({}, o.headers, { 'x-run-token': RUN }) }));
+  } };
+  let env = null;
   N.__gw = (u, o) => handle(fakeReq(u, o), env, deps); N.__t = async () => tok;
   N.eval(`CHAT_GW_URL = 'https://gw.test'; chatFetch = window.__gw; chatIdToken = window.__t; CHAT.open = true;`);
   const nj = s => JSON.parse(N.eval(`JSON.stringify(${s})`));
   const writes0 = N.__FAKE.__writes.length;
+  const usageBy = {}; CONFIGS.forEach(c => { usageBy[c.model + '/' + c.effort] = { calls: 0, input: 0, output: 0, cache_read: 0, cache_write: 0 }; });
+  outer:
   for (const c of set.conversations) {
-    N.eval(`CHAT.msgs = []; CHAT.map = {}; CHAT.n = 0; CHAT.conv = null;`);
-    const out = { id: c.id, turns: [] };
-    for (const t of c.turns) {
-      const mark = nj(`CHAT.conv ? CHAT.conv.api.length : 0`);
-      await N.eval(`chatAsk(${JSON.stringify(t.q)})`);
-      const m = nj(`(() => { const m = CHAT.msgs[CHAT.msgs.length - 1]; return { reply: m.reply || null, html: m.html, chips: m.chips || [], failed: !!m.failed, bad: m.badCites || [], used: m.used || [], sent: m.sent || '' }; })()`);
-      const api = nj(`CHAT.conv ? CHAT.conv.api : []`).slice(mark), inputs = api.flatMap(x => Array.isArray(x.content) ? x.content : []).filter(b => b.type === 'tool_use');
-      const results = api.flatMap(x => Array.isArray(x.content) ? x.content : []).filter(b => b.type === 'tool_result').map(b => String(b.content)).join(' ');
-      const prior = JSON.stringify(nj(`CHAT.conv ? CHAT.conv.api : []`).filter(x => x.role === 'user'));
-      const P = [], text = m.reply || '';
-      if (m.failed) P.push('the turn failed: ' + m.html);
-      if (t.tools_any && !t.tools_any.some(x => m.used.includes(x))) P.push(`expected one of ${t.tools_any.join(', ')}; used ${m.used.join(', ') || 'none'}`);
-      if (t.chip && !m.chips.some(x => x.includes(t.chip))) P.push(`no scope chip with ${t.chip}: ${m.chips.join(' | ')}`);
-      if (t.chip_not && m.chips.some(x => x.includes(t.chip_not))) P.push(`scope still has ${t.chip_not}: ${m.chips.join(' | ')}`);
-      if (t.input_has && !JSON.stringify(inputs.map(x => x.input)).includes(t.input_has)) P.push(`no tool call used ${t.input_has}`);
-      if (t.citation && !/\[E\d+/.test(text)) P.push('no evidence citation');
-      if (m.bad.length) P.push('cited evidence that does not exist: ' + m.bad.join(', '));
-      (t.must || []).forEach(rx => { if (!new RegExp(rx, 'i').test(text)) P.push('missing expected wording: ' + rx); });
-      (t.not || []).forEach(rx => { if (new RegExp(rx, 'i').test(text)) P.push('has wording it should not: ' + rx); });
-      if (/\bentr(y|ies)\b/i.test(text)) P.push('uses the reserved word');
-      if (t.grounded) {
-        // Every number in the answer should be in this turn's results, the question or a date. A flag to read, not proof of an error.
-        const nums = (text.replace(/\[E\d+[^\]]*\]/g, '').replace(/\b[POSE]\d+\b/g, '').match(/\d+(?:\.\d+)?/g) || []), hay = results + ' ' + prior;
-        const miss = [...new Set(nums)].filter(x => !new RegExp(`(^|[^0-9.])${x.replace('.', '\\.')}($|[^0-9])`).test(hay) && Number(x) > 10);
-        if (miss.length) P.push('numbers not found in tool results: ' + miss.join(', '));
+    const byCfg = {}, pending = {};
+    for (const cfg of CONFIGS) {
+      const key = cfg.model + '/' + cfg.effort;
+      // Same settings as production, including no individual records sent to the model.
+      env = { ANTHROPIC_API_KEY: 'held-by-local-server', FIREBASE_PROJECT_ID: PROJECT, ALLOWED_ORIGINS: TEST_ORIGIN, MODEL: cfg.model, EFFORT: cfg.effort, MAX_ROUNDS: '8', MAX_OUTPUT_TOKENS: '3000', STAFF_RULES_REVIEWED: 'sha256:' + 'a'.repeat(64) };
+      N.eval(`CA.cfg = null; CHAT.__usage = null; CHAT.msgs = []; CHAT.map = {}; CHAT.n = 0; CHAT.conv = null;`);
+      const turns = [];
+      for (const t of c.turns) {
+        const mark = nj(`CHAT.conv ? CHAT.conv.api.length : 0`), t0 = performance.now();
+        await N.eval(`chatAsk(${JSON.stringify(t.q)})`);
+        const seconds = Math.round((performance.now() - t0) / 100) / 10;
+        const m = nj(`(() => { const m = CHAT.msgs[CHAT.msgs.length - 1]; return { reply: m.reply || null, html: m.html, chips: m.chips || [], failed: !!m.failed, bad: m.badCites || [], used: m.used || [] }; })()`);
+        if (m.failed && /AI credit/.test(m.html)) { R.stopped_by_allowance = true; break outer; }   // the server's 402: this conversation is dropped whole, for every setup
+        const api = nj(`CHAT.conv ? CHAT.conv.api : []`), mine = api.slice(mark), blocks = mine.flatMap(x => Array.isArray(x.content) ? x.content : []), inputs = blocks.filter(b => b.type === 'tool_use');
+        const results = blocks.filter(b => b.type === 'tool_result').map(b => String(b.content)).join(' '), prior = JSON.stringify(api.filter(x => x.role === 'user'));
+        const P = [], text = m.reply || '';
+        if (m.failed) P.push('the turn failed: ' + m.html);
+        if (t.tools_any && !t.tools_any.some(x => m.used.includes(x))) P.push(`expected one of ${t.tools_any.join(', ')}; used ${m.used.join(', ') || 'none'}`);
+        if (t.chip && !m.chips.some(x => x.includes(t.chip))) P.push(`no scope chip with ${t.chip}: ${m.chips.join(' | ')}`);
+        if (t.chip_not && m.chips.some(x => x.includes(t.chip_not))) P.push(`scope still has ${t.chip_not}: ${m.chips.join(' | ')}`);
+        if (t.input_has && !JSON.stringify(inputs.map(x => x.input)).includes(t.input_has)) P.push(`no tool call used ${t.input_has}`);
+        if (t.citation && !/\[E\d+/.test(text)) P.push('no evidence citation');
+        if (m.bad.length) P.push('cited evidence that does not exist: ' + m.bad.join(', '));
+        if (t.golden) { const want = String(N.eval(t.golden)); if (!new RegExp(`(^|[^0-9.])${want.replace('.', '\\.')}($|[^0-9])`).test(text)) P.push(`expected the number ${want}`); }
+        if (t.golden_name) { const names = nj(t.golden_name); if (!names.some(x => (m.html || '').includes(x))) P.push(`expected one of: ${names.join(', ')}`); }
+        (t.must || []).forEach(rx => { if (!new RegExp(rx, 'i').test(text)) P.push('missing expected wording: ' + rx); });
+        (t.not || []).forEach(rx => { if (new RegExp(rx, 'i').test(text)) P.push('has wording it should not: ' + rx); });
+        if (/\bentr(y|ies)\b/i.test(text)) P.push('uses the reserved word');
+        if (/\bnormal\b/i.test(text)) P.push('uses "normal" as a benchmark');
+        if (t.grounded) {
+          // Numbers in the answer should come from this turn's results or the question. A flag to read, not proof of an error.
+          const nums = text.replace(/\[E\d+[^\]]*\]/g, '').replace(/\b[POSE]\d+\b/g, '').match(/\d+(?:\.\d+)?/g) || [], hay = results + ' ' + prior;
+          const miss = [...new Set(nums)].filter(x => Number(x) > 10 && !new RegExp(`(^|[^0-9.])${x.replace('.', '\\.')}($|[^0-9])`).test(hay));
+          if (miss.length) P.push('numbers not found in tool results: ' + miss.join(', '));
+        }
+        turns.push({ q: t.q, reply: text, seconds, failed: m.failed, chips: m.chips, used: m.used, tool_inputs: inputs.map(x => ({ name: x.name, input: x.input })), problems: P });
+        document.getElementById('out').textContent = `${key} ${c.id}`;
       }
-      out.turns.push({ q: t.q, reply: text, chips: m.chips, used: m.used, tool_inputs: inputs.map(x => ({ name: x.name, input: x.input })), problems: P });
-      document.getElementById('out').textContent = c.id + ' ' + t.q;
+      pending[key] = nj(`CHAT.__usage || {}`);
+      byCfg[key] = turns;
     }
-    R.conversations.push(out);
+    // Counted only once every setup has finished this conversation, so the figures below cover the same questions. The server's ledger counts everything.
+    Object.keys(pending).forEach(key => { ['calls', 'input', 'output', 'cache_read', 'cache_write'].forEach(k => { usageBy[key][k] += pending[key][k] || 0; }); });
+    R.conversations.push({ id: c.id, setups: byCfg }); R.ledger = await ledgerNow(); await save();   // kept after every conversation
   }
-  const u = nj(`Object.assign({}, CHAT.__usage || {})`); Object.assign(R.usage, u);
-  R.no_writes = N.__FAKE.__writes.length === writes0;
+  // Scored only on conversations every setup finished. If the allowance ended the run, this says so.
+  const total = set.conversations.length, done = R.conversations.length;
+  R.conversations_total = total; R.conversations_compared = done; R.complete = done === total;
+  R.not_compared = set.conversations.slice(done).map(c => c.id);
+  R.configs = CONFIGS.map(cfg => {
+    const key = cfg.model + '/' + cfg.effort, turns = R.conversations.flatMap(c => c.setups[key]), times = turns.map(t => t.seconds), us = usageBy[key];
+    const p = cfg.model.includes('sonnet') ? { i: 2, o: 10, r: 0.10, w: 2.5 } : { i: 0.10, o: 0.5, r: 0.01, w: 0.125 };
+    return { model: cfg.model, effort: cfg.effort, turns: turns.length, clean: turns.filter(t => !t.problems.length).length, failed: turns.filter(t => t.failed).length, median_s: median(times), max_s: times.length ? Math.max(...times) : null, tokens: us, usd_estimated_from_usage: Math.round((us.input * p.i + us.output * p.o + us.cache_read * p.r + us.cache_write * p.w) / 1e4) / 100, problems: R.conversations.flatMap(c => c.setups[key].flatMap(t => t.problems.map(x => `${c.id}: ${x}`))) };
+  });
+  R.ledger = await ledgerNow(); R.no_database_writes = N.__FAKE.__writes.length === writes0;
 }
-main().then(done, e => { R.err = String(e && e.stack || e); return done(); });
+main().then(save, e => { R.err = String(e && e.stack || e); return save(); });
 </script></body></html>

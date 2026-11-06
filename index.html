@@ -4832,7 +4832,7 @@ initSubtabs();
 //    every render, except in lists already narrowed to his own shots;
 //  - a last sweep replaces any other roster name still on screen.
 // Team totals and averages stay, since they don't name anyone.
-// One player can be listed under different names in different seasons (Nick / Nicholas De Cain).
+// One player can be listed under different names in different seasons (a short and a full first name).
 // Player View knows all of his names: pmHas(text) = text names him.
 const pmNames = () => (PLAYER_MODE ? (PLAYER_MODE.names || [PLAYER_MODE.name]) : []);
 const pmKeys = () => pmNames().map(n => n.trim().toLowerCase());
@@ -4863,7 +4863,7 @@ function pmPickerOpen() {
     r.roles.forEach(x => e.roles.add(x));
     people.set(key, e);
   }));
-  // Same player, different name in another season (Nick / Nicholas De Cain): same last name, first names that
+  // Same player, different name in another season (a short and a full first name): same last name, first names that
   // start the same, the same jersey, and never on the roster in the same season. Keep the latest season's name; know all.
   const split = n => ({ first: (n.trim().split(/\s+/)[0] || '').toLowerCase(), last: lastNameOf(n).toLowerCase() });
   const sameGuy = (a, b) => { const x = split(a.name), y = split(b.name);
@@ -5237,8 +5237,8 @@ document.getElementById('f_opponent').addEventListener('input', () => { if (isSc
 // ---------------- Shooter / Assist: type a last name, resolve to a roster jersey ----------------
 // No fuzzy/last-name matcher existed anywhere in the app before this — the
 // only prior name matching (the NAME: roster-continuity feature) requires
-// an exact full-name match. This one splits on the last space so "Keller"
-// resolves to "Andrew Keller" without picking from a dropdown.
+// an exact full-name match. This one splits on the last space so "Lastname"
+// resolves to "First Last" without picking from a dropdown.
 let resolvedShooterJersey = null;
 let resolvedAssistJersey = null;
 // Safe for element text AND quoted attribute values.
@@ -5251,7 +5251,7 @@ function resolveByLastName(text, season) {
   if (!key) return [];
   const pool = rosterPlayers(season);
   // Match against EITHER the last name alone or the full "First Last"
-  // name — a coach typing "Brennan" and a coach typing "Blair Brennan"
+  // name — a coach typing "Lastname" and a coach typing "First Last"
   // both need to find the same player. Matching last-name-only was the
   // actual bug: typing a full name never matched since it was compared
   // only against the last-name token, so someone right there on the
@@ -5264,7 +5264,7 @@ function resolveByLastName(text, season) {
   // Otherwise match live as the coach types, the same as any normal
   // autocomplete — requiring the FULL last name before showing anything
   // (the original behavior) meant typing "Kel" showed "no player found"
-  // even though "Keller" is right there on the roster, which read as the
+  // even though "Lastname" is right there on the roster, which read as the
   // app not knowing its own roster.
   return pool.filter(p => lastNameOf(p.name).toLowerCase().startsWith(key) || fullNameOf(p).startsWith(key));
 }
@@ -6169,7 +6169,7 @@ function renderUnitsPanel() {
     document.getElementById('unit_add').addEventListener('click', async () => {
       const season = currentLogSeason();
       const name = document.getElementById('unit_name').value.trim();
-      // numbers or names ("Fertels, 25, Koo"), comma separated
+      // numbers or names ("Lastname, 25, Lastname"), comma separated
       const raw = document.getElementById('unit_jerseys').value.split(',').flatMap(x => (/^[\s#\d]+$/.test(x) ? x.split(/\s+/) : [x])).map(x => normJerseyText(x)).filter(Boolean);   // "2 7 11" still works
       const nums = raw.map(x => (validJerseyText(x) ? x : (jerseyFromName(x, season).j || x)));
       const msg = t => { document.getElementById('unitMsg').innerHTML = `<div class="msg err">${escapeHtml(t)}</div>`; };
@@ -20434,7 +20434,8 @@ function chatDraw() {
   document.getElementById('chatLog').innerHTML = CHAT.msgs.length ? CHAT.msgs.map(m => `<div class="chat-msg ${m.role}">${m.focus ? `<div class="n-note">about ${escapeHtml(m.focus)}</div>` : ''}${m.agent ? caMsgHtml(m) : m.html}${m.actions && m.actions.length ? `<div class="chat-acts">${m.actions.map((a, i) => `<button type="button" class="pill" data-chat="act" data-m="${CHAT.msgs.indexOf(m)}" data-a="${i}">${escapeHtml(a.t)}</button>`).join('')}</div>` : ''}${m.cmp || ''}${m.sent && chatShowSent() ? `<details class="chat-sent"><summary>What was sent</summary><pre>${escapeHtml(m.sent)}</pre></details>` : ''}</div>`).join('')
     : `<div class="chat-empty"><p>${chatAgentOn() ? 'Ask anything: what happened, why, who, which records and film, what if. Follow up in your own words.' : 'Ask anything about the numbers: why a player is where he is, how a stat is figured, what would change it.'}</p><p class="n-note">Only coded numbers go to the AI (P1, P2&hellip;), never names. The tracker does the math${chatAgentOn() ? ', and read-only: chat can’t change a record' : ''}.</p></div>`;
   panel.classList.toggle('wide', chatAgentOn() && CA.wide);
-  panel.querySelectorAll('[data-agent-only]').forEach(x => { x.hidden = !chatAgentOn(); });
+  panel.querySelectorAll('[data-agent-only]:not(#chatUsage)').forEach(x => { x.hidden = !chatAgentOn(); });
+  const ub = document.getElementById('chatUsage'); if (ub) { ub.hidden = !chatAgentOn() || !CA.usage; if (!ub.hidden) ub.innerHTML = caUsageHtml(); }
   const hb = document.getElementById('chatHist'); if (hb) { hb.hidden = !(chatAgentOn() && CA.showHist); if (!hb.hidden) hb.innerHTML = caHistHtml(); }
   document.getElementById('chatSugg').innerHTML = sugg.map(s => `<button type="button" class="pill" data-chat="ask" data-q="${escapeHtml(s)}">${escapeHtml(s)}</button>`).join('');
   const log = document.getElementById('chatLog'); if (CA.keepScroll) { CA.keepScroll = false; log.scrollTop = logTop0; } else log.scrollTop = log.scrollHeight;
@@ -20448,6 +20449,7 @@ function chatInit() {
   wrap.innerHTML = `<button type="button" id="chatFab" class="chat-fab" title="Ask the tracker" aria-label="Ask the tracker">&#128172;</button>
     <section id="chatPanel" class="chat-panel" hidden aria-label="Ask the tracker">
       <div class="chat-head"><b>Ask the tracker</b><span style="flex:1;"></span><button type="button" class="pill" data-chat="hist" data-agent-only hidden>Saved chats</button><button type="button" class="pill" data-chat="wide" data-agent-only hidden>Wider</button><button type="button" class="pill" data-chat="new">New chat</button><button type="button" class="chat-x" data-chat="close" title="Close">&times;</button></div>
+      <div id="chatUsage" class="chat-focus" data-agent-only hidden></div>
       <div id="chatHist" class="chat-hist" hidden></div>
       <div id="chatFocus" class="chat-focus"></div>
       <div id="chatLog" class="chat-log"></div>
@@ -20479,7 +20481,7 @@ function chatInit() {
 let CHAT_GW_URL = '';   // empty: the chat above runs exactly as it did
 let chatFetch = (u, o) => fetch(u, o);
 let chatIdToken = force => firebase.auth().currentUser.getIdToken(!!force);
-const CA_MAX_ROUNDS = 10, CA_IDLE_MS = 60000, CA_EV_PAGE = 25, CA_SESS_PAGE = 20;
+const CA_MAX_ROUNDS = 8, CA_IDLE_MS = 60000, CA_EV_PAGE = 25, CA_SESS_PAGE = 20;
 const CA = { ctl: null, cfg: null, stopWhy: null, keepScroll: false, hist: null, showHist: false, wide: false };
 function chatAgentOn() { return !!CHAT_GW_URL && !PLAYER_MODE; }
 class CaErr extends Error {}
@@ -20628,7 +20630,7 @@ const CA_TOOLS = {
       season, seasons: SEASONS, analytics_seasons: ADV_SEASONS, analytics_available: adv, by_session_type: rows, sessions_with_records: sids.length, tracking_by_session: tracking,
       metrics: SA_CATALOG.map(c => ({ id: c.id, label: c.label, min_n: c.min || 0, season_level: !!c.seasonOnly || c.f.length === 0 })),
       pages: Object.values(NAV_PAGES).filter(navVisible).map(p => ({ id: p.id, name: p.name })),
-      not_available_yet: ['lineup and stint records', 'modeled What If', 'uploaded documents', 'Matchup Studio simulations', 'video analysis'],
+      not_available_yet: ['individual records in the AI\u2019s view (totals and clickable lists only)', 'lineup and stint records', 'modeled What If', 'uploaded documents', 'Matchup Studio simulations', 'video analysis'],
     };
   },
   find_players(a) {
@@ -20736,7 +20738,8 @@ const CA_TOOLS = {
     if (a.kind === 'no_shot_possessions') { const by = {}; list.forEach(e => { const k = e.end || 'not recorded'; by[k] = (by[k] || 0) + 1; }); totals.by_ending = by; }
     if (a.kind === 'faceoffs') { totals.won = list.filter(e => e.won === 1).length; }
     turn.chips.push(chip);
-    return { scope: sc.echo, kind: a.kind, filters: { player: a.player || null, player_role: a.player ? role : null, location: a.location || null, zone: a.zone || null, result: a.result || null, man_situation: a.man_situation || null, shot_quality: a.shot_quality || null, pressure: a.pressure || null, end: a.end || null }, totals, evidence: caEvidence(K[0], K[2], sc.season, list, chip), page, pages: Math.ceil(list.length / size) || 1, rows: rows.map(row), coverage: caCoverage(sc.sids, [a.kind === 'faceoffs' ? 'fo' : isShot ? 'shots' : 'poss']) };
+    const sendRows = !!(CA.cfg && CA.cfg.send_rows);
+    return { scope: sc.echo, kind: a.kind, filters: { player: a.player || null, player_role: a.player ? role : null, location: a.location || null, zone: a.zone || null, result: a.result || null, man_situation: a.man_situation || null, shot_quality: a.shot_quality || null, pressure: a.pressure || null, end: a.end || null }, totals, evidence: caEvidence(K[0], K[2], sc.season, list, chip), page, pages: Math.ceil(list.length / size) || 1, rows: sendRows ? rows.map(row) : [], rows_withheld: !sendRows, coverage: caCoverage(sc.sids, [a.kind === 'faceoffs' ? 'fo' : isShot ? 'shots' : 'poss']) };
   },
   scoring_change(a, turn) {
     const R = scCompare(caPeriodOpts(a, a.subject)), dec = R.dec, chip = caChipPeriod(R);
@@ -20894,12 +20897,12 @@ async function caAsk(q, retryOf) {
       if (res.stop === 'max_tokens' && calls.length) throw caCallError('too_long', 'That answer ran too long to finish. Try a narrower question.');
       conv.api.push({ role: 'assistant', content: content.map(b => { const o = Object.assign({}, b); delete o.__bad_json; return o; }) });
       if (res.stop !== 'tool_use') { reply = content.filter(b => b.type === 'text').map(b => b.text).join('\n').trim(); cut = res.stop === 'max_tokens'; break; }
-      if (round >= CA_MAX_ROUNDS) throw caCallError('too_many', 'That took too many steps. Try breaking it into smaller questions.');
+      if (round >= CA_MAX_ROUNDS - 1) throw caCallError('too_many', 'That took too many steps. Try breaking it into smaller questions.');
       const results = [];
       for (const b of calls) { m.status = CA_STATUS[b.name] || 'Checking the tracker…'; m.partial = ''; chatDraw(); results.push(await caRunTool(b, turn)); if (ctl.signal.aborted) throw caCallError('stopped', ''); }
       results.forEach(x => turn.sent.push(`${x.is_error ? 'tool error' : 'tool result'}: ${x.content}`));
       const contentOut = results.slice();
-      if (round === CA_MAX_ROUNDS - 1) contentOut.push({ type: 'text', text: '[tracker context] Step limit reached. Answer now from what you have and say what you could not check. [/tracker context]' });
+      if (round === CA_MAX_ROUNDS - 2) contentOut.push({ type: 'text', text: '[tracker context] Step limit reached. Answer now from what you have and say what you could not check. [/tracker context]' });
       conv.api.push({ role: 'user', content: contentOut });
     }
     if (!reply) throw caCallError('empty', 'The AI didn’t give an answer. Try again.');
@@ -20914,10 +20917,23 @@ async function caAsk(q, retryOf) {
     if (!e.gw && !stopped && CA.stopWhy !== 'timeout') console.error('chat', e);
     Object.assign(m, { pending: false, status: '', partial: '', failed: true, chips: [...new Set(turn.chips)], html: `<p>${escapeHtml(why)}</p>` });
     if (e.gw === 'auth' || e.gw === 'not_staff' || e.gw === 'origin') CA.cfg = null;
-    m.canRetry = !['not_staff', 'origin', 'not_configured', 'config', 'credit', 'blocked'].includes(e.gw);
+    m.canRetry = !['not_staff', 'origin', 'not_configured', 'config', 'credit', 'blocked', 'budget', 'paused', 'too_large', 'rows'].includes(e.gw);
   }
   clearTimeout(tick);
   CA.ctl = null; CHAT.busy = false;
+  chatDraw();
+  caRefreshUsage();
+}
+// The month's chat budget, from the server's ledger. The owner also gets the off switch.
+async function caRefreshUsage() {
+  try { const r = await caAuthedFetch('/v1/usage', { method: 'GET' }); if (r.ok) { CA.usage = await r.json(); chatDraw(); } } catch (e) { /* the line just stays as it was */ }
+}
+function caUsageHtml() {
+  const u = CA.usage; if (!u) return '';
+  return `<span class="n-note">${u.killed ? 'Assistant switched off. ' : ''}Chat budget ${escapeHtml(u.month)}: $${u.spent_usd.toFixed(2)} used, $${u.stop_at_usd.toFixed(2)} limit, ${u.requests} calls</span>${u.owner ? `<button type="button" class="pill" data-chat="kill">${u.killed ? 'Turn assistant on' : 'Turn assistant off'}</button>` : ''}`;
+}
+async function caSetKill(on) {
+  try { const r = await caAuthedFetch('/v1/admin/kill', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ on }) }); if (r.ok) CA.usage = Object.assign({}, CA.usage, await r.json()); } catch (e) { console.warn('chat kill', e); }
   chatDraw();
 }
 const CA_STATUS = { tracker_overview: 'Checking what the tracker holds…', find_players: 'Finding the player…', list_sessions: 'Checking sessions…', team_summary: 'Adding up team numbers…', player_stats: 'Pulling player numbers…', find_records: 'Finding the records…', scoring_change: 'Running Scoring Change…', what_if: 'Running What If…', possession_scenario: 'Running the possession scenario…', rating_facts: 'Checking the ratings…', get_clips: 'Checking Film Check…', open_view: 'Finding the page…' };
@@ -21012,6 +21028,7 @@ function caAction(a, b) {
   if (a === 'retry') { const m = CHAT.msgs[Number(b.dataset.m)]; if (m && m.q) caAsk(m.q, m); return true; }
   if (a === 'hist') { caOpenHist(); return true; }
   if (a === 'wide') { CA.wide = !CA.wide; chatDraw(); return true; }
+  if (a === 'kill') { caSetKill(!(CA.usage && CA.usage.killed)); return true; }
   if (a === 'openconv') { if (CA.ctl) { CA.stopWhy = 'user'; CA.ctl.abort(); } caOpenConv(b.dataset.id); return true; }
   if (a === 'delconv') { caStore('readwrite', s => s.delete(b.dataset.id)).then(() => { CA.hist = (CA.hist || []).filter(c => c.id !== b.dataset.id); if (CHAT.conv && CHAT.conv.id === b.dataset.id) { CHAT.conv = null; CHAT.msgs = []; CHAT.map = {}; CHAT.n = 0; } chatDraw(); }).catch(e => console.warn('chat delete', e)); return true; }
   if (a === 'ev') { const w = b.closest('.chat-msg'), i = [...document.querySelectorAll('#chatLog .chat-msg')].indexOf(w), m = CHAT.msgs[i]; if (m) { m.evOpen = m.evOpen === b.dataset.ev ? null : b.dataset.ev; m.evPage = 1; CA.keepScroll = true; chatDraw(); } return true; }

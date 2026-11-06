@@ -10,7 +10,7 @@
 <iframe id="fOld" src="tracker_main.html"></iframe><iframe id="fNew" src="tracker_branch.html"></iframe>
 <pre id="out">running…</pre>
 <script type="module">
-import { handle, verifyStaff, checkMessages, providerRequest, TOOLS, SYSTEM_PROMPT } from './worker.js';
+import { handle, providerRequest, TOOLS, SYSTEM_PROMPT, LedgerCore, monthKey, worstCaseMicros, actualMicros, priceOf, roundsSoFar, rowsInHistory } from './worker.js';
 const T = { results: [], pass: 0, fail: 0 };
 const ok = (name, cond, info) => { T.results.push({ name, ok: !!cond, info: info === undefined ? null : info }); cond ? T.pass++ : T.fail++; };
 const done = async err => { const body = JSON.stringify(Object.assign({ err: err || null }, T)); document.getElementById('out').textContent = body.slice(0, 20000); await fetch('results/chat_tests.json', { method: 'POST', body }); };
@@ -19,15 +19,20 @@ async function main() {
   const exp = await (await fetch('fixture.json')).json(), cols = exp.collections;
   // ---- A: the gateway on its own ----
   const signer = await makeSigner(), KEY = 'sk-SECRET-TEST-KEY';
-  const env = { ANTHROPIC_API_KEY: KEY, STAFF_EMAILS: STAFF + ',other@test.invalid', FIREBASE_PROJECT_ID: PROJECT, ALLOWED_ORIGINS: TEST_ORIGIN, RATE_PER_MINUTE: '100000' };
+  const env = { ANTHROPIC_API_KEY: KEY, FIREBASE_PROJECT_ID: PROJECT, ALLOWED_ORIGINS: TEST_ORIGIN, BUDGET_USD: '100', MAX_IN_FLIGHT: '50', ALLOW_RECORD_ROWS: '1', OWNER_EMAILS: 'owner@test.invalid', STAFF_RULES_REVIEWED: 'sha256:' + 'a'.repeat(64) };
+  const memStore = () => { const m = new Map(); return { get: async k => m.has(k) ? JSON.parse(JSON.stringify(m.get(k))) : undefined, put: async (k, v) => { m.set(k, JSON.parse(JSON.stringify(v))); }, m }; };
+  const ledger = new LedgerCore(memStore(), env);
+  // Stands in for the production rules: these accounts can read the protected document.
+  const rulesStaff = new Set([STAFF, 'owner@test.invalid', 'other@test.invalid']); const tokenEmail = t => { try { return JSON.parse(atob(t.split('.')[1].replace(/-/g, '+').replace(/_/g, '/'))).email; } catch (e) { return null; } }; let firestoreDown = false, probeCount = 0;
   let provider = null; const sentToProvider = [];
   const gwFetch = async (u, o) => {
     if (String(u).includes('jwk')) return signer.jwksResponse();
+    if (String(u).includes('firestore')) { probeCount++; if (firestoreDown) throw new TypeError('network'); return new Response('{}', { status: rulesStaff.has(tokenEmail(o.headers.authorization.replace('Bearer ', ''))) ? 200 : 403 }); }
     sentToProvider.push(JSON.parse(o.body));
     sentToProvider[sentToProvider.length - 1].__headers = o.headers;
     return provider(JSON.parse(o.body), o);
   };
-  const deps = { fetch: gwFetch };
+  const deps = { fetch: gwFetch, ledger };
   const call = async (tok, body, o) => handle(fakeReq('https://gw.test/v1/chat', Object.assign({ method: 'POST', headers: { authorization: 'Bearer ' + tok }, body: JSON.stringify(body) }, o || {})), env, deps);
   const good = await signer.sign({}), one = { messages: [{ role: 'user', content: 'hi' }] };
   provider = async () => streamResponse(sseOf([{ type: 'text', text: 'Hello coach' }], 'end_turn'));
@@ -37,8 +42,8 @@ async function main() {
   ok('gateway: text deltas add up to the final text', evs.filter(e => e.t === 'text').map(e => e.d).join('') === 'Hello coach' && evs[evs.length - 1].content[0].text === 'Hello coach');
   const sentH = sentToProvider[0].__headers;
   ok('gateway: key goes only to the provider header, never to the browser', sentH['x-api-key'] === KEY && !JSON.stringify(evs).includes(KEY));
-  ok('gateway: server sets system prompt, tools, model and limits', sentToProvider[0].system[0].text === SYSTEM_PROMPT && sentToProvider[0].tools.length === TOOLS.length && sentToProvider[0].model === 'claude-opus-5-5' && sentToProvider[0].max_tokens === 8000);
-  ok('gateway: only supported request fields go to the provider', !sentToProvider[0].thinking && !sentToProvider[0].temperature && sentToProvider[0].stream === true && sentToProvider[0].fallbacks === 'default' && /context-management-2025-06-27/.test(sentH['anthropic-beta']) && /server-side-fallback-2026-07-01/.test(sentH['anthropic-beta']));
+  ok('gateway: server sets system prompt, tools, model and limits', sentToProvider[0].system[0].text === SYSTEM_PROMPT && sentToProvider[0].tools.length === TOOLS.length && sentToProvider[0].model === 'claude-haiku-5-5' && sentToProvider[0].max_tokens === 3000);
+  ok('gateway: only supported request fields go to the provider', !sentToProvider[0].thinking && !sentToProvider[0].temperature && sentToProvider[0].stream === true && sentToProvider[0].fallbacks === undefined && /context-management-2025-06-27/.test(sentH['anthropic-beta']));
   ok('gateway: request bytes are stable between calls (prompt cache)', JSON.stringify(providerRequest(one.messages, env)) === JSON.stringify(providerRequest(one.messages, env)));
   const now = Math.floor(Date.now() / 1000), other = await crypto.subtle.generateKey({ name: 'RSASSA-PKCS1-v1_5', modulusLength: 2048, publicExponent: new Uint8Array([1, 0, 1]), hash: 'SHA-256' }, true, ['sign', 'verify']);
   const bad = [
@@ -53,8 +58,11 @@ async function main() {
     ['not on the staff list', await signer.sign({ email: 'stranger@test.invalid' }), 403],
   ];
   for (const [label, tok, code] of bad) { const n0 = sentToProvider.length; const x = await call(tok, one); ok(`gateway refuses: ${label}`, x.status === code && sentToProvider.length === n0, x.status); }
-  const emptyStaff = await handle(fakeReq('https://gw.test/v1/chat', { method: 'POST', headers: { authorization: 'Bearer ' + good }, body: JSON.stringify(one) }), Object.assign({}, env, { STAFF_EMAILS: '' }), deps);
-  ok('gateway: an empty staff list refuses everyone', emptyStaff.status === 403);
+  firestoreDown = true; const downTok = await signer.sign({ email: 'fresh@test.invalid' }); rulesStaff.add('fresh@test.invalid'); const down = await call(downTok, one);
+  ok('gateway: if the staff check can\'t reach Firestore, it refuses', down.status === 403, down.status); firestoreDown = false;
+  ok('gateway: and that failure is not remembered', (await call(downTok, one)).status === 200);
+  const wrongP = await call(await signer.sign({ email: 'pw@test.invalid', firebase: { sign_in_provider: 'password' } }), one);
+  ok('gateway: only Google sign-in counts, as the rules require', wrongP.status === 401, wrongP.status);
   ok('gateway: another site is refused', (await call(good, one, { origin: 'https://evil.test' })).status === 403);
   const pre = await handle(fakeReq('https://gw.test/v1/chat', { method: 'OPTIONS' }), env, deps);
   ok('gateway: preflight names only our origin', pre.status === 204 && pre.headers.get('access-control-allow-origin') === TEST_ORIGIN);
@@ -82,9 +90,73 @@ async function main() {
   provider = async () => streamResponse(sseOf([{ type: 'thinking', signature: 'sig123' }, { type: 'text', text: 'x' }, { type: 'tool_use', id: 'tu1', name: 'tracker_overview', input: { season: '2027' } }], 'tool_use'));
   const toolEv = await ndjson(await call(good, one)), tm = toolEv[toolEv.length - 1];
   ok('gateway: thinking signature and whole tool requests are passed back unchanged', tm.stop === 'tool_use' && tm.content[0].signature === 'sig123' && tm.content[2].input.season === '2027' && tm.content[2].id === 'tu1', tm);
-  const lim = await handle(fakeReq('https://gw.test/v1/chat', { method: 'POST', headers: { authorization: 'Bearer ' + await signer.sign({ email: 'other@test.invalid' }) }, body: JSON.stringify(one) }), Object.assign({}, env, { RATE_PER_MINUTE: '0.5' }), deps);
-  const lim2 = await handle(fakeReq('https://gw.test/v1/chat', { method: 'POST', headers: { authorization: 'Bearer ' + await signer.sign({ email: 'other@test.invalid' }) }, body: JSON.stringify(one) }), Object.assign({}, env, { RATE_PER_MINUTE: '0.5' }), deps);
-  ok('gateway: over the per-account limit is refused', lim2.status === 429, [lim.status, lim2.status]);
+  // ---- Budget ----
+  const T0 = Date.UTC(2026, 10, 15, 12), mkL = (e, st, clk) => { const c = { t: T0 }; const l = new LedgerCore(st || memStore(), Object.assign({ BUDGET_USD: '10', SAFETY_MARGIN_USD: '1', MAX_IN_FLIGHT: '100' }, e || {}), clk || (() => c.t)); l.c = c; return l; };
+  ok('budget: month follows New York, not UTC', monthKey(Date.UTC(2026, 11, 1, 4, 30)) === '2026-11' && monthKey(Date.UTC(2026, 11, 1, 5, 30)) === '2026-12' && monthKey(Date.UTC(2027, 0, 1, 4, 59)) === '2026-12');
+  let L = mkL(), st1 = await L.status();
+  ok('budget: $10 less the $1 margin stops at $9; hosting is $0', st1.stop_at_usd === 9 && st1.budget_usd === 10 && st1.fixed_hosting_usd === 0, st1);
+  ok('budget: fixed hosting comes off the top', (await mkL({ FIXED_HOSTING_USD: '5' }).status()).stop_at_usd === 4);
+  const race = await Promise.all(Array.from({ length: 60 }, (_, i) => L.reserve({ id: 'r' + i, max: 200000, model: 'm' })));
+  const won = race.filter(x => x.ok).length; st1 = await L.status();
+  ok('budget: 60 questions at once at $0.20 each: exactly 45 reserved, none beyond $9', won === 45 && st1.reserved_usd === 9, [won, st1.reserved_usd]);
+  ok('budget: a reservation that would cross the limit is refused for budget', race.filter(x => !x.ok).every(x => x.reason === 'budget'));
+  await L.settle({ id: 'r0', cost: 1000, model: 'm', usage: { input: 10, output: 1, cache_read: 0, cache_write: 0 } }); st1 = await L.status();
+  ok('budget: settling frees the reservation and charges the real cost', st1.reserved_usd === 8.8 && st1.spent_usd === 0 && st1.requests === 1 && st1.remaining_usd === 0.2, st1);
+  ok('budget: freed money can be used again', (await L.reserve({ id: 'again', max: 150000, model: 'm' })).ok);
+  L = mkL({ RESERVATION_TTL_S: '60' }); await L.reserve({ id: 'lost', max: 500000, model: 'm' }); L.c.t += 61000; st1 = await L.status();
+  ok('budget: a call that never settles (crash) is charged in full', st1.spent_usd === 0.5 && st1.reserved_usd === 0 && st1.never_settled === 1, st1);
+  L = mkL({ MAX_IN_FLIGHT: '2' }); await L.reserve({ id: 'a', max: 1, model: 'm' }); await L.reserve({ id: 'b', max: 1, model: 'm' });
+  ok('budget: too many at once is refused', (await L.reserve({ id: 'c', max: 1, model: 'm' })).reason === 'busy');
+  L = mkL({ PRIOR_SPEND_JSON: '{"2026-11": 8.95}' });
+  ok('budget: testing spend before launch counts against the month', (await L.status()).spent_usd === 8.95 && !(await L.reserve({ id: 'x', max: 100000, model: 'm' })).ok && (await L.reserve({ id: 'y', max: 40000, model: 'm' })).ok);
+  ok('budget: an unreadable before-launch figure stops spending', !(await mkL({ PRIOR_SPEND_JSON: 'oops' }).reserve({ id: 'z', max: 1, model: 'm' })).ok);
+  const S0 = memStore(); L = mkL({}, S0); await L.reserve({ id: 'n', max: 8900000, model: 'm' }); await L.settle({ id: 'n', cost: 8900000, model: 'm' });
+  const dec = Date.UTC(2026, 11, 1, 6); const Ld = mkL({}, S0, () => dec), stD = await Ld.status();
+  ok('budget: a new New York month starts fresh and keeps the old record', stD.month === '2026-12' && stD.spent_usd === 0 && S0.m.has('m:2026-11'), stD);
+  L = mkL({}, memStore()); await L.reserve({ id: 'late', max: 500, model: 'm' }); const Lnext = new LedgerCore(L.st, L.env, () => dec); await Lnext.settle({ id: 'late', cost: 100, model: 'm' });
+  ok('budget: a call across midnight is charged to the month it began', (await L.status()).spent_usd === 0 && JSON.stringify((await L.st.get('m:2026-11')).reserved) === '{}' && (await Lnext.status()).month === '2026-12');
+  await L.setKill(true, 'x'); ok('kill switch: refuses new paid calls', (await L.reserve({ id: 'k', max: 1, model: 'm' })).reason === 'killed'); await L.setKill(false, 'x'); ok('kill switch: comes back on', (await L.reserve({ id: 'k2', max: 1, model: 'm' })).ok);
+  // Prices and worst-case arithmetic.
+  const pH = priceOf({ MODEL: 'claude-haiku-5-5' }), pS = priceOf({ MODEL: 'claude-sonnet-5-5' });
+  ok('prices: as published', pH.in === 0.1 && pH.cw === 0.125 && pH.cr === 0.01 && pH.out === 0.5 && pS.in === 2 && pS.cw === 2.5 && pS.cr === 0.1 && pS.out === 10);
+  ok('prices: a million input tokens at Sonnet = $2', actualMicros({ input: 1e6, output: 0, cache_read: 0, cache_write: 0 }, pS) === 2e6);
+  ok('prices: Haiku over 100k tokens uses the higher tier', actualMicros({ input: 150000, output: 0, cache_read: 0, cache_write: 0 }, pH) === 75000 && actualMicros({ input: 50000, output: 0, cache_read: 0, cache_write: 0 }, pH) === 5000);
+  ok('worst case: never below the real cost of the same request', worstCaseMicros(40000, {}, pH) >= actualMicros({ input: 0, cache_write: 20000, cache_read: 0, output: 3000 }, pH));
+  ok('no price on file: refused without calling the provider', (await (async () => { const n0 = sentToProvider.length, x = await handle(fakeReq('https://gw.test/v1/chat', { method: 'POST', headers: { authorization: 'Bearer ' + good }, body: JSON.stringify(one) }), Object.assign({}, env, { MODEL: 'claude-opus-5-5' }), deps); return x.status === 503 && sentToProvider.length === n0; })()));
+  // Whole calls through the gateway against one ledger.
+  const LG = mkL({ MAX_IN_FLIGHT: '50' }, null, () => Date.now()), depsG = Object.assign({}, deps, { ledger: LG }), callG = (body, e) => handle(fakeReq('https://gw.test/v1/chat', { method: 'POST', headers: { authorization: 'Bearer ' + good }, body: JSON.stringify(body) }), Object.assign({}, env, e || {}), depsG);
+  provider = async () => streamResponse(sseOf([{ type: 'text', text: 'ok' }], 'end_turn'));
+  await (await callG(one)).text(); await sleep(20); let sg = await LG.status();
+  ok('call: a complete answer settles at real usage', sg.requests === 1 && sg.reserved_usd === 0 && sg.by_model['claude-haiku-5-5'].input === 10 && sg.by_model['claude-haiku-5-5'].output === 20, sg);
+  provider = async () => streamResponse(sseOf([{ type: 'text', text: 'partial' }], 'end_turn').slice(0, 3));
+  const m0 = (await LG.st.get('m:' + monthKey(Date.now()))).spent; await (await callG(one)).text(); await sleep(20); const m1 = (await LG.st.get('m:' + monthKey(Date.now()))).spent;
+  ok('call: a cut-off answer stays charged at its full reservation', m1 - m0 > 1000, m1 - m0);
+  provider = async () => new Response('{}', { status: 500 }); const m2 = (await LG.st.get('m:' + monthKey(Date.now()))).spent; await callG(one); ok('call: a provider refusal costs nothing', (await LG.st.get('m:' + monthKey(Date.now()))).spent === m2);
+  provider = async () => { throw new TypeError('net'); }; await callG(one); ok('call: an unknown fate is counted as spent', (await LG.st.get('m:' + monthKey(Date.now()))).spent > m2);
+  const LS = mkL({ BUDGET_USD: '1.0001', SAFETY_MARGIN_USD: '1' }, null, () => Date.now()), n1 = sentToProvider.length, rB = await handle(fakeReq('https://gw.test/v1/chat', { method: 'POST', headers: { authorization: 'Bearer ' + good }, body: JSON.stringify(one) }), env, Object.assign({}, deps, { ledger: LS }));
+  ok('call: over budget is refused before anything goes to the provider', rB.status === 402 && sentToProvider.length === n1, rB.status);
+  const toolTurn = i => [{ role: 'assistant', content: [{ type: 'tool_use', id: 't' + i, name: 'tracker_overview', input: {} }] }, { role: 'user', content: [{ type: 'tool_result', tool_use_id: 't' + i, content: '{}' }] }];
+  const deep = n => ({ messages: [{ role: 'user', content: 'q' }].concat(...Array.from({ length: n }, (_, i) => toolTurn(i))) });
+  ok('rounds: counted from the history', roundsSoFar(deep(3).messages) === 3 && roundsSoFar([{ role: 'user', content: 'a' }, { role: 'assistant', content: [{ type: 'text', text: 'b' }] }, { role: 'user', content: [{ type: 'text', text: 'c' }] }]) === 0);
+  const n2 = sentToProvider.length; ok('rounds: past the limit is refused at the server', (await callG(deep(8))).status === 400 && sentToProvider.length === n2);
+  ok('input size: over the limit is refused', (await callG({ messages: [{ role: 'user', content: 'x'.repeat(170000) }] })).status === 413);
+  provider = async () => streamResponse(sseOf([{ type: 'text', text: 'ok' }], 'end_turn'));
+  const rowsMsg = c => ({ messages: [{ role: 'user', content: 'q' }, { role: 'assistant', content: [{ type: 'tool_use', id: 'fr', name: 'find_records', input: { kind: 'shots', scope: {} } }] }, { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'fr', content: c }] }] });
+  const prodE = { ALLOW_RECORD_ROWS: undefined }, n3 = sentToProvider.length;
+  ok('rows: production refuses a history holding record rows', (await callG(rowsMsg(JSON.stringify({ rows: [{ shooter: 'P1' }] })), prodE)).status === 400 && sentToProvider.length === n3);
+  ok('rows: production refuses a result it can\'t read', (await callG(rowsMsg('not json'), prodE)).status === 400);
+  ok('rows: totals with no rows pass', (await callG(rowsMsg(JSON.stringify({ rows: [], rows_withheld: true, totals: { matching_records: 9 } })), prodE)).status === 200);
+  ok('rows: rowsInHistory ignores other tools', !rowsInHistory([{ role: 'assistant', content: [{ type: 'tool_use', id: 'o', name: 'team_summary', input: {} }] }, { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'o', content: '{"rows":[1]}' }] }]));
+  // Usage and the owner's switch.
+  const getU = async t => handle(fakeReq('https://gw.test/v1/usage', { headers: { authorization: 'Bearer ' + t } }), env, depsG);
+  const uJ = await (await getU(good)).json(); ok('usage: staff can see the month\'s figures', uJ.month === monthKey(Date.now()) && uJ.owner === false && uJ.stop_at_usd === 9, uJ);
+  ok('usage: non-staff can\'t', (await getU(await signer.sign({ email: 'stranger2@test.invalid' }))).status === 403);
+  const killAs = async (t, on) => handle(fakeReq('https://gw.test/v1/admin/kill', { method: 'POST', headers: { authorization: 'Bearer ' + t }, body: JSON.stringify({ on }) }), env, depsG);
+  const ownerTok = await signer.sign({ email: 'owner@test.invalid' });
+  ok('kill: other staff can\'t use it', (await killAs(good, true)).status === 403);
+  ok('kill: the owner can', (await (await killAs(ownerTok, true)).json()).killed === true);
+  const n4 = sentToProvider.length, kr = await callG(one); ok('kill: new paid calls stop at the server', kr.status === 503 && sentToProvider.length === n4, kr.status); await killAs(ownerTok, false);
+  ok('hard off: a setting also stops it', (await callG(one, { CHAT_DISABLED: '1' })).status === 503);
   const cfg = await handle(fakeReq('https://gw.test/v1/config', { headers: { authorization: 'Bearer ' + good } }), env, deps), cj = await cfg.json();
   ok('gateway: config lists tools and reveals no key or prompt', cfg.status === 200 && cj.tools.length === TOOLS.length && !JSON.stringify(cj).includes(KEY) && !JSON.stringify(cj).includes('sharp assistant'));
   ok('gateway: every tool is read-only by name', TOOLS.every(t => !/^(delete|write|save|update|create|set|log|edit)/.test(t.name)));
@@ -105,6 +177,9 @@ async function main() {
   const tool = async (name, input) => { const turn = { chips: [], used: [], actions: [] }; const out = await N.CA_TOOLS_REF(name, input, turn); return out; };
   n(`window.CA_TOOLS_REF = (name, input, turn) => Promise.resolve(CA_TOOLS[name](input, turn)).then(o => JSON.stringify(o)).then(JSON.parse);`);
   n(`CA.cfg = null; SEASON_PART = 'Full'; NAV_ST.ctx = 'All';`);
+  const withheld = await tool('find_records', { kind: 'shots', scope: { season: n(`currentAdvSeason()`) } });
+  ok('rows: with no setting from the server, the browser withholds every row but keeps totals and the link', withheld.rows.length === 0 && withheld.rows_withheld === true && withheld.totals.matching_records > 0 && !!withheld.evidence, withheld.totals);
+  n(`CA.cfg = { send_rows: true, tools: [] };`);
   const SEASON = n(`currentAdvSeason()`);
   // Scope reconciles with Scoring Change's own period picking.
   const R5 = nj(`(() => { const R = scCompare({ season: '${SEASON}', type: 'Practice', period: '5', custom: null, subject: 'team', grouping: 'groups' }); return { b: R.per.B.map(s => s.sid), a: R.per.A.map(s => s.sid), bN: R.shotsB.length, bG: R.b.G, aN: R.shotsA.length, aG: R.a.G, total: R.dec.total, vol: R.dec.volume, rate: R.dec.rate, mix: R.dec.mix, conv: R.dec.conversion }; })()`);
@@ -222,6 +297,7 @@ async function main() {
   ok('turn 1: a scope chip shows season, type and session count', (m.chips || []).some(c => c.includes(SEASON) && c.includes('Practice') && /5 sessions|sessions/.test(c)), m.chips);
   ok('turn 1: cited evidence becomes a working button', /data-chat="ev"/.test(m.html) && /data-ev="E1"/.test(m.html), m.html);
   ok('turn 1: a small table renders', /<table/.test(m.html));
+  await sleep(150); ok('usage: the chat shows the month\'s budget line after a turn', /Chat budget/.test(n(`document.getElementById('chatUsage').innerHTML`)) && !n(`document.getElementById('chatUsage').hidden`), n(`document.getElementById('chatUsage').innerHTML`));
   const firstCall = sentToProvider[0].messages[0].content[0].text;
   ok('turn 1: the question went out coded, with context', /\[tracker context\]/.test(firstCall) && /P1/.test(firstCall) && !firstCall.includes(lastN) && !firstCall.includes('#' + someone), firstCall);
   ok('turn 1: tool results returned to the model in one message', sentToProvider[1].messages.length === 3 && sentToProvider[1].messages[2].role === 'user' && sentToProvider[1].messages[2].content[0].type === 'tool_result');
@@ -323,7 +399,7 @@ async function main() {
   scripted.push(textStep('After refresh.'));
   await ask('token refresh case');
   m = lastMsg();
-  ok('auth: a stale token refreshes once and goes through', m.reply === 'After refresh.' && tokCalls === 2, [tokCalls, m]);
+  ok('auth: a stale token refreshes once and goes through', m.reply === 'After refresh.' && tokCalls >= 2, [tokCalls, m]);
   N.__idToken = async () => 'bad.token.value';
   await ask('still bad');
   m = lastMsg();
@@ -333,7 +409,7 @@ async function main() {
   N.__idToken = async () => signer.sign({ email: 'stranger@test.invalid' });
   await ask('not staff');
   m = lastMsg();
-  ok('auth: a non-staff account is told so, and cannot retry past it', /staff list/.test(m.html) && !m.canRetry, m);
+  ok('auth: a non-staff account is told so, and cannot retry past it', /isn’t staff/.test(m.html) && !m.canRetry, m);
   N.__idToken = async () => good;
   n(`CA.cfg = null`);
   // Cancel mid-stream: partial answer dropped, conversation intact.

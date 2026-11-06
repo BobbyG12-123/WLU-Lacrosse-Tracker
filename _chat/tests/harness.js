@@ -9,7 +9,7 @@ async function makeSigner() {
   jwk.kid = 'k' + Math.random().toString(36).slice(2, 8);
   const sign = async (claims, over) => {
     const now = Math.floor(Date.now() / 1000), head = b64s(JSON.stringify(Object.assign({ alg: 'RS256', kid: jwk.kid, typ: 'JWT' }, (over || {}).head)));
-    const body = b64s(JSON.stringify(Object.assign({ aud: PROJECT, iss: 'https://securetoken.google.com/' + PROJECT, sub: 'u1', iat: now - 10, exp: now + 3000, auth_time: now - 100, email: STAFF, email_verified: true }, claims)));
+    const body = b64s(JSON.stringify(Object.assign({ aud: PROJECT, iss: 'https://securetoken.google.com/' + PROJECT, firebase: { sign_in_provider: 'google.com' }, sub: 'u-' + ((claims || {}).email || STAFF), iat: now - 10, exp: now + 3000, auth_time: now - 100, email: STAFF, email_verified: true }, claims)));
     return `${head}.${body}.${b64u(await crypto.subtle.sign('RSASSA-PKCS1-v1_5', (over || {}).key || kp.privateKey, new TextEncoder().encode(head + '.' + body)))}`;
   };
   return { sign, jwk, jwksResponse: () => new Response(JSON.stringify({ keys: [jwk] }), { headers: { 'cache-control': 'max-age=3600' } }) };

@@ -4,14 +4,14 @@
 <title>TEST: view</title><style>html,body{margin:0;height:100%}iframe{width:100%;height:100%;border:0}</style></head><body>
 <iframe id="fNew" src="tracker_branch.html"></iframe>
 <script type="module">
-import { handle } from './worker.js';
+import { handle, LedgerCore } from './worker.js';
 (async () => {
   const exp = await (await fetch('fixture.json')).json(), N = await bootFrame('fNew', exp.collections), signer = await makeSigner();
-  const env = { ANTHROPIC_API_KEY: 'x', STAFF_EMAILS: STAFF, FIREBASE_PROJECT_ID: PROJECT, ALLOWED_ORIGINS: TEST_ORIGIN };
+  const env = { ANTHROPIC_API_KEY: 'x', FIREBASE_PROJECT_ID: PROJECT, ALLOWED_ORIGINS: TEST_ORIGIN, STAFF_RULES_REVIEWED: 'sha256:' + 'a'.repeat(64) }; const store = new Map(), ledger = new LedgerCore({ get: async k => store.get(k), put: async (k, v) => { store.set(k, v); } }, {});
   const script = [
     { blocks: [{ type: 'tool_use', id: 't1', name: 'team_summary', input: { scope: { season: '2027', session_types: ['Practice'], last_n_sessions: 5 } } }, { type: 'tool_use', id: 't2', name: 'team_summary', input: { scope: { season: '2027', session_types: ['Practice'], last_n_sessions: 5, skip_last_n_sessions: 5 } } }], stop: 'tool_use' },
     { blocks: [{ type: 'text', text: 'Scoring is up over the last five practices (mock answer, scripted for this screenshot; the shots are synthetic).\n\n- **Shots:** see the list [E1], compared with the previous five practices [E4].\n- Turnover logging isn\'t confirmed complete, so read that part with care.' }], stop: 'end_turn' }];
-  const deps = { fetch: async (u, o) => String(u).includes('jwk') ? signer.jwksResponse() : streamResponse(sseOf(script[0].blocks, script.shift().stop)) };
+  const deps = { ledger, fetch: async (u, o) => String(u).includes('jwk') ? signer.jwksResponse() : String(u).includes('firestore') ? new Response('{}') : streamResponse(sseOf(script[0].blocks, script.shift().stop)) };
   const tok = await signer.sign({}); N.__gw = (u, o) => handle(fakeReq(u, o), env, deps); N.__t = async () => tok;
   N.document.querySelectorAll('#authGate, #loadingBox').forEach(x => { x.style.display = 'none'; }); const ar = N.document.getElementById('appRoot'); if (ar) ar.style.display = '';
   N.eval(`CHAT_GW_URL = 'https://gw.test'; chatFetch = window.__gw; chatIdToken = window.__t; CHAT.open = true; CA.wide = true; chatDraw();`);

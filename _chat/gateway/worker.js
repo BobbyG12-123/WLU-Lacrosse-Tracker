@@ -1,27 +1,25 @@
-// Ask the Tracker gateway. One file, no dependencies, no build step: it can be pasted into the Cloudflare dashboard.
+// The tracker's staff-only site and its chat gateway, in one Worker. No dependencies and no build step.
 // (Plain fetch rather than the Anthropic SDK on purpose: this project has no npm toolchain, so there's nothing to bundle with.)
 //
-// What it does: checks that the caller is signed-in staff, adds the provider key, the system prompt and the tool list, forwards
-// the conversation to the model, and streams back text and tool requests as one JSON object per line.
-// What it doesn't do: it stores no chat content, logs no chat content, holds no database credentials, and runs no tools.
-// Tools run in the coach's signed-in browser on data Firestore's rules already allow that account to read.
+// Site: every request runs this code first, so the pages and alternate addresses all pass the same gate.
+//   Signed out: a sign-in page with no team data. Signed in as staff: the tracker. Firebase still holds all the data.
+// Staff: there is no list here. A person is staff if Firestore's own rules let their ID token read a protected document,
+//   so the production rules stay the one place that decides. After removal: the database refuses at once (rules), chat stops within
+//   STAFF_CACHE_S, a new page session is refused at once, and a page session already issued lasts until it ends (SESSION_SECONDS).
+// Chat: adds the provider key, prompt and tools, and reserves the most a call could cost before making it (see BudgetLedger).
+//   It stores no chat content, logs no chat content, holds no database credentials, and runs no tools.
 //
-// Secrets and settings (Worker environment, never in this file):
-//   ANTHROPIC_API_KEY    the provider key (a secret)
-//   STAFF_EMAILS         comma-separated allowed accounts, lower case; empty refuses everyone
-//   FIREBASE_PROJECT_ID  wlu-lacrosse-tracker
-//   ALLOWED_ORIGINS      comma-separated page origins, e.g. https://bobbyg12-123.github.io
-//   MODEL                optional, default claude-opus-5-5
-//   EFFORT               optional, default medium
-//   MAX_OUTPUT_TOKENS    optional, default 8000
-//   RATE_PER_MINUTE      optional, default 30 model calls per account per minute
+// Secrets (never in this file): ANTHROPIC_API_KEY, SESSION_SECRET
+// Settings: see _deploy/wrangler.toml
 
 const JWKS_URL = 'https://www.googleapis.com/service_accounts/v1/jwk/securetoken@system.gserviceaccount.com';
 const API_URL = 'https://api.anthropic.com/v1/messages';
-const MAX_BODY_BYTES = 1500000;
 const MAX_MESSAGES = 400;
 const CLOCK_SKEW_S = 60;
-const GATEWAY_VERSION = 'g1';
+const GATEWAY_VERSION = 'g2';
+
+const modelOf = env => env.MODEL || 'claude-haiku-5-5';
+const maxOutput = env => Number(env.MAX_OUTPUT_TOKENS) || 3000;
 
 // ---- The system prompt. Fixed text: a change here is a code change, and the browser can't supply or alter it. ----
 export const SYSTEM_PROMPT = `You are the staff assistant inside the Washington and Lee men's lacrosse tracker. You talk with the coaches like a sharp assistant coach: plain words, direct, no filler. You can discuss coaching freely, and you get team numbers only from the tools.
@@ -41,6 +39,7 @@ Answers
 - Lead with the answer in normal coaching language, then the evidence. Scale the length to the question: a quick question gets a couple of sentences. Don't force a template.
 - For any statistical claim give: the named comparison (for example "team, previous 5 practices", never "normal" or "average" with no name), the season, dates and session types, totals alongside per-100 rates with the denominator named (goals per 100 shots, turnovers per 100 logged possessions), the sample size, and any coverage limit the tool reported.
 - Cite evidence where it supports a claim by writing its handle in square brackets, like [E3]. Cite only handles a tool returned. The coach can click one to see the records and any film.
+- Individual records may be withheld from you (rows_withheld). You still get complete totals and a handle. Don't describe a single record you can't see; point the coach to the handle.
 - "—" means missing or not tracked; 0 means a measured zero. A null value from a tool is missing, never zero. Don't assume logging was complete: only session tracking confirms that, and an unconfirmed session stays unconfirmed. Say "logged possessions" and "logged turnovers".
 - Report uncertainty when a tool gives a range. If a tool gives none, say the sample is small when it is, and don't invent a range.
 - Keep these kinds of statement clearly apart, in words the coach can see: what the records show; possible explanations, which you label as possibilities; general coaching ideas, which you label as ideas and not findings about this team; conditional What If arithmetic, which says "if these assumptions held" and is not a forecast; experimental model outputs, labeled experimental.
@@ -92,7 +91,7 @@ export const TOOLS = [
     input_schema: { type: 'object', additionalProperties: false, required: ['scope'], properties: { scope: SCOPE } } },
   { name: 'player_stats', description: 'One or more tracker metrics for players over all matching records. Use metric ids from tracker_overview. Give players to compare specific players, position to narrow a group, or neither to rank everyone. A missing value is null, not zero.',
     input_schema: { type: 'object', additionalProperties: false, required: ['scope', 'metrics'], properties: { scope: SCOPE, metrics: { type: 'array', minItems: 1, maxItems: 12, items: { type: 'string' } }, players: { type: 'array', maxItems: 12, items: { type: 'string', pattern: '^P\\d+$' } }, position: { type: 'string', enum: ['Attack', 'Midfield', 'SSDM', 'LSM', 'Defense', 'FOGO', 'Goalie'] }, limit: { type: 'integer', minimum: 1, maximum: 40 } } } },
-  { name: 'find_records', description: 'Individual shots, no-shot possessions or faceoffs. Totals cover every match; rows are one page of them, in coded form. Returns an evidence handle the coach can click to see all of them with names and film. Page through only when you need the rows.',
+  { name: 'find_records', description: 'Find shots, no-shot possessions or faceoffs. Totals cover every match. Returns an evidence handle the coach can click to see all of them with names and film. Rows, one coded page at a time, are included only if this deployment allows it; otherwise rows_withheld is true.',
     input_schema: { type: 'object', additionalProperties: false, required: ['kind', 'scope'], properties: {
       kind: { type: 'string', enum: ['shots', 'opponent_shots', 'no_shot_possessions', 'faceoffs'] }, scope: SCOPE,
       player: { type: 'string', pattern: '^P\\d+$' },
@@ -155,18 +154,25 @@ export async function verifyStaff(token, env, deps) {
   if (!(claims.exp > t - CLOCK_SKEW_S) || !(claims.iat <= t + CLOCK_SKEW_S)) throw new Error('expired');
   if (!(claims.auth_time <= t + CLOCK_SKEW_S)) throw new Error('bad auth time');
   if (claims.email_verified !== true || !claims.email) throw new Error('email not verified');
-  const email = String(claims.email).toLowerCase(), staff = listOf(env.STAFF_EMAILS).map(x => x.toLowerCase());
-  if (!staff.includes(email)) throw new Error('not staff');
-  return email;
+  if (!claims.firebase || claims.firebase.sign_in_provider !== 'google.com') throw new Error('wrong sign-in');
+  const email = String(claims.email).toLowerCase();
+  if (!(await firestoreSaysStaff(token, claims.sub, env, deps, now))) throw new Error('not staff');
+  return { email, sub: claims.sub, owner: listOf(env.OWNER_EMAILS).map(x => x.toLowerCase()).includes(email) };
 }
-
-// Per-account limit. Each Worker copy keeps its own count, so it's a brake, not an exact meter; the prepaid credit is the hard cap.
-const RATE = new Map();
-function rateOk(email, env, now) {
-  const limit = Number(env.RATE_PER_MINUTE) || 30, list = (RATE.get(email) || []).filter(t => now - t < 60000);
-  if (list.length >= limit) { RATE.set(email, list); return false; }
-  list.push(now); RATE.set(email, list);
-  return true;
+// Asks the production rules. Anything but a clean 200 means no. The answer is remembered briefly so a chat doesn't cost a read per call.
+const STAFF_SEEN = new Map();
+async function firestoreSaysStaff(token, sub, env, deps, now) {
+  // "Can read this document" only means "is staff" if the rules say so. Until someone has checked the actual rules with
+  // _deploy/check_rules.py and recorded the fingerprint of what was checked, nobody counts as staff.
+  if (!/^sha256:[0-9a-f]{64}$/.test(env.STAFF_RULES_REVIEWED || '')) return false;
+  const ttl = 1000 * (Number(env.STAFF_CACHE_S) || 300), seen = STAFF_SEEN.get(sub);
+  if (seen && !deps.fresh && now - seen.at < ttl) return seen.ok;   // issuing a page session always asks again
+  const project = env.FIREBASE_PROJECT_ID, doc = env.STAFF_PROBE_DOC || 'app/roster';
+  const url = `${deps.firestoreUrl || 'https://firestore.googleapis.com'}/v1/projects/${project}/databases/(default)/documents/${doc}?mask.fieldPaths=__name__`;
+  let ok = false;
+  try { const r = await deps.fetch(url, { headers: { authorization: 'Bearer ' + token } }); ok = r.status === 200; } catch (e) { return false; }   // not remembered: a network failure isn't an answer
+  STAFF_SEEN.set(sub, { at: now, ok });
+  return ok;
 }
 
 // The only message shapes accepted from the browser. It can't add a system message, a tool, a model or a token limit.
@@ -190,19 +196,41 @@ export function checkMessages(body) {
   }
   return null;
 }
+// How many model calls this question has already used, from the history itself, so the limit holds whatever the browser does.
+export function roundsSoFar(messages) {
+  let n = 0;
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const x = messages[i];
+    if (x.role === 'assistant') { n++; continue; }
+    const c = x.content;
+    if (typeof c === 'string' || (Array.isArray(c) && !c.some(b => b && b.type === 'tool_result'))) break;
+  }
+  return n;
+}
+// Production rule: individual records don't go to the model. Checked here as well as in the browser.
+export function rowsInHistory(messages) {
+  const records = new Set();
+  for (const x of messages) for (const b of Array.isArray(x.content) ? x.content : []) {
+    if (b.type === 'tool_use' && b.name === 'find_records') records.add(b.id);
+    if (b.type === 'tool_result' && records.has(b.tool_use_id)) {
+      try { const r = JSON.parse(typeof b.content === 'string' ? b.content : ''); if (r && Array.isArray(r.rows) && r.rows.length) return true; }
+      catch (e) { if (!b.is_error) return true; }   // not readable: treat it as a row
+    }
+  }
+  return false;
+}
 
 // The request to the provider. Tools and system stay byte-identical across calls so the prompt cache keeps working.
 export function providerRequest(messages, env) {
   return {
-    model: env.MODEL || 'claude-opus-5-5',
-    max_tokens: Number(env.MAX_OUTPUT_TOKENS) || 8000,
+    model: modelOf(env),
+    max_tokens: maxOutput(env),
     stream: true,
     system: [{ type: 'text', text: SYSTEM_PROMPT, cache_control: { type: 'ephemeral' } }],
     tools: TOOLS,
     tool_choice: { type: 'auto' },
     output_config: { effort: env.EFFORT || 'medium' },
     cache_control: { type: 'ephemeral' },
-    fallbacks: 'default',
     // Old tool results are cleared on the provider's side, which also keeps old numbers out of later answers.
     context_management: { edits: [{ type: 'clear_tool_uses_20250919', trigger: { type: 'input_tokens', value: 60000 }, keep: { type: 'tool_uses', value: 10 }, clear_at_least: { type: 'input_tokens', value: 10000 } }] },
     messages,
@@ -211,7 +239,7 @@ export function providerRequest(messages, env) {
 
 // Provider stream -> one JSON object per line: {t:'text',d}, then {t:'message',content,stop,usage} or {t:'error',code,message}.
 // Tool inputs are held until their block ends, so the browser only ever sees whole tool requests.
-export async function translateStream(body, write) {
+export async function translateStream(body, write, onUsage) {
   const reader = body.getReader(), dec = new TextDecoder();
   let buf = '', content = [], stop = null, usage = {}, cur = null, ended = false;
   const handle = ev => {
@@ -245,37 +273,161 @@ export async function translateStream(body, write) {
     }
   }
   if (!ended) throw new Error('provider stream ended early');
+  if (onUsage) onUsage({ input: usage.input_tokens || 0, output: usage.output_tokens || 0, cache_read: usage.cache_read_input_tokens || 0, cache_write: usage.cache_creation_input_tokens || 0 });
   write({ t: 'message', content, stop, usage: { input: usage.input_tokens || 0, output: usage.output_tokens || 0, cache_read: usage.cache_read_input_tokens || 0, cache_write: usage.cache_creation_input_tokens || 0 } });
 }
 
-// deps lets the tests supply fetch and the clock. In production they're the platform's.
+// ---- Budget: every paid call reserves its worst-case cost first, then settles at the real cost ----
+// Money is whole millionths of a dollar. A price per million tokens times a token count is already in those units.
+export const PRICES = {
+  // Official prices, checked Nov 6, 2026 (platform.claude.com/docs/en/about-claude/pricing). Per million tokens: input, 5-minute cache write, cache read, output.
+  'claude-haiku-5-5': { in: 0.10, cw: 0.125, cr: 0.01, out: 0.50, longOver: 100000, long: { in: 0.50, cw: 0.625, cr: 0.05, out: 2.50 } },
+  'claude-sonnet-5-5': { in: 2, cw: 2.50, cr: 0.10, out: 10 },
+};
+export function priceOf(env) {
+  if (env.PRICE_JSON) { try { return JSON.parse(env.PRICE_JSON); } catch (e) { return null; } }
+  return PRICES[modelOf(env)] || null;
+}
+export const TOKENS_PER_BYTE_MAX = 0.5;   // a deliberately high guess at tokens per byte of JSON, for the reservation only
+export function worstCaseMicros(bodyBytes, env, price) {
+  const tokens = Math.ceil(bodyBytes * TOKENS_PER_BYTE_MAX), p = price.longOver && tokens > price.longOver ? price.long : price;
+  return Math.ceil(tokens * Math.max(p.in, p.cw) + maxOutput(env) * p.out);
+}
+export function actualMicros(u, price) {
+  const total = u.input + u.cache_read + u.cache_write, p = price.longOver && total > price.longOver ? price.long : price;
+  return Math.ceil(u.input * p.in + u.cache_write * p.cw + u.cache_read * p.cr + u.output * p.out);
+}
+export function monthKey(ms) {
+  const parts = new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', year: 'numeric', month: '2-digit' }).formatToParts(new Date(ms));
+  return parts.find(x => x.type === 'year').value + '-' + parts.find(x => x.type === 'month').value;
+}
+const usd = micros => Math.round(micros / 1e4) / 100;
+// The ledger's rules, apart from where it stores things, so tests can run them directly. One writer at a time (a Durable Object in production).
+export class LedgerCore {
+  constructor(storage, env, clock) { this.st = storage; this.env = env; this.now = clock || (() => Date.now()); this.q = Promise.resolve(); }
+  // One operation at a time, in order, so two questions at once can't both spend the same dollars.
+  run(fn) { const p = this.q.then(fn); this.q = p.catch(() => {}); return p; }
+  reserve(b) { return this.run(() => this._reserve(b)); }
+  settle(b) { return this.run(() => this._settle(b)); }
+  status() { return this.run(() => this._status()); }
+  setKill(on, who) { return this.run(async () => { await this.st.put('kill', on ? { at: this.now(), who } : false); return this._status(); }); }
+  limits() {
+    const e = this.env, m = v => Math.round(Number(v) * 1e6);
+    const budget = m(e.BUDGET_USD === undefined ? 10 : e.BUDGET_USD), hosting = m(e.FIXED_HOSTING_USD === undefined ? 0 : e.FIXED_HOSTING_USD), margin = m(e.SAFETY_MARGIN_USD === undefined ? 1 : e.SAFETY_MARGIN_USD);
+    return { budget, hosting, margin, stopAt: Math.max(0, budget - hosting - margin), maxInFlight: Number(e.MAX_IN_FLIGHT) || 4, ttl: 1000 * (Number(e.RESERVATION_TTL_S) || 600) };
+  }
+  prior(month) { try { return Math.round(1e6 * (JSON.parse(this.env.PRIOR_SPEND_JSON || '{}')[month] || 0)); } catch (e) { return Infinity; } }   // unreadable: stop, don't guess
+  async load() {
+    const month = monthKey(this.now()), rec = (await this.st.get('m:' + month)) || { month, spent: 0, requests: 0, denied: 0, orphans: 0, reserved: {}, byModel: {} }, L = this.limits();
+    let changed = false;
+    for (const [id, r] of Object.entries(rec.reserved)) if (this.now() - r.at > L.ttl) { rec.spent += r.max; rec.orphans++; delete rec.reserved[id]; changed = true; }   // never settled: counted in full
+    if (changed) await this.st.put('m:' + month, rec);
+    return rec;
+  }
+  async killed() { return !!(await this.st.get('kill')); }
+  committed(rec) { return rec.spent + this.prior(rec.month) + Object.values(rec.reserved).reduce((t, r) => t + r.max, 0); }
+  async _reserve({ id, max, model }) {
+    const rec = await this.load(), L = this.limits();
+    if (await this.killed()) return { ok: false, reason: 'killed' };
+    if (!(max > 0)) return { ok: false, reason: 'budget' };
+    if (Object.keys(rec.reserved).length >= L.maxInFlight) { rec.denied++; await this.st.put('m:' + rec.month, rec); return { ok: false, reason: 'busy' }; }
+    if (this.committed(rec) + max > L.stopAt) { rec.denied++; await this.st.put('m:' + rec.month, rec); return { ok: false, reason: 'budget' }; }
+    rec.reserved[id] = { max, at: this.now(), model };
+    await this.st.put('m:' + rec.month, rec);
+    return { ok: true };
+  }
+  async _settle({ id, cost, model, usage }) {
+    let rec = await this.load();
+    if (!rec.reserved[id]) {   // a call can straddle midnight on the last of the month: it's charged to the month it was reserved in
+      const d = new Date(this.now()); d.setUTCDate(1); d.setUTCHours(-30);
+      const prev = await this.st.get('m:' + monthKey(d.getTime()));
+      if (prev && prev.reserved[id]) rec = prev; else return { ok: false };
+    }
+    const r = rec.reserved[id], amount = Math.max(0, Number.isFinite(cost) ? cost : r.max); delete rec.reserved[id];
+    rec.spent += amount; rec.requests++;
+    const m = rec.byModel[model || r.model] = rec.byModel[model || r.model] || { calls: 0, input: 0, output: 0, cache_read: 0, cache_write: 0, micros: 0 };
+    m.calls++; m.micros += amount;
+    if (usage) ['input', 'output', 'cache_read', 'cache_write'].forEach(k => { m[k] += usage[k] || 0; });
+    await this.st.put('m:' + rec.month, rec);
+    return { ok: true };
+  }
+  async _status() {
+    const rec = await this.load(), L = this.limits(), reserved = Object.values(rec.reserved).reduce((t, r) => t + r.max, 0), prior = this.prior(rec.month);
+    return { month: rec.month, time_zone: 'America/New_York', budget_usd: usd(L.budget), fixed_hosting_usd: usd(L.hosting), safety_margin_usd: usd(L.margin), stop_at_usd: usd(L.stopAt), spent_usd: usd(rec.spent + prior), of_which_before_launch_usd: usd(prior), reserved_usd: usd(reserved), remaining_usd: usd(Math.max(0, L.stopAt - rec.spent - prior - reserved)), requests: rec.requests, denied: rec.denied, never_settled: rec.orphans, by_model: Object.fromEntries(Object.entries(rec.byModel).map(([k, v]) => [k, Object.assign({}, v, { micros: undefined, usd: usd(v.micros) })])), killed: await this.killed() };
+  }
+}
+export class BudgetLedger {
+  constructor(state, env) { this.core = new LedgerCore(state.storage, env); }
+  async fetch(request) {
+    const op = new URL(request.url).pathname.slice(1), body = request.method === 'POST' ? await request.json() : {};
+    if (!['reserve', 'settle', 'status', 'kill'].includes(op)) return new Response('no', { status: 404 });
+    const out = op === 'reserve' ? await this.core.reserve(body) : op === 'settle' ? await this.core.settle(body) : op === 'kill' ? await this.core.setKill(!!body.on, body.who) : await this.core.status();
+    return new Response(JSON.stringify(out), { headers: { 'content-type': 'application/json' } });
+  }
+}
+function ledgerOf(env, deps) {
+  if (deps.ledger) return deps.ledger;
+  const stub = env.LEDGER.get(env.LEDGER.idFromName('budget')), call = (op, body) => stub.fetch('https://ledger/' + op, body ? { method: 'POST', body: JSON.stringify(body) } : {}).then(r => r.json());
+  return { reserve: b => call('reserve', b), settle: b => call('settle', b), status: () => call('status'), setKill: (on, who) => call('kill', { on, who }) };
+}
+
+// ---- The chat gateway ----
+const JSON_HEADERS = { 'content-type': 'application/json', 'cache-control': 'no-store' };
+const okJson = (o, origin) => new Response(JSON.stringify(o), { headers: Object.assign({}, JSON_HEADERS, corsHeaders(origin)) });
+// deps lets the tests supply fetch, the clock and the ledger. In production they're the platform's.
 export async function handle(request, env, deps) {
   deps = deps || {};
-  const doFetch = deps.fetch || ((...a) => fetch(...a)), now = deps.now ? deps.now() : Date.now();
-  const origin = request.headers.get('origin'), okOrigin = origin && listOf(env.ALLOWED_ORIGINS).includes(origin) ? origin : null;
-  const path = new URL(request.url).pathname;
+  const doFetch = deps.fetch || ((...a) => fetch(...a)), url = new URL(request.url);
+  const origin = request.headers.get('origin'), allowed = listOf(env.ALLOWED_ORIGINS).concat(url.origin), okOrigin = origin && allowed.includes(origin) ? origin : null;
+  const path = url.pathname.replace(/^\/chat-api/, '');
   if (request.method === 'OPTIONS') return okOrigin ? new Response(null, { status: 204, headers: corsHeaders(okOrigin) }) : new Response(null, { status: 403 });
-  if (!okOrigin) return fail(403, 'origin', 'This site may not use the assistant.', null);
-  if (!env.ANTHROPIC_API_KEY) return fail(503, 'not_configured', 'The assistant isn’t set up yet.', okOrigin);
-  let email;
-  try { email = await verifyStaff((request.headers.get('authorization') || '').replace(/^Bearer\s+/i, ''), env, { fetch: doFetch, now: deps.now, jwksUrl: deps.jwksUrl }); }
-  catch (e) { const denied = /not staff/.test(e.message); return fail(denied ? 403 : 401, denied ? 'not_staff' : 'auth', denied ? 'This account isn’t on the staff list for the assistant.' : 'Please sign in again.', okOrigin); }
+  if (origin && !okOrigin) return fail(403, 'origin', 'This site may not use the assistant.', null);
+  let who;
+  try { who = await verifyStaff((request.headers.get('authorization') || '').replace(/^Bearer\s+/i, ''), env, Object.assign({}, deps, { fetch: doFetch })); }
+  catch (e) { const denied = /not staff/.test(e.message); return fail(denied ? 403 : 401, denied ? 'not_staff' : 'auth', denied ? 'This account isn’t staff for the tracker.' : 'Please sign in again.', okOrigin); }
+  const ledger = ledgerOf(env, deps);
 
-  if (path === '/v1/config' && request.method === 'GET') return new Response(JSON.stringify({ version: GATEWAY_VERSION, model: env.MODEL || 'claude-opus-5-5', tools: TOOLS.map(t => ({ name: t.name, input_schema: t.input_schema })) }), { headers: Object.assign({ 'content-type': 'application/json', 'cache-control': 'no-store' }, corsHeaders(okOrigin)) });
+  if (path === '/v1/usage' && request.method === 'GET') return okJson(Object.assign(await ledger.status(), { model: modelOf(env), owner: who.owner }), okOrigin);
+  if (path === '/v1/admin/kill' && request.method === 'POST') {
+    if (!who.owner) return fail(403, 'not_owner', 'Only the tracker owner can do that.', okOrigin);
+    let b = {}; try { b = JSON.parse(await request.text()); } catch (e) { return fail(400, 'bad_json', 'Bad request.', okOrigin); }
+    if (typeof b.on !== 'boolean') return fail(400, 'bad_request', 'Say on or off.', okOrigin);
+    return okJson(await ledger.setKill(b.on, who.email), okOrigin);
+  }
+  if (path === '/v1/config' && request.method === 'GET') return okJson({ version: GATEWAY_VERSION, model: modelOf(env), send_rows: env.ALLOW_RECORD_ROWS === '1', max_rounds: Number(env.MAX_ROUNDS) || 8, tools: TOOLS.map(t => ({ name: t.name, input_schema: t.input_schema })) }, okOrigin);
   if (path !== '/v1/chat' || request.method !== 'POST') return fail(404, 'not_found', 'Not found.', okOrigin);
 
-  const raw = await request.text();
-  if (raw.length > MAX_BODY_BYTES) return fail(413, 'too_large', 'This chat has grown too long. Start a new chat.', okOrigin);
+  if (env.CHAT_DISABLED === '1') return fail(503, 'paused', 'The assistant is switched off.', okOrigin);
+  if (!env.ANTHROPIC_API_KEY) return fail(503, 'not_configured', 'The assistant isn’t set up yet.', okOrigin);
+  const price = priceOf(env);
+  if (!price) return fail(503, 'not_configured', 'This model has no price on file, so it won’t run.', okOrigin);
+  const raw = await request.text(), maxBytes = Number(env.MAX_INPUT_BYTES) || 160000;
+  if (raw.length > maxBytes) return fail(413, 'too_large', 'This chat has grown too long. Start a new chat.', okOrigin);
   let body; try { body = JSON.parse(raw); } catch (e) { return fail(400, 'bad_json', 'Bad request.', okOrigin); }
   const bad = checkMessages(body);
   if (bad) return fail(400, 'bad_request', bad, okOrigin);
-  if (!rateOk(email, env, now)) return fail(429, 'rate', 'Too many requests this minute. Try again shortly.', okOrigin, { 'retry-after': '30' });
+  if (roundsSoFar(body.messages) >= (Number(env.MAX_ROUNDS) || 8)) return fail(400, 'too_many', 'That took too many steps. Try breaking it into smaller questions.', okOrigin);
+  if (env.ALLOW_RECORD_ROWS !== '1' && rowsInHistory(body.messages)) return fail(400, 'rows', 'Individual records may not be sent to the AI.', okOrigin);
 
+  // Reserve first. The worst case is priced on everything the provider will receive.
+  const out = JSON.stringify(providerRequest(body.messages, env)), bytes = new TextEncoder().encode(out).length, max = worstCaseMicros(bytes, env, price);
+  const id = crypto.randomUUID(), model = modelOf(env), held = await ledger.reserve({ id, max, model });
+  if (!held.ok) {
+    if (held.reason === 'killed') return fail(503, 'paused', 'The owner has switched the assistant off.', okOrigin);
+    if (held.reason === 'busy') return fail(429, 'rate', 'Too many questions at once. Try again in a moment.', okOrigin, { 'retry-after': '20' });
+    return fail(402, 'budget', 'This month’s chat budget is used up. The tracker itself still works.', okOrigin);
+  }
+  const timeout = AbortSignal.timeout(1000 * (Number(env.MAX_CALL_SECONDS) || 90));
+  const signal = request.signal && AbortSignal.any ? AbortSignal.any([request.signal, timeout]) : timeout;
   let up;
   try {
-    up = await doFetch(deps.apiUrl || API_URL, { method: 'POST', signal: request.signal, headers: { 'content-type': 'application/json', 'x-api-key': env.ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01', 'anthropic-beta': 'context-management-2025-06-27,server-side-fallback-2026-07-01' }, body: JSON.stringify(providerRequest(body.messages, env)) });
-  } catch (e) { return fail(502, 'upstream', 'The AI service couldn’t be reached.', okOrigin); }
+    up = await doFetch(deps.apiUrl || API_URL, { method: 'POST', signal, headers: { 'content-type': 'application/json', 'x-api-key': env.ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01', 'anthropic-beta': 'context-management-2025-06-27' }, body: out });
+  } catch (e) {
+    await ledger.settle({ id, cost: max, model });   // we can't tell whether it was billed, so count it
+    return fail(502, 'upstream', 'The AI service couldn’t be reached.', okOrigin);
+  }
   if (!up.ok) {
+    await ledger.settle({ id, cost: 0, model });   // a refused request isn't billed
     // Never pass the provider's error body on: it can echo request details. Status only.
     const s = up.status, map = { 429: [429, 'rate', 'The AI service is busy. Try again shortly.'], 529: [503, 'overloaded', 'The AI service is overloaded. Try again shortly.'], 401: [502, 'config', 'The assistant’s AI key isn’t working. Tell the tracker owner.'], 403: [502, 'config', 'The assistant’s AI key isn’t working. Tell the tracker owner.'], 402: [502, 'credit', 'The assistant is out of AI credit. Tell the tracker owner.'] };
     const [st, code, msg] = map[s] || (s === 400 ? [502, 'rejected', 'The AI service rejected this conversation. Start a new chat.'] : [502, 'upstream', 'The AI service had a problem. Try again.']);
@@ -284,9 +436,70 @@ export async function handle(request, env, deps) {
   }
   const { readable, writable } = new TransformStream();
   const w = writable.getWriter(), enc = new TextEncoder(), write = o => w.write(enc.encode(JSON.stringify(o) + '\n'));
-  const pump = translateStream(up.body, write).catch(e => { if (!/abort/i.test(String(e && e.name))) return write({ t: 'error', code: 'stream', message: 'The answer was cut off. Try again.' }); }).finally(() => w.close().catch(() => {}));
+  let finalUsage = null;
+  const pump = translateStream(up.body, write, u => { finalUsage = u; })
+    .catch(e => { if (!/abort/i.test(String(e && e.name))) return write({ t: 'error', code: 'stream', message: 'The answer was cut off. Try again.' }).catch(() => {}); })
+    .finally(async () => {
+      // A complete answer settles at its real usage. Anything cut short was billed for an unknown amount, so it stays at the reservation.
+      await ledger.settle({ id, cost: finalUsage ? actualMicros(finalUsage, price) : max, model, usage: finalUsage });
+      await w.close().catch(() => {});
+    });
   if (deps.waitUntil) deps.waitUntil(pump);
   return new Response(readable, { headers: Object.assign({ 'content-type': 'application/x-ndjson', 'cache-control': 'no-store' }, corsHeaders(okOrigin)) });
 }
 
-export default { fetch: (request, env, ctx) => handle(request, env, { waitUntil: p => ctx.waitUntil(p) }) };
+// ---- The site gate ----
+const COOKIE = '__Host-wlu_staff';
+const b64url = b => btoa(String.fromCharCode(...new Uint8Array(b))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+const hmacKey = secret => crypto.subtle.importKey('raw', new TextEncoder().encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign', 'verify']);
+export async function makeSession(sub, env, now) {
+  const body = b64url(new TextEncoder().encode(JSON.stringify({ sub, exp: now + 1000 * (Number(env.SESSION_SECONDS) || 3600) })));
+  return body + '.' + b64url(await crypto.subtle.sign('HMAC', await hmacKey(env.SESSION_SECRET), new TextEncoder().encode(body)));
+}
+export async function readSession(value, env, now) {
+  if (!value || !env.SESSION_SECRET || env.SESSION_SECRET.length < 32) return null;
+  const [body, sig] = value.split('.');
+  if (!body || !sig) return null;
+  try {
+    if (!(await crypto.subtle.verify('HMAC', await hmacKey(env.SESSION_SECRET), b64urlBytes(sig), new TextEncoder().encode(body)))) return null;
+    const o = JSON.parse(new TextDecoder().decode(b64urlBytes(body)));
+    return o.exp > now ? o : null;
+  } catch (e) { return null; }
+}
+const cookieOf = (request, name) => { for (const c of (request.headers.get('cookie') || '').split(/;\s*/)) { const i = c.indexOf('='); if (i > 0 && c.slice(0, i) === name) return c.slice(i + 1); } return null; };
+const SECURITY = { 'x-robots-tag': 'noindex, nofollow', 'x-content-type-options': 'nosniff', 'referrer-policy': 'no-referrer', 'x-frame-options': 'SAMEORIGIN', 'cache-control': 'private, no-store', 'strict-transport-security': 'max-age=31536000' };
+const withSecurity = r => { const h = new Headers(r.headers); Object.entries(SECURITY).forEach(([k, v]) => h.set(k, v)); return new Response(r.body, { status: r.status, statusText: r.statusText, headers: h }); };
+// The only page a stranger can get. It holds the same public Firebase web settings the sign-in needs, and no team data or staff names.
+function loginPage(env) {
+  const cfg = JSON.stringify({ apiKey: env.FIREBASE_WEB_KEY, authDomain: env.FIREBASE_PROJECT_ID + '.firebaseapp.com', projectId: env.FIREBASE_PROJECT_ID });
+  return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex"><title>Staff sign-in</title>
+<style>body{font:15px system-ui;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;background:#f4f6fb;color:#0b2545}main{text-align:center;max-width:360px;padding:16px}button{font:inherit;font-weight:600;background:#0b2545;color:#fff;border:0;border-radius:6px;padding:10px 18px;cursor:pointer}</style></head>
+<body><main><h1 style="font-size:20px">Staff sign-in</h1><p id="m">Sign in with your coaching staff Google account.</p><button id="b">Sign in with Google</button></main>
+<script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-app-compat.js"></script><script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-auth-compat.js"></script>
+<script>firebase.initializeApp(${cfg.replace(/</g, '\\u003c')});const m=document.getElementById('m'),b=document.getElementById('b');
+async function go(u){m.textContent='Checking…';const r=await fetch('/__auth/session',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({idToken:await u.getIdToken(true)})});if(r.ok){location.replace(location.pathname+location.search);return;}m.textContent=r.status===403?'This account isn\\u2019t staff for the tracker.':'Sign-in didn\\u2019t work. Try again.';if(r.status===403)firebase.auth().signOut();}
+firebase.auth().onAuthStateChanged(u=>{if(u)go(u).catch(()=>{m.textContent='Sign-in didn\\u2019t work. Try again.';});});
+b.onclick=()=>firebase.auth().signInWithPopup(new firebase.auth.GoogleAuthProvider()).catch(()=>{m.textContent='Sign-in was cancelled.';});</script></body></html>`;
+}
+export async function site(request, env, ctx, deps) {
+  deps = Object.assign({}, deps || {}, { waitUntil: p => ctx && ctx.waitUntil ? ctx.waitUntil(p) : null });
+  const url = new URL(request.url), now = deps.now ? deps.now() : Date.now(), doFetch = deps.fetch || ((...a) => fetch(...a));
+  if (url.pathname.startsWith('/chat-api/')) return withSecurity(await handle(request, env, deps));
+  if (url.pathname === '/__auth/session') {
+    if (request.method !== 'POST' || request.headers.get('origin') !== url.origin) return withSecurity(fail(403, 'origin', 'Not allowed.', null));
+    if (!env.SESSION_SECRET || env.SESSION_SECRET.length < 32) return withSecurity(fail(503, 'not_configured', 'The site isn’t set up yet.', null));
+    let tok; try { tok = JSON.parse(await request.text()).idToken; } catch (e) { return withSecurity(fail(400, 'bad_json', 'Bad request.', null)); }
+    let who; try { who = await verifyStaff(tok, env, Object.assign({}, deps, { fetch: doFetch, fresh: true })); }
+    catch (e) { const denied = /not staff/.test(e.message); return withSecurity(fail(denied ? 403 : 401, denied ? 'not_staff' : 'auth', denied ? 'This account isn’t staff.' : 'Please sign in again.', null)); }
+    const v = await makeSession(who.sub, env, now);
+    return withSecurity(new Response('{"ok":true}', { headers: { 'content-type': 'application/json', 'set-cookie': `${COOKIE}=${v}; Path=/; Secure; HttpOnly; SameSite=Lax; Max-Age=${Number(env.SESSION_SECONDS) || 3600}` } }));
+  }
+  if (url.pathname === '/__auth/logout') return withSecurity(new Response('{"ok":true}', { headers: { 'content-type': 'application/json', 'set-cookie': `${COOKIE}=; Path=/; Secure; HttpOnly; SameSite=Lax; Max-Age=0` } }));
+  const s = await readSession(cookieOf(request, COOKIE), env, now);
+  if (!s) {
+    const wantsPage = request.method === 'GET' && /text\/html/.test(request.headers.get('accept') || '');
+    return withSecurity(wantsPage ? new Response(loginPage(env), { status: 401, headers: { 'content-type': 'text/html; charset=utf-8' } }) : new Response('Sign in first.', { status: 401 }));
+  }
+  return withSecurity(await env.ASSETS.fetch(request));
+}
+export default { fetch: (request, env, ctx) => site(request, env, ctx) };
