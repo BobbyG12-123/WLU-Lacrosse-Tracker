@@ -12,7 +12,8 @@ Nothing here loads in the tracker page. This folder starts with `_`, so GitHub P
 | `results.js` | Batches, workers, aggregates, paired comparison |
 | `worker.js` | Browser worker for one chunk |
 | `replay.js`, `studio.html`, `studio.js` | Experimental screen and replay |
-| `docs/MODEL_SCOPE.md`, `docs/ACCOUNTING_RECORD.md`, `docs/PACE_CHECK.md` | What's frozen, the bug record, the pace check |
+| `docs/MODEL_SCOPE.md`, `docs/ACCOUNTING_RECORD.md`, `docs/PACE_CHECK.md`, `docs/REPLAY_MOVEMENT.md` | What's frozen, the bug record, the pace check, how the replay moves |
+| `explain.js` | Reasons: wins vs losses accounting, player reasons, lineup efficiency |
 | `tools_fit_reference.js` | Fits tempo and related settings to official team totals. A fit, not a validation |
 | `tools_run_matchup.js` | Runs a matchup from local files and writes a report |
 | `official.js`, `tools_official.js` | Reads official school stat pages into dated games |

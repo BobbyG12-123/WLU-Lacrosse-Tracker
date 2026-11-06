@@ -15,7 +15,7 @@ s=s.replace("worker-src 'none'; frame-src 'none'","worker-src 'self'; frame-src 
 PY
 )
 cp "$HERE/preview_host.html" "$OUT/preview.html"; cp "$EXP" "$OUT/export.json"
-for f in rules.js constants.js engine.js results.js estimate.js adapter.js official.js validate.js validate_v2.js replay.js studio.js studio.html worker.js; do cp "$HERE/$f" "$OUT/_matchup/"; done
+for f in rules.js constants.js engine.js results.js estimate.js adapter.js official.js validate.js validate_v2.js explain.js replay.js studio.js studio.html worker.js; do cp "$HERE/$f" "$OUT/_matchup/"; done
 deno run --check=none --allow-read --allow-write="$OUT" "$HERE/tools_preview_data.js" "$INP" "$RAW" "$OUT/_matchup/local_data.json" "$COMMIT" >/dev/null
 cat > "$OUT/Open Simulation Preview.command" <<'CMD'
 #!/bin/bash

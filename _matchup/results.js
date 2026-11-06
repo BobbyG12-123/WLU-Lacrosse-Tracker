@@ -14,7 +14,9 @@
   // Compact per-game record: enough for every report, without keeping ledgers. A replay regenerates from the seed.
   function runGame(P, runSeed, index) {
     const seed = MS.gameSeed(runSeed, index), { ledger } = MS.simulateGame(P, seed), box = MS.boxFromLedger(ledger), problems = MS.validateGame(ledger, P);
-    return { index, seed, box, problems, ledgerHash: MS.hash32(canon(ledger), 7) };
+    const out = { index, seed, box, problems, ledgerHash: MS.hash32(canon(ledger), 7) };
+    if (P.trackLines && MS.lineStatsFromLedger) out.lines = MS.lineStatsFromLedger(ledger, 0);   // who was on the field: reporting only
+    return out;
   }
   // Chunk size changes only how work is grouped, since each game's seed comes from the run seed and its index.
   function runBatch(P, opt) {
