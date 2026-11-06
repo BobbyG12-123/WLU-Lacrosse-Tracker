@@ -1,0 +1,19 @@
+<!doctype html><html><head><meta charset="utf-8"><title>TEST: matchup engine in a browser worker</title>
+<script src="../rules.js"></script><script src="../constants.js"></script><script src="../engine.js"></script><script src="../results.js"></script><script src="../estimate.js"></script><script src="fixtures.js"></script></head><body><pre id="out">running</pre>
+<script>
+(async () => {
+  const T = { results: [], pass: 0, fail: 0 }, ok = (name, c, info) => { T.results.push({ name, ok: !!c, info: info === undefined ? null : info }); c ? T.pass++ : T.fail++; };
+  try {
+    const P = FX.params({}, {}, { uncertainty: 'posterior' }), mk = () => new Worker('../worker.js'), fp = r => JSON.stringify(r.games.map(x => x.ledgerHash));
+    const d = MS.runBatch(P, { seed: 31, games: 200 }), a = await MS.runBatchWorkers(P, { seed: 31, games: 200, chunk: 200, workers: 1 }, mk), b = await MS.runBatchWorkers(P, { seed: 31, games: 200, chunk: 9, workers: 4 }, mk);
+    ok('browser workers match the in-page run for any chunk and worker count', fp(d) === fp(a) && fp(d) === fp(b), { d: d.record.completedGames, a: a.record.completedGames, b: b.record.completedGames });
+    let prog = 0; const c = await MS.runBatchWorkers(P, { seed: 31, games: 200, chunk: 20, workers: 1, onProgress: n => { prog = n; }, shouldCancel: n => n >= 60 }, mk);
+    ok('browser worker cancel reports completed games and progress', c.record.cancelled && c.record.completedGames === 60 && prog === 60, c.record);
+    const bad = await MS.runBatchWorkers(P, { seed: 31, games: 50, chunk: 25, workers: 1 }, () => new Worker('missing_worker.js'));
+    ok('a worker that fails to load reports zero completed games', bad.record.completedGames === 0 && bad.record.failedChunks === 1, bad.record);
+    ok('no page storage or network beyond these files', performance.getEntriesByType('resource').every(r => r.name.startsWith(location.origin)));
+  } catch (e) { T.err = String(e && e.stack || e); }
+  await fetch('/results/browser_worker.json', { method: 'POST', body: JSON.stringify(T) });
+  document.getElementById('out').textContent = JSON.stringify(T);
+})();
+</script></body></html>
