@@ -125,7 +125,7 @@
 
     ['groundBalls', 'penalties', 'clock', 'clears'].forEach(m => inputs.push(row(`Not available: ${m}`, null, 'missing', '—', ev.missing[m], 0)));
     Object.entries(C).forEach(([nm, c]) => inputs.push(row(`Setting: ${nm}`, c.value, c.cls, c.unit, c.source)));
-    const P = { uncertainty: cfg.uncertainty || 'posterior', tempo: tempoFrom(cfg.tempo), retention: retentionFrom(cfg.retention), penalties: penaltiesFrom(), faceoff, lineShiftSec: v('lineShiftSec'), clearRequired: v('clearRequiredShare'), teams: [W, opp], overrides: cfg.overrides || [], snapshotHash: MS.hashOf([ev, cfg.reference, cfg.opponentImport || null, cfg.rotation, cfg.cohort]) };
+    const P = { uncertainty: cfg.uncertainty || 'posterior', tempo: tempoFrom(cfg.tempo), retention: retentionFrom(cfg.retention), penalties: penaltiesFrom(), faceoff, lineShiftSec: v('lineShiftSec'), clearRequired: v('clearRequiredShare'), teams: [W, opp], overrides: cfg.overrides || [], snapshotHash: MS.hashOf([Object.assign({}, ev, { exportedAt: undefined }), cfg.reference, cfg.opponentImport || null, cfg.rotation, cfg.cohort]) };   // the data, not when it was exported
     if (cfg.opponentImport && cfg.opponentImport.causedByTeam !== undefined) { W.rates.caused = weighted(cfg.opponentImport.causedByTeam / cfg.opponentImport.opponentTurnovers, v('teamPriorWeight')); inputs.push(row('W&L: share of turnovers caused by the opponent (replaces W&L reference)', cfg.opponentImport.causedByTeam / cfg.opponentImport.opponentTurnovers, 'historical reference', `${cfg.opponentName} caused turnovers / its opponents' turnovers`, cfg.opponentImport.source, cfg.opponentImport.opponentTurnovers)); }
     return { P, inputs };
   }

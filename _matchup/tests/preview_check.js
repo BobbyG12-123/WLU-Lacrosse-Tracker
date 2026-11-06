@@ -50,7 +50,8 @@ const leg = await ev("const r = JSON.parse(JSON.stringify(ST.rotation)); r.attac
 ok('illegal rotations are rejected', leg[0] > 0 && leg[1] > 0 && leg[2] > 0 && leg[3] === 0, leg);
 await ev("const r = JSON.parse(JSON.stringify(ST.rotation)); r.lines[0].share = 0.3; r.lines[1].share = 0.7; ST.tested.push({ name: 'More line 2', rotation: r }); const q = JSON.parse(JSON.stringify(ST.rotation)); q.lines = [{ players: q.lines[1].players, share: 0.6 }, { players: q.lines[0].players, share: 0.4 }]; ST.tested.push({ name: 'Lines swapped', rotation: q }); await RUN.runCompare();"); await waitIdle(400); await sleep(300);
 const cm = await ev("return ST.cmp && { rows: ST.cmp.rows, partial: ST.cmp.partial };"); ok('rotation comparison finishes with fresh-seed differences and uncertainty', cm && !cm.partial && cm.rows.length === 3 && cm.rows.some(x => x.diff !== null && x.se !== null && /tied|higher|lower/i.test(x.read)), cm);
-ok('rankings say "Highest projected among tested rotations"', /Highest projected among tested rotations/.test(await ev("return D.body.innerText;"))); await shot('06_compare');
+console.log('    comparison:', JSON.stringify(cm.rows.map(x => [x.name, x.screen, x.fresh, x.diff, x.se, x.read])));
+ok('rankings say "Highest projected among tested rotations"', /Highest projected among tested rotations/.test(await ev("return D.body.innerText;"))); await ev("D.querySelector('h3:last-of-type'); const hs = [...D.querySelectorAll('h3')].find(h => /Highest projected/.test(h.textContent)); if (hs) hs.scrollIntoView();"); await sleep(150); await shot('06_compare');
 const legal = await ev("return JSON.stringify(ST.rotation) === JSON.stringify(ST.fixtureRotation);"); ok('comparing does not change the current rotation', legal);
 // Replay
 await ev("ST.tab = 'replay'; RUN.render();"); await sleep(400);
@@ -66,6 +67,8 @@ if (Deno.env.get('MS_WLVMI')) { const rep = JSON.parse(Deno.readTextFileSync(Den
 // Team-level model
 await ev("ST.mode = 'team'; ST.ov = {}; ST.base = null; ST.scen = null; ST.replay = null; ST.tab = 'overview'; ST.games = 500; RUN.render(); await RUN.runMatchup();"); await waitIdle(); await sleep(300);
 const tm = await ev("const r = ST.base.r.record; return { id: r.modelId, st: r.validationStatus, txt: D.body.innerText, players: Object.keys(ST.base.r.summary.players[0]) };"); ok('the team-level run names v2, states its scope and limits', tm.id === 'team-v2-frozen' && /13 of 17/.test(tm.txt) && /isn.t a forward-in-time test/.test(tm.txt) && tm.st === 'all reconciled', tm.id); ok('the team-level model invents no players', tm.players.length === 1 && tm.players[0] === 'TEAM', tm.players); await shot('10_team_level');
+ok('a run with no losses does not claim 100%', await ev("ST.teamA = 'washington and lee'; ST.teamB = 'averett'; ST.base = null; ST.games = 500; RUN.render(); await RUN.runMatchup(); return !/100\\.0%/.test(D.querySelector('.tile .v').textContent);"));
+await waitIdle();
 await ev("ST.tab = 'replay'; RUN.render();"); await sleep(400); await ev("ST.player.seek(1400);"); await sleep(100); await shot('11_team_level_replay');
 // Safety
 const safe = await ev("const h = W.parent; const b = window.top.__GUARD; const hb = h.__GUARD; return { top: b ? b.blocked : null, host: hb ? hb.blocked : null, writes: h.__FAKE && h.__FAKE.writes ? h.__FAKE.writes.length : (h.__FAKE && h.__FAKE.log ? h.__FAKE.log.length : null) };");
