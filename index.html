@@ -3099,7 +3099,7 @@ function stintById(sid, id) {
 
 // Which tracker build this page is. Shown in the footer on every device and stored in every save's audit record, so a
 // device (or a save) still running an older build can be told apart from this one.
-const BUILD_VERSION = '7a1-g9';
+const BUILD_VERSION = '7a1-g10';
 try { window.WLU_BUILD = BUILD_VERSION; document.getElementById('buildVersion').textContent = 'Build ' + BUILD_VERSION; } catch (e) {}
 // ---- Safe saves (Stage 3 PR 7a-1, M1 + M2 + M3) ----
 // Every shot / possession change (Log Shot, Backfill, Film Check, new entries, moves to another session, deletes) is an
@@ -18139,6 +18139,8 @@ function scrimCtx(game) {
   const poss = (ourPace + theirPace) / 2 / 4;   // possessions per team per quarter
   return { o, oppDef, oppOffRate, poss, wl };
 }
+// Goals per possession by possession type. The ratios multiply finishing in scrimPossessions; a possession has at most one shot there,
+// so goals per possession keep these ratios (checked in _tests/planner). Shot frequency isn't varied by type.
 const SCRIM_TYPES = [['half', 0.526, 0.278], ['trans', 0.366, 0.209], ['zone', 0.051, 0.094], ['manup', 0.057, 0.361]];
 function scrimPick(arr, w) { let t = 0; w.forEach(x => { t += x; }); let r = SCRIM_RNG() * t; for (let i = 0; i < arr.length; i++) { r -= w[i]; if (r <= 0) return arr[i]; } return arr[arr.length - 1]; }
 function scrimBeta(a, b) { // quick beta draw via two gammas (Marsaglia-Tsang)
@@ -18233,7 +18235,10 @@ function scrimSimCore(M, calib, state, N, cfg) {
       let qg = 0;
       const tm = (st.mins || []).reduce((a, b) => a + b, 0), shares = st.lines.map((_, li) => (tm ? st.mins[li] / tm : 1 / st.lines.length));
       st.lines.forEach((l, li) => { const k = Math.round(nUs * shares[li] + (SCRIM_RNG() - 0.5)); const r = scrimPossessions(M, st.att.concat(l), Math.max(0, k), w, ctx, calib * cfg.hot, undefined, out.stat); out.lines[qi][li].push(r.g); qg += r.g; });
-      if (scrimOpt('special')) { if (SCRIM_RNG() < (wl.emoChances || 2.6) / 4 && SCRIM_RNG() < Math.min(0.7, (wl.emo || 0.361) * ((ctx.defEmo || 0.33) / 0.33))) qg++; }
+      if (scrimOpt('special')) { if (SCRIM_RNG() < (wl.emoChances || 2.6) / 4 && SCRIM_RNG() < Math.min(0.7, (wl.emo || 0.361) * ((ctx.defEmo || 0.33) / 0.33))) { qg++;
+        // A man-up goal counts in the score, so it needs a scorer too: someone from a line in this quarter, by usage.
+        const six = st.att.concat(st.lines[scrimPick(st.lines.map((_, x) => x), shares)]).map(j => M.P[j]).filter(Boolean);
+        if (six.length) { const who = scrimPick(six, six.map(x => x.use)); out.stat.goals++; out.stat.goalsBy[who.j] = (out.stat.goalsBy[who.j] || 0) + 1; } } }
       out.q[qi].push(qg); if (counts) tot[gi].us += qg;
       if (scrimOpt('winprob')) {
         let rate = ctx.oppOffRate * (wl.defRel || 0.62);
@@ -18264,12 +18269,21 @@ function scrimWorkerSrc() {
     ...fns.map(f => f.toString()),
     `let W_M = null, W_J = null, W_C = 1; onmessage = e => { const d = e.data; if (d.opts) SC.plan.opts = d.opts; if (d.fn === 'init') { W_M = d.M; W_J = d.J; W_C = d.calib; postMessage({ ready: 1 }); return; } if (d.fn === 'day') { postMessage(scrimDaysCore(W_M, W_C, W_J, d.D, d.seed)); return; } SCRIM_SEED = d.seed; postMessage(scrimSimCore(d.M, d.calib, d.state, d.N, d.cfg)); };`].join('\n');
 }
+// The games are split into a fixed set of jobs, each with its own seed, so the result doesn't depend on how many workers a computer
+// has. requested = games asked for; N = games completed; short = true if a failure left fewer than asked for.
+const SCRIM_JOBS = 8;
 function scrimSimulateAsync(M, calib, state, N, maxW) {
-  let url; try { url = URL.createObjectURL(new Blob([scrimWorkerSrc()], { type: 'text/javascript' })); } catch (e) { return Promise.resolve(scrimSimulate(M, calib, state, Math.min(N, 3000))); }
-  const W = Math.max(1, Math.min(maxW || 4, (navigator.hardwareConcurrency || 2) - 1)), per = Math.ceil(N / W), cfg = scrimSimCfg(), opts = Object.fromEntries(SCRIM_OPTS.map(o => [o[0], scrimOpt(o[0])]));
-  const jobs = Array.from({ length: W }, (_, k) => new Promise((res, rej) => { const w = new Worker(url); w.onmessage = e => { res(e.data); w.terminate(); }; w.onerror = err => { rej(err); w.terminate(); };
-    w.postMessage({ M, calib, state: JSON.parse(JSON.stringify(state)), N: per, cfg, opts, seed: (0x9E3779B9 * (k + 1) + 12345) >>> 0 || 1 }); }));
-  return Promise.all(jobs).then(parts => { URL.revokeObjectURL(url); return scrimMerge(parts); }).catch(e => { console.error('workers', e); return scrimSimulate(M, calib, state, Math.min(N, 3000)); });
+  const fallback = () => { const r = scrimSimulate(M, calib, state, Math.min(N, 3000)); r.requested = N; r.short = r.N < N; return r; };
+  let url; try { url = URL.createObjectURL(new Blob([scrimWorkerSrc()], { type: 'text/javascript' })); } catch (e) { return Promise.resolve(fallback()); }
+  const W = Math.max(1, Math.min(maxW || 4, (navigator.hardwareConcurrency || 2) - 1)), cfg = scrimSimCfg(), opts = Object.fromEntries(SCRIM_OPTS.map(o => [o[0], scrimOpt(o[0])]));
+  const jobs = Array.from({ length: SCRIM_JOBS }, (_, k) => ({ k, n: Math.floor(N / SCRIM_JOBS) + (k < N % SCRIM_JOBS ? 1 : 0) })).filter(j => j.n > 0), parts = [];
+  let next = 0;
+  const crew = () => new Promise((res, rej) => { const w = new Worker(url); w.onerror = err => { rej(err); w.terminate(); };
+    const give = () => { if (next >= jobs.length) { w.terminate(); res(); return; } const j = jobs[next++];
+      w.onmessage = e => { parts[j.k] = e.data; give(); };
+      w.postMessage({ M, calib, state: JSON.parse(JSON.stringify(state)), N: j.n, cfg, opts, seed: (0x9E3779B9 * (j.k + 1) + 12345) >>> 0 || 1 }); };
+    give(); });
+  return Promise.all(Array.from({ length: Math.min(W, jobs.length) }, crew)).then(() => { URL.revokeObjectURL(url); const r = scrimMerge(parts.filter(Boolean)); r.requested = N; r.short = r.N < N; return r; }).catch(e => { console.error('workers', e); return fallback(); });
 }
 function scrimMerge(parts) {
   const o = parts[0]; parts.slice(1).forEach(p => {
@@ -18975,7 +18989,7 @@ function renderScrim() {
     ${R ? '<p class="n-note">Boosts, playing time, pools, options and the game situation rebuild everything on their own. Quarters you set by hand stay as you set them.</p>' : ''}
     <p class="bf-msg" id="scMsg">${escapeHtml(SC.msg || '')}</p>${SC.busy ? '<p class="n-note">Working… a few seconds.</p>' : ''}</div>`;
   if (!R || !SC.uni || !R.sim || !R.state || !SC.uni.rows) { wrap.innerHTML = top + scrimQRulesHtml() + scrimLoggingHtml(); return; }
-  const picture = `<div class="panel"><p class="panel-title">Likely result</p><div class="sc-res">${p.games.map((g, gi) => { const us = R.sim.games[gi].us, them = R.sim.games[gi].them, win = scrimWin(us, them), qs = R.state.map((s, qi) => qi).filter(qi => Math.floor(qi / 4) === gi);
+  const picture = `<div class="panel"><p class="panel-title">Likely result</p>${R.sim.short ? `<p class="n-note sc-short">Background simulation failed: these results use ${R.sim.N.toLocaleString()} of the ${R.sim.requested.toLocaleString()} games requested.</p>` : ''}<div class="sc-res">${p.games.map((g, gi) => { const us = R.sim.games[gi].us, them = R.sim.games[gi].them, win = scrimWin(us, them), qs = R.state.map((s, qi) => qi).filter(qi => Math.floor(qi / 4) === gi);
       return `<div class="sc-rescard"><p class="sc-vt">${escapeHtml(g.name)} vs ${escapeHtml(p.opps[g.opp].name)}</p><p class="sc-final">W&amp;L <b>${Math.round(scrimMean(us))}</b> &ndash; <b>${Math.round(scrimMean(them))}</b> ${escapeHtml(p.opps[g.opp].name)}</p>
         <p class="sc-win">We win about <b>${Math.round(win * 10)} out of 10</b> times. On a bad day we score ${scrimQ(us, 0.1)}; on a good day ${scrimQ(us, 0.9)}.</p>
         <div class="sc-qrow">${qs.map(qi => `<div class="sc-qcell"><span>${escapeHtml(p.quarters[qi].label.replace(/^G\d /, ''))}</span><b>${num(scrimMean(R.sim.q[qi]), 1)}</b><i>${num(scrimMean(R.sim.qOpp[qi] || [0]), 1)}</i></div>`).join('')}</div><p class="n-note">Each quarter: our expected goals (bold), theirs (gray).</p></div>`; }).join('')}</div></div>`;
