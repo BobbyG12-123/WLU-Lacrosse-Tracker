@@ -1,6 +1,6 @@
 // Matchup engine tests. Synthetic only. Run: _matchup/tests/run.sh
 const base = new URL('..', import.meta.url);
-for (const f of ['rules.js', 'constants.js', 'engine.js', 'results.js', 'estimate.js', 'tests/fixtures.js']) await import(new URL(f, base));
+for (const f of ['rules.js', 'constants.js', 'engine.js', 'results.js', 'estimate.js', 'replay.js', 'tests/fixtures.js']) await import(new URL(f, base));
 const MS = globalThis.MS, FX = globalThis.FX, T = MS.TEAM, R = MS.RULES;
 const results = [], covered = new Set();
 const ok = (name, cond, info, rules) => { results.push({ name, ok: !!cond, info }); if (cond && rules) rules.forEach(r => covered.add(r)); };
@@ -311,6 +311,33 @@ function allGames(P, n, fn) { for (let s = 0; s < n; s++) { const L = sim(P, MS.
 
 // Locks v1 behavior: this ledger hash must not change while v1 is the record. A deliberate engine change has to update this line and say why.
 { const h = MS.hash32(MS.canon(MS.simulateGame(FX.params(), 12345).ledger), 7); console.log('v1 lock hash', h); ok('the engine still produces the v1 ledger for a fixed seed', h === 2305489941, h); }
+
+// ---------- 7d3. replay, driven only by the ledger ----------
+{ const names = { teams: ['X', 'Y'] }, run = (P, seed) => { const led = MS.simulateGame(P, seed).ledger; return { led, R: MS.buildReplay(led, P, names), box: MS.boxFromLedger(led) }; };
+  const P = FX.params(), { led, R, box } = run(P, 8), goals = led.filter(e => e.type === 'shot' && e.outcome === 'goal');
+  const scEnd = R.scoreAt(R.duration);
+  ok('replay final score equals the box score and ledger', scEnd[0] === box.score[0] && scEnd[1] === box.score[1] && goals.length === box.score[0] + box.score[1]);
+  let sync = true; goals.forEach(e => { const t = e.t / 10, a = R.scoreAt(t - 0.01), b = R.scoreAt(t), B = R.ballAt(t), gx = (e.team === 0) === (e.period % 2 === 1) ? MS.FIELD.goalR : MS.FIELD.goalL; if (b[e.team] !== a[e.team] + 1) sync = false; if (Math.abs(B.x - gx) > 1 || Math.abs(B.y - 30) > 1.5) sync = false; });
+  ok('the scoreboard changes the moment the ball arrives in the correct goal', goals.length > 0 && sync);
+  let inBounds = true, count = true, finite = true, speedOK = true, prev = null, maxJump = 0; const dt = 0.25;
+  for (let t = 0; t <= R.duration; t += dt) { const q = R.playersAt(t), b = R.ballAt(t); if (q.length > 20) count = false; q.forEach(p => { if (!Number.isFinite(p.x) || !Number.isFinite(p.y)) finite = false; if ((p.x < -1 || p.x > 111 || p.y < -1 || p.y > 63)) inBounds = false; }); if (!Number.isFinite(b.x) || !Number.isFinite(b.y)) finite = false; if (prev) { const d = Math.hypot(b.x - prev.x, b.y - prev.y) / dt; maxJump = Math.max(maxJump, d); } prev = b; }
+  ok('players and ball stay finite, on the field, and at most 20 on it', inBounds && count && finite, { inBounds, count, finite });
+  ok('ball speed stays plausible at every moment', maxJump < 260, { maxJump });
+  { let top = 0, tooFast = 0, n = 0, off = 0, shots = 0, away = 0; const prevP = {}; for (let t = 0; t <= R.duration; t += 0.2) { R.playersAt(t).forEach(p => { const k = p.team + ':' + p.slot, q = prevP[k]; if (q && q.id === p.id && !p.entering) { const v = Math.hypot(p.x - q.x, p.y - q.y) / 0.2; n++; top = Math.max(top, v); if (v > 13) tooFast++; } prevP[k] = p; }); }
+    led.forEach(e => { if (e.type !== 'shot' || e.t / 10 < 12) return; shots++; const on = R.playersAt(e.t / 10 - 0.5).filter(p => p.team === e.team && p.slot >= 4), gx = (e.team === 0) === (e.period % 2 === 1) ? MS.FIELD.goalR : MS.FIELD.goalL; const near = on.filter(p => Math.abs(p.x - gx) < 35).length; if (near < 4) away++; });
+    ok('players move at plausible speed, apart from rare hand-offs between formations', tooFast / n < 0.015, { top, share: tooFast / n });
+    ok('the shooting team is in its attacking end when it shoots', shots > 10 && away / shots < 0.1, { away, shots }); }
+  const hop = t => JSON.stringify([R.playersAt(t).map(p => [p.id, p.x, p.y]), R.ballAt(t), R.scoreAt(t), R.clockAt(t)]), a1 = hop(900.5); hop(100); hop(2000); ok('a moment is the same however you reach it, so seek and speed cannot change a result', a1 === hop(900.5));
+  const before = MS.hash32(MS.canon(led), 7), s0 = MS.hash32(MS.canon(MS.simulateGame(P, 8).ledger), 7); ok('building a replay leaves the ledger and the simulation untouched', before === s0);
+  let actors = true; led.forEach(e => { if (e.type === 'shot') { const t = e.t / 10 - 0.7; const on = R.playersAt(Math.max(0, t)).filter(p => p.team === e.team).map(p => p.id); if (e.shooter !== MS.TEAM && !on.includes(e.shooter)) actors = false; } });
+  ok('the shooter is on the field just before each shot', actors);
+  ok('the replay plays straight through every period', led.filter(e => e.type === 'period_start').every(e => R.playersAt(e.t / 10 + 0.1).length >= 16) && R.duration >= led[led.length - 1].t / 10);
+  const cl = R.clockAt(450); ok('the clock counts down from ledger times', cl.period === 1 && Math.abs(cl.left - 4500) < 1, cl);
+  let bad = null; for (const v of [{ a: { foul: 0.4, namedPenalties: true }, b: { foul: 0.4 } }, { a: { r: 0.05, q: 0.25, shotVsTO: 0.3 }, b: { r: 0.05, q: 0.25, shotVsTO: 0.3 } }]) { const Pv = FX.params(v.a, v.b); for (let s = 0; s < 25 && !bad; s++) { const { R: Rv, box: bx } = run(Pv, s), f = Rv.scoreAt(Rv.duration); if (f[0] !== bx.score[0] || f[1] !== bx.score[1]) bad = { s }; for (let t = 0; t < Rv.duration && !bad; t += 7) { const q = Rv.playersAt(t), B = Rv.ballAt(t); if (!Number.isFinite(B.x) || q.some(p => !Number.isFinite(p.x)) || q.length < 11) bad = { s, t, n: q.length }; } } }
+  ok('replay holds with many penalties and in overtime', !bad, bad);
+  const tl = FX.params(); tl.teams[1] = FX.teamLevel('y'); const rr = run(tl, 3), lbl = rr.R.playersAt(100).filter(p => p.team === 1); ok('a team-level opponent shows ten unnamed markers', rr.R.teamLevel[1] && lbl.length === 10 && lbl.every(p => p.id.startsWith('1:')));
+  ok('every shot appears in the replay event list', rr.R.events.filter(e => e.type === 'shot').length === rr.led.filter(e => e.type === 'shot').length);
+}
 
 // ---------- 7e. possession interactions are emergent, no fixed offensive total ----------
 { const base0 = FX.params({ foul: 0.03 }, { foul: 0.03 }), r0 = MS.runBatch(base0, { seed: 41, games: 1200 }).summary.teams[1];

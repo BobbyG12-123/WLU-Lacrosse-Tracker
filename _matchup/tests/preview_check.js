@@ -1,0 +1,74 @@
+// Drives the offline preview in real headless Chrome through DevTools. Usage: deno run -A tests/preview_check.js <shotDir> [port]
+const shotDir = Deno.args[0], port = Deno.args[1] || '9333', results = [];
+const ok = (n, c, i) => { results.push({ n, ok: !!c, i }); console.log((c ? '  OK   ' : '  FAIL ') + n + (c || i === undefined ? '' : '  ' + JSON.stringify(i).slice(0, 500))); };
+const tabs = await (await fetch(`http://127.0.0.1:${port}/json`)).json(), page = tabs.find(t => t.type === 'page');
+const ws = new WebSocket(page.webSocketDebuggerUrl); await new Promise(r => { ws.onopen = r; }); let id = 0; const pending = new Map(), logs = [];
+ws.onmessage = e => { const m = JSON.parse(e.data); if (m.id && pending.has(m.id)) { pending.get(m.id)(m); pending.delete(m.id); } if (m.method === 'Runtime.exceptionThrown') logs.push(m.params.exceptionDetails.exception ? m.params.exceptionDetails.exception.description : m.params.exceptionDetails.text); };
+const send = (method, params = {}) => new Promise(r => { const i = ++id; pending.set(i, r); ws.send(JSON.stringify({ id: i, method, params })); });
+await send('Runtime.enable'); await send('Page.enable');
+const FR = "(document.getElementById('f').contentWindow.document.getElementById('matchupFrame').contentWindow)";
+const ev = async (code, top) => { const r = await send('Runtime.evaluate', { expression: top ? code : `(async () => { const W = ${FR}, D = W.document, ST = W.__MS_STUDIO, RUN = W.__MS_RUN, MS = W.MS; ${code} })()`, awaitPromise: true, returnByValue: true }); if (r.result.exceptionDetails) throw new Error(JSON.stringify(r.result.exceptionDetails).slice(0, 700)); return r.result.result.value; };
+const sleep = ms => new Promise(r => setTimeout(r, ms)), shot = async name => { const r = await send('Page.captureScreenshot', { format: 'png' }); Deno.writeFileSync(`${shotDir}/${name}.png`, Uint8Array.from(atob(r.result.data), c => c.charCodeAt(0))); };
+const size = (w, h) => send('Emulation.setDeviceMetricsOverride', { width: w, height: h, deviceScaleFactor: 1, mobile: false });
+await size(1320, 1000);
+for (let i = 0; i < 120; i++) { const t = await ev('document.title', true); if (t === 'READY') break; await sleep(500); }
+for (let i = 0; i < 80; i++) { try { if (await ev('return !!(ST && ST.E && ST.official);')) break; } catch (e) { /* frame still loading */ } await sleep(500); }
+const waitIdle = async (n = 240) => { for (let i = 0; i < n; i++) { if (await ev('return !ST.busy;')) return true; await sleep(500); } return false; };
+ok('the flagged screen loads with tracker data and official data', await ev('return !!(ST.E && ST.official && ST.teamList.length > 5);'));
+ok('the host has the Simulation page only behind the flag', await ev("return W.parent.document.getElementById('matchupFrame').getAttribute('src') === '_matchup/studio.html';"));
+{ const off = await ev(`const f = window.top.document.createElement('iframe'); f.src = 'tracker_preview.html'; f.style.display = 'none'; window.top.document.body.appendChild(f); for (let i = 0; i < 80 && !(f.contentWindow.msStudioData); i++) await new Promise(r => setTimeout(r, 200)); let txt = 'no function'; try { await f.contentWindow.msStudioData(); txt = 'opened'; } catch (e) { txt = e.message; } const src = f.contentWindow.document.getElementById('matchupFrame').getAttribute('src'); f.remove(); return { txt, src };`);
+  ok('without the flag the screen stays closed and its data read refuses', off.txt === 'Not available.' && off.src === null, off); }
+// Baseline
+await ev("ST.games = 500; D.getElementById('run') ; await RUN.runMatchup();"); await waitIdle(); await sleep(300);
+const b = await ev("const r = ST.base.r; return { req: r.record.requestedGames, done: r.record.completedGames, valid: r.record.validGames, st: r.record.validationStatus, model: r.record.modelId, src: r.record.inputSources, commit: r.record.codeCommit, hash: r.record.snapshotHash, seed: r.record.seed, win: r.summary.teams[0].winProbability, a: r.summary.teams[0].avgScore, vmi: r.summary.teams[1].avgScore };");
+ok('a W&L vs VMI baseline completes through browser workers with accounting clean', b.req === 500 && b.done === 500 && b.valid === 500 && b.st === 'all reconciled', b);
+ok('the run record names model, sources, code, snapshot and seed', b.model === 'player-v1-logic' && /practices/.test(b.src) && b.commit && b.hash && b.seed === 20271106, b);
+const tx = await ev("return D.body.innerText;");
+ok('the player model says no validation applies, and shows no v2 figures', /No game validation applies/.test(tx) && !/13 of 17/.test(tx));
+await shot('01_overview_wl_vmi');
+await ev("ST.tab = 'players'; RUN.render();"); await sleep(200); const ptx = await ev("return D.body.innerText;"); ok('players show credits, exposure and dashes for untracked stats', /Off poss/.test(ptx) && /#7/.test(ptx) && /—/.test(ptx) && /team credits only/.test(ptx)); await shot('02_players');
+const rec = await ev("const c = ST.base.r.summary; const P = c.players[0]; const sum = k => Object.values(P).reduce((a, x) => a + x[k], 0); return { g: sum('goals'), t: c.teams[0].avgScore, a: sum('assists'), to: sum('turnovers'), tt: c.teams[0].turnovers, sv: Object.values(c.players[1]).reduce((a,x)=>a+x.saves,0), ts: c.teams[1].saves };");
+ok('player and team-credit totals add up to team totals', Math.abs(rec.g - rec.t) < 1e-9 && Math.abs(rec.to - rec.tt) < 1e-9 && Math.abs(rec.sv - rec.ts) < 1e-9, rec);
+// Tabs don't rerun
+const h1 = await ev("return ST.base.at;"); await ev("ST.tab = 'overview'; RUN.render(); ST.tab = 'lineups'; RUN.render(); ST.tab = 'inputs'; RUN.render();"); ok('switching tabs does not rerun the simulation', h1 === await ev("return ST.base.at;")); await shot('03_inputs');
+// Scenario
+await ev("ST.ov['g.faceoff'] = '55'; RUN.render(); await RUN.runMatchup();"); await waitIdle(); await sleep(200);
+const sc = await ev("const a = ST.base.r.summary.teams[0], b = ST.scen.r.summary.teams[0]; return { ba: a.faceoffPct, sc: b.faceoffPct, ov: ST.scen.r.record.overrides, base0: ST.base.r.record.overrides.length, sameSeed: ST.base.seed === ST.scen.seed };");
+ok('a scenario changes its input, records it, and leaves the baseline alone', sc.sc > sc.ba + 0.1 && sc.ov.length === 1 && sc.ov[0].to === 55 && sc.base0 === 0 && sc.sameSeed, sc);
+ok('Overview shows scenario minus baseline', /Scenario minus baseline/.test(await ev("ST.tab = 'overview'; RUN.render(); return D.body.innerText;"))); await shot('04_scenario');
+await ev("ST.ov['g.faceoff'] = '150'; RUN.render();"); ok('an out-of-range input blocks the run and says why', await ev("return D.getElementById('run').disabled && /out of range/.test(D.body.innerText);")); await ev("ST.ov = {}; RUN.render();");
+// Unchanged scenario gives zero paired difference
+await ev("ST.ov = {}; RUN.render(); const P0 = RUN.compileBase().P, r1 = await MS.runBatchWorkers(P0, { seed: 5, games: 100, chunk: 30, workers: 2 }, () => new W.Worker('worker.js')), r2 = await MS.runBatchWorkers(JSON.parse(JSON.stringify(P0)), { seed: 5, games: 100, chunk: 100, workers: 1 }, () => new W.Worker('worker.js')); W.__same = JSON.stringify(r1.games.map(x => x.ledgerHash)) === JSON.stringify(r2.games.map(x => x.ledgerHash));");
+ok('same inputs and seed give identical games in the browser for any chunk and worker count', await ev('return W.__same;'));
+// Cancel
+await ev("ST.games = 10000; W.__p = RUN.runMatchup(); ");await sleep(600); await ev("ST.cancel = true; await W.__p;"); await waitIdle();
+const cn = await ev("const c = ST.base.r.record; return { req: c.requestedGames, done: c.completedGames, can: c.cancelled, M: ST.base.r.summary.M };"); ok('cancel reports completed games, not requested', cn.can && cn.done < cn.req && cn.M === cn.done, cn);
+// Rotations
+await ev("ST.games = 500; ST.tab = 'lineups'; RUN.render();"); await sleep(100);
+ok('the default rotation is labeled a test fixture', /test fixture/.test(await ev('return D.body.innerText;'))); await shot('05_lineups');
+const leg = await ev("const r = JSON.parse(JSON.stringify(ST.rotation)); r.attack.pop(); const a = RUN.rotationProblems(r).length; const r2 = JSON.parse(JSON.stringify(ST.rotation)); r2.attack[0] = r2.lines[0].players[0]; const b2 = RUN.rotationProblems(r2).length; const r3 = JSON.parse(JSON.stringify(ST.rotation)); r3.attack[0] = '999'; return [a, b2, RUN.rotationProblems(r3).length, RUN.rotationProblems(ST.rotation).length];");
+ok('illegal rotations are rejected', leg[0] > 0 && leg[1] > 0 && leg[2] > 0 && leg[3] === 0, leg);
+await ev("const r = JSON.parse(JSON.stringify(ST.rotation)); r.lines[0].share = 0.3; r.lines[1].share = 0.7; ST.tested.push({ name: 'More line 2', rotation: r }); const q = JSON.parse(JSON.stringify(ST.rotation)); q.lines = [{ players: q.lines[1].players, share: 0.6 }, { players: q.lines[0].players, share: 0.4 }]; ST.tested.push({ name: 'Lines swapped', rotation: q }); await RUN.runCompare();"); await waitIdle(400); await sleep(300);
+const cm = await ev("return ST.cmp && { rows: ST.cmp.rows, partial: ST.cmp.partial };"); ok('rotation comparison finishes with fresh-seed differences and uncertainty', cm && !cm.partial && cm.rows.length === 3 && cm.rows.some(x => x.diff !== null && x.se !== null && /tied|higher|lower/i.test(x.read)), cm);
+ok('rankings say "Highest projected among tested rotations"', /Highest projected among tested rotations/.test(await ev("return D.body.innerText;"))); await shot('06_compare');
+const legal = await ev("return JSON.stringify(ST.rotation) === JSON.stringify(ST.fixtureRotation);"); ok('comparing does not change the current rotation', legal);
+// Replay
+await ev("ST.tab = 'replay'; RUN.render();"); await sleep(400);
+const rp = await ev("const P = ST.replay, R = P.R, t = R.duration; const sc = R.scoreAt(t); return { box: P.box.score, sc, matches: P.matches, dur: R.duration, ov: P.box.overtime };"); ok('the replay ends at the box score and matches the stored run', rp.sc[0] === rp.box[0] && rp.sc[1] === rp.box[1] && rp.matches === true, rp);
+ok('the replay is labeled and separated from averages', /Simulated replay/.test(await ev('return D.body.innerText;')) && /this one game only/.test(await ev('return D.body.innerText;')));
+await ev("ST.player.seek(0);"); await shot('07_replay_start');
+const g1 = await ev("const R = ST.replay.R, e = R.events.find(x => x.goal); ST.player.seek(e.t - 0.3); return e.t;"); await sleep(120); await shot('08_replay_shot_release');
+const beforeGoal = await ev("return D.getElementById('s0').textContent + '-' + D.getElementById('s1').textContent;"); await ev(`ST.player.seek(${g1});`); await sleep(100); const atGoal = await ev("return D.getElementById('s0').textContent + '-' + D.getElementById('s1').textContent;"); ok('on screen, the score changes exactly as the shot arrives', beforeGoal !== atGoal, { beforeGoal, atGoal });
+await ev("const P = ST.player; P.speed(32); P.seek(ST.replay.R.events.find(x => x.period === 2).t - 1); P.play();"); await sleep(2500); const pl = await ev("const P = ST.player; P.pause(); return { t: P.st.t, per: ST.replay.R.clockAt(P.st.t).period };"); ok('playback runs on its own across a period break', pl.per >= 2 && pl.t > 10, pl); await shot('09_replay_midgame');
+await ev("ST.player.seek(ST.replay.R.duration);"); await sleep(100); await ev("return 0;");
+// Team-level model
+await ev("ST.mode = 'team'; ST.ov = {}; ST.base = null; ST.scen = null; ST.replay = null; ST.tab = 'overview'; ST.games = 500; RUN.render(); await RUN.runMatchup();"); await waitIdle(); await sleep(300);
+const tm = await ev("const r = ST.base.r.record; return { id: r.modelId, st: r.validationStatus, txt: D.body.innerText, players: Object.keys(ST.base.r.summary.players[0]) };"); ok('the team-level run names v2, states its scope and limits', tm.id === 'team-v2-frozen' && /13 of 17/.test(tm.txt) && /isn.t a forward-in-time test/.test(tm.txt) && tm.st === 'all reconciled', tm.id); ok('the team-level model invents no players', tm.players.length === 1 && tm.players[0] === 'TEAM', tm.players); await shot('10_team_level');
+await ev("ST.tab = 'replay'; RUN.render();"); await sleep(400); await ev("ST.player.seek(1400);"); await sleep(100); await shot('11_team_level_replay');
+// Safety
+const safe = await ev("const h = W.parent; const b = window.top.__GUARD; const hb = h.__GUARD; return { top: b ? b.blocked : null, host: hb ? hb.blocked : null, writes: h.__FAKE && h.__FAKE.writes ? h.__FAKE.writes.length : (h.__FAKE && h.__FAKE.log ? h.__FAKE.log.length : null) };");
+ok('nothing tried to leave the machine', (safe.top || []).length === 0 && (safe.host || []).filter(x => !/gstatic|jsdelivr|fonts/.test(x)).length === 0, safe);
+ok('no page errors', logs.length === 0, logs.slice(0, 4));
+await size(390, 844); await ev("ST.mode = 'wl'; ST.tab = 'overview'; ST.base = null; ST.games = 500; RUN.render(); await RUN.runMatchup();"); await waitIdle(); await sleep(300); await shot('12_phone_overview'); ok('no sideways page scroll at phone width', await ev("return D.documentElement.scrollWidth <= W.innerWidth + 1;"), await ev("return [D.documentElement.scrollWidth, W.innerWidth];"));
+await ev("ST.tab = 'replay'; RUN.render();"); await sleep(300); await shot('13_phone_replay');
+const pass = results.filter(r => r.ok).length, fail = results.length - pass; console.log(`preview pass ${pass}  fail ${fail}`); ws.close(); Deno.exit(fail ? 1 : 0);

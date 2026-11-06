@@ -23,8 +23,8 @@
       default: throw new Error('unknown shot outcome ' + x.outcome);
     }
   }
-  function decode(exp, pageSrc, season) {
-    const cols = columnsFromPage(pageSrc), A = exp.collections.app, S = exp.collections.sessions, track = A.session_tracking || {}, out = [];
+  function decode(exp, pageOrCols, season) {
+    const cols = typeof pageOrCols === 'string' ? columnsFromPage(pageOrCols) : pageOrCols, A = exp.collections.app, S = exp.collections.sessions, track = A.session_tracking || {}, out = [];
     Object.keys(S).sort().forEach(sid => {
       const d = S[sid], date = d.date || sid.slice(0, 10); if (seasonOf(date) !== season) return;
       const rec = track['typ_' + sid] ? JSON.parse(track['typ_' + sid]) : null, trk = track['trk_' + sid] ? JSON.parse(track['trk_' + sid]) : null;

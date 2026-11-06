@@ -3,7 +3,7 @@
 // No real data here: the repository is public. Values below are model settings a coach can see and change.
 (function (g) {
   const MS = g.MS = g.MS || {};
-  MS.MODEL_VERSION = 'matchup-engine-0.1';
+  MS.MODEL_VERSION = 'matchup-engine-0.1.1';   // 0.1.1 fixes the loose-ball-at-the-horn path. See docs/ACCOUNTING_RECORD.md
   MS.CONSTANTS = Object.freeze({
     actionMeanSec:      { value: 25.6,   cls: 'fitted',     unit: 'seconds of live play from control to a shot or turnover', source: 'Tuned by tools_tune.js on league totals from 53 official games before 2026-03-01. Not tuned on any test game. A fit, not a validation' },
     faceoffMeanSec:     { value: 8,    cls: 'assumption', unit: 'seconds, whistle to possession', source: 'No timed evidence' },

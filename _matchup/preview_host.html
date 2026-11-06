@@ -1,0 +1,19 @@
+<!doctype html>
+<html><head><meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; connect-src 'self'; style-src 'unsafe-inline'; frame-src 'self'; img-src 'self' data:; base-uri 'none'">
+<script src="guard_offline.js"></script><script src="fake_firestore.js"></script>
+<title>Simulation preview (offline, in-memory copy of your backup)</title>
+<style>html,body{margin:0;height:100%} iframe{width:100%;height:100%;border:0;display:block}</style></head><body>
+<iframe id="f" src="tracker_preview.html?matchupDev=1"></iframe>
+<script>
+// Runs the tracker on an in-memory copy of a local export. Nothing can reach the live database: dummy Firebase config, strict CSP, offline guard.
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+(async () => {
+  const exp = await (await fetch('export.json')).json(), w = document.getElementById('f').contentWindow;
+  for (let i = 0; i < 80 && !(w.firebase && w.firebase.apps && w.firebase.apps.length && typeof w.init === 'function'); i++) await sleep(250);
+  const fake = makeFakeFirestore(exp.collections), real = w.firebase.firestore, f = function () { return fake; }; Object.keys(real).forEach(x => { f[x] = real[x]; }); f.FieldValue = real.FieldValue; f.FieldPath = real.FieldPath; w.firebase.firestore = f; w.__FAKE = fake;
+  await w.init(); for (let i = 0; i < 120 && !w.__appReady; i++) await sleep(250); await sleep(800);
+  w.document.getElementById('authGate').style.display = 'none'; w.document.getElementById('appRoot').style.display = '';
+  w.goNav('matchup'); document.title = 'READY';
+})();
+</script></body></html>

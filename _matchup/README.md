@@ -11,6 +11,8 @@ Nothing here loads in the tracker page. This folder starts with `_`, so GitHub P
 | `engine.js` | One game from parameters and a seed: the canonical event ledger, box score and validator |
 | `results.js` | Batches, workers, aggregates, paired comparison |
 | `worker.js` | Browser worker for one chunk |
+| `replay.js`, `studio.html`, `studio.js` | Experimental screen and replay |
+| `docs/MODEL_SCOPE.md`, `docs/ACCOUNTING_RECORD.md`, `docs/PACE_CHECK.md` | What's frozen, the bug record, the pace check |
 | `tools_fit_reference.js` | Fits tempo and related settings to official team totals. A fit, not a validation |
 | `tools_run_matchup.js` | Runs a matchup from local files and writes a report |
 | `official.js`, `tools_official.js` | Reads official school stat pages into dated games |
@@ -33,6 +35,12 @@ Opponent numbers are a plain totals object with `source`, set as `opponent.offic
 
 Use `tools_versioned.sh`. It refuses to run if `_matchup/` has uncommitted changes, and it stamps the commit into every run record, alongside model and rules versions, input snapshot hash, seed and completed games.
 
+## Experimental screen
+
+`studio.html`, `studio.js` and `replay.js` are the Simulation screen. In the tracker it appears only with the development flag (`?matchupDev=1`), never in player mode, and it reads data and writes nothing. To try it locally, offline, on an in-memory copy of a backup: `tools_build_preview.sh <export.json> <inputs.json> <official_raw> <out>`, then open the `.command` file it creates. `tests/preview_check.js` drives it in real Chrome.
+
+Before any release, this folder needs a published path, because GitHub Pages skips folders that start with `_`, and official data needs a tracker home.
+
 ## Not built yet
 
-Lineup optimization, polished replay, the tracker screen, and held-out forecast validation.
+An automated lineup search (on purpose), and a forward-in-time validation, which needs later games.
