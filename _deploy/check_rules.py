@@ -114,7 +114,7 @@ def page_emails(path):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument('rules'); ap.add_argument('--doc', default='app/roster'); ap.add_argument('--page')
+    ap.add_argument('rules'); ap.add_argument('--doc', default='app/roster'); ap.add_argument('--page'); ap.add_argument('--show-unmatched', action='store_true')
     a = ap.parse_args()
     raw = pathlib.Path(a.rules).read_bytes()
     problems, emails, names = verdict(raw.decode('utf-8'), a.doc)
@@ -125,6 +125,9 @@ def main():
         else:
             print(f'Addresses in the page list: {len(pg)}; on the page but not in the rules: {len(pg - low)}; in the rules but not on the page: {len(low - pg)}')
             if pg - low: print('  NOTE: those coaches pass the page but Firestore refuses them, and they would be refused here too.')
+            if a.show_unmatched:
+                for e in sorted(pg - low): print('  on the page only:', e)
+                for e in sorted(low - pg): print('  in the rules only:', e)
     if problems:
         print('\nFAIL: read permission on this document can\'t be treated as staff membership:')
         for p in problems: print('  -', p)

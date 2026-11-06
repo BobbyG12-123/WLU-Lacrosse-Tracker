@@ -62,17 +62,24 @@ The check reads the text, once. Run it again after any rules change. It can't se
 
 ## 4. Staging: prove it live without touching production
 
-This uses the existing `wlu-tracker-test` project, with synthetic data only.
+This uses the existing `wlu-tracker-test` project, with synthetic data only. `prepare_staging.py` refuses any other project and refuses to leave a production identifier in the pages.
 
-1. In the test project, enable the Google provider, add `wlu-tracker-staging.<your-subdomain>.workers.dev` to Authorized domains, and add a synthetic `app/roster` document. Publish test rules with `isCoach()` listing two of your Google accounts (the shape `check_rules.py` accepts).
-2. From `_deploy`:
+1. Prepare, naming the two Google accounts that will test, with an output folder outside the repository:
    ```
-   python3 build_site.py
-   npx wrangler secret put SESSION_SECRET --config wrangler.staging.toml     # paste a long random value at its prompt: `openssl rand -base64 48`
+   python3 _deploy/prepare_staging.py --firebase-config ~/Desktop/Lacrosse_Code/test_env/firebase_test_config.js --staff first@example.com,second@example.com --out ~/Desktop/Lacrosse_Code/test_env/staging --chat
+   ```
+2. In the **test** project's console: enable the Google sign-in provider; publish `staging_rules.rules` (save the current rules first, and restore them afterward); add the Worker's address to Authorized domains after step 3.
+3. Deploy from the output folder. The Worker's settings file is there, so production can't be picked up by accident:
+   ```
+   cd ~/Desktop/Lacrosse_Code/test_env/staging
+   npx wrangler login
    npx wrangler deploy --config wrangler.staging.toml
+   openssl rand -base64 48 | npx wrangler secret put SESSION_SECRET --config wrangler.staging.toml
+   npx wrangler secret put ANTHROPIC_API_KEY --config wrangler.staging.toml
    ```
-   First add two lines under `[vars]` in `wrangler.staging.toml`, on your computer only: `FIREBASE_WEB_KEY` (the test project's public web key) and `STAFF_RULES_REVIEWED` (from `check_rules.py` on the test rules).
-   If the staged page is built with `--chat`, set the test project's config in it first: the pages are built for production.
+   The last line asks for the key at its own prompt. Staging chat spends real money, counted in the month's budget. Use `PRIOR_SPEND_JSON` from the comparison.
+4. Add synthetic data to the test project (never an export).
+5. Run the signed-out checks: `python3 _deploy/staging_check.py https://wlu-tracker-staging.<your-subdomain>.workers.dev`
 
 ## 5. Staging checks (all must pass before step 7)
 
