@@ -367,6 +367,13 @@
   .chat-facts { font-size: 12px; white-space: pre-wrap; color: var(--muted); max-height: 220px; overflow-y: auto; }
   .chat-sent pre { white-space: pre-wrap; font-size: 11px; max-height: 200px; overflow: auto; }
   .chat-empty { color: var(--muted); font-size: 13px; }
+  .chat-panel.wide { width: min(820px, calc(100vw - 24px)); height: min(860px, calc(100vh - 36px)); }
+  .chat-scope { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 6px; } .chat-scope span { font-size: 11px; color: var(--muted); border: 1px solid var(--line); border-radius: 10px; padding: 1px 7px; }
+  .chat-ev { font: inherit; font-size: 11.5px; border: 1px solid #0B2545; border-radius: 10px; background: none; color: inherit; padding: 0 7px; cursor: pointer; white-space: nowrap; }
+  .chat-evbox { margin-top: 8px; border-top: 1px solid var(--line); padding-top: 6px; }
+  .chat-status { font-style: italic; }
+  .chat-hist { max-height: 40%; overflow-y: auto; padding: 8px 12px; border-bottom: 1px solid var(--line); font-size: 13px; } .chat-hist[hidden] { display: none; }
+  .chat-histrow { display: flex; align-items: center; gap: 8px; } .chat-histrow .lnk { flex: 1; text-align: left; }
   .chat-acts { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 8px; } .chat-acts .pill { font-size: 11.5px; }
   .chat-cmp { font-size: 12px; margin-top: 8px; } .chat-cmp td, .chat-cmp th { padding: 3px 6px; white-space: nowrap; }
   .chat-sugg { display: flex; flex-wrap: wrap; gap: 4px; padding: 6px 12px 0; } .chat-sugg .pill { font-size: 11.5px; }
@@ -20332,6 +20339,7 @@ function chatUnmask(text, allowed) {
   return esc.replace(/\*\*(.+?)\*\*/g, '<b>$1</b>').split(/\n{2,}/).map(par => /^\s*[-*•] /m.test(par) ? `<ul>${par.split('\n').filter(l => l.trim()).map(l => `<li>${l.replace(/^\s*[-*•]\s*/, '')}</li>`).join('')}</ul>` : `<p>${par.replace(/\n/g, '<br>')}</p>`).join('');
 }
 async function chatAsk(q) {
+  if (chatAgentOn()) return caAsk(q);
   if (CHAT.busy || !q.trim()) return;
   CHAT.busy = true;
   const shown = escapeHtml(q);
@@ -20385,6 +20393,7 @@ function chatDoAction(m, a) {
   if (a.k === 'show') { CHAT.open = window.innerWidth > 700; chatDraw(); navHighlight([a.j]); const chip = [...document.querySelectorAll('.view.active .depth-chip')].find(x => new RegExp(`#${a.j}\\b`).test(x.textContent)); if (chip) { chip.scrollIntoView({ block: 'center' }); chip.classList.add('nav-hl'); } return; }
   if (a.k === 'try') { const o = DP_WHATIF[a.side] || { w: {}, adj: {}, lock: {} }; o.lock[a.j] = { line: a.line, by: dpWho(), at: new Date().toISOString() }; DP_WHATIF[a.side] = o; DP_VIEW[a.side] = 'whatif'; CHAT.open = window.innerWidth > 700; chatDraw(); goNav('depth'); setTimeout(() => { const el = document.getElementById(a.side === 'def' ? 'depthModelDef' : 'depthModel'); if (el) el.scrollIntoView({ block: 'start' }); }, 120); return; }
   if (a.k === 'compare') { m.cmp = m.cmp ? null : chatCompareHtml(a.js); chatDraw(); }
+  if (a.k === 'nav') { CHAT.open = window.innerWidth > 700; chatDraw(); goNav(a.id); }
 }
 function chatFocusLabel(f) { return [f.jersey ? `#${f.jersey} ${nameFor(f.jersey, chatSeason()) || ''}` : '', f.row, f.label, f.value].filter(Boolean).join(' · ') + (f.panel ? ` (${f.panel})` : ''); }
 // Remember what the coach last clicked on a page: a player row or card, a stat tile, a table cell.
@@ -20419,13 +20428,18 @@ function chatDraw() {
   fab.hidden = CHAT.open; panel.hidden = !CHAT.open;
   if (!CHAT.open) return;
   const f = CHAT.focus;
-  const sugg = f && f.jersey ? ['Why is he where he is?', 'What does he need to work on to move up?', 'Is he getting better lately?', 'What is he best and worst at?'] : f ? ['How is this figured?', 'Why is it this number?', 'Who is best at this?'] : ['Who should start on offense, and why?', 'Who should start on defense, and why?', 'Who is our best off-ball player?'];
+  const sugg = chatAgentOn() && CHAT.msgs.length ? [] : chatAgentOn() && !f ? ['What stands out from our last five practices?', 'Why did our scoring change?', 'What if we reduced turnovers?'] : f && f.jersey ? ['Why is he where he is?', 'What does he need to work on to move up?', 'Is he getting better lately?', 'What is he best and worst at?'] : f ? ['How is this figured?', 'Why is it this number?', 'Who is best at this?'] : ['Who should start on offense, and why?', 'Who should start on defense, and why?', 'Who is our best off-ball player?'];
   document.getElementById('chatFocus').innerHTML = f ? `<span>Asking about: <b>${escapeHtml(chatFocusLabel(f))}</b></span><button type="button" class="chat-x" data-chat="unfocus" title="Stop asking about this">&times;</button>` : '<span class="n-note">Tip: click a player, row or number on any page, then ask about it.</span>';
-  document.getElementById('chatLog').innerHTML = CHAT.msgs.length ? CHAT.msgs.map(m => `<div class="chat-msg ${m.role}">${m.focus ? `<div class="n-note">about ${escapeHtml(m.focus)}</div>` : ''}${m.html}${m.actions && m.actions.length ? `<div class="chat-acts">${m.actions.map((a, i) => `<button type="button" class="pill" data-chat="act" data-m="${CHAT.msgs.indexOf(m)}" data-a="${i}">${escapeHtml(a.t)}</button>`).join('')}</div>` : ''}${m.cmp || ''}${m.sent && chatShowSent() ? `<details class="chat-sent"><summary>What was sent</summary><pre>${escapeHtml(m.sent)}</pre></details>` : ''}</div>`).join('')
-    : `<div class="chat-empty"><p>Ask anything about the numbers: why a player is where he is, how a stat is figured, what would change it.</p><p class="n-note">Only coded numbers go to the AI (P1, P2&hellip;), never names. The tracker does the math.</p></div>`;
+  const logTop0 = document.getElementById('chatLog').scrollTop;
+  document.getElementById('chatLog').innerHTML = CHAT.msgs.length ? CHAT.msgs.map(m => `<div class="chat-msg ${m.role}">${m.focus ? `<div class="n-note">about ${escapeHtml(m.focus)}</div>` : ''}${m.agent ? caMsgHtml(m) : m.html}${m.actions && m.actions.length ? `<div class="chat-acts">${m.actions.map((a, i) => `<button type="button" class="pill" data-chat="act" data-m="${CHAT.msgs.indexOf(m)}" data-a="${i}">${escapeHtml(a.t)}</button>`).join('')}</div>` : ''}${m.cmp || ''}${m.sent && chatShowSent() ? `<details class="chat-sent"><summary>What was sent</summary><pre>${escapeHtml(m.sent)}</pre></details>` : ''}</div>`).join('')
+    : `<div class="chat-empty"><p>${chatAgentOn() ? 'Ask anything: what happened, why, who, which records and film, what if. Follow up in your own words.' : 'Ask anything about the numbers: why a player is where he is, how a stat is figured, what would change it.'}</p><p class="n-note">Only coded numbers go to the AI (P1, P2&hellip;), never names. The tracker does the math${chatAgentOn() ? ', and read-only: chat can’t change a record' : ''}.</p></div>`;
+  panel.classList.toggle('wide', chatAgentOn() && CA.wide);
+  panel.querySelectorAll('[data-agent-only]').forEach(x => { x.hidden = !chatAgentOn(); });
+  const hb = document.getElementById('chatHist'); if (hb) { hb.hidden = !(chatAgentOn() && CA.showHist); if (!hb.hidden) hb.innerHTML = caHistHtml(); }
   document.getElementById('chatSugg').innerHTML = sugg.map(s => `<button type="button" class="pill" data-chat="ask" data-q="${escapeHtml(s)}">${escapeHtml(s)}</button>`).join('');
-  const log = document.getElementById('chatLog'); log.scrollTop = log.scrollHeight;
-  document.getElementById('chatSend').disabled = CHAT.busy;
+  const log = document.getElementById('chatLog'); if (CA.keepScroll) { CA.keepScroll = false; log.scrollTop = logTop0; } else log.scrollTop = log.scrollHeight;
+  document.getElementById('chatSend').disabled = CHAT.busy && !chatAgentOn();
+  if (chatAgentOn()) { const sb = document.getElementById('chatSend'); sb.textContent = CHAT.busy ? 'Stop' : 'Send'; if (CHAT.busy) sb.dataset.chat = 'stop'; else delete sb.dataset.chat; sb.type = CHAT.busy ? 'button' : 'submit'; }
 }
 function chatShowSent() { try { return IS_DH_OWNER && localStorage.getItem('wluAiShowSent') === '1'; } catch (e) { return false; } }
 function chatInit() {
@@ -20433,7 +20447,8 @@ function chatInit() {
   const wrap = document.createElement('div');
   wrap.innerHTML = `<button type="button" id="chatFab" class="chat-fab" title="Ask the tracker" aria-label="Ask the tracker">&#128172;</button>
     <section id="chatPanel" class="chat-panel" hidden aria-label="Ask the tracker">
-      <div class="chat-head"><b>Ask the tracker</b><span style="flex:1;"></span><button type="button" class="pill" data-chat="new">New chat</button><button type="button" class="chat-x" data-chat="close" title="Close">&times;</button></div>
+      <div class="chat-head"><b>Ask the tracker</b><span style="flex:1;"></span><button type="button" class="pill" data-chat="hist" data-agent-only hidden>Saved chats</button><button type="button" class="pill" data-chat="wide" data-agent-only hidden>Wider</button><button type="button" class="pill" data-chat="new">New chat</button><button type="button" class="chat-x" data-chat="close" title="Close">&times;</button></div>
+      <div id="chatHist" class="chat-hist" hidden></div>
       <div id="chatFocus" class="chat-focus"></div>
       <div id="chatLog" class="chat-log"></div>
       <div id="chatSugg" class="chat-sugg"></div>
@@ -20446,7 +20461,8 @@ function chatInit() {
     const a = b.dataset.chat;
     if (a === 'close') CHAT.open = false;
     if (a === 'unfocus') CHAT.focus = null;
-    if (a === 'new') { CHAT.msgs = []; CHAT.map = {}; CHAT.n = 0; }
+    if (a === 'new') { if (CA.ctl) { CA.stopWhy = 'user'; CA.ctl.abort(); } CHAT.msgs = []; CHAT.map = {}; CHAT.n = 0; CHAT.conv = null; CA.showHist = false; }
+    if (chatAgentOn() && caAction(a, b)) return;
     if (a === 'ask') { chatAsk(b.dataset.q); return; }
     if (a === 'act') { const m = CHAT.msgs[Number(b.dataset.m)]; if (m && m.actions) chatDoAction(m, m.actions[Number(b.dataset.a)]); return; }
     chatDraw();
@@ -20455,6 +20471,552 @@ function chatInit() {
   document.getElementById('chatInput').addEventListener('keydown', ev => { if (ev.key === 'Enter' && !ev.shiftKey) { ev.preventDefault(); document.getElementById('chatForm').requestSubmit(); } });
   document.getElementById('appRoot').addEventListener('click', chatCapture, true);
   chatDraw();
+}
+// ---------------- Ask chat: the tool-using assistant (Nov 2026; off until CHAT_GW_URL is set) ----------------
+// The model picks tools and explains results; the tracker's own functions do every calculation, in this browser, on data this
+// account already loaded. Every tool only reads. What's sent is coded (P1 players, O1 opponents, S1 sessions, E1 evidence); records stay
+// here, and the model cites them by handle. The gateway holds the provider key, the prompt and the tool list (_chat/gateway/worker.js).
+let CHAT_GW_URL = '';   // empty: the chat above runs exactly as it did
+let chatFetch = (u, o) => fetch(u, o);
+let chatIdToken = force => firebase.auth().currentUser.getIdToken(!!force);
+const CA_MAX_ROUNDS = 10, CA_IDLE_MS = 60000, CA_EV_PAGE = 25, CA_SESS_PAGE = 20;
+const CA = { ctl: null, cfg: null, stopWhy: null, keepScroll: false, hist: null, showHist: false, wide: false };
+function chatAgentOn() { return !!CHAT_GW_URL && !PLAYER_MODE; }
+class CaErr extends Error {}
+const caR = v => (typeof v === 'number' && isFinite(v)) ? Math.round(v * 100) / 100 : (v === undefined || (typeof v === 'number') ? null : v);
+const caPer100 = (a, b) => b ? Math.round(1000 * a / b) / 10 : null;
+function caNewConv() { return { id: 'c' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7), title: '', at: new Date().toISOString(), api: [], ev: {}, evN: 0, opp: {}, oppN: 0, sess: {}, sessN: 0 }; }
+function caConv() { if (!CHAT.conv) CHAT.conv = caNewConv(); return CHAT.conv; }
+// ---- Codes ----
+function caOppCode(name) { if (!name) return null; const c = caConv(), have = Object.keys(c.opp).find(k => c.opp[k] === name); if (have) return have; const k = 'O' + (++c.oppN); c.opp[k] = name; return k; }
+function caSessCode(sid) { if (!sid) return null; const c = caConv(), have = Object.keys(c.sess).find(k => c.sess[k] === sid); if (have) return have; const k = 'S' + (++c.sessN); c.sess[k] = sid; return k; }
+const caPlayer = j => (j && !isOppJersey(j)) ? chatCode(String(j)) : (j ? 'an opponent' : null);
+function caJersey(code) { const j = CHAT.map[code]; if (!j) throw new CaErr(`${code} isn't a known player code. Call find_players first.`); return j; }
+function caKnownOpponents() {
+  const out = new Set();
+  Object.values(LIVE_SESSIONS).forEach(s => { const o = sessionOpponentOf(s); if (o) out.add(o); });
+  return [...out].filter(o => String(o).trim().length >= 2);
+}
+const caEsc = s => String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+// A question on its way out: names and #jerseys through the same mask the search bar and old chat use, then opponents.
+function caScrubText(q) {
+  const m = saMask(q);
+  let text = m.text; Object.keys(m.map).forEach(p => { text = text.replace(new RegExp(`\\b${p}\\b`, 'g'), '\u0000' + chatCode(m.map[p])); }); text = text.replace(/\u0000/g, '');
+  caKnownOpponents().forEach(o => { text = text.replace(new RegExp(`\\b${caEsc(o)}\\b`, 'gi'), () => caOppCode(o)); });
+  if (!saMaskOk(text)) throw new CaErr('blocked');
+  return text;
+}
+// Everything in a tool result is checked again before it leaves. Fails closed: the result isn't sent.
+function caOutOk(obj) {
+  const strs = [], walk = v => { if (typeof v === 'string') strs.push(v); else if (Array.isArray(v)) v.forEach(walk); else if (v && typeof v === 'object') Object.values(v).forEach(walk); };
+  walk(obj);
+  const text = strs.join('\n');
+  if (!saMaskOk(text)) return false;
+  return !caKnownOpponents().some(o => new RegExp(`\\b${caEsc(o)}\\b`, 'i').test(text));
+}
+// ---- Scope: what a tool ran on, resolved once, reported back as used ----
+function caScope(sc) {
+  sc = sc || {};
+  const season = sc.season || chatSeason();
+  if (!isAdvSeason(season)) throw new CaErr(`The tracker's analytics cover ${ADV_SEASONS.join(', ')}. ${season} isn't included.`);
+  const types = sc.session_types && sc.session_types.length ? [...new Set(sc.session_types)] : null, c = caConv();
+  let opp = null;
+  if (sc.opponent) { opp = c.opp[sc.opponent]; if (!opp) throw new CaErr(`${sc.opponent} isn't a known opponent code. Use list_sessions.`); }
+  const base = e => !!e.date && seasonForDate(e.date) === season && (!types || types.includes(sessionTypeOf(e))) && (!sc.from || e.date >= sc.from) && (!sc.to || e.date <= sc.to) && (!opp || sessionOpponentOf(e) === opp) && (!sc.part || inPart(e, season, sc.part));
+  let only = null, all = null;
+  if (sc.last_n_sessions || sc.skip_last_n_sessions) {
+    const m = {};
+    advShots(season).filter(s => s.team !== 'OPP' && s.shooterJersey && base(s)).forEach(s => { const id = scSid(s); m[id] = m[id] || { sid: id, date: s.date || '' }; });
+    all = Object.values(m).sort((a, b) => (a.date + a.sid).localeCompare(b.date + b.sid));
+    const skip = sc.skip_last_n_sessions || 0, end = all.length - skip, n = sc.last_n_sessions || end, pick = all.slice(Math.max(0, end - n), Math.max(0, end));
+    only = new Set(pick.map(x => x.sid));
+  }
+  const ok = e => base(e) && (!only || only.has(scSid(e)));
+  const shots = advShots(season).filter(s => s.team !== 'OPP' && ok(s)), opps = OPP_SHOTS.filter(ok), poss = POSSESSIONS.filter(ok), fos = FACEOFFS.filter(ok);
+  const sids = [...new Set(shots.concat(opps, poss, fos).map(scSid))].sort(), dates = [...new Set(shots.concat(opps, poss, fos).map(e => e.date))].sort();
+  const words = types ? types.join(' + ') : 'all session types';
+  const echo = { season, session_types: types || 'all', first_date: dates[0] || null, last_date: dates[dates.length - 1] || null, sessions: sids.length, session_dates: dates.length <= 12 ? dates : undefined, opponent: sc.opponent || null, part: sc.part || null, last_n_sessions: sc.last_n_sessions || null, skip_last_n_sessions: sc.skip_last_n_sessions || null };
+  if (only && sc.last_n_sessions && only.size < sc.last_n_sessions) echo.note = `Asked for ${sc.last_n_sessions} sessions; only ${only.size} with logged shots are available.`;
+  return { season, types, words, ok, shots, opps, poss, fos, sids, echo, sc };
+}
+function caChip(sc) {
+  const e = sc.echo, d = x => x ? `${Number(x.slice(5, 7))}/${Number(x.slice(8, 10))}` : '—';
+  return [e.season, Array.isArray(e.session_types) ? e.session_types.join(' + ') : 'All session types', e.first_date ? (e.first_date === e.last_date ? d(e.first_date) : `${d(e.first_date)}–${d(e.last_date)}`) : 'no records', `${e.sessions} session${e.sessions === 1 ? '' : 's'}`].concat(sc.sc.opponent ? [`vs ${caConv().opp[sc.sc.opponent]}`] : [], sc.sc.part ? [sc.sc.part] : []).join(' · ');
+}
+function caWithEff(scope, fn) {
+  const s0 = EFF_SEASON, c0 = EFF_CONTEXT, fr0 = EFF_FROM, to0 = EFF_TO, op0 = EFF_OPP, on0 = EFF_ONLY, pp0 = PART_PAGE_ON;
+  EFF_SEASON = scope.season; EFF_CONTEXT = 'All'; EFF_FROM = null; EFF_TO = null; EFF_OPP = null; EFF_ONLY = scope.ok; PART_PAGE_ON = false;
+  try { return fn(); } finally { EFF_SEASON = s0; EFF_CONTEXT = c0; EFF_FROM = fr0; EFF_TO = to0; EFF_OPP = op0; EFF_ONLY = on0; PART_PAGE_ON = pp0; }
+}
+const CA_TRACK_WORD = { C: 'complete in every session', P: 'partly tracked, or mixed', N: 'not tracked', U: 'not confirmed' };
+function caCoverage(sids, cats) { const o = {}; (cats || TRACK_CATS.map(c => c[0])).forEach(c => { o[c] = CA_TRACK_WORD[trackSetStatus(sids, c)]; }); return o; }
+// ---- Evidence: a list of records kept here; the model only sees its handle and count ----
+const caKey = (k, e) => [k, scSid(e), e.id, eidOf(e) || ''].join('|');
+function caEvidence(kind, label, season, list, chip) {
+  if (!list.length) return null;
+  const c = caConv(), keys = list.map(e => caKey(kind, e)), sig = kind + ':' + keys.join(',');
+  const have = Object.keys(c.ev).find(k => c.ev[k].sig === sig); if (have) return have;
+  const id = 'E' + (++c.evN); c.ev[id] = { sig, kind, label, season, keys, chip: chip || '', at: new Date().toISOString() };
+  return id;
+}
+function caResolve(ev) {
+  const src = ev.kind === 's' ? SHOTS : ev.kind === 'o' ? OPP_SHOTS : ev.kind === 'p' ? POSSESSIONS : FACEOFFS, by = new Map();
+  src.forEach(e => by.set(scSid(e) + '|' + e.id, e));
+  return ev.keys.map(key => { const [, sid, id, eid] = key.split('|'), e = by.get(sid + '|' + id); return e && (!eid || !eidOf(e) || eidOf(e) === eid) ? e : null; });
+}
+// ---- Argument checking against the gateway's schemas ----
+function caValidate(s, v, path) {
+  path = path || 'input';
+  if (v === undefined || v === null) return `${path} is missing`;
+  if (s.type === 'object') {
+    if (typeof v !== 'object' || Array.isArray(v)) return `${path} must be an object`;
+    const props = s.properties || {};
+    for (const k of s.required || []) if (v[k] === undefined) return `${path}.${k} is required`;
+    for (const k of Object.keys(v)) { if (!props[k]) { if (s.additionalProperties === false) return `${path}.${k} isn't allowed`; continue; } const e = caValidate(props[k], v[k], `${path}.${k}`); if (e) return e; }
+    return null;
+  }
+  if (s.type === 'array') {
+    if (!Array.isArray(v)) return `${path} must be a list`;
+    if (s.minItems && v.length < s.minItems) return `${path} needs at least ${s.minItems}`;
+    if (s.maxItems !== undefined && v.length > s.maxItems) return `${path} allows at most ${s.maxItems}`;
+    for (let i = 0; i < v.length; i++) { const e = caValidate(s.items || {}, v[i], `${path}[${i}]`); if (e) return e; }
+    return null;
+  }
+  if (s.type === 'string') {
+    if (typeof v !== 'string') return `${path} must be text`;
+    if (s.maxLength && v.length > s.maxLength) return `${path} is too long`;
+    if (s.pattern && !new RegExp(s.pattern).test(v)) return `${path} has the wrong format`;
+  }
+  if (s.type === 'integer' && !Number.isInteger(v)) return `${path} must be a whole number`;
+  if (s.type === 'number' && (typeof v !== 'number' || !isFinite(v))) return `${path} must be a number`;
+  if ((s.type === 'integer' || s.type === 'number') && ((s.minimum !== undefined && v < s.minimum) || (s.maximum !== undefined && v > s.maximum))) return `${path} is out of range`;
+  if (s.enum && !s.enum.includes(v)) return `${path} must be one of ${s.enum.join(', ')}`;
+  return null;
+}
+// ---- The tools. Each one only reads. ----
+const caCalc = x => { if (!x || typeof x !== 'object') return null; const o = {}; Object.keys(x).forEach(k => { const v = x[k]; if (typeof v === 'number') o[k] = caR(v); else if (typeof v === 'string' || typeof v === 'boolean' || v === null) o[k] = v; }); return o; };
+const caPlain = h => String(h || '').replace(/<[^>]+>/g, '').replace(/&rsquo;/g, '’').replace(/&amp;/g, '&').trim();
+function caPeriodOpts(a, subject) {
+  const season = a.season || chatSeason();
+  if (!isAdvSeason(season)) throw new CaErr(`The tracker's analytics cover ${ADV_SEASONS.join(', ')}. ${season} isn't included.`);
+  if (a.period === 'custom' && !a.custom) throw new CaErr('period "custom" needs custom dates.');
+  return { season, type: a.session_type, period: a.period, custom: a.custom ? { aFrom: a.custom.a_from, aTo: a.custom.a_to, bFrom: a.custom.b_from, bTo: a.custom.b_to } : null, subject: subject && subject !== 'team' ? caJersey(subject) : 'team', grouping: a.grouping || 'groups' };
+}
+function caPeriodEcho(R) {
+  const dates = l => l.map(s => s.date), side = l => ({ sessions: l.length, dates: dates(l) });
+  const words = { season: R.season, session_type: R.type, comparison: R.per.label, period_a_earlier: side(R.per.A), period_b_later: side(R.per.B), part: SEASON_PART === 'Full' ? null : SEASON_PART };
+  if (R.per.wanted && (R.per.A.length < R.per.wanted || R.per.B.length < R.per.wanted)) words.note = `Asked for ${R.per.wanted} sessions per period; period A has ${R.per.A.length} and period B has ${R.per.B.length}.`;
+  if (R.per.overlap) words.note = `The two custom periods share ${R.per.overlap} session(s).`;
+  return words;
+}
+function caChipPeriod(R) {
+  const d = x => x ? `${Number(x.slice(5, 7))}/${Number(x.slice(8, 10))}` : '—', span = l => l.length ? `${d(l[0].date)}–${d(l[l.length - 1].date)} (${l.length})` : 'none';
+  return `${R.season} · ${R.type} · A ${span(R.per.A)} vs B ${span(R.per.B)}`;
+}
+const CA_TOOLS = {
+  tracker_overview(a, turn) {
+    const season = a.season || chatSeason();
+    if (!(ROSTERS[season] || isAdvSeason(season))) throw new CaErr(`No season ${season}. Seasons: ${SEASONS.join(', ')}.`);
+    const adv = isAdvSeason(season), rows = SESSION_TYPES.concat([SCRIM_UNTYPED]).map(t => {
+      const f = e => e.date && seasonForDate(e.date) === season && sessionTypeOf(e) === t, sh = SHOTS.filter(s => s.team !== 'OPP' && f(s)), op = OPP_SHOTS.filter(f), po = POSSESSIONS.filter(f), fo = FACEOFFS.filter(f);
+      const all = sh.concat(op, po, fo), ds = [...new Set(all.map(e => e.date))].sort();
+      return { session_type: t, sessions: new Set(all.map(scSid)).size, shots: sh.length, opponent_shots: op.length, no_shot_possessions: po.length, faceoffs: fo.length, first_date: ds[0] || null, last_date: ds[ds.length - 1] || null };
+    }).filter(r => r.sessions);
+    const sids = [...new Set(SHOTS.concat(OPP_SHOTS, POSSESSIONS, FACEOFFS).filter(e => e.date && seasonForDate(e.date) === season).map(scSid))];
+    const tracking = {}; TRACK_CATS.forEach(([c, l]) => { const st = sids.map(s => trackStatus(s, c)); tracking[l] = { complete: st.filter(x => x === 'C').length, partial: st.filter(x => x === 'P').length, not_tracked: st.filter(x => x === 'N').length, not_confirmed: st.filter(x => x === null).length }; });
+    return {
+      season, seasons: SEASONS, analytics_seasons: ADV_SEASONS, analytics_available: adv, by_session_type: rows, sessions_with_records: sids.length, tracking_by_session: tracking,
+      metrics: SA_CATALOG.map(c => ({ id: c.id, label: c.label, min_n: c.min || 0, season_level: !!c.seasonOnly || c.f.length === 0 })),
+      pages: Object.values(NAV_PAGES).filter(navVisible).map(p => ({ id: p.id, name: p.name })),
+      not_available_yet: ['lineup and stint records', 'modeled What If', 'uploaded documents', 'Matchup Studio simulations', 'video analysis'],
+    };
+  },
+  find_players(a) {
+    const season = a.season || chatSeason(), roster = (ROSTERS[season] || []).filter(r => r.jersey && r.name && !isOppJersey(r.jersey));
+    const posSet = Object.keys(POSITIONS[season] || {}).length > 0, posKey = a.position ? Object.keys(DEPTH_POS_LABEL).find(k => DEPTH_POS_LABEL[k] === a.position) : null;
+    let hits = roster.map(r => ({ r, how: a.query ? null : 'listed' }));
+    if (a.query) {
+      const q0 = a.query.trim(), code = /^P\d+$/.test(q0) && CHAT.map[q0], q = q0.toLowerCase().replace(/^#\s*/, ''), toks = q.split(/\s+/).filter(Boolean);
+      hits = roster.map(r => {
+        const parts = r.name.toLowerCase().split(/\s+/);
+        if (code) return { r, how: r.jersey === code ? 'code' : null };
+        if (/^\d{1,3}$/.test(q)) return { r, how: r.jersey === q ? 'jersey' : null };
+        if (toks.length && toks.every(t => parts.includes(t))) return { r, how: 'name' };
+        if (toks.some(t => t.length >= 2 && parts.some(p => p.startsWith(t)))) return { r, how: 'partial name' };
+        if (toks.some(t => t.length >= 4 && parts.some(p => navNear(t, p)))) return { r, how: 'close spelling' };
+        return { r, how: null };
+      }).filter(x => x.how);
+      const exact = hits.filter(x => x.how === 'name' || x.how === 'jersey' || x.how === 'code');
+      if (exact.length) hits = exact;
+    }
+    if (posKey) hits = posSet ? hits.filter(x => posOfJ(season, x.r.jersey) === posKey || posAltJ(season, x.r.jersey) === posKey) : hits;
+    const out = { season, matches: hits.slice(0, 60).map(x => ({ player: chatCode(x.r.jersey), matched_on: x.how, position: DEPTH_POS_LABEL[posOfJ(season, x.r.jersey)] || null, also_plays: DEPTH_POS_LABEL[posAltJ(season, x.r.jersey)] || null })), total: hits.length };
+    if (posKey && !posSet) out.note = 'Positions aren’t set for this season, so this list is not narrowed by position.';
+    if (a.query && !hits.length) out.note = 'No player on this season’s roster matches. The roster holds names and numbers only, so nicknames won’t match; ask the coach.';
+    return out;
+  },
+  list_sessions(a, turn) {
+    const sc = caScope(a.scope), by = {};
+    const add = (e, f) => { const id = scSid(e), s = by[id] = by[id] || { sid: id, date: e.date, type: sessionTypeOf(e), opp: sessionOpponentOf(e), shots: 0, opponent_shots: 0, no_shot_possessions: 0, faceoffs: 0 }; s[f]++; };
+    sc.shots.forEach(e => add(e, 'shots')); sc.opps.forEach(e => add(e, 'opponent_shots')); sc.poss.forEach(e => add(e, 'no_shot_possessions')); sc.fos.forEach(e => add(e, 'faceoffs'));
+    const all = Object.values(by).sort((x, y) => (y.date + y.sid).localeCompare(x.date + x.sid)), page = a.page || 1, rows = all.slice((page - 1) * CA_SESS_PAGE, page * CA_SESS_PAGE);
+    turn.chips.push(caChip(sc));
+    return { scope: sc.echo, total_sessions: all.length, page, pages: Math.ceil(all.length / CA_SESS_PAGE) || 1, sessions: rows.map(s => ({ session: caSessCode(s.sid), date: s.date, session_type: s.type, opponent: caOppCode(s.opp), shots: s.shots, opponent_shots: s.opponent_shots, no_shot_possessions: s.no_shot_possessions, faceoffs: s.faceoffs, tracking: { shots: CA_TRACK_WORD[trackSetStatus([s.sid], 'shots')], possessions: CA_TRACK_WORD[trackSetStatus([s.sid], 'poss')], faceoffs: CA_TRACK_WORD[trackSetStatus([s.sid], 'fo')] } })) };
+  },
+  team_summary(a, turn) {
+    const sc = caScope(a.scope), chip = caChip(sc);
+    turn.chips.push(chip);
+    return caWithEff(sc, () => {
+      const d = buildEffData(), sh = d.shots, wp = d.possList.filter(x => x.team === 'WLU'), g = sh.filter(s => s.goal === 1).length, loc = sh.filter(s => shotZone(s));
+      const to = wp.filter(x => x.to).length, xg = sh.reduce((t, s) => t + d.xgOf(s), 0), oppG = d.oppShots.filter(s => s.goal === 1).length;
+      const ones = sc.fos.filter(f => f.both !== 1), won = ones.filter(f => f.won === 1).length;
+      return { scope: sc.echo, coverage: caCoverage(sc.sids),
+        shots: { shots: sh.length, goals: g, goals_per_100_shots: caPer100(g, sh.length), located_shots: loc.length, goals_on_located_shots: loc.filter(s => s.goal === 1).length, expected_goals_in_sample: sh.length ? caR(xg) : null, evidence: caEvidence('s', 'Our shots', sc.season, sh, chip) },
+        logged_possessions: { logged_possessions: wp.length, logged_turnovers: to, logged_turnovers_per_100_logged_possessions: caPer100(to, wp.length), goals_per_100_logged_possessions: caPer100(wp.reduce((t, x) => t + x.goal, 0), wp.length), note: 'Counted the tracker’s way: a kept miss with no rebound tag counts as two logged possessions. Turnover logging isn’t confirmed complete unless coverage says so.', evidence: caEvidence('p', 'No-shot possessions', sc.season, sc.poss.filter(p => p.team !== 'OPP'), chip) },
+        opponent_shots: { shots: d.oppShots.length, goals: oppG, goals_per_100_shots: caPer100(oppG, d.oppShots.length), evidence: caEvidence('o', 'Opponent shots', sc.season, d.oppShots, chip) },
+        faceoffs: { logged: ones.length, won, win_per_100: caPer100(won, ones.length), two_sided_practice_reps: sc.fos.length - ones.length, evidence: caEvidence('f', 'Faceoffs', sc.season, sc.fos, chip) } };
+    });
+  },
+  player_stats(a, turn) {
+    const sc = caScope(a.scope), chip = caChip(sc), season = sc.season;
+    const unknown = a.metrics.filter(id => !SA_CATALOG.some(c => c.id === id));
+    if (unknown.length) throw new CaErr(`Unknown metric ${unknown.join(', ')}. Use a metric id from tracker_overview.`);
+    const want = a.players ? a.players.map(caJersey) : null, posKey = a.position ? Object.keys(DEPTH_POS_LABEL).find(k => DEPTH_POS_LABEL[k] === a.position) : null, posSet = Object.keys(POSITIONS[season] || {}).length > 0;
+    turn.chips.push(chip);
+    return caWithEff(sc, () => {
+      const d = buildEffData(), notes = [];
+      if (posKey && !posSet) notes.push('Positions aren’t set for this season, so the list is not narrowed by position.');
+      const metrics = a.metrics.map(id => {
+        const c = SA_CATALOG.find(x => x.id === id);
+        let raw = {}; try { raw = c.f(d) || {}; } catch (e) { console.error('chat metric', id, e); return { id, label: c.label, value_available: false, note: 'This metric couldn’t be computed for this scope.' }; }
+        const seasonLevel = !!c.seasonOnly || c.f.length === 0, min = c.min || 0, out = { id, label: c.label, lower_is_better: c.dir === 'low', min_n: min, season_level: seasonLevel };
+        if (seasonLevel) out.note = `Built from the whole ${season} season by its own page, so this scope's dates and session types were not applied to it.`;
+        if (c.coverage) { const cov = c.coverage(d); if (cov === 'N') { out.note = 'Not tracked: nothing logged or marked complete for these sessions.'; out.rows = []; return out; } if (cov === 'P') out.note = 'Partly tracked in these sessions, so the counts are not complete.'; }
+        const keep = j => !isOppJersey(j) && (!posKey || !posSet || posOfJ(season, j) === posKey || posAltJ(season, j) === posKey) && (want || !c.off || !posSet || isOffensePos(season, j));
+        const qual = Object.keys(raw).filter(j => raw[j] && isFinite(raw[j].v) && (raw[j].n === undefined || raw[j].n >= min) && keep(j));
+        const better = c.dir === 'low' ? 1 : -1, order = qual.slice().sort((x, y) => better * (raw[x].v - raw[y].v));
+        const line = j => { const r = raw[j]; if (!r || !isFinite(r.v)) return { player: chatCode(j), value: null, why: 'no logged records for this metric in this scope' }; const o = { player: chatCode(j), value: caPlain(c.fmt(r.v)), raw: caR(r.v), n: r.n === undefined ? null : caR(r.n), rank: order.indexOf(j) + 1 || null }; if (r.n !== undefined && r.n < min) o.below_min_n = true; return o; };
+        out.qualified_players = qual.length;
+        if (want) out.rows = want.map(line); else { out.rows = order.slice(0, a.limit || 15).map(line); out.total_rows = order.length; }
+        return out;
+      });
+      const res = { scope: sc.echo, coverage: caCoverage(sc.sids, ['shots', 'poss', 'gb', 'def', 'pick']), metrics };
+      if (notes.length) res.notes = notes;
+      if (want) { res.evidence = {}; want.forEach(j => { res.evidence[chatCode(j)] = caEvidence('s', `Shots by #${j}`, season, d.shots.filter(s => String(s.shooterJersey) === String(j)), chip); }); }
+      return res;
+    });
+  },
+  find_records(a, turn) {
+    const sc = caScope(a.scope), chip = caChip(sc), J = a.player ? caJersey(a.player) : null;
+    const kinds = { shots: ['s', sc.shots, 'Our shots'], opponent_shots: ['o', sc.opps, 'Opponent shots'], no_shot_possessions: ['p', sc.poss.filter(p => p.team !== 'OPP'), 'No-shot possessions'], faceoffs: ['f', sc.fos, 'Faceoffs'] }, K = kinds[a.kind];
+    const isShot = a.kind === 'shots' || a.kind === 'opponent_shots';
+    const role = a.player_role || (isShot ? 'shooter' : a.kind === 'faceoffs' ? 'faceoff' : 'turnover_by');
+    const roleOf = { shooter: e => e.shooterJersey, assist: e => e.assistJersey, goalie: e => e.goalieJersey, defender: e => e.defender, turnover_by: e => e.turnoverBy, caused_by: e => e.causedBy, faceoff: e => e.playerJersey };
+    const zoneGroup = e => { const z = shotZone(e); return z ? SC_GROUP_OF[z] : null; };
+    const list = K[1].filter(e => {
+      if (J && !(String(roleOf[role](e)) === String(J) || (a.kind === 'faceoffs' && e.both === 1 && String(e.vsPlayerJersey) === String(J)))) return false;
+      if (isShot) {
+        if (a.location && zoneGroup(e) !== a.location) return false;
+        if (a.zone && shotZone(e) !== a.zone) return false;
+        if (a.result && (e.goal === 1) !== (a.result === 'goal')) return false;
+        if (a.shot_quality && e.shotQuality !== a.shot_quality) return false;
+        if (a.pressure && e.contestLevel !== a.pressure) return false;
+      }
+      if (a.man_situation && e.manSituation !== a.man_situation) return false;
+      if (a.end && e.end !== a.end) return false;
+      return true;
+    }).sort((x, y) => chronoKey(y).localeCompare(chronoKey(x)));
+    const size = a.page_size || 25, page = a.page || 1, rows = list.slice((page - 1) * size, page * size);
+    const base = e => ({ session: caSessCode(scSid(e)), date: e.date, session_type: sessionTypeOf(e), opponent: caOppCode(sessionOpponentOf(e)), number: e.id });
+    const row = e => isShot ? Object.assign(base(e), { shooter: caPlayer(e.shooterJersey), assist: caPlayer(e.assistJersey), goalie: caPlayer(e.goalieJersey), defender: caPlayer(e.defender), zone: shotZone(e) || null, location: zoneGroup(e), result: e.goal === 1 ? 'goal' : 'no goal', outcome: e.outcome || null, quality: e.shotQuality || null, pressure: e.contestLevel || null, off_the: e.offDodge === 1 ? 'dodge' : e.offDodge === 0 ? 'catch' : null, man: e.manSituation || null, rebound: e.rebound || null, trigger: e.trigger || null })
+      : a.kind === 'faceoffs' ? Object.assign(base(e), { player: caPlayer(e.playerJersey), against: caPlayer(e.vsPlayerJersey), won: e.won === 1 ? true : e.won === 0 ? false : null, two_sided: e.both === 1 })
+      : Object.assign(base(e), { ended: e.end || null, turnover_by: caPlayer(e.turnoverBy), caused_by: caPlayer(e.causedBy), man: e.manSituation || null });
+    const totals = { matching_records: list.length, sessions: new Set(list.map(scSid)).size };
+    if (isShot) { const g = list.filter(e => e.goal === 1).length, loc = {}; SC_GROUPS.forEach(k => { loc[k] = 0; }); let noLoc = 0; list.forEach(e => { const k = zoneGroup(e); if (k) loc[k]++; else noLoc++; }); Object.assign(totals, { goals: g, goals_per_100_shots: caPer100(g, list.length), shots_by_location: loc, shots_with_no_location: noLoc }); }
+    if (a.kind === 'no_shot_possessions') { const by = {}; list.forEach(e => { const k = e.end || 'not recorded'; by[k] = (by[k] || 0) + 1; }); totals.by_ending = by; }
+    if (a.kind === 'faceoffs') { totals.won = list.filter(e => e.won === 1).length; }
+    turn.chips.push(chip);
+    return { scope: sc.echo, kind: a.kind, filters: { player: a.player || null, player_role: a.player ? role : null, location: a.location || null, zone: a.zone || null, result: a.result || null, man_situation: a.man_situation || null, shot_quality: a.shot_quality || null, pressure: a.pressure || null, end: a.end || null }, totals, evidence: caEvidence(K[0], K[2], sc.season, list, chip), page, pages: Math.ceil(list.length / size) || 1, rows: rows.map(row), coverage: caCoverage(sc.sids, [a.kind === 'faceoffs' ? 'fo' : isShot ? 'shots' : 'poss']) };
+  },
+  scoring_change(a, turn) {
+    const R = scCompare(caPeriodOpts(a, a.subject)), dec = R.dec, chip = caChipPeriod(R);
+    turn.chips.push(chip);
+    const side = s => ({ shots: s.N, goals: s.G, goals_per_100_shots: caPer100(s.G, s.N), located_shots: s.loc.N, goals_on_located_shots: s.loc.G, no_location_shots: s.unloc.N, goals_on_no_location_shots: s.unloc.G, ungraded_shots: s.ungraded, expected_goals_in_sample: s.N ? caR(s.xg) : null });
+    return { label: 'Descriptive breakdown of logged shots. It doesn’t identify a cause.', subject: a.subject || 'team', scope: caPeriodEcho(R), period_a: side(R.a), period_b: side(R.b),
+      change: dec ? { goals_total: dec.total, from_no_location_shots: dec.unlocated, on_located_shots: dec.located, from_volume: caR(dec.volume), from_rate: caR(dec.rate), from_location_mix: caR(dec.mix), from_conversion: caR(dec.conversion), split_available: dec.split, why_not_split: dec.why, per_100_located_shots: dec.per100 ? { a: caR(dec.per100.a), b: caR(dec.per100.b), change: caR(dec.per100.delta), mix: caR(dec.per100.mix), conversion: caR(dec.per100.conversion) } : null,
+        by_location: dec.rows.map(r => ({ location: r.key, shots_a: r.nA, goals_a: r.gA, shots_b: r.nB, goals_b: r.gB, share_a: caR(r.pA), share_b: caR(r.pB), conversion_a: caR(r.cA), conversion_b: caR(r.cB), mix_per_100: caR(r.mix100), conversion_per_100: caR(r.conv100) })) } : null,
+      why_no_change: dec ? null : 'Neither period has logged shots for this selection.', evidence: { period_a: caEvidence('s', 'Period A shots', R.season, R.shotsA, chip), period_b: caEvidence('s', 'Period B shots', R.season, R.shotsB, chip) } };
+  },
+  what_if(a, turn) {
+    const R = scCompare(caPeriodOpts(a, a.subject)), chip = caChipPeriod(R);
+    if (!R.dec) throw new CaErr('Neither period has logged shots for this selection.');
+    const X = wiCompute(R, a.move_from || a.move_to ? { from: a.move_from, to: a.move_to, n: a.move_n || 0 } : {});
+    turn.chips.push(chip);
+    const res = x => { if (!x) return null; const o = caCalc(x); if (!x.none && !x.idle && x.lo !== undefined) o.read = caPlain(wiRead(x)); return o; };
+    const out = { label: 'Conditional arithmetic on past shots at a fixed historical benchmark. Not a forecast and not evidence a change would happen.', field_meanings: { actual: 'logged goals', base: 'baseline goals at the benchmark', scen: 'scenario goals', d: 'scenario minus baseline', per100: 'd per 100 of N shots', lo_hi: 'provisional average range', loNew_hiNew: 'provisional range for a new run' }, scope: caPeriodEcho(R), subject: a.subject || 'team', benchmark_located_shots: X.benchN, session_swing_usable: !!(X.swing && X.swing.usable),
+      move_shots: res(X.move), evidence: { period_a: caEvidence('s', 'Period A shots', R.season, R.shotsA, chip), period_b: caEvidence('s', 'Period B shots', R.season, R.shotsB, chip) } };
+    if (X.move) out.move_shots.support = X.move.support_state || null;
+    if (X.team) { out.earlier_conversion = res(X.conv); out.earlier_mix = res(X.mix); }
+    else { out.vs_teammates_period_a = res(X.pA && X.pA.res); out.vs_teammates_period_b = res(X.pB && X.pB.res); }
+    return out;
+  },
+  possession_scenario(a, turn) {
+    const R = scCompare(caPeriodOpts(a, 'team')), chip = caChipPeriod(R);
+    const st = { scope: a.records || 'records', bench: a.benchmark || 'season', N: a.possessions || null, delta: a.turnover_change_per_100 || 0, repl: a.replacement_share === undefined ? null : a.replacement_share, mix: a.shot_mix === 'location' ? 'loc' : (a.shot_mix || null), mixLoc: a.shot_mix_location || null, from: a.move_from || null, to: a.move_to || null, n: a.move_n || 0 };
+    const C = wpCompute(R, st), tally = T => T ? { logged_possessions: T.L, goals: T.G, logged_turnovers: T.TO, other_no_shot: T.NS, shot_possessions: T.S, shots: T.shots, goals_per_100_logged_possessions: caPer100(T.G, T.L), logged_turnovers_per_100_logged_possessions: caPer100(T.TO, T.L) } : null;
+    turn.chips.push(chip);
+    const out = { label: 'Conditional: what follows arithmetically if these assumptions hold. Not a forecast; no validated prediction exists for these scenarios.', scope: caPeriodEcho(R), records_used: st.scope, benchmark: C.benchName || null, period_a: tally(C.A), period_b: tally(C.B),
+      sessions_excluded: (C.excluded || []).map(s => ({ date: s.date, why: s.why })), limit: 'A kept miss with no rebound tag counts as two logged possessions, and turnover logging isn’t confirmed complete unless a session is confirmed.' };
+    if (C.none || C.idle) return Object.assign(out, { estimate: null, why: C.why, needs_input: !!C.idle, allowed_turnover_change: C.dMin !== undefined ? [C.dMin, C.dMax] : null });
+    const rng = C.range || {};
+    return Object.assign(out, { possessions_used: C.N, logged_possessions_period_b: C.Nlog, turnover_change_applied: C.delta, allowed_turnover_change: [C.dMin, C.dMax], baseline_goals_estimated: caR(C.baseGoals), scenario_goals_estimated: caR(C.scenGoals), actual_goals: C.actual === undefined ? null : caR(C.actual), change_in_goals: caR(C.d), change_per_100_logged_possessions: caR(C.per100), average_range: rng.lo === null || rng.lo === undefined ? null : [caR(rng.lo), caR(rng.hi)], new_run_range: rng.loNew === null || rng.loNew === undefined ? null : [caR(rng.loNew), caR(rng.hiNew)], unchanged: !!C.unchanged, supported_by_sessions: C.supported, sessions_big_enough: C.bigN, sessions_reaching_all_changes: (C.together || []).length, changes_checked: (C.alone || []).map(x => ({ change: x.label, to: caR(x.to), sessions_reaching_it: x.sessions })), replacement_share_has_no_evidence: !!C.replNoEvidence,
+      evidence: { period_b_shots: caEvidence('s', 'Period B shots', R.season, R.shotsB, chip), period_b_no_shot: caEvidence('p', 'Period B no-shot possessions', R.season, POSSESSIONS.filter(p => p.team !== 'OPP' && R.per.B.some(s => s.sid === scSid(p))), chip) } });
+  },
+  rating_facts(a, turn) {
+    const js = (a.players || []).map(caJersey), topic = { offense_lineup: 'who should start on offense lineup', defense_lineup: 'who should start on defense lineup', goalies: 'goalie saves', faceoffs: 'faceoffs' }[a.topic] || '';
+    const facts = chatFacts([topic].concat(js.map(j => '#' + j)).join(' '));
+    turn.actions = (turn.actions || []).concat(chatActions());
+    return { label: 'The tracker’s rating model and saved season facts, on the top-bar season and session filter. Model output, not proof a lineup is right.', facts };
+  },
+  async get_clips(a) {
+    const ev = caConv().ev[a.evidence];
+    if (!ev) throw new CaErr(`${a.evidence} isn't an evidence handle from this chat.`);
+    if (ev.kind !== 's') return { evidence: a.evidence, film_links_available: false, why: 'Film links exist for our shots only.' };
+    let C = await devLoadClips(ev.season); if (!C) C = await devLoadClips(ev.season);
+    if (!C) throw new CaErr('Film Check changed while it was being read. Try again.');
+    const recs = caResolve(ev), found = recs.filter(Boolean);
+    const out = { evidence: a.evidence, shots: ev.keys.length, no_longer_in_log: recs.length - found.length, clip_confirmed: 0, two_clips_disputed: 0, session_in_film_check_no_clip_confirmed: 0, session_not_in_film_check: 0, note: 'A clip is linked only when a coach confirmed it in Film Check. The coach opens links from the evidence handle.' };
+    if (C.err) { out.film_check_error = C.err; return out; }
+    found.forEach(s => { const k = devKey(s); if (C.map.get(k)) out.clip_confirmed++; else if (C.amb.has(k)) out.two_clips_disputed++; else if (C.sids.has(sessKey(s))) out.session_in_film_check_no_clip_confirmed++; else out.session_not_in_film_check++; });
+    return out;
+  },
+  open_view(a, turn) {
+    const p = NAV_PAGES[a.page];
+    if (!p || !navVisible(p)) throw new CaErr(`No page "${a.page}". Use a page id from tracker_overview.`);
+    turn.actions = (turn.actions || []).concat([{ t: a.label ? `Open: ${caPlain(a.label)}` : `Open ${p.name}`, k: 'nav', id: p.id }]);
+    return { offered: true, page: p.name, note: 'A button is shown under your answer. Nothing has moved yet.' };
+  },
+};
+async function caRunTool(block, turn) {
+  const def = CA.cfg.tools.find(t => t.name === block.name), fn = Object.prototype.hasOwnProperty.call(CA_TOOLS, block.name) ? CA_TOOLS[block.name] : null;
+  const err = message => ({ type: 'tool_result', tool_use_id: block.id, is_error: true, content: message });
+  if (!def || !fn) return err(`There is no tool called ${String(block.name).slice(0, 40)}. Tools only read tracker data.`);
+  if (block.__bad_json) return err('The arguments were not valid JSON. Try again.');
+  const bad = caValidate(def.input_schema, block.input);
+  if (bad) return err(`Bad arguments: ${bad}.`);
+  let out;
+  try { out = await fn(block.input, turn); }
+  catch (e) { if (e instanceof CaErr) return err(e.message); console.error('chat tool', block.name, e); return err('The calculation failed, so there is no result. Tell the coach this part could not be computed.'); }
+  if (!caOutOk(out)) return err('This result held a name or number that may not be sent, so it was withheld. Tell the coach this part could not be shared with the AI.');
+  turn.used.push(block.name);
+  return { type: 'tool_result', tool_use_id: block.id, content: JSON.stringify(out) };
+}
+// ---- Gateway calls ----
+function caCallError(code, message) { const e = new Error(message); e.gw = code; return e; }
+async function caAuthedFetch(path, opts) {
+  const go = async force => { let tok; try { tok = await chatIdToken(force); } catch (e) { throw caCallError('auth', 'Please sign in again.'); } return chatFetch(CHAT_GW_URL + path, Object.assign({}, opts, { headers: Object.assign({}, opts.headers || {}, { authorization: 'Bearer ' + tok }) })); };
+  let r = await go(false);
+  if (r.status === 401) r = await go(true);   // a stale token gets one refresh
+  return r;
+}
+async function caReadError(r) { let code = 'http', msg = 'The assistant had a problem. Try again.'; try { const j = await r.json(); if (j && j.error) { code = j.error.code || code; msg = j.error.message || msg; } } catch (e) { /* keep the plain message */ } return caCallError(code, msg); }
+async function caConfig(signal) {
+  if (CA.cfg) return CA.cfg;
+  const r = await caAuthedFetch('/v1/config', { method: 'GET', signal });
+  if (!r.ok) throw await caReadError(r);
+  CA.cfg = await r.json();
+  return CA.cfg;
+}
+// One model call. Streams text into onText; resolves with { content, stop, usage }.
+async function caCall(api, ctl, onText) {
+  let timer = null;
+  const arm = () => { clearTimeout(timer); timer = setTimeout(() => { CA.stopWhy = 'timeout'; ctl.abort(); }, CA_IDLE_MS); };
+  arm();
+  try {
+    const r = await caAuthedFetch('/v1/chat', { method: 'POST', signal: ctl.signal, headers: { 'content-type': 'application/json' }, body: JSON.stringify({ messages: api }) });
+    if (!r.ok) throw await caReadError(r);
+    const reader = r.body.getReader(), dec = new TextDecoder();
+    let buf = '', final = null;
+    for (;;) {
+      arm();
+      const { value, done } = await reader.read();
+      if (done) break;
+      buf += dec.decode(value, { stream: true });
+      let i;
+      while ((i = buf.indexOf('\n')) >= 0) {
+        const line = buf.slice(0, i).trim(); buf = buf.slice(i + 1);
+        if (!line) continue;
+        const ev = JSON.parse(line);
+        if (ev.t === 'text') onText(ev.d);
+        else if (ev.t === 'message') final = ev;
+        else if (ev.t === 'error') throw caCallError(ev.code || 'stream', ev.message || 'The answer was cut off. Try again.');
+      }
+    }
+    if (!final) throw caCallError('stream', 'The answer was cut off. Try again.');
+    return final;
+  } finally { clearTimeout(timer); }
+}
+// ---- One coach question: the loop ----
+function caContextLine() {
+  const page = NAV_PAGES[NAV_ST.cur], bits = [`today ${localDateStr(new Date())}`, `top bar: season ${chatSeason()}, ${sessionCtxWords(NAV_ST.ctx || 'All')}, part ${SEASON_PART}`, `page: ${page ? page.name : 'tracker'}`];
+  if (CHAT.focus) { try { bits.push(`coach clicked: ${caScrubText(chatFocusLabel(CHAT.focus))}`); } catch (e) { /* leave out a click that can't be coded */ } }
+  return `[tracker context] ${bits.join('; ')} [/tracker context]`;
+}
+async function caAsk(q, retryOf) {
+  if (CHAT.busy || !q.trim()) return;
+  CHAT.busy = true;
+  const conv = caConv(), mark = conv.api.length, at = new Date().toISOString();
+  if (!conv.title) conv.title = q.trim().slice(0, 70);
+  if (retryOf) { const i = CHAT.msgs.indexOf(retryOf); if (i >= 0) CHAT.msgs.splice(i, 1); }
+  else CHAT.msgs.push({ role: 'user', html: escapeHtml(q), q, at, focus: CHAT.focus ? chatFocusLabel(CHAT.focus) : '' });
+  const m = { role: 'model', agent: true, html: '', pending: true, status: 'Working it out…', partial: '', at, q };
+  CHAT.msgs.push(m);
+  const ctl = new AbortController(); CA.ctl = ctl; CA.stopWhy = null;
+  chatDraw();
+  const turn = { chips: [], used: [], actions: [], sent: [] };
+  let tick = null;
+  const later = () => { if (!tick) tick = setTimeout(() => { tick = null; chatDraw(); }, 80); };
+  try {
+    let text;
+    try { text = caScrubText(q); } catch (e) { if (e instanceof CaErr) throw caCallError('blocked', 'A name was still in what would be sent, so nothing went out. Try rewording it.'); throw e; }
+    await caConfig(ctl.signal);
+    const first = `${caContextLine()}\n${text}`;
+    conv.api.push({ role: 'user', content: [{ type: 'text', text: first }] });
+    turn.sent.push(first);
+    let reply = '', cut = false;
+    for (let round = 0; ; round++) {
+      m.partial = '';
+      const res = await caCall(conv.api, ctl, d => { m.partial += d; m.status = ''; later(); });
+      if (res.usage) { const u = CHAT.__usage = CHAT.__usage || { calls: 0, input: 0, output: 0, cache_read: 0, cache_write: 0 }; u.calls++; ['input', 'output', 'cache_read', 'cache_write'].forEach(k => { u[k] += res.usage[k] || 0; }); }
+      if (res.stop === 'refusal') throw caCallError('refusal', 'The AI declined to answer this one. Try asking it another way.');
+      const content = res.content.filter(b => !(b.type === 'text' && !String(b.text || '').trim()));   // the API refuses empty text blocks in history
+      const calls = content.filter(b => b.type === 'tool_use');
+      if (res.stop === 'max_tokens' && calls.length) throw caCallError('too_long', 'That answer ran too long to finish. Try a narrower question.');
+      conv.api.push({ role: 'assistant', content: content.map(b => { const o = Object.assign({}, b); delete o.__bad_json; return o; }) });
+      if (res.stop !== 'tool_use') { reply = content.filter(b => b.type === 'text').map(b => b.text).join('\n').trim(); cut = res.stop === 'max_tokens'; break; }
+      if (round >= CA_MAX_ROUNDS) throw caCallError('too_many', 'That took too many steps. Try breaking it into smaller questions.');
+      const results = [];
+      for (const b of calls) { m.status = CA_STATUS[b.name] || 'Checking the tracker…'; m.partial = ''; chatDraw(); results.push(await caRunTool(b, turn)); if (ctl.signal.aborted) throw caCallError('stopped', ''); }
+      results.forEach(x => turn.sent.push(`${x.is_error ? 'tool error' : 'tool result'}: ${x.content}`));
+      const contentOut = results.slice();
+      if (round === CA_MAX_ROUNDS - 1) contentOut.push({ type: 'text', text: '[tracker context] Step limit reached. Answer now from what you have and say what you could not check. [/tracker context]' });
+      conv.api.push({ role: 'user', content: contentOut });
+    }
+    if (!reply) throw caCallError('empty', 'The AI didn’t give an answer. Try again.');
+    Object.assign(m, { pending: false, status: '', partial: '', reply, cut, chips: [...new Set(turn.chips)], sent: turn.sent.join('\n\n'), actions: turn.actions.slice(0, 6), used: turn.used });
+    caRenderMsg(m, conv);
+    conv.at = new Date().toISOString();
+    caSaveConv(conv);
+  } catch (e) {
+    conv.api.length = mark;   // the conversation is left as it was before this question, so it stays valid for the next one
+    const stopped = ctl.signal.aborted && CA.stopWhy !== 'timeout';
+    const why = CA.stopWhy === 'timeout' ? 'The AI took too long to respond.' : stopped || e.gw === 'stopped' ? 'Stopped. Nothing from this question was kept.' : e.gw ? e.message : 'The assistant couldn’t be reached. Check the connection and try again.';
+    if (!e.gw && !stopped && CA.stopWhy !== 'timeout') console.error('chat', e);
+    Object.assign(m, { pending: false, status: '', partial: '', failed: true, chips: [...new Set(turn.chips)], html: `<p>${escapeHtml(why)}</p>` });
+    if (e.gw === 'auth' || e.gw === 'not_staff' || e.gw === 'origin') CA.cfg = null;
+    m.canRetry = !['not_staff', 'origin', 'not_configured', 'config', 'credit', 'blocked'].includes(e.gw);
+  }
+  clearTimeout(tick);
+  CA.ctl = null; CHAT.busy = false;
+  chatDraw();
+}
+const CA_STATUS = { tracker_overview: 'Checking what the tracker holds…', find_players: 'Finding the player…', list_sessions: 'Checking sessions…', team_summary: 'Adding up team numbers…', player_stats: 'Pulling player numbers…', find_records: 'Finding the records…', scoring_change: 'Running Scoring Change…', what_if: 'Running What If…', possession_scenario: 'Running the possession scenario…', rating_facts: 'Checking the ratings…', get_clips: 'Checking Film Check…', open_view: 'Finding the page…' };
+// ---- Showing answers: codes back to names, handles to buttons. Built here; nothing on this path goes to the AI. ----
+function caInline(text, conv, seen, bad) {
+  let h = chatUnmask(text, seen).replace(/^<p>|<\/p>$/g, '');
+  h = h.replace(/\bO(\d+)\b/g, m => conv.opp[m] ? `<b>${escapeHtml(conv.opp[m])}</b>` : 'an opponent');
+  h = h.replace(/\bS(\d+)\b/g, m => { const sid = conv.sess[m]; if (!sid) return 'a session'; const s = LIVE_SESSIONS[sid]; return s ? `${scDate(s.date)} ${escapeHtml(sessionTypeOf(Object.assign({}, s, { _sid: sid })) || 'session')}` : 'a session'; });
+  h = h.replace(/\[((?:E\d+(?:,\s*)?)+)\]/g, (all, list) => list.split(/,\s*/).map(id => { if (conv.ev[id]) return `<button type="button" class="chat-ev" data-chat="ev" data-ev="${id}" title="${escapeHtml(conv.ev[id].label)}">${conv.ev[id].keys.length} ${escapeHtml(CA_KIND[conv.ev[id].kind])}</button>`; bad.push(id); return '<span class="n-note">(record link unavailable)</span>'; }).join(' '));
+  return h;
+}
+const CA_KIND = { s: 'shots', o: 'opp. shots', p: 'possessions', f: 'faceoffs' };
+function caRenderText(text, conv, seen, bad) {
+  return String(text).split(/\n{2,}/).map(block => {
+    const lines = block.split('\n').map(l => l.trim()).filter(Boolean);
+    if (lines.length >= 2 && lines.every(l => l.startsWith('|'))) {
+      const cells = l => l.replace(/^\||\|$/g, '').split('|').map(c => caInline(c.trim(), conv, seen, bad).replace(/<\/?p>/g, ''));
+      const body = lines.filter((l, i) => !(i === 1 && /^[|\s:-]+$/.test(l)));
+      return `<div class="table-wrap"><table class="shotlog chat-cmp"><thead><tr>${cells(body[0]).map(c => `<th>${c}</th>`).join('')}</tr></thead><tbody>${body.slice(1).map(l => `<tr>${cells(l).map(c => `<td>${c}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`;
+    }
+    if (/^#{1,4} /.test(block)) return `<p><b>${caInline(block.replace(/^#{1,4} /, ''), conv, seen, bad)}</b></p>`;
+    const h = caInline(block, conv, seen, bad);
+    return /^<ul>/.test(h) ? h : `<p>${h}</p>`;
+  }).join('');
+}
+function caRenderMsg(m, conv) {
+  if (!m.reply) return;
+  const seen = new Set(JSON.stringify(conv.api).match(/\bP\d+\b/g) || []), bad = [];
+  m.html = caRenderText(m.reply, conv, seen, bad);
+  m.badCites = bad;
+}
+function caEvHtml(m, conv) {
+  const ev = conv.ev[m.evOpen]; if (!ev) return '';
+  const recs = caResolve(ev), page = m.evPage || 1, n = Math.ceil(recs.length / CA_EV_PAGE) || 1, rows = recs.slice((page - 1) * CA_EV_PAGE, page * CA_EV_PAGE), season = ev.season;
+  const who = j => j ? (isOppJersey(j) ? 'Opponent' : `#${escapeHtml(j)} ${escapeHtml(lastNameOf(nameFor(j, season) || ''))}`) : '—';
+  if (ev.kind === 's' && !(DEV.clips && DEV.clips.season === season)) devEnsureClips(season, () => { CA.keepScroll = true; chatDraw(); });
+  const row = e => {
+    if (!e) return `<tr><td colspan="6" class="n-note">No longer in the log (it was moved, deleted or edited since this answer).</td></tr>`;
+    const d = scDate(e.date), ty = escapeHtml(sessionTypeOf(e) || '—'), z = shotZone(e);
+    if (ev.kind === 's') return `<tr><td>${d}</td><td>${ty}</td><td>${who(e.shooterJersey)}</td><td>${z ? escapeHtml(z) : '—'}</td><td>${e.goal === 1 ? 'Goal' : 'No goal'}</td><td>${devClipCell(e)} <button type="button" class="lnk" data-scopen="${e.id}" data-sid="${escapeHtml(scSid(e))}" title="Opens this shot in the Log editor. Nothing changes unless you save there.">Open &rsaquo;</button></td></tr>`;
+    if (ev.kind === 'o') return `<tr><td>${d}</td><td>${ty}</td><td>${who(e.goalieJersey)}</td><td>${z ? escapeHtml(z) : '—'}</td><td>${e.goal === 1 ? 'Goal' : 'No goal'}</td><td></td></tr>`;
+    if (ev.kind === 'p') return `<tr><td>${d}</td><td>${ty}</td><td>${who(e.turnoverBy)}</td><td>${escapeHtml(e.end || '—')}</td><td>${who(e.causedBy)}</td><td></td></tr>`;
+    return `<tr><td>${d}</td><td>${ty}</td><td>${who(e.playerJersey)}</td><td>${who(e.vsPlayerJersey)}</td><td>${e.won === 1 ? 'Won' : e.won === 0 ? 'Lost' : '—'}</td><td></td></tr>`;
+  };
+  const heads = { s: ['Date', 'Type', 'Shooter', 'Location', 'Result', 'Film'], o: ['Date', 'Type', 'Goalie', 'Location', 'Result', ''], p: ['Date', 'Type', 'Turnover by', 'Ended', 'Caused by', ''], f: ['Date', 'Type', 'Player', 'Against', 'Result', ''] }[ev.kind];
+  const gone = recs.filter(x => !x).length;
+  return `<div class="chat-evbox"><div class="n-note"><b>${escapeHtml(ev.label)}</b> · ${recs.length} record${recs.length === 1 ? '' : 's'}${ev.chip ? ' · ' + escapeHtml(ev.chip) : ''}${gone ? ` · ${gone} no longer in the log` : ''}</div>
+    <div class="table-wrap"><table class="shotlog chat-cmp"><thead><tr>${heads.map(h => `<th>${h}</th>`).join('')}</tr></thead><tbody>${rows.map(row).join('')}</tbody></table></div>
+    ${n > 1 ? `<div class="chat-acts"><button type="button" class="pill" data-chat="evpage" data-d="-1" ${page <= 1 ? 'disabled' : ''}>Back</button><span class="n-note">Page ${page} of ${n}</span><button type="button" class="pill" data-chat="evpage" data-d="1" ${page >= n ? 'disabled' : ''}>Next</button></div>` : ''}</div>`;
+}
+// Parts of a message around its text.
+function caMsgHtml(m) {
+  const conv = CHAT.conv || { ev: {}, opp: {}, sess: {}, api: [] }, i = CHAT.msgs.indexOf(m);
+  if (m.pending) { const seen = null, bad = []; return `${m.partial ? caRenderText(m.partial, conv, seen, bad) : ''}${m.status ? `<p class="n-note chat-status">${escapeHtml(m.status)}</p>` : ''}`; }
+  const today = localDateStr(new Date()), old = m.at && m.at.slice(0, 10) !== today && m.reply ? `<p class="n-note">Answered ${escapeHtml(m.at.slice(0, 10))}. Ask again for current numbers.</p>` : '';
+  const cited = new Set((m.reply || '').match(/\bE\d+\b/g) || []);
+  return `${old}${(m.chips || []).length ? `<div class="chat-scope">${m.chips.map(c => `<span>${escapeHtml(c)}</span>`).join('')}</div>` : ''}${m.html}${m.cut ? '<p class="n-note">This answer hit the length limit and was cut off. Ask for the rest.</p>' : ''}${(m.badCites || []).length ? '<p class="n-note">The AI cited a record list that doesn’t exist, so that link was removed. Treat that claim as unverified.</p>' : ''}${m.canRetry ? `<div class="chat-acts"><button type="button" class="pill" data-chat="retry" data-m="${i}">Try again</button></div>` : ''}${m.evOpen && cited.has(m.evOpen) ? caEvHtml(m, conv) : ''}`;
+}
+// ---- Saved chats: on this device, per signed-in account. Never in the shared database. ----
+function caDb() {
+  return new Promise((res, rej) => {
+    if (!window.indexedDB || !BOOT.email) return rej(new Error('no storage'));
+    const r = indexedDB.open('wluChat_' + BOOT.email, 1);
+    r.onupgradeneeded = () => r.result.createObjectStore('convs', { keyPath: 'id' });
+    r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error);
+  });
+}
+function caStore(mode, fn) { return caDb().then(db => new Promise((res, rej) => { const tx = db.transaction('convs', mode), q = fn(tx.objectStore('convs')); tx.oncomplete = () => { db.close(); res(q && q.result); }; tx.onerror = () => { db.close(); rej(tx.error); }; })); }
+function caSaveConv(conv) {
+  const msgs = CHAT.msgs.filter(m => !m.pending && !m.failed).map(m => ({ role: m.role, agent: m.agent, q: m.q, at: m.at, reply: m.reply, chips: m.chips, actions: m.actions, cut: m.cut, focus: m.focus, html: m.role === 'user' ? m.html : undefined }));
+  const rec = Object.assign({}, conv, { msgs, map: CHAT.map, n: CHAT.n });
+  return caStore('readwrite', s => s.put(JSON.parse(JSON.stringify(rec)))).then(() => { CA.saveErr = false; }).catch(e => { CA.saveErr = true; console.warn('chat save', e); chatDraw(); });
+}
+function caOpenHist() { CA.showHist = !CA.showHist; if (CA.showHist) { CA.hist = null; caStore('readonly', s => s.getAll()).then(l => { CA.hist = (l || []).sort((a, b) => (b.at || '').localeCompare(a.at || '')); chatDraw(); }).catch(() => { CA.hist = []; chatDraw(); }); } chatDraw(); }
+function caOpenConv(id) {
+  caStore('readonly', s => s.get(id)).then(c => {
+    if (!c) return;
+    CHAT.conv = { id: c.id, title: c.title, at: c.at, api: c.api, ev: c.ev, evN: c.evN, opp: c.opp, oppN: c.oppN, sess: c.sess, sessN: c.sessN };
+    CHAT.map = c.map || {}; CHAT.n = c.n || 0;
+    CHAT.msgs = (c.msgs || []).map(m => Object.assign({}, m));
+    CHAT.msgs.forEach(m => caRenderMsg(m, CHAT.conv));
+    CA.showHist = false; chatDraw();
+  }).catch(e => console.warn('chat open', e));
+}
+function caHistHtml() {
+  if (!CA.hist) return '<p class="n-note">Loading saved chats…</p>';
+  if (!CA.hist.length) return '<p class="n-note">No saved chats on this computer yet.</p>';
+  return `<p class="n-note">Saved on this computer, for this account only. Numbers in old answers are as of that day.</p>${CA.hist.map(c => `<div class="chat-histrow"><button type="button" class="lnk" data-chat="openconv" data-id="${escapeHtml(c.id)}">${escapeHtml(c.title || 'Chat')}</button><span class="n-note">${escapeHtml((c.at || '').slice(0, 10))}</span><button type="button" class="chat-x" data-chat="delconv" data-id="${escapeHtml(c.id)}" title="Delete this saved chat">&times;</button></div>`).join('')}`;
+}
+function caAction(a, b) {
+  if (a === 'stop') { if (CA.ctl) { CA.stopWhy = 'user'; CA.ctl.abort(); } return true; }
+  if (a === 'retry') { const m = CHAT.msgs[Number(b.dataset.m)]; if (m && m.q) caAsk(m.q, m); return true; }
+  if (a === 'hist') { caOpenHist(); return true; }
+  if (a === 'wide') { CA.wide = !CA.wide; chatDraw(); return true; }
+  if (a === 'openconv') { if (CA.ctl) { CA.stopWhy = 'user'; CA.ctl.abort(); } caOpenConv(b.dataset.id); return true; }
+  if (a === 'delconv') { caStore('readwrite', s => s.delete(b.dataset.id)).then(() => { CA.hist = (CA.hist || []).filter(c => c.id !== b.dataset.id); if (CHAT.conv && CHAT.conv.id === b.dataset.id) { CHAT.conv = null; CHAT.msgs = []; CHAT.map = {}; CHAT.n = 0; } chatDraw(); }).catch(e => console.warn('chat delete', e)); return true; }
+  if (a === 'ev') { const w = b.closest('.chat-msg'), i = [...document.querySelectorAll('#chatLog .chat-msg')].indexOf(w), m = CHAT.msgs[i]; if (m) { m.evOpen = m.evOpen === b.dataset.ev ? null : b.dataset.ev; m.evPage = 1; CA.keepScroll = true; chatDraw(); } return true; }
+  if (a === 'evpage') { const w = b.closest('.chat-msg'), i = [...document.querySelectorAll('#chatLog .chat-msg')].indexOf(w), m = CHAT.msgs[i]; if (m) { m.evPage = (m.evPage || 1) + Number(b.dataset.d); CA.keepScroll = true; chatDraw(); } return true; }
+  return false;
 }
 // One line for a search answer when a Coach's lineup is saved: who it starts that the model doesn't.
 function saCoachNote(side, season, M) {

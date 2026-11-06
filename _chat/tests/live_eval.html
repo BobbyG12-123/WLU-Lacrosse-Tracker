@@ -1,0 +1,56 @@
+<!doctype html>
+<html><head><meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; connect-src 'self'; style-src 'unsafe-inline'; frame-src 'self'">
+<script src="guard_offline.js"></script><script src="fake_firestore.js"></script><script src="harness.js"></script>
+<title>TEST: live evaluation (real model, synthetic data)</title><style>iframe{width:100%;height:600px;border:0}</style></head><body>
+<iframe id="fNew" src="tracker_branch.html"></iframe><pre id="out">running…</pre>
+<script type="module">
+import { handle } from './worker.js';
+const R = { err: null, conversations: [], usage: { calls: 0, input: 0, output: 0, cache_read: 0, cache_write: 0 } };
+const done = async () => { const u = R.usage; u.cost = Math.round(100 * (u.input * 4 + u.output * 20 + u.cache_read * 0.2 + u.cache_write * 5) / 1e6) / 100; await fetch('results/live_eval.json', { method: 'POST', body: JSON.stringify(R) }); };
+async function main() {
+  const set = await (await fetch('conversations.json')).json(), exp = await (await fetch('fixture.json')).json();
+  const N = await bootFrame('fNew', exp.collections), signer = await makeSigner(), tok = await signer.sign({});
+  const env = { ANTHROPIC_API_KEY: 'held-by-local-proxy', STAFF_EMAILS: STAFF, FIREBASE_PROJECT_ID: PROJECT, ALLOWED_ORIGINS: TEST_ORIGIN, RATE_PER_MINUTE: '1000' };
+  const deps = { apiUrl: '/anthropic/v1/messages', fetch: (u, o) => String(u).includes('jwk') ? Promise.resolve(signer.jwksResponse()) : fetch(u, o) };
+  N.__gw = (u, o) => handle(fakeReq(u, o), env, deps); N.__t = async () => tok;
+  N.eval(`CHAT_GW_URL = 'https://gw.test'; chatFetch = window.__gw; chatIdToken = window.__t; CHAT.open = true;`);
+  const nj = s => JSON.parse(N.eval(`JSON.stringify(${s})`));
+  const writes0 = N.__FAKE.__writes.length;
+  for (const c of set.conversations) {
+    N.eval(`CHAT.msgs = []; CHAT.map = {}; CHAT.n = 0; CHAT.conv = null;`);
+    const out = { id: c.id, turns: [] };
+    for (const t of c.turns) {
+      const mark = nj(`CHAT.conv ? CHAT.conv.api.length : 0`);
+      await N.eval(`chatAsk(${JSON.stringify(t.q)})`);
+      const m = nj(`(() => { const m = CHAT.msgs[CHAT.msgs.length - 1]; return { reply: m.reply || null, html: m.html, chips: m.chips || [], failed: !!m.failed, bad: m.badCites || [], used: m.used || [], sent: m.sent || '' }; })()`);
+      const api = nj(`CHAT.conv ? CHAT.conv.api : []`).slice(mark), inputs = api.flatMap(x => Array.isArray(x.content) ? x.content : []).filter(b => b.type === 'tool_use');
+      const results = api.flatMap(x => Array.isArray(x.content) ? x.content : []).filter(b => b.type === 'tool_result').map(b => String(b.content)).join(' ');
+      const prior = JSON.stringify(nj(`CHAT.conv ? CHAT.conv.api : []`).filter(x => x.role === 'user'));
+      const P = [], text = m.reply || '';
+      if (m.failed) P.push('the turn failed: ' + m.html);
+      if (t.tools_any && !t.tools_any.some(x => m.used.includes(x))) P.push(`expected one of ${t.tools_any.join(', ')}; used ${m.used.join(', ') || 'none'}`);
+      if (t.chip && !m.chips.some(x => x.includes(t.chip))) P.push(`no scope chip with ${t.chip}: ${m.chips.join(' | ')}`);
+      if (t.chip_not && m.chips.some(x => x.includes(t.chip_not))) P.push(`scope still has ${t.chip_not}: ${m.chips.join(' | ')}`);
+      if (t.input_has && !JSON.stringify(inputs.map(x => x.input)).includes(t.input_has)) P.push(`no tool call used ${t.input_has}`);
+      if (t.citation && !/\[E\d+/.test(text)) P.push('no evidence citation');
+      if (m.bad.length) P.push('cited evidence that does not exist: ' + m.bad.join(', '));
+      (t.must || []).forEach(rx => { if (!new RegExp(rx, 'i').test(text)) P.push('missing expected wording: ' + rx); });
+      (t.not || []).forEach(rx => { if (new RegExp(rx, 'i').test(text)) P.push('has wording it should not: ' + rx); });
+      if (/\bentr(y|ies)\b/i.test(text)) P.push('uses the reserved word');
+      if (t.grounded) {
+        // Every number in the answer should be in this turn's results, the question or a date. A flag to read, not proof of an error.
+        const nums = (text.replace(/\[E\d+[^\]]*\]/g, '').replace(/\b[POSE]\d+\b/g, '').match(/\d+(?:\.\d+)?/g) || []), hay = results + ' ' + prior;
+        const miss = [...new Set(nums)].filter(x => !new RegExp(`(^|[^0-9.])${x.replace('.', '\\.')}($|[^0-9])`).test(hay) && Number(x) > 10);
+        if (miss.length) P.push('numbers not found in tool results: ' + miss.join(', '));
+      }
+      out.turns.push({ q: t.q, reply: text, chips: m.chips, used: m.used, tool_inputs: inputs.map(x => ({ name: x.name, input: x.input })), problems: P });
+      document.getElementById('out').textContent = c.id + ' ' + t.q;
+    }
+    R.conversations.push(out);
+  }
+  const u = nj(`Object.assign({}, CHAT.__usage || {})`); Object.assign(R.usage, u);
+  R.no_writes = N.__FAKE.__writes.length === writes0;
+}
+main().then(done, e => { R.err = String(e && e.stack || e); return done(); });
+</script></body></html>
