@@ -29,7 +29,8 @@
   }
   function finishRun(P, opt, gamesOut, cancelled, failed) {
     const sorted = gamesOut.slice().sort((a, b) => a.index - b.index), valid = sorted.filter(x => !x.problems.length);
-    const record = { runId: hashOf([hashOf(P), opt.seed, opt.games]), snapshotHash: P.snapshotHash || null, paramsHash: hashOf(P), modelVersion: MS.MODEL_VERSION, rulesVersion: MS.RULES.version, overrides: P.overrides || [], rotation: P.teams.map(T => T.rotation), seed: opt.seed, requestedGames: opt.games, completedGames: sorted.length, validGames: valid.length, invalidGames: sorted.length - valid.length, cancelled: !!cancelled, failedChunks: failed || 0, validationStatus: sorted.length - valid.length ? 'problems' : 'all reconciled', problemSamples: [...new Set(sorted.flatMap(x => x.problems))].slice(0, 12) };
+    const codeCommit = opt.codeCommit || (typeof Deno !== 'undefined' && Deno.env && (() => { try { return Deno.env.get('MS_COMMIT'); } catch (e) { return null; } })()) || null;
+    const record = { runId: hashOf([hashOf(P), opt.seed, opt.games, codeCommit]), codeCommit, snapshotHash: P.snapshotHash || null, paramsHash: hashOf(P), modelVersion: MS.MODEL_VERSION, rulesVersion: MS.RULES.version, overrides: P.overrides || [], rotation: P.teams.map(T => T.rotation), seed: opt.seed, requestedGames: opt.games, completedGames: sorted.length, validGames: valid.length, invalidGames: sorted.length - valid.length, cancelled: !!cancelled, failedChunks: failed || 0, validationStatus: sorted.length - valid.length ? 'problems' : 'all reconciled', problemSamples: [...new Set(sorted.flatMap(x => x.problems))].slice(0, 12) };
     return { record, games: valid, summary: summarize(P, valid) };
   }
 

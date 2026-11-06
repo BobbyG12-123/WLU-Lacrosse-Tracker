@@ -169,6 +169,7 @@ function allGames(P, n, fn) { for (let s = 0; s < n; s++) { const L = sim(P, MS.
   const bad = MS.finishRun(P, { seed: 1, games: 2 }, [Object.assign({}, a.games[0], { problems: ['x'] }), a.games[1]], false);
   ok('failed games stay out of denominators and are counted', bad.summary.M === 1 && bad.record.invalidGames === 1 && bad.record.validationStatus === 'problems');
   ok('the run record names versions, seed, games and rotation', a.record.modelVersion && a.record.rulesVersion === R.version && a.record.seed === 77 && a.record.requestedGames === 300 && a.record.rotation.length === 2 && a.record.paramsHash);
+  { const c1 = MS.runBatch(P, { seed: 77, games: 5, codeCommit: 'abc' }).record, c2 = MS.runBatch(P, { seed: 77, games: 5, codeCommit: 'def' }).record; ok('the run record carries the code commit, and it changes the run ID', c1.codeCommit === 'abc' && c1.runId !== c2.runId && 'snapshotHash' in c1 && c1.completedGames === 5); }
   ok('hash does not depend on property order', MS.hashOf({ a: 1, b: [2, { c: 3, d: 4 }] }) === MS.hashOf({ b: [2, { d: 4, c: 3 }], a: 1 }));
   const un = MS.compareRuns(P, JSON.parse(JSON.stringify(P)), 5, 300);
   ok('an unchanged plan gives exactly zero paired difference', un.meanDiff === 0 && un.se === 0 && un.games === 300, un);
@@ -254,6 +255,43 @@ function allGames(P, n, fn) { for (let s = 0; s < n; s++) { const L = sim(P, MS.
   let threw = false; try { MS.compileMatchup(E, { cohort: 'practice', opponent: 'NONE', opponentName: 'None', reference: ref, rotation: rot }); } catch (e) { threw = true; }
   ok('an opponent with no sessions is refused, not invented', threw);
   ok('calibration test leaves each scrimmage out', MS.calibrationTest(E).rows.length === 2);
+}
+
+// ---------- 7d. official pages and pre-game validation ----------
+{ await import(new URL('official.js', base)); await import(new URL('validate.js', base));
+  const row = (d, o, sc, x) => `<tr><td>${d}</td><td>${o}</td><td>W</td><td>${sc}</td><td>${x}</td></tr>`;
+  const page = (name, body) => `<table><caption>Game-By-Game Comparison</caption><tr><th>Date</th><th>Opponent</th><th>W/L</th><th>Score</th><th>A</th><th>SH</th><th>SOG</th><th>GB</th><th>TO</th><th>FO</th><th>Clears</th><th>PEN-MIN</th></tr>${body}<tr><td></td><td>${name}</td><td></td><td>1-1</td><td></td></tr></table>`;
+  const stat = '5/4</td><td>30/25</td><td>20/15</td><td>20/18</td><td>15/14</td><td>12/10</td><td>18-20/16-20</td><td>2-01:30/1-00:30';
+  const A = MS.parseStatsPage(page('Alpha', row('2/01/26', 'at Beta', '10-8', stat) + row('2/02/25', 'Beta', '9-8', stat)), '2026'), Bt = MS.parseStatsPage(page('Beta', row('2/01/26', 'Alpha', '8-10', '4/5</td><td>25/30</td><td>15/20</td><td>18/20</td><td>14/15</td><td>10/12</td><td>16-20/18-20</td><td>1-00:30/2-01:30')), '2026');
+  ok('official parser reads team, score and paired stats', A.teamName === 'Alpha' && A.games[0].us.goals === 10 && A.games[0].them.shots === 25 && A.games[0].us.clearAtt === 20 && A.games[0].them.penaltySec === 30 && A.games[0].location === 'away');
+  ok('a bad page date is corrected for ordering and reported', A.games[1].date === '2026-02-02' && A.notes.length === 1);
+  const Mg = MS.mergeGames([A, Bt], {});
+  ok('a game on both schools pages merges into one and agrees', Mg.games.filter(x => x.date === '2026-02-01').length === 1 && Mg.conflicts.length === 0, Mg.conflicts);
+  const Bad = MS.parseStatsPage(page('Beta', row('2/01/26', 'Alpha', '8-11', '4/5</td><td>25/30</td><td>15/20</td><td>18/20</td><td>14/15</td><td>10/12</td><td>16-20/18-20</td><td>1-00:30/2-01:30')), '2026');
+  ok('schools disagreeing on a game are listed, not resolved', MS.mergeGames([A, Bad], {}).conflicts.some(c => c.field === 'goals'));
+  ok('an alias merges different names for one school', MS.keyFor('at Chris. Newport', { 'chris newport': 'cnu' }) === 'cnu');
+  const mk = (d, a, b, ga, gb) => ({ date: d, a, b, aLocation: 'home', sources: [], aStats: { goals: ga, assists: 4, shots: 35, sog: 22, gb: 20, turnovers: 16, faceoffsWon: 12, clears: 18, clearAtt: 20, penalties: 3, emGoals: 0 }, bStats: { goals: gb, assists: 3, shots: 30, sog: 18, gb: 18, turnovers: 18, faceoffsWon: 10, clears: 16, clearAtt: 20, penalties: 3, emGoals: 0 } });
+  const list = []; for (let i = 1; i <= 6; i++) { list.push(mk(`2026-02-0${i}`, 'a', 'x', 12, 8)); list.push(mk(`2026-02-0${i}`, 'b', 'y', 9, 10)); }
+  const test = mk('2026-03-05', 'a', 'b', 10, 9), S = { actionMeanSec: 25, clearRequired: 0.72, turnoverGroundBall: 1, manUpShift: 1.5 };
+  const H1 = MS.historyBefore(list.concat([test]), test.date), later = list.concat([test, mk('2026-03-20', 'a', 'x', 99, 0), mk('2026-03-05', 'a', 'x', 50, 0)]), H2 = MS.historyBefore(later, test.date);
+  ok('a future or same-day game cannot change pre-game inputs', JSON.stringify(H1) === JSON.stringify(H2));
+  const R1 = MS.testGame(test, H1, S, { seed: 2, games: 150 }), R2 = MS.testGame(test, H2, S, { seed: 2, games: 150 });
+  ok('a future game cannot change a pre-game prediction', R1.model === R2.model && R1.baseline === R2.baseline && R1.invalid === 0);
+  const fake = H1.teams.a.goals; H1.teams.a.goals = fake; ok('the better history gets the higher baseline', MS.baselineGD('a', 'b', H1) > 0.5);
+  const P0 = MS.paramsForGame('a', 'b', H1, S); let bad = null; for (let s = 0; s < 60 && !bad; s++) { const pr = MS.validateGame(MS.simulateGame(P0, s).ledger, P0); if (pr.length) bad = pr.slice(0, 4); } ok('validation parameters reconcile', !bad, bad);
+  const fit = MS.slopeFit(Array.from({ length: 2000 }, (_, i) => { const p = 0.1 + 0.8 * (i % 100) / 99, u = MS.hash32('s' + i, 3) / 4294967296; return { p, y: u < p ? 1 : 0 }; }), 'p');
+  ok('calibration slope is near 1 for honest probabilities', Math.abs(fit.slope - 1) < 0.2, fit);
+  const bs = MS.bootstrapDiff([{ y: 1, a: 0.9, b: 0.5 }, { y: 0, a: 0.1, b: 0.5 }, { y: 1, a: 0.8, b: 0.5 }], 'a', 'b', 500, 2026); ok('paired bootstrap reports a difference and an interval', bs.mean < 0 && bs.lo <= bs.hi);
+}
+
+// ---------- 7e. possession interactions are emergent, no fixed offensive total ----------
+{ const base0 = FX.params({ foul: 0.03 }, { foul: 0.03 }), r0 = MS.runBatch(base0, { seed: 41, games: 1200 }).summary.teams[1];
+  const fo100 = FX.params({ foul: 0.03 }, { foul: 0.03 }, { faceoff: FX.B(0.98, 1e5) }), r1 = MS.runBatch(fo100, { seed: 41, games: 1200 }).summary.teams[1];
+  ok('the other team loses shots when one team wins nearly every faceoff', r1.shots < r0.shots - 2 && r1.avgScore < r0.avgScore, { base: r0.shots, fo: r1.shots });
+  const hold = FX.params({ foul: 0.03 }, { foul: 0.03, tempo: {} }, { tempo: { actionMeanSec: 40 } }), r2 = MS.runBatch(hold, { seed: 41, games: 1200 }).summary.teams[1];
+  ok('a slower game gives the other team fewer shots', r2.shots < r0.shots - 2, { base: r0.shots, slow: r2.shots });
+  const hi = FX.params({ foul: 0.03, r: 0.85, q: 0.9 }, { foul: 0.03 }), r3 = MS.runBatch(hi, { seed: 41, games: 1200 }).summary, r4 = MS.runBatch(base0, { seed: 41, games: 1200 }).summary;
+  ok('more goals for one team means more faceoffs in the game', r3.teams[0].faceoffsPerGame > r4.teams[0].faceoffsPerGame + 2, { hi: r3.teams[0].faceoffsPerGame, base: r4.teams[0].faceoffsPerGame });
 }
 
 // ---------- 8. every modeled rule has a passing test ----------
