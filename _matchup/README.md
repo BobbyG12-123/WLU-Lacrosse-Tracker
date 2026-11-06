@@ -13,6 +13,9 @@ Nothing here loads in the tracker page. This folder starts with `_`, so GitHub P
 | `worker.js` | Browser worker for one chunk |
 | `tools_fit_reference.js` | Fits tempo and related settings to official team totals. A fit, not a validation |
 | `tools_run_matchup.js` | Runs a matchup from local files and writes a report |
+| `official.js`, `tools_official.js` | Reads official school stat pages into dated games |
+| `validate.js`, `tools_validate.js`, `tools_tune.js` | Pre-game validation under `docs/VALIDATION_PROTOCOL.md` |
+| `tools_versioned.sh` | Runs a tool stamped with the code commit |
 
 ## Run
 
@@ -24,7 +27,11 @@ Nothing here loads in the tracker page. This folder starts with `_`, so GitHub P
 
 ## Opponent imports
 
-Opponent numbers are a plain totals object with `source`, set as `opponent.officialImport` in the inputs file: `shots, sog, goals, turnovers, caused, assists, clears, clearAtt, penalties, saves, goalsAllowed`. No provider is built in. An opponent with no logged sessions is refused. Opponents stay team level; no player ratings are invented.
+Opponent numbers are a plain totals object with `source`, set as `opponent.officialImport` in the inputs file: `shots, sog, goals, turnovers, caused, assists, clears, clearAtt, penalties, saves, goalsAllowed`, where `caused` is this team's turnovers caused by its opponents and `saves` and `goalsAllowed` are this team's goalies. Optional: `causedByTeam, opponentTurnovers`. No provider is built in. An opponent with no logged sessions is refused. Opponents stay team level; no player ratings are invented.
+
+## Versioned runs
+
+Use `tools_versioned.sh`. It refuses to run if `_matchup/` has uncommitted changes, and it stamps the commit into every run record, alongside model and rules versions, input snapshot hash, seed and completed games.
 
 ## Not built yet
 

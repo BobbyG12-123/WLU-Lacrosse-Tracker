@@ -93,7 +93,9 @@
     const e = O.opponent, off = cfg.opponentImport || ref.opp, pr = off, srcPr = cfg.opponentImport ? cfg.opponentImport.source : `${ref.source}, W&L's opponents. Not ${cfg.opponent}'s own numbers`;
     const w0 = cfg.opponentPriorWeight ?? v('teamPriorWeight');
     const blockedShare = (ev.practice.team.blocked + ev.opponent_scrimmage.team.blocked) / (ev.practice.team.shots + ev.opponent_scrimmage.team.shots), pipeShare = (ev.practice.team.pipe + ev.opponent_scrimmage.team.pipe) / (ev.practice.team.pipe + ev.practice.team.wide + ev.opponent_scrimmage.team.pipe + ev.opponent_scrimmage.team.wide);
-    const prior = Object.assign({ blocked: pr.shots * blockedShare, assistedGoals: pr.assists ?? pr.goals * 0.6 }, pr); const unbPr = prior.shots - prior.blocked; prior.pipe = prior.pipe ?? (unbPr - prior.sog) * pipeShare;
+    const prior = Object.assign({ blocked: pr.shots * blockedShare, assistedGoals: pr.assists ?? pr.goals * 0.6 }, pr);
+    // caused here means this team's turnovers that its opponents caused. Without an import, that's W&L's caused turnovers on its opponents.
+    if (!cfg.opponentImport) prior.caused = ref.wl.caused; const unbPr = prior.shots - prior.blocked; prior.pipe = prior.pipe ?? (unbPr - prior.sog) * pipeShare;
     const ev2 = { shots: e.shots, sog: e.sog, goals: e.goals, pipe: e.pipe, blocked: e.blocked, turnovers: e.turnoverSessions ? e.turnovers : null, caused: e.caused, causedKnown: true, assistedGoals: null, goalsForAssist: null, clears: null, clearAtt: null };
     const shotsTO = { shots: e.shotsWhereTurnoversLogged, turnovers: e.turnoverSessions ? e.turnovers : null };
     const R = MS.teamRates(Object.assign({}, ev2, { shots: e.shots }), prior, w0, inputs, cfg.opponentName, `Our logs of ${cfg.opponentName}, ${O.sessions.join(', ')}`, srcPr);
@@ -117,13 +119,14 @@
     // Faceoffs: logged head-to-head, shrunk toward even. Provisional, not a fitted opponent-adjusted model.
     const fo = ev.faceoffs.byOpponent[cfg.opponent] || { won: 0, att: 0, by: {} }, fw = v('faceoffPriorWeight');
     const faceoff = MS.betaPosterior(fo.won, fo.att, 0.5, fw);
-    inputs.push(row('W&L faceoff chance vs opponent', faceoff.a / (faceoff.a + faceoff.b), 'observed with prior', 'P(W&L wins a faceoff)', `Our logs: ${fo.won} of ${fo.att}; prior 50%, weight ${fw}`, fo.att));
+    inputs.push(row('W&L faceoff chance vs opponent', faceoff.a / (faceoff.a + faceoff.b), 'observed with assumed prior', 'P(W&L wins a faceoff)', `Our logs: raw ${fo.won} of ${fo.att} = ${fo.att ? (100 * fo.won / fo.att).toFixed(1) : '—'}%. Blend = (${fo.won} + ${fw} x 0.5) / (${fo.att} + ${fw}) = ${(100 * faceoff.a / (faceoff.a + faceoff.b)).toFixed(1)}%. The prior (50%, weight ${fw}) is an assumption, not a fit`, fo.att));
     const fogo = (rot.fogoPlayers || []).map(j => { const scr = Object.values(ev.faceoffs.byOpponent).reduce((a, x) => a + ((x.by[j] || {}).att || 0), 0); return { id: j, weight: scr + 1 }; });
     W.rotation = Object.assign({}, rot, { fogo }); delete W.rotation.fogoPlayers;
 
     ['groundBalls', 'penalties', 'clock', 'clears'].forEach(m => inputs.push(row(`Not available: ${m}`, null, 'missing', '—', ev.missing[m], 0)));
     Object.entries(C).forEach(([nm, c]) => inputs.push(row(`Setting: ${nm}`, c.value, c.cls, c.unit, c.source)));
-    const P = { uncertainty: cfg.uncertainty || 'posterior', tempo: tempoFrom(cfg.tempo), retention: retentionFrom(cfg.retention), penalties: penaltiesFrom(), faceoff, lineShiftSec: v('lineShiftSec'), clearRequired: v('clearRequiredShare'), teams: [W, opp], overrides: cfg.overrides || [], snapshotHash: MS.hashOf(ev) };
+    const P = { uncertainty: cfg.uncertainty || 'posterior', tempo: tempoFrom(cfg.tempo), retention: retentionFrom(cfg.retention), penalties: penaltiesFrom(), faceoff, lineShiftSec: v('lineShiftSec'), clearRequired: v('clearRequiredShare'), teams: [W, opp], overrides: cfg.overrides || [], snapshotHash: MS.hashOf([ev, cfg.reference, cfg.opponentImport || null, cfg.rotation, cfg.cohort]) };
+    if (cfg.opponentImport && cfg.opponentImport.causedByTeam !== undefined) { W.rates.caused = weighted(cfg.opponentImport.causedByTeam / cfg.opponentImport.opponentTurnovers, v('teamPriorWeight')); inputs.push(row('W&L: share of turnovers caused by the opponent (replaces W&L reference)', cfg.opponentImport.causedByTeam / cfg.opponentImport.opponentTurnovers, 'historical reference', `${cfg.opponentName} caused turnovers / its opponents' turnovers`, cfg.opponentImport.source, cfg.opponentImport.opponentTurnovers)); }
     return { P, inputs };
   }
 

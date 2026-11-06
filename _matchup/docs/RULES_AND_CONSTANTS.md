@@ -51,7 +51,7 @@ The test suite fails if a modeled rule has no passing named test.
 
 | Name | Value | Class | Units | Source |
 |---|---|---|---|---|
-| actionMeanSec | 25.4 | fitted | seconds of live play from control to a shot or turnover | Tuned by tools_fit_reference.js so a reference game matches official 2026 W&L shots plus turnovers per game. A fit, not a validation |
+| actionMeanSec | 25.6 | fitted | seconds of live play from control to a shot or turnover | Tuned by tools_tune.js on league totals from 53 official games before 2026-03-01. Not tuned on any test game. A fit, not a validation |
 | faceoffMeanSec | 8 | assumption | seconds, whistle to possession | No timed evidence |
 | clearMeanSec | 10 | assumption | seconds, control to the offensive half | No timed evidence; capped by Rule 4-16 |
 | looseMeanSec | 4 | assumption | seconds a ball stays loose | No timed evidence |
@@ -59,13 +59,13 @@ The test suite fails if a modeled rule has no passing named test.
 | looseToShooters | 0.4 | assumption | share of loose saves and pipe shots recovered by the shooting team | No evidence. Sensitivity reported |
 | wideToShooters | 0.45 | assumption | share of wide shots retained by the shooting team (Rule 4-7-b-3) | No evidence. Sensitivity reported |
 | blockedToShooters | 0.4 | assumption | share of blocked shots retained by the shooting team | No evidence. Sensitivity reported |
-| clearRequiredShare | 0.72 | fitted | share of non-faceoff possession changes that count as a clear attempt | Tuned to official clear attempts per game |
-| turnoverGroundBall | 1 | fitted | share of live turnovers recovered as a ground ball | Tuned to official 2026 ground balls per game; the fit reached its upper limit and still ran 2 short. Team-level only; no player credit |
+| clearRequiredShare | 0.62 | fitted | share of non-faceoff possession changes that count as a clear attempt | Tuned by tools_tune.js on league totals from 53 official games before 2026-03-01. Not tuned on any test game. A fit, not a validation |
+| turnoverGroundBall | 0.95 | fitted | share of live turnovers recovered as a ground ball | Tuned by tools_tune.js on league totals from 53 official games before 2026-03-01. Not tuned on any test game. A fit, not a validation |
 | defenseFoulShare | 0.65 | assumption | share of penalties committed against the team with the ball | Not logged |
 | technicalShare | 0.52 | assumption | share of penalties that are 30-second technical fouls | Not logged. With personalMix, gives the 0.78 minutes per penalty in W&L official 2026 totals (50:00 on 64, 40:30 on 52) |
 | personalMix | [0.92,0.07,0.01] | assumption | share of personal fouls at 1, 2, 3 minutes | Not logged |
 | nonreleasableShare | 0.05 | assumption | share of penalties that are nonreleasable | Not logged |
-| manUpFinishShift | 1.55 | fitted | logit shift on P(on goal) and P(goal | on goal) with an extra man | Tuned to official 2026 extra-man goals per game. Absorbs other man-up effects, so read it as a fit |
+| manUpFinishShift | 1.1 | fitted | logit shift on P(on goal) and P(goal | on goal) with an extra man | Tuned by tools_tune.js on league totals from 53 official games before 2026-03-01. Not tuned on any test game. A fit, not a validation |
 | lineShiftSec | 120 | assumption | seconds per midfield rotation block | Coach-editable |
 | kappaFloor | 10 | assumption | smallest prior weight, in shots | Keeps a method-of-moments fit from trusting tiny samples |
 | kappaCeiling | 400 | assumption | largest prior weight, in shots | Means no measurable player spread |

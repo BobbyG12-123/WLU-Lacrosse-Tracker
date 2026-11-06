@@ -5,7 +5,7 @@
   const MS = g.MS = g.MS || {};
   MS.MODEL_VERSION = 'matchup-engine-0.1';
   MS.CONSTANTS = Object.freeze({
-    actionMeanSec:      { value: 25.4,   cls: 'fitted',     unit: 'seconds of live play from control to a shot or turnover', source: 'Tuned by tools_fit_reference.js so a reference game matches official 2026 W&L shots plus turnovers per game. A fit, not a validation' },
+    actionMeanSec:      { value: 25.6,   cls: 'fitted',     unit: 'seconds of live play from control to a shot or turnover', source: 'Tuned by tools_tune.js on league totals from 53 official games before 2026-03-01. Not tuned on any test game. A fit, not a validation' },
     faceoffMeanSec:     { value: 8,    cls: 'assumption', unit: 'seconds, whistle to possession', source: 'No timed evidence' },
     clearMeanSec:       { value: 10,   cls: 'assumption', unit: 'seconds, control to the offensive half', source: 'No timed evidence; capped by Rule 4-16' },
     looseMeanSec:       { value: 4,    cls: 'assumption', unit: 'seconds a ball stays loose', source: 'No timed evidence' },
@@ -13,13 +13,13 @@
     looseToShooters:    { value: 0.40, cls: 'assumption', unit: 'share of loose saves and pipe shots recovered by the shooting team', source: 'No evidence. Sensitivity reported' },
     wideToShooters:     { value: 0.45, cls: 'assumption', unit: 'share of wide shots retained by the shooting team (Rule 4-7-b-3)', source: 'No evidence. Sensitivity reported' },
     blockedToShooters:  { value: 0.40, cls: 'assumption', unit: 'share of blocked shots retained by the shooting team', source: 'No evidence. Sensitivity reported' },
-    clearRequiredShare: { value: 0.72, cls: 'fitted',     unit: 'share of non-faceoff possession changes that count as a clear attempt', source: 'Tuned to official clear attempts per game' },
-    turnoverGroundBall: { value: 1.0,  cls: 'fitted',     unit: 'share of live turnovers recovered as a ground ball', source: 'Tuned to official 2026 ground balls per game; the fit reached its upper limit and still ran 2 short. Team-level only; no player credit' },
+    clearRequiredShare: { value: 0.62, cls: 'fitted',     unit: 'share of non-faceoff possession changes that count as a clear attempt', source: 'Tuned by tools_tune.js on league totals from 53 official games before 2026-03-01. Not tuned on any test game. A fit, not a validation' },
+    turnoverGroundBall: { value: 0.95,  cls: 'fitted',     unit: 'share of live turnovers recovered as a ground ball', source: 'Tuned by tools_tune.js on league totals from 53 official games before 2026-03-01. Not tuned on any test game. A fit, not a validation' },
     defenseFoulShare:   { value: 0.65, cls: 'assumption', unit: 'share of penalties committed against the team with the ball', source: 'Not logged' },
     technicalShare:     { value: 0.52, cls: 'assumption', unit: 'share of penalties that are 30-second technical fouls', source: 'Not logged. With personalMix, gives the 0.78 minutes per penalty in W&L official 2026 totals (50:00 on 64, 40:30 on 52)' },
     personalMix:        { value: [0.92, 0.07, 0.01], cls: 'assumption', unit: 'share of personal fouls at 1, 2, 3 minutes', source: 'Not logged' },
     nonreleasableShare: { value: 0.05, cls: 'assumption', unit: 'share of penalties that are nonreleasable', source: 'Not logged' },
-    manUpFinishShift:   { value: 1.55, cls: 'fitted',     unit: 'logit shift on P(on goal) and P(goal | on goal) with an extra man', source: 'Tuned to official 2026 extra-man goals per game. Absorbs other man-up effects, so read it as a fit' },
+    manUpFinishShift:   { value: 1.1, cls: 'fitted',     unit: 'logit shift on P(on goal) and P(goal | on goal) with an extra man', source: 'Tuned by tools_tune.js on league totals from 53 official games before 2026-03-01. Not tuned on any test game. A fit, not a validation' },
     lineShiftSec:       { value: 120,  cls: 'assumption', unit: 'seconds per midfield rotation block', source: 'Coach-editable' },
     kappaFloor:         { value: 10,   cls: 'assumption', unit: 'smallest prior weight, in shots', source: 'Keeps a method-of-moments fit from trusting tiny samples' },
     kappaCeiling:       { value: 400,  cls: 'assumption', unit: 'largest prior weight, in shots', source: 'Means no measurable player spread' },

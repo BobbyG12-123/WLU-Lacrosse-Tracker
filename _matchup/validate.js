@@ -27,7 +27,7 @@
     const L = H.league, A = H.teams[a], Z = H.teams[b], TA = teamFrom(a, A, A, L, S), TB = teamFrom(b, Z, Z, L, S), k = v('goalieShrinkShots');
     const Lsv = 1 - L.goals / L.sog, sv = x => ((x.ag.sog - x.ag.goals) + k * Lsv) / (x.ag.sog + k);
     TA.opposingFinishShift = MS.logit(1 - sv(A)) - MS.logit(1 - Lsv); TB.opposingFinishShift = MS.logit(1 - sv(Z)) - MS.logit(1 - Lsv);
-    // Each team's turnover rate above used its own defense's history by mistake if read alone: swap so A's rate meets B's defense.
+    // Replaces the placeholder from teamFrom: A's turnover rate meets B's defensive history, and the reverse.
     const swap = (me, mine, opp) => { const w = v('teamPriorWeight'), non = x => (x.clearAtt - x.clears) + x.penalties * (1 - v('defenseFoulShare')), Ls = L.shots / (L.shots + Math.max(1, L.turnovers - non(L))), own = B(mine.shots, mine.shots + Math.max(1, mine.turnovers - non(mine)), Ls, w), ag = opp.ag, sAg = (ag.shots + w * Ls) / (ag.shots + Math.max(1, ag.turnovers - non(ag)) + w); me.rates.shotVsTO = shiftBeta(own, MS.logit(sAg) - MS.logit(Ls)); };
     swap(TA, A, Z); swap(TB, Z, A);
     const fr = x => { const att = x.faceoffsWon + x.ag.faceoffsWon, fw = v('faceoffPriorWeight'); return { p: (x.faceoffsWon + fw * 0.5) / (att + fw), n: att + fw }; }, fa = fr(A), fb = fr(Z), p = MS.faceoffMatchup(fa.p, fb.p);
