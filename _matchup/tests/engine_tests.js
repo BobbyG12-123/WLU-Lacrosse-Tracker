@@ -284,6 +284,27 @@ function allGames(P, n, fn) { for (let s = 0; s < n; s++) { const L = sim(P, MS.
   const bs = MS.bootstrapDiff([{ y: 1, a: 0.9, b: 0.5 }, { y: 0, a: 0.1, b: 0.5 }, { y: 1, a: 0.8, b: 0.5 }], 'a', 'b', 500, 2026); ok('paired bootstrap reports a difference and an interval', bs.mean < 0 && bs.lo <= bs.hi);
 }
 
+// ---------- 7d2. v2 candidate ----------
+{ await import(new URL('validate_v2.js', base));
+  const mk2 = (d, a, b, ga, gb, sa = 35, sb = 30) => ({ date: d, a, b, aLocation: 'home', sources: [], aStats: { goals: ga, assists: 4, shots: sa, sog: Math.round(sa * 0.6), gb: 20, turnovers: 16, faceoffsWon: 12, clears: 18, clearAtt: 20, penalties: 3, emGoals: 0 }, bStats: { goals: gb, assists: 3, shots: sb, sog: Math.round(sb * 0.6), gb: 18, turnovers: 18, faceoffsWon: 10, clears: 16, clearAtt: 20, penalties: 3, emGoals: 0 } });
+  const hist = []; for (let i = 1; i <= 8; i++) { hist.push(mk2(`2026-02-0${i}`, 'strong', 'weak1', 20, 4, 55, 22)); hist.push(mk2(`2026-02-1${i}`, 'mid', 'weak1', 12, 9)); hist.push(mk2(`2026-02-2${i > 8 ? 8 : i}`, 'mid2', 'weak2', 12, 9)); hist.push(mk2(`2026-01-1${i}`, 'strong', 'mid', 15, 9, 45, 28)); }
+  const test = mk2('2026-03-05', 'strong', 'mid2', 14, 10), S2 = { actionMeanSec: 25, clearRequired: 0.72, turnoverGroundBall: 1, manUpShift: 1.5 }, Opt = { lambda: 30, beta: 4, seed: 7, games: 150 };
+  const R1 = MS.testGameV2(test, hist.concat([test]), S2, Opt), R2 = MS.testGameV2(test, hist.concat([test, mk2('2026-03-05', 'strong', 'mid', 99, 0), mk2('2026-04-01', 'mid2', 'weak1', 50, 0)]), S2, Opt);
+  ok('v2: a same-day or future game cannot change the prediction', R1.model === R2.model && R1.simMargin === R2.simMargin && R1.invalid === 0);
+  const prior = MS.gamesBefore(hist, test.date), P2 = MS.paramsV2('strong', 'mid2', prior, S2, { lambda: 30, beta: 4 });
+  ok('v2: the team with more ball control retains more', P2.teams[0].retentionShift > 0 && P2.teams[1].retentionShift < 0, [P2.teams[0].retentionShift, P2.teams[1].retentionShift]);
+  let bad = null; for (let s = 0; s < 80 && !bad; s++) { const pr = MS.validateGame(MS.simulateGame(P2, s).ledger, P2); if (pr.length) bad = pr.slice(0, 4); } ok('v2: games reconcile', !bad, bad);
+  const fq = MS.fitStat(prior, MS.V2_STATS.r, 30), fbig = MS.fitStat(prior, MS.V2_STATS.r, 1e6);
+  ok('v2: a very large ridge shrinks every team to the league rate', Math.abs(fbig.rate('strong', 'mid2') - MS.invLogit(fbig.mu)) < 1e-3 && Math.abs(fq.rate('strong', 'mid2') - MS.invLogit(fq.mu)) > 1e-3);
+  const off = FX.params(); const on = JSON.parse(JSON.stringify(off)); on.teams[0].retentionShift = 0;
+  ok('no retention shift leaves results identical to v1 logic', MS.hash32(MS.canon(MS.simulateGame(off, 9).ledger), 7) === MS.hash32(MS.canon(MS.simulateGame(on, 9).ledger), 7));
+  const hi = FX.params(); hi.teams[0].retentionShift = 2; const a1 = MS.runBatch(FX.params(), { seed: 6, games: 500 }).summary.teams[0], a2 = MS.runBatch(hi, { seed: 6, games: 500 }).summary.teams[0];
+  ok('a positive retention shift gives more shots', a2.shots > a1.shots + 1, { a1: a1.shots, a2: a2.shots });
+}
+
+// Locks v1 behavior: this ledger hash must not change while v1 is the record. A deliberate engine change has to update this line and say why.
+{ const h = MS.hash32(MS.canon(MS.simulateGame(FX.params(), 12345).ledger), 7); console.log('v1 lock hash', h); ok('the engine still produces the v1 ledger for a fixed seed', h === 2305489941, h); }
+
 // ---------- 7e. possession interactions are emergent, no fixed offensive total ----------
 { const base0 = FX.params({ foul: 0.03 }, { foul: 0.03 }), r0 = MS.runBatch(base0, { seed: 41, games: 1200 }).summary.teams[1];
   const fo100 = FX.params({ foul: 0.03 }, { foul: 0.03 }, { faceoff: FX.B(0.98, 1e5) }), r1 = MS.runBatch(fo100, { seed: 41, games: 1200 }).summary.teams[1];

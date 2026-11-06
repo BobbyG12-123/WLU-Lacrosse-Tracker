@@ -142,18 +142,18 @@
         return;
       }
       emit('shot', f);
-      const R = P.retention, u = s('rebound');
+      const R = P.retention, u = s('rebound'), keep = base => { const sh = T.retentionShift; return sh ? invLogit(logit(base) + sh) : base; };
       if (outcome === 'wide') {
         // Dead ball: the clock is stopped. 4-7-b-3: nearest inbounds player's team gets it. Wide is not a valid shot, so no reset.
-        if (u() < R.wide) { clock = MS.clockAfterShot(clock, outcome, true, true); emit('retained', { team: i, pid, outcome, clock }); return; }
+        if (u() < keep(R.wide)) { clock = MS.clockAfterShot(clock, outcome, true, true); emit('retained', { team: i, pid, outcome, clock }); return; }
         endPossession('defense_gain'); beginPossession(o, 'shot_out_of_bounds', RULES.shotClockFullDs, true); return;
       }
-      if (outcome === 'save' && u() < R.saveHeld) { endPossession('defense_gain'); beginPossession(o, 'goalie_save', RULES.shotClockFullDs, true); return; }
+      if (outcome === 'save' && u() < (T.retentionShift ? 1 - keep(1 - R.saveHeld) : R.saveHeld)) { endPossession('defense_gain'); beginPossession(o, 'goalie_save', RULES.shotClockFullDs, true); return; }
       const d = gammaDs(P.tempo.looseMeanSec, s('time'));
       if (d >= left) { tick(left); return; }
       emit('loose_ball', { team: i, pid, outcome, ds: d });
       tick(d);
-      const toShooters = u() < (outcome === 'blocked' ? R.blocked : R.loose);
+      const toShooters = u() < keep(outcome === 'blocked' ? R.blocked : R.loose);
       if (toShooters) {
         groundBall(i, 'rebound');
         const next = MS.clockAfterShot(clock, outcome, true, true);
