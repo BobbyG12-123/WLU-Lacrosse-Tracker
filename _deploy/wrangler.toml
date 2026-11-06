@@ -1,0 +1,43 @@
+# Staff-only site + chat. Prepared, not deployed. See _deploy/DEPLOY.md.
+name = "wlu-tracker-staff"
+main = "../_chat/gateway/worker.js"
+compatibility_date = "2026-10-01"
+workers_dev = true
+preview_urls = false            # no separate version addresses
+
+[assets]
+directory = "./dist"
+binding = "ASSETS"
+run_worker_first = true         # every request goes through the gate, including the pages themselves
+
+[[durable_objects.bindings]]
+name = "LEDGER"
+class_name = "BudgetLedger"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["BudgetLedger"]   # the only kind on the free plan
+
+[vars]
+FIREBASE_PROJECT_ID = "wlu-lacrosse-tracker"
+FIREBASE_WEB_KEY = "AIzaSyAqsYhOypQznZK0N7JzWmpGjJv7eBNKqMc"   # Firebase's public web setting, already in the page; not a secret
+STAFF_PROBE_DOC = "app/roster"  # read with the coach's own token; the production rules decide
+STAFF_RULES_REVIEWED = ""       # empty = nobody is staff. Set from _deploy/check_rules.py after it passes on the live rules.
+STAFF_CACHE_S = "300"           # chat and new sessions stop within this long after removal
+SESSION_SECONDS = "3600"        # an existing page session (code only, no team data) ends within this long
+OWNER_EMAILS = "rdglax22@icloud.com"
+MODEL = "claude-haiku-5-5"      # set from the comparison results
+EFFORT = "low"
+MAX_OUTPUT_TOKENS = "3000"
+MAX_INPUT_BYTES = "160000"
+MAX_ROUNDS = "8"
+MAX_CALL_SECONDS = "90"
+MAX_IN_FLIGHT = "4"
+RESERVATION_TTL_S = "600"
+BUDGET_USD = "10"
+FIXED_HOSTING_USD = "0"         # free plan. Change this if the plan ever changes.
+SAFETY_MARGIN_USD = "1"
+PRIOR_SPEND_JSON = "{}"         # set before launch to what testing spent (the comparison run prints it)
+CHAT_DISABLED = "1"             # hard off until production approval
+# ALLOW_RECORD_ROWS stays unset: individual records don't go to the model.
+# Secrets, set with `wrangler secret put` (it prompts; never in a file or a chat): ANTHROPIC_API_KEY, SESSION_SECRET
