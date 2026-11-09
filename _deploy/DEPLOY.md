@@ -4,6 +4,8 @@ Prepared, not deployed. Steps 1 to 6 don't change the current site or the produc
 
 Keys are only ever typed at a hidden prompt on your own computer. Never paste one into a chat or a file.
 
+`deno run --no-prompt _deploy/tests/secrets_test.js` checks that neither Worker secret appears in any response, header, cookie or log line, across every refusal and provider failure, and that the Anthropic key goes only to Anthropic's address in its one header. It uses fake keys. It can't check Cloudflare's own handling of secrets; two-step sign-in on the Cloudflare account and a small Anthropic balance with auto-reload off cover that.
+
 ## What the design does
 
 One Cloudflare Worker serves the pages and the chat gateway. Firebase keeps all the data. Every request runs the Worker's code first, so there is no address that skips the gate. Version URLs are off, and Cloudflare doesn't generate them for Workers with a Durable Object.

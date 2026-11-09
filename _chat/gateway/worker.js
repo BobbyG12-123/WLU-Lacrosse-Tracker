@@ -431,7 +431,9 @@ export async function handle(request, env, deps) {
     // Never pass the provider's error body on: it can echo request details. Status only.
     const s = up.status, map = { 429: [429, 'rate', 'The AI service is busy. Try again shortly.'], 529: [503, 'overloaded', 'The AI service is overloaded. Try again shortly.'], 401: [502, 'config', 'The assistant’s AI key isn’t working. Tell the tracker owner.'], 403: [502, 'config', 'The assistant’s AI key isn’t working. Tell the tracker owner.'], 402: [502, 'credit', 'The assistant is out of AI credit. Tell the tracker owner.'] };
     const [st, code, msg] = map[s] || (s === 400 ? [502, 'rejected', 'The AI service rejected this conversation. Start a new chat.'] : [502, 'upstream', 'The AI service had a problem. Try again.']);
-    console.log(JSON.stringify({ upstream_status: s, request_id: up.headers.get('request-id') || null }));   // no content
+    // No content. The request ID is logged only if it has the provider's plain shape: an outside header is never logged as-is.
+    const rid = up.headers.get('request-id') || '';
+    console.log(JSON.stringify({ upstream_status: s, request_id: /^req_[A-Za-z0-9]{8,64}$/.test(rid) ? rid : null }));
     return fail(st, code, msg, okOrigin);
   }
   const { readable, writable } = new TransformStream();
