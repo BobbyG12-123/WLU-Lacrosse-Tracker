@@ -4,7 +4,8 @@
 <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore-compat.js"></script>
 <script src="fixtures.js"></script>
 </head><body style="margin:0">
-<iframe id="f" style="width:100%;height:1400px;border:0"></iframe>
+<div style="height:150px;background:#0E1625;color:#9AA8BC;font:13px sans-serif;padding:12px;box-sizing:border-box">TEST HOST: stands in for the tracker header (the tracker sizes this frame to the window height minus 150px)</div>
+<iframe id="f" style="width:100%;height:calc(100vh - 150px);min-height:520px;border:0;display:block"></iframe>
 <script>
 (async () => {
   try {

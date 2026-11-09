@@ -56,6 +56,7 @@ ok('the save is shown as in progress while offline, and moves to the next clip',
 ok('no save failure on screen', !/FAILED/.test(await bar()));
 
 // ---- Clip 2: good defense, team credit; check fields reset per clip
+const clip2 = await ev("return W.eval('REEL')[W.eval('RI')].tagId;");
 ok('the next clip starts empty', await ev("return !W.eval('PDRAFT').cov && !W.eval('PDRAFT').scr && !W.eval('PDRAFT').res && W.eval('PSLOT') === 'scr';"));
 await ev("Q('[data-pcov=\"Switch\"]').click(); Q('[data-pres=to_forced]').click();"); await sleep(80);
 ok('a forced turnover defaults to "Good defense: who gets credit"', await ev("return W.eval('PDRAFT').call === 'credit';") && /Who gets credit\?/.test(await bar()));
@@ -76,12 +77,36 @@ const before = await ev("return W.eval('RI');"); await ev("Q('#pskip').click();"
 ok('Skip moves on without saving', await ev(`return W.eval('RI') === ${before} + 1;`) && !((await tagDoc('pick_def_901')).t[await ev(`return W.eval('REEL')[${before}].tagId;`)]));
 await ev("Q('#psave').click();"); await sleep(100);
 ok('saving an empty form is refused with a message', /Nothing to save/.test(await bar()));
+// ---- Unsaved work survives Prev/Next and arrow keys, and is marked
+await ev("Q('[data-pcov=\"Switch\"]').click();"); await sleep(50);
+ok('an edited clip is marked Unsaved changes', /Unsaved changes/.test(await bar()));
+const here = await ev("return W.eval('RI');"); await ev("Q('#pnext').click();"); await sleep(200); await ev("Q('#pprev').click();"); await sleep(200);
+ok('unsaved coverage survives Next then Prev', await ev(`return W.eval('RI') === ${here} && W.eval('PDRAFT').cov === 'Switch';`));
+await ev("D.dispatchEvent(new W.KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));"); await sleep(200); await ev("D.dispatchEvent(new W.KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true }));"); await sleep(200);
+ok('unsaved coverage survives the arrow keys', await ev("return W.eval('PDRAFT').cov === 'Switch';"));
+await ev("Q('#preset').click();"); await sleep(50);
+ok('Clear this form empties the clip', await ev("return !W.eval('PDRAFT').cov;") && !/Unsaved changes/.test(await bar()));
+// ---- Unsaved work survives closing the tagger, and the summary says so
+await ev("Q('[data-pcov=\"Jump / double\"]').click();"); await sleep(50); const keepId = await ev("return W.eval('REEL')[W.eval('RI')].tagId;");
+await ev("Q('#pclose').click();"); await sleep(300);
+ok('after closing with unsaved work, the summary shows 1 clip with unsaved changes', /1 clip with unsaved changes/.test(await ev("return Q('[data-pickstart=def]').parentElement.innerText;")));
+await ev("Q('[data-pickstart=def]').click();"); await sleep(300); await ev(`const i = W.eval('REEL').findIndex(c => c.tagId === '${keepId}'); W.eval('RI = ' + i); W.showClip();`); await sleep(200);
+ok('reopening the tagger brings the unsaved work back', await ev("return W.eval('PDRAFT').cov === 'Jump / double';") && /Unsaved changes/.test(await bar()));
+await ev("Q('#preset').click();"); await sleep(50);
 // ---- Change a result: call fields are cleared, and merge leaves no old value behind
-await ev("W.eval('RI = 0'); W.showClip();"); await sleep(200);
+const goTo = async tid => ev(`W.eval('RI = ' + W.eval('REEL').findIndex(c => c.tagId === '${tid}')); W.showClip();`);
+await goTo(first); await sleep(200);
 ok('reopening a saved clip shows its tags', await ev("return W.eval('PDRAFT').cov === 'Go under' && W.eval('PDRAFT').cj === '8';"));
 await ev("Q('[data-pres=reset]').click();"); await sleep(50); await ev("Q('[data-pcall=\"\"]').click(); Q('#psave').click();"); await sleep(250);
 const r1b = (await tagDoc('pick_def_901')).t[first];
 ok('changing the result to "Reset / nothing, no call" clears fault fields in the saved record', r1b.res === 'reset' && r1b.call === null && r1b.cj === null && r1b.cT === null && r1b.scr === '90', r1b);
+// ---- Clearing a saved tag: the clip counts as untagged again
+const clipB = clip2; await goTo(clipB); await sleep(200);
+ok('a saved clip reopens without the unsaved marker', !/Unsaved changes/.test(await bar()));
+await ev("Q('#preset').click();"); await sleep(50); await ev("Q('#psave').click();"); await sleep(250);
+const cleared = (await tagDoc('pick_def_901')).t[clipB];
+ok('Clear this form then Save clears a saved tag', cleared && cleared.cov === null && cleared.res === null && cleared.cj === null, cleared);
+await goTo(clipB); await sleep(150); await ev("Q('[data-pcov=\"Switch\"]').click(); Q('[data-pres=to_forced]').click();"); await sleep(50); await ev("Q('[data-pcj=\"team|team\"]').click(); Q('#psave').click();"); await sleep(250);
 await ev("Q('#pclose').click();"); await sleep(400);
 
 // ---- Summary

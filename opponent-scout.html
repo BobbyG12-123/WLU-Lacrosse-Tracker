@@ -712,10 +712,11 @@ const PRES = Object.fromEntries(PICK_RES.map(([k, l, g, c]) => [k, { l, g, c }])
 const PSLOTS = [['scr', 'Screener', 'o'], ['usr', 'Ball carrier', 'o'], ['sd', 'Screener’s defender', 'd'], ['ud', 'Ball carrier’s defender', 'd']];
 const PICK_FIELDS = ['cov', 'oT', 'dT', 'scr', 'usr', 'sd', 'ud', 'x', 'y', 'res', 'call', 'cj', 'cT', 'sb', 'typ', 'pg'];
 const PGRP_COL = { goal: '#C62E1A', shot: '#E3A92B', to: '#1E9E55', other: '#9AA8BC' };
+let PDRAFTS = {}; // unsaved work per side and clip, kept until another team is opened
 let PT = { def: {}, off: {} }, PT_TEAM = null, PT_ERR = '', PSIDE = null, PDRAFT = null, PSLOT = 'scr', PALL = false, POTHER = false, PSAVEMSG = '';
 const ROST = {};
 async function loadPickTags(teamId) {
-  PT = { def: {}, off: {} }; PT_TEAM = teamId; PT_ERR = '';
+  PT = { def: {}, off: {} }; PT_TEAM = teamId; PT_ERR = ''; PDRAFTS = {};
   try {
     const [d, o] = await Promise.all(['def', 'off'].map(s => DBX.collection('filmTags').doc(`pick_${s}_${teamId}`).get()));
     if (PT_TEAM !== teamId) return;
@@ -757,10 +758,16 @@ function rosterBubbles(tid, kind, cur, attr) {
   return show.map(r => { const j = String(r.jersey_number); return `<button ${attr}="${esc(tid + '|' + j)}" title="${esc(r.player)}" style="${String(cur) === j ? SELB : ''}">#${esc(j)} ${esc(lastName(r.player))}</button>`; }).join('')
     + ` <button data-pall>${PALL || !pref.length ? 'Fewer' : 'All players'}</button> <input data-ptype="${attr}" placeholder="#" title="Type a number and press Enter" style="width:52px">`;
 }
+// True when the form for this clip differs from what is saved (or from an empty form if nothing is saved).
+function pickDirty(side, tagId, d) {
+  if (!d) return false; const sv = PT[side] && PT[side][tagId]; const old = side === 'def' && TAGS.pick ? TAGS.pick[tagId] : null;
+  return PICK_FIELDS.filter(k => !['oT', 'dT', 'sb', 'typ', 'pg'].includes(k)).some(k => (d[k] ?? null) !== ((sv ? sv[k] : k === 'cov' ? old : null) ?? null));
+}
 function blankPick(c) { const o = {}; PICK_FIELDS.forEach(k => o[k] = null); return Object.assign(o, { oT: c.oT ?? null, dT: c.dT ?? null, sb: c.sb ?? null, typ: c.typ ?? null, pg: c.pg ?? null }); }
 function startPickDraft(c) {
   const saved = PT[PSIDE][c.tagId]; const legacy = PSIDE === 'def' && !saved && TAGS.pick && TAGS.pick[c.tagId];
-  PDRAFT = Object.assign(blankPick(c), saved || {}, legacy ? { cov: TAGS.pick[c.tagId] } : {}, { oT: c.oT ?? null, dT: c.dT ?? null });
+  const dk = PSIDE + '|' + c.tagId;
+  PDRAFT = PDRAFTS[dk] || (PDRAFTS[dk] = Object.assign(blankPick(c), saved || {}, legacy ? { cov: TAGS.pick[c.tagId] } : {}, { oT: c.oT ?? null, dT: c.dT ?? null }));
   PSLOT = (PSLOTS.find(s => !PDRAFT[s[0]]) || PSLOTS[0])[0]; POTHER = false;
   Promise.all([rosterFor(c.oT), rosterFor(c.dT)]).then(() => { if (PLAYCTX === 'pick' && REEL[RI] === c) showClip(true); });
 }
@@ -782,6 +789,7 @@ function pickBar(c) {
         + (POTHER ? `<div style="margin-top:4px">${rosterBubbles(d.dT, 'd', otherOn ? d.cj : null, 'data-pcj')}</div>` : '');
     }
   }
+  const dirty = pickDirty(PSIDE, c.tagId, d);
   const missing = [!d.cov && 'coverage', PSLOTS.some(s => d[s[0]] == null) && 'players', d.x == null && 'location', !d.res && 'result'].filter(Boolean);
   return `<div class="pbar" id="pickbar" style="display:block">
     <div style="display:flex;flex-wrap:wrap;gap:18px;align-items:flex-start">
@@ -797,15 +805,16 @@ function pickBar(c) {
     </div>
     <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:10px;align-items:center">
       <button id="psave" style="background:#2F7BFF;border-color:#2F7BFF">Save &amp; next ▶</button><button id="pskip">Skip / can't tell</button><button id="preset">Clear this form</button>
-      <span style="opacity:.8">${missing.length ? 'Not filled: ' + missing.join(', ') : 'All filled'}</span><span id="pmsg" style="color:${/fail/i.test(PSAVEMSG) ? '#FF8A80' : '#9BE3B5'}">${esc(PSAVEMSG)}</span>
+      <span style="opacity:.8">${missing.length ? 'Not filled: ' + missing.join(', ') : 'All filled'}</span>${dirty ? '<span style="color:#E3A92B;font-weight:700">Unsaved changes</span>' : ''}<span id="pmsg" style="color:${/fail/i.test(PSAVEMSG) ? '#FF8A80' : '#9BE3B5'}">${esc(PSAVEMSG)}</span>
       <span style="opacity:.7;font-size:11.5px">Keys: 1–6 coverage · Enter save</span></div></div>`;
 }
 function pickNext() { if (RI < REEL.length - 1) { RI++; showClip(); } else closePlayer(); }
 function savePick() {
   const c = REEL[RI], d = PDRAFT; if (!c || !d) return;
-  if (!PICK_FIELDS.some(k => !['oT', 'dT', 'sb', 'typ', 'pg'].includes(k) && d[k] != null)) { PSAVEMSG = 'Nothing to save on this clip.'; showClip(true); return; }
+  // An empty form saves only when it clears a tag saved earlier (the clip then counts as untagged again).
+  if (!PICK_FIELDS.some(k => !['oT', 'dT', 'sb', 'typ', 'pg'].includes(k) && d[k] != null) && !PT[PSIDE][c.tagId]) { PSAVEMSG = 'Nothing to save on this clip.'; showClip(true); return; }
   const rec = {}; PICK_FIELDS.forEach(k => rec[k] = d[k] ?? null); rec.by = ME; rec.at = new Date().toISOString();
-  const side = PSIDE, team = T.id, n = RI + 1; PT[side][c.tagId] = rec; PSAVEMSG = `Saving clip ${n}…`;
+  const side = PSIDE, team = T.id, n = RI + 1; PT[side][c.tagId] = rec; delete PDRAFTS[side + '|' + c.tagId]; PSAVEMSG = `Saving clip ${n}…`;
   try {
     DBX.collection('filmTags').doc(`pick_${side}_${team}`).set(toHost({ t: { [c.tagId]: rec }, team, side, updatedAt: rec.at, updatedBy: ME }), { merge: true })
       .then(() => { PSAVEMSG = `Clip ${n} saved ✓`; if (PLAYCTX === 'pick') showClip(true); })
@@ -829,7 +838,7 @@ function wirePickBar(p) {
   p.querySelectorAll('[data-pcj]').forEach(x => x.onclick = () => { const [t, j] = x.dataset.pcj.split('|'); if (t === 'team') { d.cT = null; d.cj = 'team'; } else { d.cT = +t; d.cj = j; } POTHER = false; re(); });
   const sv = p.querySelector('#psave'); if (sv) sv.onclick = savePick;
   const sk = p.querySelector('#pskip'); if (sk) sk.onclick = () => { PSAVEMSG = ''; pickNext(); };
-  const rs = p.querySelector('#preset'); if (rs) rs.onclick = () => { const c = REEL[RI]; PDRAFT = blankPick(c); PSLOT = 'scr'; POTHER = false; re(); };
+  const rs = p.querySelector('#preset'); if (rs) rs.onclick = () => { const c = REEL[RI]; PDRAFT = PDRAFTS[PSIDE + '|' + c.tagId] = blankPick(c); PSLOT = 'scr'; POTHER = false; re(); };
 }
 function startPickTagger(side) {
   const S = T.sb || {}; const L = pickClips(side, S).filter(x => x.c); if (!L.length) return;
@@ -879,7 +888,7 @@ function pickSummary(side, S) {
   const L = pickClips(side, S).filter(x => x.c); const rows = pickRows(side, S); const done = rows.length;
   const title = side === 'def' ? `How ${T.name} defends picks` : `How ${T.name} uses picks`;
   const head = `<div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center"><b style="font-size:13px">${esc(title)} — staff pick tags</b><span style="flex:1"></span>
-    ${L.length ? `<button class="playall" data-pickstart="${side}">▶ Tag picks (${done}/${L.length} done)</button>` : '<span class="note" style="margin:0">no pick clips on film</span>'}</div>`;
+    ${L.length ? `${(() => { const u = Object.entries(PDRAFTS).filter(([k, d]) => k.startsWith(side + '|') && pickDirty(side, k.slice(side.length + 1), d)).length; return u ? `<span style="color:var(--warn);font-size:12px;font-weight:700">${u} clip${u > 1 ? 's' : ''} with unsaved changes</span>` : ''; })()}<button class="playall" data-pickstart="${side}">▶ Tag picks (${done}/${L.length} done)</button>` : '<span class="note" style="margin:0">no pick clips on film</span>'}</div>`;
   if (PT_ERR) return `<div style="border:1px solid var(--line);padding:10px 12px;margin:10px 0;background:var(--card-2)">${head}<p class="warnbox">${esc(PT_ERR)}</p></div>`;
   if (!done) return `<div style="border:1px solid var(--line);padding:10px 12px;margin:10px 0;background:var(--card-2)">${head}<p class="note" style="margin:6px 0 0">No picks tagged yet.</p></div>`;
   const legacy = rows.filter(r => r.t.legacy).length;
