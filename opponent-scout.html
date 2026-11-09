@@ -800,7 +800,14 @@ function pickBar(c) {
         ${lab('4. What happened after')}<div style="display:flex;flex-wrap:wrap;gap:5px">${PICK_RES.map(([k, l]) => b('data-pres', k, l, d.res === k)).join('')}</div>
         ${call}
       </div>
-      <div>${lab('3. Where was the pick set? Click the spot')}${pickFieldSVG(d.lat != null ? [{ lat: d.lat, dist: d.dist, pick: true }] : [], true)}<div style="font-size:11.5px;opacity:.75;margin-top:3px">${d.lat != null ? esc(pickSpotText(d.lat, d.dist)) : 'Same field as Log Shot, extended to the end line'}</div></div>
+      <div>${lab('3. Where was the pick set? Click the spot')}${pickFieldSVG(d.lat != null ? [{ lat: d.lat, dist: d.dist, pick: true }] : [], true)}
+        <div id="pfread" style="font-size:12px;margin-top:4px;min-height:16px;color:#FFE08A"></div>
+        <div style="font-size:12px;margin-top:2px">${d.lat != null ? '<b style="font:inherit;letter-spacing:0;text-transform:none">Set:</b> ' + esc(pickSpotText(d.lat, d.dist)) : '<span style="opacity:.75">Hover to see the yardage, click to set (rounds to the nearest half yard)</span>'}</div>
+        <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:6px;font-size:12px">
+          <label>Yards out <input id="pfdist" type="number" step="0.5" min="${-PF_BEHIND}" max="21.5" value="${d.dist ?? ''}" title="Negative = behind the goal" style="width:62px;background:#0E1625;color:#E8EEF7;border:1px solid #3A4A66;padding:3px 5px"></label>
+          <label>from center <input id="pflat" type="number" step="0.5" min="0" max="20" value="${d.lat != null ? Math.abs(d.lat) : ''}" style="width:56px;background:#0E1625;color:#E8EEF7;border:1px solid #3A4A66;padding:3px 5px"></label>
+          ${b('data-pfside', 'L', 'Left', d.lat != null && d.lat < 0)}${b('data-pfside', 'R', 'Right', d.lat != null && d.lat > 0)}
+          <span style="opacity:.65">Negative yards out = behind the goal</span></div></div>
     </div>
     <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:10px;align-items:center">
       <button id="psave" style="background:#2F7BFF;border-color:#2F7BFF">Save &amp; next ▶</button><button id="pskip">Skip / can't tell</button><button id="preset">Clear this form</button>
@@ -830,8 +837,18 @@ function wirePickBar(p) {
   p.querySelectorAll('[data-pall]').forEach(x => x.onclick = () => { PALL = !PALL; re(); });
   p.querySelectorAll('[data-ptype]').forEach(x => x.onkeydown = e => { if (e.key !== 'Enter') return; e.preventDefault(); e.stopPropagation(); const j = x.value.replace(/[^0-9A-Za-z]/g, ''); if (!j) return;
     if (x.dataset.ptype === 'data-pcj') { d.cT = d.dT; d.cj = j; POTHER = false; } else setJ(PSLOT, '|' + j); re(); });
-  const f = p.querySelector('#pickfield'); if (f) f.onclick = e => { const pt = f.createSVGPoint(); pt.x = e.clientX; pt.y = e.clientY; const q = pt.matrixTransform(f.getScreenCTM().inverse()); const y = pfUn(q.x, q.y);
-    if (!isFinite(y.lat) || !isFinite(y.dist) || q.y <= PF.horizon) return; d.lat = Math.round(Math.max(-20, Math.min(20, y.lat)) * 10) / 10; d.dist = Math.round(Math.max(-PF_BEHIND, Math.min(21.5, y.dist)) * 10) / 10; re(); };
+  const f = p.querySelector('#pickfield');
+  if (f) {
+    const hov = f.querySelector('#pfhover'), rd = p.querySelector('#pfread');
+    f.onmousemove = e => { const y = pfFromEvent(f, e); if (!y) { hov.innerHTML = ''; rd.textContent = ''; return; } hov.innerHTML = pfGuides(y.lat, y.dist); rd.textContent = 'Click to set: ' + pickSpotText(y.lat, y.dist); };
+    f.onmouseleave = () => { hov.innerHTML = ''; rd.textContent = ''; };
+    f.onclick = e => { const y = pfFromEvent(f, e); if (!y) return; d.lat = y.lat; d.dist = y.dist; re(); };
+  }
+  const side = () => d.lat != null && d.lat < 0 ? -1 : 1;
+  const setExact = () => { const di = p.querySelector('#pfdist'), la = p.querySelector('#pflat'); const dv = parseFloat(di.value), lv = parseFloat(la.value);
+    if (!isFinite(dv) && !isFinite(lv)) return; const c = pfClamp(isFinite(lv) ? side() * Math.abs(lv) : (d.lat ?? 0), isFinite(dv) ? dv : (d.dist ?? 0)); d.lat = Math.round(c.lat * 10) / 10; d.dist = Math.round(c.dist * 10) / 10; re(); };
+  ['#pfdist', '#pflat'].forEach(sel => { const i = p.querySelector(sel); if (i) { i.onchange = setExact; i.onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); setExact(); } }; } });
+  p.querySelectorAll('[data-pfside]').forEach(x => x.onclick = () => { const m = Math.abs(d.lat ?? parseFloat(p.querySelector('#pflat').value) ?? 0) || 0; d.lat = x.dataset.pfside === 'L' ? -m : m; if (d.dist == null) d.dist = 0; re(); });
   p.querySelectorAll('[data-pres]').forEach(x => x.onclick = () => { const k = x.dataset.pres; if (d.res === k) { d.res = null; d.call = null; } else { d.res = k; d.call = PRES[k].c || null; } d.cj = null; d.cT = null; POTHER = false; re(); });
   p.querySelectorAll('[data-pcall]').forEach(x => x.onclick = () => { d.call = x.dataset.pcall || null; d.cj = null; d.cT = null; POTHER = false; re(); });
   p.querySelectorAll('[data-pother]').forEach(x => x.onclick = () => { POTHER = !POTHER; re(); });
@@ -887,10 +904,25 @@ function pickFieldSVG(marks, clickable) {
   s += (marks || []).map(m => { const [x, y] = pfP(m.lat, m.dist); return m.pick
     ? `<circle cx="${x.toFixed(2)}" cy="${y.toFixed(2)}" r="2.1" fill="#D4AF37" opacity="0.35"/><circle cx="${x.toFixed(2)}" cy="${y.toFixed(2)}" r="1.1" fill="#0F1F3D" stroke="#FFFFFF" stroke-width="0.35"/>`
     : `<circle cx="${x.toFixed(2)}" cy="${y.toFixed(2)}" r="1.15" fill="${m.color}" stroke="#FFFFFF" stroke-width="0.3">${m.title ? `<title>${esc(m.title)}</title>` : ''}</circle>`; }).join('');
+  if (clickable) s += `<g id="pfhover" style="pointer-events:none"></g>`;
   s += `<rect x="0" y="0" width="100" height="${PF.viewH}" fill="url(#${u}vig)" style="pointer-events:none;"/></svg>`;
   return s;
 }
 const yds = v => (Math.round(Math.abs(v) * 10) / 10).toString();
+const PF_SNAP = 0.5; // clicks land on the nearest half yard
+const pfSnap = v => Math.round(v / PF_SNAP) * PF_SNAP;
+const pfClamp = (lat, dist) => ({ lat: Math.max(-20, Math.min(20, lat)), dist: Math.max(-PF_BEHIND, Math.min(21.5, dist)) });
+// Screen point -> snapped yards, or null when the point is above the field.
+function pfFromEvent(svg, e) {
+  const pt = svg.createSVGPoint(); pt.x = e.clientX; pt.y = e.clientY; const q = pt.matrixTransform(svg.getScreenCTM().inverse());
+  if (q.y <= PF.horizon) return null; const y = pfUn(q.x, q.y); if (!isFinite(y.lat) || !isFinite(y.dist)) return null;
+  const c = pfClamp(y.lat, y.dist); return { lat: pfSnap(c.lat), dist: pfSnap(c.dist) };
+}
+function pfGuides(lat, dist) {
+  const line = pts => `<polyline points="${pts.map(pfPt).join(' ')}" fill="none" stroke="#FFE08A" stroke-width="0.3" stroke-dasharray="0.8,0.6" opacity="0.9"/>`;
+  const [x, y] = pfP(lat, dist);
+  return line([pfP(-20, dist), pfP(20, dist)]) + line([pfP(lat, -PF_BEHIND), pfP(lat, 21.5)]) + `<circle cx="${x.toFixed(2)}" cy="${y.toFixed(2)}" r="1.1" fill="none" stroke="#FFE08A" stroke-width="0.35"/>`;
+}
 const pickSpotText = (lat, dist) => lat == null || dist == null ? '' : `${dist < 0 ? yds(dist) + ' yds behind the goal' : yds(dist) + ' yds out'}, ${Math.abs(lat) < 0.5 ? 'center' : yds(lat) + ' yds ' + (lat < 0 ? 'left' : 'right')}`;
 // ---------- pick summaries (Scouting page) ----------
 function pickArea(lat, dist) {

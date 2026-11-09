@@ -40,7 +40,26 @@ ok('the defender slots switch to the defending team (Testa College, defenders)',
 await ev("Q('[data-pj=\"901|7\"]').click();"); await sleep(80); await ev("Q('[data-pj=\"901|8\"]').click();"); await sleep(80);
 await ev(clickField(0.25, 0.4)); await sleep(80);
 const loc = await ev("const d = W.eval('PDRAFT'), f = Q('#player #pickfield'), r = f.getBoundingClientRect(), pt = f.createSVGPoint(); pt.x = r.left + r.width * 0.25; pt.y = r.top + r.height * 0.4; const q = pt.matrixTransform(f.getScreenCTM().inverse()), y = W.eval('pfUn')(q.x, q.y); return { lat: d.lat, dist: d.dist, eLat: y.lat, eDist: y.dist, txt: Q('#pickbar').innerText };");
-ok('clicking the tracker-style field stores the spot in yards (left of the goal, in front)', loc.lat < -3 && loc.dist > 0 && loc.dist < 21.5 && Math.abs(loc.lat - loc.eLat) < 0.3 && Math.abs(loc.dist - loc.eDist) < 0.3 && /yds out, [\d.]+ yds left/.test(loc.txt), loc);
+ok('clicking the tracker-style field stores the spot in yards (left of the goal, in front)', loc.lat < -3 && loc.dist > 0 && loc.dist < 21.5 && Math.abs(loc.lat - loc.eLat) < 0.4 && Math.abs(loc.dist - loc.eDist) < 0.4 && loc.lat * 2 === Math.round(loc.lat * 2) && loc.dist * 2 === Math.round(loc.dist * 2) && /yds out, [\d.]+ yds left/.test(loc.txt), loc);
+// hover readout and guides
+await ev("const f = Q('#player #pickfield'), r = f.getBoundingClientRect(); f.dispatchEvent(new W.MouseEvent('mousemove', { bubbles: true, clientX: r.left + r.width * 0.6, clientY: r.top + r.height * 0.7 }));"); await sleep(60);
+const hv = await ev("return { rd: Q('#pfread').textContent, g: Q('#pfhover').innerHTML.length, still: [W.eval('PDRAFT').lat, W.eval('PDRAFT').dist] };");
+ok('hovering shows the yardage under the cursor and guide lines, without moving the set spot', /^Click to set: [\d.]+ yds out, [\d.]+ yds right$/.test(hv.rd) && hv.g > 100 && hv.still[0] === loc.lat && hv.still[1] === loc.dist, hv);
+await ev("Q('#player #pickfield').dispatchEvent(new W.MouseEvent('mouseleave', { bubbles: false }));"); await sleep(30);
+ok('leaving the field clears the hover readout', await ev("return Q('#pfread').textContent === '' && Q('#pfhover').innerHTML === '';"));
+// exact entry
+const riX = await ev("return W.eval('RI');");
+await ev("const i = Q('#pfdist'); i.value = '12'; i.dispatchEvent(new W.KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));"); await sleep(60);
+await ev("const i = Q('#pflat'); i.value = '4'; i.dispatchEvent(new W.Event('change', { bubbles: true }));"); await sleep(60);
+ok('typing yards out and from center sets the exact spot, keeping the side', await ev("const d = W.eval('PDRAFT'); return d.dist === 12 && d.lat === -4;") && /Set: 12 yds out, 4 yds left/.test(await bar()));
+ok('Enter in a yardage box does not save the clip', await ev(`return W.eval('RI') === ${riX};`));
+await ev("Q('[data-pfside=R]').click();"); await sleep(60);
+ok('Right flips the side', await ev("return W.eval('PDRAFT').lat === 4;"));
+await ev("const i = Q('#pfdist'); i.value = '-6'; i.dispatchEvent(new W.Event('change', { bubbles: true }));"); await sleep(60);
+ok('negative yards out places it behind the goal', /6 yds behind the goal, 4 yds right/.test(await bar()));
+await ev("const i = Q('#pfdist'); i.value = '40'; i.dispatchEvent(new W.Event('change', { bubbles: true }));"); await sleep(60);
+ok('out-of-range yardage is held to the field', await ev("return W.eval('PDRAFT').dist === 21.5;"));
+await ev(clickField(0.25, 0.4)); await sleep(60);
 ok('step 5 is hidden until a result is picked', !/5\. Breakdown/.test(await bar()));
 await ev("Q('[data-pres=goal_pick]').click();"); await sleep(80);
 b = await bar(); ok('a goal defaults to "Breakdown: whose fault" and lists the four players', await ev("return W.eval('PDRAFT').call === 'fault';") && /Whose fault\?/.test(b) && (b.match(/\(screener|\(ball carrier|’s defender\)/g) || []).length >= 4, b.slice(-600));
