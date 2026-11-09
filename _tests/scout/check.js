@@ -15,7 +15,7 @@ const tagDoc = async k => ev(`const d = await H.__DB.collection('filmTags').doc(
 const open = async q => { await send('Page.navigate', { url: `http://127.0.0.1:${sport}/_tests/scout/host.html${q || ''}` }); for (let i = 0; i < 60; i++) { await sleep(300); try { if (await ev("return !!(W.eval('T') && D.querySelector('[data-pickstart]'));")) return true; } catch (e) {} } return false; };
 await send('Runtime.enable'); await send('Page.enable'); await send('Emulation.setDeviceMetricsOverride', { width: 1280, height: 1400, deviceScaleFactor: 1, mobile: false });
 // Field click helper: clicks the field diagram at (x%, y%) of its box.
-const clickField = (fx, fy) => `const f = Q('#player #shotfield'), r = f.getBoundingClientRect(); f.dispatchEvent(new W.MouseEvent('click', { bubbles: true, clientX: r.left + r.width * ${fx}, clientY: r.top + r.height * ${fy} }));`;
+const clickField = (fx, fy) => `const f = Q('#player #pickfield'), r = f.getBoundingClientRect(); f.dispatchEvent(new W.MouseEvent('click', { bubbles: true, clientX: r.left + r.width * ${fx}, clientY: r.top + r.height * ${fy} }));`;
 const bar = () => ev("return Q('#pickbar') ? Q('#pickbar').innerText : null;");
 
 ok('page loads in the offline host with the synthetic opponent', await open());
@@ -39,7 +39,8 @@ await ev("Q('[data-pj=\"410|93\"]').click();"); await sleep(80);
 ok('the defender slots switch to the defending team (Testa College, defenders)', await ev("const t = QA('[data-pj]').map(x => x.dataset.pj); return W.eval('PSLOT') === 'sd' && t.every(v => v.startsWith('901|')) && t.includes('901|7') && !t.includes('901|1');"));
 await ev("Q('[data-pj=\"901|7\"]').click();"); await sleep(80); await ev("Q('[data-pj=\"901|8\"]').click();"); await sleep(80);
 await ev(clickField(0.25, 0.4)); await sleep(80);
-const loc = await ev("return [W.eval('PDRAFT').x, W.eval('PDRAFT').y];"); ok('clicking the field stores an exact spot', Math.abs(loc[0] - 25) < 1.5 && Math.abs(loc[1] - 28) < 1.5, loc);
+const loc = await ev("const d = W.eval('PDRAFT'), f = Q('#player #pickfield'), r = f.getBoundingClientRect(), pt = f.createSVGPoint(); pt.x = r.left + r.width * 0.25; pt.y = r.top + r.height * 0.4; const q = pt.matrixTransform(f.getScreenCTM().inverse()), y = W.eval('pfUn')(q.x, q.y); return { lat: d.lat, dist: d.dist, eLat: y.lat, eDist: y.dist, txt: Q('#pickbar').innerText };");
+ok('clicking the tracker-style field stores the spot in yards (left of the goal, in front)', loc.lat < -3 && loc.dist > 0 && loc.dist < 21.5 && Math.abs(loc.lat - loc.eLat) < 0.3 && Math.abs(loc.dist - loc.eDist) < 0.3 && /yds out, [\d.]+ yds left/.test(loc.txt), loc);
 ok('step 5 is hidden until a result is picked', !/5\. Breakdown/.test(await bar()));
 await ev("Q('[data-pres=goal_pick]').click();"); await sleep(80);
 b = await bar(); ok('a goal defaults to "Breakdown: whose fault" and lists the four players', await ev("return W.eval('PDRAFT').call === 'fault';") && /Whose fault\?/.test(b) && (b.match(/\(screener|\(ball carrier|’s defender\)/g) || []).length >= 4, b.slice(-600));
@@ -50,8 +51,8 @@ await shot('01_tagger_clip1'); await send('Emulation.setDeviceMetricsOverride', 
 ok('on a laptop-height screen with a real-size video, the video stays on screen and Save can be scrolled to', await ev("const p = Q('#player'); Q('#pv').style.height = '368px'; await new Promise(r => setTimeout(r, 100)); const v = Q('#pv').getBoundingClientRect(); const fits = Q('#psave').getBoundingClientRect().bottom <= p.clientHeight; p.scrollTop = p.scrollHeight; await new Promise(r => setTimeout(r, 100)); const sb = Q('#psave').getBoundingClientRect(); const out = p.classList.contains('pickmode') && v.top >= 0 && (fits || (p.scrollHeight > p.clientHeight && sb.bottom <= p.clientHeight)); p.scrollTop = 0; Q('#pv').style.height = ''; return out;")); await shot('01b_tagger_laptop'); await send('Emulation.setDeviceMetricsOverride', { width: 1280, height: 1400, deviceScaleFactor: 1, mobile: false });
 await ev("D.dispatchEvent(new W.KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));"); await sleep(300);
 const d1 = await tagDoc('pick_def_901'); const r1 = d1 && d1.t && d1.t[first];
-ok('Enter saves to filmTags/pick_def_901 through the real SDK (no cross-frame object error)', r1 && r1.cov === 'Go under' && r1.scr === '90' && r1.usr === '93' && r1.sd === '7' && r1.ud === '8' && r1.res === 'goal_pick' && r1.call === 'fault' && r1.cj === '8' && r1.cT === 901 && r1.oT === 410 && r1.dT === 901 && Math.abs(r1.x - 25) < 1.5, r1);
-ok('the record keeps every field, clip details, tagger and time', r1 && ['cov', 'oT', 'dT', 'scr', 'usr', 'sd', 'ud', 'x', 'y', 'res', 'call', 'cj', 'cT', 'sb', 'typ', 'pg', 'by', 'at'].every(k => k in r1) && r1.sb === 'G1' && r1.by === 'tester@example.test', r1);
+ok('Enter saves to filmTags/pick_def_901 through the real SDK (no cross-frame object error)', r1 && r1.cov === 'Go under' && r1.scr === '90' && r1.usr === '93' && r1.sd === '7' && r1.ud === '8' && r1.res === 'goal_pick' && r1.call === 'fault' && r1.cj === '8' && r1.cT === 901 && r1.oT === 410 && r1.dT === 901 && Math.abs(r1.lat - loc.lat) < 0.01 && Math.abs(r1.dist - loc.dist) < 0.01, r1);
+ok('the record keeps every field, clip details, tagger and time', r1 && ['cov', 'oT', 'dT', 'scr', 'usr', 'sd', 'ud', 'lat', 'dist', 'res', 'call', 'cj', 'cT', 'sb', 'typ', 'pg', 'by', 'at'].every(k => k in r1) && r1.sb === 'G1' && r1.by === 'tester@example.test', r1);
 ok('the save is shown as in progress while offline, and moves to the next clip', await ev("return W.eval('RI') === 1 && /Saving clip 1/.test(Q('#pmsg').textContent);"));
 ok('no save failure on screen', !/FAILED/.test(await bar()));
 
@@ -125,7 +126,10 @@ await ev("Q('[data-pickstart=off]').click();"); await sleep(400);
 ok('offense clips know the defending team from the same game', await ev("const c = W.eval('REEL')[0]; return c.oT === 901 && (c.dT === 410 || c.dT === 902);"));
 ok('screener roster on offense is their own team', await ev("return QA('[data-pj]').every(x => x.dataset.pj.startsWith('901|'));"));
 await ev("Q('[data-pcov=\"Fight over\"]').click(); Q('[data-pj=\"901|1\"]').click();"); await sleep(50); await ev("Q('[data-pj=\"901|4\"]').click();"); await sleep(50);
-await ev(clickField(0.5, 0.55)); await ev("Q('[data-pres=goal_later]').click();"); await sleep(50); await ev("Q('#psave').click();"); await sleep(250); await ev("Q('#pclose').click();"); await sleep(400);
+await ev(clickField(0.5, 0.08)); await sleep(60);
+const bh = await ev("const d = W.eval('PDRAFT'); return { lat: d.lat, dist: d.dist, txt: Q('#pickbar').innerText };");
+ok('a click behind the cage stores a spot behind the goal (X)', bh.dist < -2 && Math.abs(bh.lat) < 3 && /behind the goal/.test(bh.txt), bh);
+ok('the pick field is the tracker drawing: turf, GLE, crease, cage, yard numbers, end line', await ev("const t = Q('#pickfield').outerHTML; return /turf/.test(t) && /GLE/.test(t) && /END LINE/.test(t) && /pipeH/.test(t) && />20</.test(t);")); await ev("Q('[data-pres=goal_later]').click();"); await sleep(50); await ev("Q('#psave').click();"); await sleep(250); await ev("Q('#pclose').click();"); await sleep(400);
 const o1 = (await tagDoc('pick_off_901')).t; const ok1 = Object.values(o1)[0];
 ok('offense tag saves to filmTags/pick_off_901 with both teams', ok1 && ok1.oT === 901 && ok1.scr === '1' && ok1.usr === '4' && ok1.res === 'goal_later', ok1);
 const so = await ev("const box = Q('[data-pickstart=off]').closest('div').parentElement; return box.innerText;");

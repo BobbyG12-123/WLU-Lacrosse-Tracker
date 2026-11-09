@@ -710,7 +710,7 @@ const PICK_RES = [['goal_pick', 'Goal off the pick', 'goal', 'fault'], ['goal_la
   ['broke', 'Pick broke down (illegal, missed screen, slip)', 'other', 'credit'], ['rescreen', 'Re-screen / second pick', 'other', '']];
 const PRES = Object.fromEntries(PICK_RES.map(([k, l, g, c]) => [k, { l, g, c }]));
 const PSLOTS = [['scr', 'Screener', 'o'], ['usr', 'Ball carrier', 'o'], ['sd', 'Screener’s defender', 'd'], ['ud', 'Ball carrier’s defender', 'd']];
-const PICK_FIELDS = ['cov', 'oT', 'dT', 'scr', 'usr', 'sd', 'ud', 'x', 'y', 'res', 'call', 'cj', 'cT', 'sb', 'typ', 'pg'];
+const PICK_FIELDS = ['cov', 'oT', 'dT', 'scr', 'usr', 'sd', 'ud', 'lat', 'dist', 'res', 'call', 'cj', 'cT', 'sb', 'typ', 'pg'];
 const PGRP_COL = { goal: '#C62E1A', shot: '#E3A92B', to: '#1E9E55', other: '#9AA8BC' };
 let PDRAFTS = {}; // unsaved work per side and clip, kept until another team is opened
 let PT = { def: {}, off: {} }, PT_TEAM = null, PT_ERR = '', PSIDE = null, PDRAFT = null, PSLOT = 'scr', PALL = false, POTHER = false, PSAVEMSG = '';
@@ -778,7 +778,6 @@ function pickBar(c) {
   const teamOf = kind => kind === 'o' ? d.oT : d.dT;
   const act = PSLOTS.find(s => s[0] === PSLOT) || PSLOTS[0];
   const slots = PSLOTS.map(([k, l, kind]) => `<button data-pslot="${k}" style="${PSLOT === k ? 'outline:2px solid #E3A92B;outline-offset:1px;' : ''}">${esc(l)}: <b style="font:inherit;text-transform:none;letter-spacing:0">${esc(pj(teamOf(kind), d[k]))}</b></button>`).join(' ');
-  const dot = d.x != null ? `<circle cx="${d.x}" cy="${d.y}" r="2" fill="#E3A92B" stroke="#081A33" stroke-width=".5"/>` : '';
   let call = '';
   if (d.res) {
     call = lab('5. Breakdown or good defense?') + b('data-pcall', 'fault', 'Breakdown: whose fault', d.call === 'fault') + ' ' + b('data-pcall', 'credit', 'Good defense: who gets credit', d.call === 'credit') + ' ' + b('data-pcall', '', 'No call', !d.call);
@@ -790,7 +789,7 @@ function pickBar(c) {
     }
   }
   const dirty = pickDirty(PSIDE, c.tagId, d);
-  const missing = [!d.cov && 'coverage', PSLOTS.some(s => d[s[0]] == null) && 'players', d.x == null && 'location', !d.res && 'result'].filter(Boolean);
+  const missing = [!d.cov && 'coverage', PSLOTS.some(s => d[s[0]] == null) && 'players', d.lat == null && 'location', !d.res && 'result'].filter(Boolean);
   return `<div class="pbar" id="pickbar" style="display:block">
     <div style="display:flex;flex-wrap:wrap;gap:18px;align-items:flex-start">
       <div style="flex:1 1 460px;min-width:280px">
@@ -801,7 +800,7 @@ function pickBar(c) {
         ${lab('4. What happened after')}<div style="display:flex;flex-wrap:wrap;gap:5px">${PICK_RES.map(([k, l]) => b('data-pres', k, l, d.res === k)).join('')}</div>
         ${call}
       </div>
-      <div>${lab('3. Where was the pick set? Click the spot')}${FIELD_SVG(dot, true)}<div style="font-size:11.5px;opacity:.75;margin-top:3px">Goal at the top${d.x != null ? ` · set at ${d.x}, ${d.y}` : ''}</div></div>
+      <div>${lab('3. Where was the pick set? Click the spot')}${pickFieldSVG(d.lat != null ? [{ lat: d.lat, dist: d.dist, pick: true }] : [], true)}<div style="font-size:11.5px;opacity:.75;margin-top:3px">${d.lat != null ? esc(pickSpotText(d.lat, d.dist)) : 'Same field as Log Shot, extended to the end line'}</div></div>
     </div>
     <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:10px;align-items:center">
       <button id="psave" style="background:#2F7BFF;border-color:#2F7BFF">Save &amp; next ▶</button><button id="pskip">Skip / can't tell</button><button id="preset">Clear this form</button>
@@ -831,7 +830,8 @@ function wirePickBar(p) {
   p.querySelectorAll('[data-pall]').forEach(x => x.onclick = () => { PALL = !PALL; re(); });
   p.querySelectorAll('[data-ptype]').forEach(x => x.onkeydown = e => { if (e.key !== 'Enter') return; e.preventDefault(); e.stopPropagation(); const j = x.value.replace(/[^0-9A-Za-z]/g, ''); if (!j) return;
     if (x.dataset.ptype === 'data-pcj') { d.cT = d.dT; d.cj = j; POTHER = false; } else setJ(PSLOT, '|' + j); re(); });
-  const f = p.querySelector('#shotfield'); if (f) f.onclick = e => { const r = f.getBoundingClientRect(); d.x = Math.round((e.clientX - r.left) / r.width * 1000) / 10; d.y = Math.round((e.clientY - r.top) / r.height * 700) / 10; re(); };
+  const f = p.querySelector('#pickfield'); if (f) f.onclick = e => { const pt = f.createSVGPoint(); pt.x = e.clientX; pt.y = e.clientY; const q = pt.matrixTransform(f.getScreenCTM().inverse()); const y = pfUn(q.x, q.y);
+    if (!isFinite(y.lat) || !isFinite(y.dist) || q.y <= PF.horizon) return; d.lat = Math.round(Math.max(-20, Math.min(20, y.lat)) * 10) / 10; d.dist = Math.round(Math.max(-PF_BEHIND, Math.min(21.5, y.dist)) * 10) / 10; re(); };
   p.querySelectorAll('[data-pres]').forEach(x => x.onclick = () => { const k = x.dataset.pres; if (d.res === k) { d.res = null; d.call = null; } else { d.res = k; d.call = PRES[k].c || null; } d.cj = null; d.cT = null; POTHER = false; re(); });
   p.querySelectorAll('[data-pcall]').forEach(x => x.onclick = () => { d.call = x.dataset.pcall || null; d.cj = null; d.cT = null; POTHER = false; re(); });
   p.querySelectorAll('[data-pother]').forEach(x => x.onclick = () => { POTHER = !POTHER; re(); });
@@ -848,12 +848,56 @@ function startPickTagger(side) {
   let p = $('#player'); if (!p) { p = document.createElement('div'); p.id = 'player'; p.className = 'player'; document.body.appendChild(p); }
   p.hidden = false; showClip();
 }
+// ---------- pick field: the tracker's 2.5D field (same camera, turf, stripes, lines, crease, cage and yard numbers as
+// Log Shot and the heat maps in index.html), extended back to the end line so picks at X and GLE can be placed.
+// Spots are stored in yards like the tracker's shots: lat = yards left (-) / right (+) of the goal, dist = yards out
+// from the goal line (negative = behind the goal).
+const PF_BEHIND = 15;
+const PF = (() => { const zc = 88, nearD = zc - 21.5, farD = zc + PF_BEHIND; const f = 47 * nearD / 19.5; const h = 58 / (f * (1 / nearD - 1 / farD));
+  const horizon = 7 - f * h / farD, nearY = horizon + f * h / nearD; return { zc, h, f, horizon, cx: 50, refD: zc - 10, viewH: Math.ceil(nearY + 3) }; })();
+const pfP = (lat, dist, up) => { const d = PF.zc - dist; return [PF.cx + PF.f * lat / d, PF.horizon + PF.f * (PF.h - (up || 0)) / d]; };
+const pfUn = (x, y) => { const d = PF.f * PF.h / (y - PF.horizon); return { lat: (x - PF.cx) * d / PF.f, dist: PF.zc - d }; };
+const pfPt = p => p[0].toFixed(2) + ',' + p[1].toFixed(2);
+const pfQuad = (x0, x1, y0, y1) => [pfP(x0, y0), pfP(x1, y0), pfP(x1, y1), pfP(x0, y1)].map(pfPt).join(' ');
+let PF_UID = 0;
+function pickFieldSVG(marks, clickable) {
+  const u = 'pf' + (++PF_UID) + '_', W = 'rgba(255,255,255,0.92)', FONT = 'font-family="Instrument Sans, Helvetica Neue, Arial, sans-serif"';
+  let s = `<svg viewBox="0 0 100 ${PF.viewH}" xmlns="http://www.w3.org/2000/svg" ${clickable ? 'id="pickfield"' : ''} role="img" aria-label="Pick locations" style="width:${clickable ? '400px' : '100%'};max-width:${clickable ? '100%' : '420px'};display:block;${clickable ? 'cursor:crosshair' : ''}">
+    <defs><linearGradient id="${u}turf" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#3F7A4A"/><stop offset="1" stop-color="#2F6A3C"/></linearGradient>
+    <radialGradient id="${u}vig" cx="50%" cy="40%" r="75%"><stop offset="0.6" stop-color="#000" stop-opacity="0"/><stop offset="1" stop-color="#000" stop-opacity="0.28"/></radialGradient>
+    <linearGradient id="${u}pipeH" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#FF9A55"/><stop offset="0.55" stop-color="#E8621F"/><stop offset="1" stop-color="#B8481A"/></linearGradient>
+    <pattern id="${u}net" width="2.2" height="2.2" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><path d="M0 0 H2.2 M0 0 V2.2" stroke="#FFFFFF" stroke-width="0.22" stroke-opacity="0.55" fill="none"/></pattern>
+    <filter id="${u}shadow" x="-20%" y="-20%" width="140%" height="160%"><feGaussianBlur stdDeviation="0.6"/></filter></defs>`;
+  s += `<rect x="0" y="0" width="100" height="${PF.viewH}" fill="#1F4F2B"/><polygon points="${pfQuad(-21, 21, -PF_BEHIND, 21.5)}" fill="url(#${u}turf)"/>`;
+  for (let z = -PF_BEHIND; z < 21.5; z += 5) s += `<polygon points="${pfQuad(-21, 21, z, Math.min(21.5, z + 2.5))}" fill="#FFFFFF" opacity="0.045"/>`;
+  s += `<polyline points="${[pfP(-19.5, 0), pfP(19.5, 0)].map(pfPt).join(' ')}" stroke="${W}" stroke-width="0.45" fill="none"/>`;
+  s += `<polyline points="${[pfP(-19.5, -PF_BEHIND + 0.3), pfP(19.5, -PF_BEHIND + 0.3)].map(pfPt).join(' ')}" stroke="${W}" stroke-width="0.35" fill="none" opacity="0.8"/>`;
+  [-8, 8].forEach(ax => { s += `<polyline points="${[pfP(ax, 0), pfP(ax, 21)].map(pfPt).join(' ')}" stroke="${W}" stroke-width="0.25" stroke-dasharray="1.2,0.9" fill="none" opacity="0.8"/>`; });
+  const cr = []; for (let i = 0; i <= 64; i++) { const a = i / 64 * Math.PI * 2; cr.push(pfP(Math.cos(a) * 3, Math.sin(a) * 3 - 0.2)); }
+  s += `<polygon points="${cr.map(pfPt).join(' ')}" fill="rgba(255,255,255,0.10)" stroke="${W}" stroke-width="0.3"/>`;
+  for (let yd = 5; yd <= 20; yd += 5) { const [x, y] = pfP(-20.1, yd); s += `<text x="${x.toFixed(2)}" y="${(y + 0.9).toFixed(2)}" text-anchor="middle" ${FONT} font-weight="700" font-size="${(2.6 * PF.refD / (PF.zc - yd)).toFixed(2)}" fill="rgba(255,255,255,0.75)">${yd}</text>`; }
+  { const [gx, gy] = pfP(19.6, 0); s += `<text x="${gx.toFixed(2)}" y="${(gy - 0.8).toFixed(2)}" text-anchor="end" ${FONT} font-size="1.7" fill="rgba(255,255,255,0.7)">GLE</text>`; }
+  { const [ex, ey] = pfP(19.6, -PF_BEHIND + 0.3); s += `<text x="${ex.toFixed(2)}" y="${(ey - 0.6).toFixed(2)}" text-anchor="end" ${FONT} font-size="1.5" fill="rgba(255,255,255,0.65)">END LINE</text>`; }
+  const P = (x, z, up) => pfPt(pfP(x, z, up)), back = -2.3, sh = pfP(0, -0.9);
+  s += `<ellipse cx="${sh[0].toFixed(2)}" cy="${sh[1].toFixed(2)}" rx="${(pfP(1.6, -0.9)[0] - 50).toFixed(2)}" ry="0.9" fill="#000" opacity="0.35" filter="url(#${u}shadow)"/>`;
+  [[`${P(-1, 0, 0)} ${P(-1, 0, 2)} ${P(0, back, 1.1)} ${P(0, back, 0)}`], [`${P(1, 0, 0)} ${P(1, 0, 2)} ${P(0, back, 1.1)} ${P(0, back, 0)}`], [`${P(-1, 0, 2)} ${P(1, 0, 2)} ${P(0, back, 1.1)}`]]
+    .forEach(([pts]) => { s += `<polygon points="${pts}" fill="url(#${u}net)" stroke="#FFFFFF" stroke-opacity="0.5" stroke-width="0.12"/>`; });
+  s += `<polyline points="${P(-1, 0, 0)} ${P(0, back, 0)} ${P(1, 0, 0)}" fill="none" stroke="#E8621F" stroke-width="0.35" stroke-linejoin="round"/>`;
+  s += `<polyline points="${P(-1, 0, 0)} ${P(-1, 0, 2)} ${P(1, 0, 2)} ${P(1, 0, 0)}" fill="none" stroke="url(#${u}pipeH)" stroke-width="0.7" stroke-linejoin="round" stroke-linecap="round"/>`;
+  s += (marks || []).map(m => { const [x, y] = pfP(m.lat, m.dist); return m.pick
+    ? `<circle cx="${x.toFixed(2)}" cy="${y.toFixed(2)}" r="2.1" fill="#D4AF37" opacity="0.35"/><circle cx="${x.toFixed(2)}" cy="${y.toFixed(2)}" r="1.1" fill="#0F1F3D" stroke="#FFFFFF" stroke-width="0.35"/>`
+    : `<circle cx="${x.toFixed(2)}" cy="${y.toFixed(2)}" r="1.15" fill="${m.color}" stroke="#FFFFFF" stroke-width="0.3">${m.title ? `<title>${esc(m.title)}</title>` : ''}</circle>`; }).join('');
+  s += `<rect x="0" y="0" width="100" height="${PF.viewH}" fill="url(#${u}vig)" style="pointer-events:none;"/></svg>`;
+  return s;
+}
+const yds = v => (Math.round(Math.abs(v) * 10) / 10).toString();
+const pickSpotText = (lat, dist) => lat == null || dist == null ? '' : `${dist < 0 ? yds(dist) + ' yds behind the goal' : yds(dist) + ' yds out'}, ${Math.abs(lat) < 0.5 ? 'center' : yds(lat) + ' yds ' + (lat < 0 ? 'left' : 'right')}`;
 // ---------- pick summaries (Scouting page) ----------
-function pickArea(x, y) {
-  if (x == null || y == null) return null;
-  const col = x < 38 ? 'left' : x > 62 ? 'right' : 'middle';
-  const row = y < 18 ? 'Behind the goal' : y < 30 ? 'Low' : y < 42 ? 'Wing height' : 'Top';
-  return `${row}, ${col}`;
+function pickArea(lat, dist) {
+  if (lat == null || dist == null) return null;
+  const col = lat < -8 ? 'left' : lat > 8 ? 'right' : 'middle';
+  if (dist < 0) return col === 'middle' ? 'X (behind the goal)' : `Behind the goal, ${col}`;
+  return `${dist < 8 ? 'Low (inside 8 yds)' : dist < 14 ? 'Mid (8–14 yds)' : 'Top (14+ yds)'}, ${col}`;
 }
 function pickRows(side, S) {
   return pickClips(side, S).map(x => ({ x, t: pickTag(side, x.id) })).filter(r => r.t).map(r => {
@@ -896,11 +940,11 @@ function pickSummary(side, S) {
   const known = rows.filter(r => r.known);
   const resCnt = {}; known.forEach(r => { resCnt[r.t.res] = (resCnt[r.t.res] || 0) + 1; });
   const resTbl = known.length ? `<div class="tw" style="margin-top:8px"><table><thead><tr><th class="l">What happened after</th><th>n</th><th>Share</th></tr></thead><tbody>${PICK_RES.filter(([k]) => resCnt[k]).map(([k, l]) => `<tr><td class="l">${esc(l)}</td><td>${resCnt[k]}</td><td>${pc(resCnt[k] / known.length)}</td></tr>`).join('')}</tbody></table></div>` : '';
-  const placed = rows.filter(r => r.t.x != null);
-  const dots = placed.map(r => `<circle cx="${r.t.x}" cy="${r.t.y}" r="1.7" fill="${PGRP_COL[r.grp || (r.goal ? 'goal' : 'other')]}" stroke="#fff" stroke-width=".3"><title>${esc((r.t.cov || 'no coverage') + ' · ' + (r.t.res ? PRES[r.t.res].l : r.goal ? 'possession scored' : 'no result tagged'))}</title></circle>`).join('');
-  const map = placed.length ? `<div style="display:flex;flex-wrap:wrap;gap:16px;margin-top:10px;align-items:flex-start"><div><div class="note" style="margin:0 0 4px">Where the picks were set (${placed.length}) · goal at the top</div>${FIELD_SVG(dots)}
+  const placed = rows.filter(r => r.t.lat != null && r.t.dist != null);
+  const marks = placed.map(r => ({ lat: r.t.lat, dist: r.t.dist, color: PGRP_COL[r.grp || (r.goal ? 'goal' : 'other')], title: (r.t.cov || 'no coverage') + ' · ' + (r.t.res ? PRES[r.t.res].l : r.goal ? 'possession scored' : 'no result tagged') + ' · ' + pickSpotText(r.t.lat, r.t.dist) }));
+  const map = placed.length ? `<div style="display:flex;flex-wrap:wrap;gap:16px;margin-top:10px;align-items:flex-start"><div><div class="note" style="margin:0 0 4px">Where the picks were set (${placed.length}) · left and right as seen from the field, looking at the goal</div>${pickFieldSVG(marks)}
       <div class="note" style="margin:4px 0 0">${Object.entries({ goal: 'goal', shot: 'shot, no goal', to: 'turnover', other: 'other / no result' }).map(([g, l]) => `<span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:${PGRP_COL[g]};margin:0 4px 0 8px"></span>${l}`).join('')}</div></div>
-      <div style="flex:1;min-width:260px">${pickTable(placed, r => pickArea(r.t.x, r.t.y), 'Area')}</div></div>` : '<p class="note" style="margin:6px 0 0">No pick locations clicked yet.</p>';
+      <div style="flex:1;min-width:260px">${pickTable(placed, r => pickArea(r.t.lat, r.t.dist), 'Area')}</div></div>` : '<p class="note" style="margin:6px 0 0">No pick locations clicked yet.</p>';
   return `<div style="border:1px solid var(--line);padding:10px 12px;margin:10px 0;background:var(--card-2)">${head}
     ${pickTable(rows, r => r.t.cov || 'Coverage not tagged', 'Coverage')}
     <p class="note" style="margin:6px 0 0">${done} tagged${legacy ? ` (${legacy} older coverage-only tags)` : ''}.${done < 15 ? ' Tag at least 15 for a reliable read.' : ''} Goals count when the possession scored. Shots (that didn't score) and turnovers (TOs) count only where the result was tagged.${vsWL.length ? ` ${vsWL.length} of these ${side === 'def' ? 'were our picks' : 'were against us'}: ${vsWL.filter(r => r.goal).length} goals.` : ''}</p>
