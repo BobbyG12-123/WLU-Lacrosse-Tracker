@@ -5,6 +5,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 deno run --check=none --allow-read=. tests/engine_tests.js
 deno run --check=none --allow-read=. tests/picks_tests.js
+deno run --check=none --allow-read=. v3/tests/v3_tests.js
 CHROME=${CHROME:-"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"}
 cp ../_tests/phase0/serve.py .
 rm -rf results chrome_profile; mkdir -p results
