@@ -22,9 +22,9 @@
     const L = Object.values(g), N = L.reduce((a, v) => a + v.n, 0), G = L.reduce((a, v) => a + v.goals, 0), team = N ? G / N : null, k = V3.K.group;
     return { team, N, k, list: team == null ? [] : L.map(v => Object.assign(v, { rate: (v.goals + k * team) / (v.n + k) })).sort((a, b) => b.rate - a.rate) };
   }
-  // Our defense: practice reps, plus scrimmage possessions where the other team shot (our defenders, our goalie).
-  // In a scrimmage, our own shots are against their goalie and their defenders, so they're left out.
-  const ourDefense = s => !(s.context === 'Scrimmage' && s.team !== 'OPP');
+  // Our defense: practice reps, plus scrimmage or game possessions where the other team shot (our defenders, our goalie).
+  // Against an opponent, our own shots are against their goalie and their defenders, so they're left out.
+  const ourDefense = s => !(s.context && s.context !== 'Practice' && s.team !== 'OPP');
   function defenders(shots) {
     const reps = shots.filter(ourDefense).filter(x => x.defender && (x.defBeaten === 'Yes' || x.defBeaten === 'No'));
     const team = reps.length ? reps.filter(x => x.defBeaten === 'Yes').length / reps.length : null, by = {}, k = V3.K.defender;
@@ -65,7 +65,8 @@
       if (!lynDef.enough.coverage) missing.push(`Their pick coverage: ${lynDef.coverageTagged} of ${(sb.pick_clips_def || []).length} pick clips tagged (15 needed). Team pick rates used.`);
     }
     const placement = placementFromTags(tags.shotOff);
-    if (!placement) missing.push('Where their shooters put the ball: not tagged yet (Scouting page shot locations). Goalie comparison uses an even spread.');
+    if (!placement) missing.push('Where their shooters put the ball: not tagged yet (Scouting page goal locations, 5+ per shooter). Goalie comparison uses an even spread.');
+    else missing.push('Shooter placement comes from where their goals went in (Scouting page goal tags), not all their shots.');
     const gz = V3.goalieZones(shots.filter(ourDefense));
     const ctx = g2 => ({ d3, wl: { picks: picks && picks.rows.length ? picks : null, pickTeams: picks ? { off: picks._off, def: picks._def } : null }, opp: { placement, goalieZones: gz, goalie: g2 } });
     const P = V3.matchup(W, O, ctx(o.goalie));

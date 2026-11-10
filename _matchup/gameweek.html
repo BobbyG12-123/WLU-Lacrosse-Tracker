@@ -1,0 +1,42 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; worker-src 'self'; connect-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; base-uri 'none'; form-action 'none'">
+<title>Game week (experimental)</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;600;700&family=Saira+Condensed:wght@500;600;700&family=Big+Shoulders+Display:wght@700&display=swap">
+<style>
+:root { --paper:#F4F6F9; --card:#FFFFFF; --card-2:#F8F9FB; --ink:#16202E; --muted:#5D6877; --line:#DDE2EA; --accent:#2F7BFF; --accent-soft:rgba(47,123,255,.12); --warn:#6B4E16; --warn-bg:#FBEFC9; --team-a:#1F5FBF; --team-b:#C2410C; }
+@media (prefers-color-scheme: dark) { :root { --paper:#070E19; --card:#0E1625; --card-2:#121C2E; --ink:#E8EEF7; --muted:#9AA8BC; --line:#22304A; --accent:#4D90FF; --accent-soft:rgba(77,144,255,.16); --warn:#F0C75A; --warn-bg:#3A2F0E; --team-a:#4E8BE8; --team-b:#D4702C; } }
+* { box-sizing:border-box; } body { margin:0; background:var(--paper); color:var(--ink); font:14px/1.45 'Instrument Sans','Helvetica Neue',Arial,sans-serif; }
+main { max-width:1240px; margin:0 auto; padding:14px 16px 60px; }
+h1 { font:700 34px/1.05 'Big Shoulders Display','Arial Narrow',sans-serif; margin:2px 0; } h2 { font-size:17px; margin:0 0 6px; } h3 { font-size:13.5px; margin:14px 0 6px; }
+.kicker { font:700 12px 'Saira Condensed',sans-serif; letter-spacing:.12em; text-transform:uppercase; color:var(--muted); }
+.banner { background:var(--warn-bg); color:var(--warn); border-left:5px solid var(--warn); padding:10px 14px; border-radius:8px; margin-bottom:12px; font-size:13px; }
+header { display:flex; flex-wrap:wrap; gap:12px; justify-content:space-between; align-items:flex-end; margin-bottom:12px; }
+.ctl { display:flex; flex-wrap:wrap; gap:6px; align-items:center; } .pill { font:600 13px inherit; font-family:inherit; padding:6px 12px; border-radius:999px; border:1.5px solid var(--line); background:var(--card-2); color:var(--ink); cursor:pointer; } .pill.on { background:var(--accent-soft); border-color:var(--accent); }
+.muted { color:var(--muted); } small.muted { font-size:11.5px; } p.muted { font-size:12.5px; margin:0 0 8px; }
+.tiles { display:grid; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); gap:10px; margin-bottom:12px; } .tile { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:12px 14px; } .tile .k { font-size:12px; color:var(--muted); } .tile .v { font:600 34px/1.1 'Saira Condensed',sans-serif; font-variant-numeric:tabular-nums; } .tile .d { font-size:12px; color:var(--muted); }
+.panel { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:16px; margin-bottom:12px; }
+.g2 { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:12px; } @media (max-width:980px) { .g2 { grid-template-columns:minmax(0,1fr); } }
+.tw { overflow-x:auto; } table { border-collapse:collapse; width:100%; font-size:13px; font-variant-numeric:tabular-nums; } th { text-align:right; font-size:11.5px; color:var(--muted); font-weight:700; padding:5px 7px; border-bottom:1.5px solid var(--line); white-space:nowrap; } td { text-align:right; padding:5px 7px; border-bottom:1px solid var(--line); } th.l, td.l { text-align:left; }
+td.bar { position:relative; min-width:120px; } td.bar i { position:absolute; top:50%; height:10px; margin-top:-5px; border-radius:3px; } td.bar .zero { position:absolute; left:50%; top:4px; bottom:4px; width:1px; background:var(--muted); opacity:.6; }
+ul.say { margin:4px 0 0 18px; padding:0; } ul.say li { margin:6px 0; font-size:14px; } ul.note { margin:4px 0 0 18px; padding:0; font-size:12.5px; color:var(--muted); }
+.inv { display:inline-block; font-size:10.5px; font-weight:700; letter-spacing:.05em; text-transform:uppercase; padding:1px 7px; border-radius:4px; background:var(--warn-bg); color:var(--warn); vertical-align:middle; }
+.hist { width:100%; max-width:520px; display:block; } .hist .ax { font:11px 'Saira Condensed',sans-serif; fill:var(--muted); }
+.dot { display:inline-block; width:9px; height:9px; border-radius:50%; margin:0 4px 0 10px; }
+.goalgrid { display:grid; grid-template-columns:repeat(3,72px); gap:3px; border:4px solid #E8621F; padding:3px; width:max-content; background:var(--card); } .goalgrid div { height:48px; display:grid; place-items:center; align-content:center; font-size:12px; } .goalgrid b { font:600 18px 'Saira Condensed',sans-serif; } .goalgrid small { color:var(--muted); font-size:10.5px; }
+.src { display:inline-block; font-size:10.5px; font-weight:700; letter-spacing:.05em; text-transform:uppercase; padding:1px 7px; border-radius:4px; vertical-align:middle; } .src.real { background:rgba(12,163,12,.14); color:#1B7A1B; } .src.proxy { background:var(--accent-soft); color:var(--accent); }
+.recs { display:grid; grid-template-columns:repeat(auto-fit,minmax(340px,1fr)); gap:10px 18px; } .rec h3 { margin:6px 0 4px; } .rec ul { margin:0 0 0 18px; padding:0; } .rec li { margin:4px 0; }
+.tgt { padding:8px 0; border-bottom:1px solid var(--line); } .tgt .tl { margin-bottom:6px; } .chips { display:flex; flex-wrap:wrap; gap:6px; } .chip { display:flex; flex-direction:column; align-items:center; min-width:64px; padding:4px 8px; border-radius:8px; border:1px solid var(--line); background:var(--card-2); } .chip small { color:var(--muted); font-size:11.5px; } .chip b { font:600 18px 'Saira Condensed',sans-serif; } .chip.now { border:2px solid var(--ink); } .chip.up b { color:var(--team-a); } .chip.down b { color:var(--team-b); }
+table.tg td.up b { color:var(--team-a); } table.tg td.down b { color:var(--team-b); } table.tg td.nowc { background:var(--accent-soft); } table.tg td { font-size:14px; }
+input.use { width:58px; font:inherit; padding:2px 5px; border:1px solid var(--line); border-radius:6px; background:var(--card); color:var(--ink); text-align:right; } p.lead { font-size:15px; margin:0 0 6px; } b.good { color:var(--team-a); } span.bad { color:var(--team-b); }
+.five ol { margin:4px 0 10px 20px; padding:0; } .five li { margin:7px 0; font-size:15px; } details summary { cursor:pointer; font-weight:600; color:var(--accent); }
+table.lev td { vertical-align:top; padding:8px 7px; } table.lev td.why { color:var(--muted); font-size:12.5px; max-width:420px; } .area { display:inline-block; font:700 10.5px 'Saira Condensed',sans-serif; letter-spacing:.08em; text-transform:uppercase; color:var(--muted); min-width:62px; }
+.cause { border:1px solid var(--line); border-radius:8px; padding:10px 12px; margin:8px 0; background:var(--card-2); } .cause .ch { display:flex; justify-content:space-between; gap:8px; font-size:15px; } .cause .share { font:600 15px 'Saira Condensed',sans-serif; color:var(--team-b); white-space:nowrap; } .cause .cb { margin-top:4px; } .cause .ct { margin-top:4px; color:var(--team-a); font-weight:600; }
+.thin { display:inline-block; font-size:10px; font-weight:700; letter-spacing:.05em; text-transform:uppercase; padding:0 5px; border-radius:3px; background:var(--warn-bg); color:var(--warn); }
+
+.pick-row { display:flex; flex-wrap:wrap; gap:6px; align-items:center; margin:6px 0; } .pick-row input[type=search] { font:inherit; padding:5px 9px; border:1px solid var(--line); border-radius:8px; background:var(--card); color:var(--ink); width:220px; }
+button.go { font:700 14px inherit; font-family:inherit; padding:8px 16px; border-radius:8px; border:0; background:var(--accent); color:#fff; cursor:pointer; } button.go:disabled { opacity:.45; cursor:not-allowed; }
+.err { color:#C62E1A; font-weight:600; } a.back { color:var(--accent); font-size:13px; }
+</style></head><body><main><header><div><div class="kicker">Simulation · game week · engine v3</div><h1 id="title">Game week</h1><p class="muted" id="srcline">Loading tracker data…</p></div><a class="back" href="studio.html">← Back to the Simulation screen</a></header>
+<section class="panel" id="controls"></section><div id="app"></div></main>
+<script src="picks.js"></script><script src="v3/model.js"></script><script src="v3/engine.js"></script><script src="v3/sheet.js"></script><script src="v3/sheet_view.js"></script><script src="v3/sources.js"></script><script src="gameweek.js"></script>
+</body></html>

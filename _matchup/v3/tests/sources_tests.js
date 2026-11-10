@@ -1,0 +1,23 @@
+// Data-source rules for game week (engine v3). Synthetic only. Run from the repo root: deno run --check=none --allow-read=. _matchup/v3/tests/sources_tests.js
+for (const f of ['../model.js', '../engine.js', '../sheet.js', '../sources.js', '../../picks.js', './fixtures_v3.js']) await import(new URL(f, import.meta.url));
+const MS = globalThis.MS, V3 = MS.V3, FX = globalThis.FX3; const results = [];
+const ok = (name, cond, info) => { results.push({ name, ok: !!cond }); console.log((cond ? '  OK   ' : '  FAIL ') + name + (cond || info === undefined ? '' : '  ' + JSON.stringify(info).slice(0, 500))); };
+ok('seasons run August to May (Aug 2026 = 2027, Apr 2026 = 2026)', V3.sources.seasonOf('2026-08-01') === 2027 && V3.sources.seasonOf('2026-04-30') === 2026 && V3.sources.seasonOf(null) === null);
+const L = V3.sources.ourLogs(FX.exp, FX.cols, 2027);
+ok('only this season’s sessions are read; last season’s are left out', L.shots.length === 30 + 60 + 180 + 10 && !L.shots.some(s => s.date === '2026-04-01'), L.shots.length);
+ok('each row carries its session context and opponent', L.shots.filter(s => s.context === 'Scrimmage').length === 10 && L.shots.find(s => s.context === 'Scrimmage').opponent === 'Sample State');
+ok('lineup records and no-shot possessions are read', L.stints.length === 2 && L.poss.length === 10 && L.roster.length === 5);
+const d3 = V3.sources.d3From(FX.meta, [{ eff: 0.25, emo: { goals: 30, chances: 100 } }, { eff: 0.27, emo: { goals: 40, chances: 100 } }]);
+ok('D3 averages: mean adjusted efficiency, pooled man-up', Math.abs(d3.eff - 0.26) < 1e-12 && Math.abs(d3.emo - 0.35) < 1e-12 && d3.by_type === FX.meta.sb_league.by_type);
+let threw = false; try { V3.sources.d3From(FX.meta, []); } catch (e) { threw = true; } ok('D3 averages refuse empty summaries', threw);
+const lr = { meta: FX.meta, teams: { 410: FX.wl, 901: FX.opp }, players: { 901: [] } };
+const I26 = V3.sources.inputs(FX.exp, FX.cols, lr, { oppId: 901, d3 });
+ok('2026 team records for a 2027 game: their returning players only, and it says so', I26.opts.oppReturning === true && /returning players/.test(I26.sourceNotes[0]));
+const I27 = V3.sources.inputs(FX.exp, FX.cols, Object.assign({}, lr, { meta: Object.assign({}, FX.meta, { season: 2027 }) }), { oppId: 901, d3 });
+ok('2027 team records for a 2027 game: used as they are (full roster)', I27.opts.oppReturning === false && /this season/.test(I27.sourceNotes[0]));
+ok('goal-location tags are joined to the shooter from the goal clip', I26.tags.shotOff.gc1.j === '2' && I26.tags.shotOff.gc1.zone === 'Low left');
+threw = false; try { V3.sources.inputs(FX.exp, FX.cols, lr, { oppId: 999, d3 }); } catch (e) { threw = /not found/.test(e.message); } ok('an opponent with no record on the tracker is refused with a clear message', threw);
+const S = V3.sheet.build(Object.assign({}, I26, { opts: Object.assign({}, I26.opts, { games: 1200 }) }));
+ok('the sheet builds from these inputs, and scrimmage shots by us stay out of our goalie numbers', S.ourGoalies.length === 2 && S.ourGoalies.every(g => g.n === 90), S.ourGoalies.map(g => [g.j, g.n]));
+ok('names on our practice levers come from the 2027 roster', S.levers.some(l => /#7 Testa → #9 Testa/.test(l.title)), S.levers.map(l => l.title));
+const pass = results.filter(r => r.ok).length; console.log(`game-week sources: pass ${pass}  fail ${results.length - pass}`); Deno.exit(pass === results.length ? 0 : 1);

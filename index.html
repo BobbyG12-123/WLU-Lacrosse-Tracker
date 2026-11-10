@@ -10034,6 +10034,17 @@ document.getElementById('lrImportBtn').addEventListener('click', importLrData);
 // read them later.
 // Read-only tracker data for the experimental Simulation screen.
 window.msStudioData = async () => { if (!MS_DEV_FLAG || PLAYER_MODE) throw new Error('Not available.'); return { exp: await exportAllDataCollect('simulation-read'), cols: { shot: COLS, poss: POSS_COLS } }; };
+// Simulation game week (experimental, same flag): read-only access to the LacrosseReference records on the tracker.
+// { meta, teams: [ids], players: [team ids], d3: true } -> plain copies. Never writes.
+window.msLrData = async (req) => {
+  if (!MS_DEV_FLAG || PLAYER_MODE) throw new Error('Not available.');
+  req = req || {}; const unpack = d => { const x = d.data(); return x && typeof x.j === 'string' ? JSON.parse(x.j) : x; }, out = {};
+  if (req.meta) { const m = await DB.collection('app').doc('lrMeta').get(); out.meta = m.exists ? unpack(m) : null; }
+  if (req.teams) { out.teams = {}; for (const id of req.teams) { const d = await DB.collection('lrTeams').doc(String(id)).get(); out.teams[id] = d.exists ? unpack(d) : null; } }
+  if (req.players) { out.players = {}; for (const id of req.players) { const qs = await DB.collection('lrPlayers').where('team', '==', Number(id)).get(); out.players[id] = []; qs.forEach(d => out.players[id].push(unpack(d))); } }
+  if (req.d3) { const qs = await DB.collection('lrTeams').get(); out.d3 = []; qs.forEach(d => { const t = unpack(d); if (t && t.lg === 'd3m' && t.stats && t.stats.adjusted_off_efficiency != null) out.d3.push({ eff: t.stats.adjusted_off_efficiency, emo: t.ev && t.ev.emo ? { goals: t.ev.emo.goals, chances: t.ev.emo.chances } : null }); }); }
+  return JSON.parse(JSON.stringify(out));
+};
 async function exportAllDataCollect(who) {
   const cols = ['app', 'sessions', 'evalPlayers', 'evalRatings', 'filmTags', 'filmSessions', 'trainQueues', 'trainShots'];
   const out = { exportedAt: new Date().toISOString(), by: who, collections: {}, excluded: 'app/op_* (save audit records)' };
