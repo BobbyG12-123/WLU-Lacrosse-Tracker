@@ -119,7 +119,10 @@
     P.shooters = sh.map(s => ({ j: s.j, name: s.name, share: s.share / tot, m: s.m / mean }));
     // Goalie in net for B, against each shooter's placement. Relative to B's usual goalie mix, so the team level stays calibrated.
     const gz = ctx.goalieZones || {}, inNet = ctx.goalie && gz[ctx.goalie] ? gz[ctx.goalie] : null;
-    const ref = B.goalies.filter(x => gz[x.j]);
+    // Reference = the defense's usual goalies that have zone logs; if none match (jersey numbers change between seasons),
+    // the logged goalie pool itself, weighted by shots faced.
+    let ref = B.goalies.filter(x => gz[x.j]);
+    if (!ref.length) { const pool = Object.values(gz).filter(x => x.n >= 30), tot = pool.reduce((a, x) => a + x.n, 0); ref = pool.map(x => ({ j: x.j, share: x.n / tot })); }
     P.goalie = inNet ? inNet.j : (B.goalies[0] && B.goalies[0].j) || null;
     P.shooters.forEach(s => {
       const mix = (ctx.placement && ctx.placement[s.j]) || EVEN_MIX;
