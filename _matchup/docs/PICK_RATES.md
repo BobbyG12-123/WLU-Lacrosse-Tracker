@@ -19,14 +19,15 @@ Every rate is (count + w × prior) / (attempts + w), reported with its count, pr
 | Coverage share | Pooled league coverage mix, or an even split over the coverages seen | 10 |
 | Goals per pick, by coverage | The team rate | 20 |
 | Shots and turnovers, by coverage | The team's tagged results, pulled toward the league's tagged results when there are any | 20 |
-| Player goals per pick | Coverage-adjusted team rate on the picks he was in | 15 |
+| Player goals off the pick, per pick with a tagged result | The team's goal-off-pick rate for the coverages he played (each pulled toward the team's overall rate, weight 20) | 15 |
 
 The weights were fixed on Nov 9, 2026, before any result-tagged picks existed, and are not tuned on tagged data. Changing them is a model change.
 
 - A goal counts from the tagged result when there is one; otherwise from whether the possession scored. Shots and turnovers count only where a result was tagged.
 - A team with no coverage tags gets no coverage split. Another team's mix is never borrowed.
 - Below 15 coverage tags for a defense, the matchup uses team rates only and says how many tags there are.
-- Players are used by the sim only from 10 tagged picks. Fault and credit count only for the team's own players.
+- Players are judged on goals off the pick only. A goal later in the possession is counted separately and isn't charged to them (Nov 10, 2026). Picks without a tagged result count as picks seen but not in the rate.
+- Players are used by the sim only from 10 picks with a tagged result. Fault and credit count only for the team's own players.
 
 ## Our picks against their defense
 

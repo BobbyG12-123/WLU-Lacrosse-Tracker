@@ -73,15 +73,24 @@ const tag = o => Object.assign({ cov: null, oT: US, dT: TEAM, scr: null, usr: nu
   ok('defenders are counted from both defender slots', p7.n === 10 && p8.n === 10 && r.players.some(p => p.jersey === '20') && r.players.some(p => p.jersey === '21'));
   ok('screeners are not counted on the defense side', !r.players.some(p => p.roles.scr || p.roles.usr));
   ok('#7 (1 goal in 10) is better than expected, #8 (6 in 10) worse', p7.diff < 0 && p8.diff > 0, [p7.diff, p8.diff]);
-  ok('player rate = (goals + 15 × expected) / (n + 15)', near(p7.rate.value, (1 + 15 * p7.rate.prior) / 25) && p7.rate.w === 15);
+  ok('player rate = (goals off the pick + 15 × expected) / (n + 15)', near(p7.rate.value, (1 + 15 * p7.rate.prior) / 25) && p7.rate.w === 15);
+  // A goal later in the possession is counted separately and not against the defender.
+  const lt = {}; const lc = []; for (let i = 0; i < 12; i++) { lc.push(clip('L' + i, 0, US)); lt['L' + i] = tag({ cov: 'Switch', res: i < 6 ? 'goal_later' : 'reset', sd: '5', ud: '6' }); }
+  for (let i = 0; i < 12; i++) { lc.push(clip('M' + i, 0, US)); lt['M' + i] = tag({ cov: 'Switch', res: i < 3 ? 'goal_pick' : 'reset', sd: '50', ud: '60' }); }
+  const rl = MS.pickRates({ side: 'def', teamId: TEAM, clips: lc, tags: lt, teamPick: { n: 200, goal_pct: 0.3 }, d3Pick: D3 });
+  const p5 = rl.players.find(p => p.jersey === '5'), p50 = rl.players.find(p => p.jersey === '50');
+  ok('goals later in the possession are counted separately, not as the defender’s goals', p5.goals === 0 && p5.later === 6 && p50.goals === 3 && p5.diff < p50.diff, [p5, p50]);
+  const lg = MS.pickRates({ side: 'def', teamId: TEAM, clips: [clip('x', 1, US)], tags: { x: tag({ cov: 'Switch', sd: '5' }) }, legacy: {}, teamPick: { n: 50, goal_pct: 0.3 }, d3Pick: D3 });
+  ok('picks without a tagged result count toward picks seen but not toward the player rate', lg.players[0].all === 1 && lg.players[0].n === 0 && lg.players[0].rate === null);
   ok('fault counts go to their own player; credit given to another team is not counted', p8.fault === 6 && p8.credit === 0 && !r.players.some(p => p.jersey === '99'), p8);
   ok('players with 10+ picks are marked usable for the sim', p7.used && p8.used);
   // Offense side: their own picks. #2 screens and #3 uses 12 times (5 goals); defenders are the other team and not listed.
   const oc = [], ot = {};
   for (let i = 0; i < 12; i++) { oc.push(clip('o' + i, 0, TEAM)); ot['o' + i] = tag({ oT: TEAM, dT: US, cov: 'Switch', res: i < 5 ? 'goal_pick' : 'reset', scr: '2', usr: '3', sd: '90', ud: '91' }); }
+  for (let i = 0; i < 12; i++) { oc.push(clip('q' + i, 0, TEAM)); ot['q' + i] = tag({ oT: TEAM, dT: US, cov: 'Switch', res: i < 1 ? 'goal_pick' : 'reset', scr: '4', usr: '5', sd: '90', ud: '91' }); }
   const r2 = MS.pickRates({ side: 'off', teamId: TEAM, clips: oc, tags: ot, teamPick: { n: 200, goal_pct: 0.3 }, d3Pick: D3 });
   const p3 = r2.players.find(p => p.jersey === '3');
-  ok('offense side counts their screeners and ball carriers, not the defenders', r2.players.length === 2 && r2.players.every(p => p.roles.scr || p.roles.usr) && p3.n === 12 && p3.goals === 5, r2.players);
+  ok('offense side counts their screeners and ball carriers, not the defenders', r2.players.length === 4 && r2.players.every(p => p.roles.scr || p.roles.usr) && p3.n === 12 && p3.goals === 5, r2.players);
   ok('on offense, more goals than expected shows as a positive difference', p3.diff > 0);
 }
 // ---- 5. Our picks against their defense

@@ -74,21 +74,25 @@
     });
     const shareSum = coverage.reduce((a, c) => a + c.share.value, 0);
     coverage.forEach(c => { c.share.value /= shareSum || 1; });
-    // 4. Players: goals on the picks they were in, against what the coverage they played would give the team.
+    // 4. Players: judged on goals off the pick only (a goal later in the possession isn't theirs), over picks with a tagged
+    //    result. Expected = the team's goal-off-pick rate for the coverage played (pulled toward the team's overall rate).
     const slots = side === 'def' ? ['sd', 'ud'] : ['scr', 'usr'];
     const own = r => side === 'def' ? r.dT === teamId : r.oT === teamId;
-    const covGoal = Object.fromEntries(coverage.map(c => [c.coverage, c.goal.value]));
-    const P = new Map(); const get = j => P.get(j) || (P.set(j, { jersey: j, n: 0, goals: 0, expected: 0, roles: {}, fault: 0, credit: 0 }), P.get(j));
+    const offPick = r => r.res === 'goal_pick';
+    const teamGP = nR ? resRecs.filter(offPick).length / nR : null;
+    const covGP = {}; if (teamGP != null) names.forEach(c => { const rr = resRecs.filter(r => r.cov === c); covGP[c] = (rr.filter(offPick).length + K.result * teamGP) / (rr.length + K.result); });
+    const P = new Map(); const get = j => P.get(j) || (P.set(j, { jersey: j, all: 0, n: 0, goals: 0, later: 0, expected: 0, roles: {}, fault: 0, credit: 0 }), P.get(j));
     for (const r of recs) {
-      if (own(r)) for (const s of slots) { const j = r[s]; if (j == null || j === '') continue; const v = get(String(j)); v.n++; v.goals += r.goal ? 1 : 0; v.expected += r.cov && covGoal[r.cov] != null ? covGoal[r.cov] : team.value; v.roles[s] = (v.roles[s] || 0) + 1; }
+      if (own(r)) for (const s of slots) { const j = r[s]; if (j == null || j === '') continue; const v = get(String(j)); v.all++; v.roles[s] = (v.roles[s] || 0) + 1;
+        if (r.resultTagged) { v.n++; if (offPick(r)) v.goals++; if (r.res === 'goal_later') v.later++; v.expected += r.cov && covGP[r.cov] != null ? covGP[r.cov] : teamGP; } }
       if (r.call && r.cj != null && r.cj !== 'team' && r.cT === teamId) get(String(r.cj))[r.call === 'fault' ? 'fault' : 'credit']++;
     }
     const players = [...P.values()].map(v => {
-      const exp = v.n ? v.expected / v.n : team.value;
-      const rate = row(shrink(v.goals, v.n, exp, K.player), v.goals, v.n, exp, K.player, 'coverage-adjusted team rate');
-      // diff < 0 on defense = fewer goals than expected (better); on offense, diff > 0 is better.
-      return { jersey: v.jersey, n: v.n, goals: v.goals, expected: round(exp), rate, diff: round(rate.value - exp), roles: v.roles, fault: v.fault, credit: v.credit, used: v.n >= 10 };
-    }).sort((a, b) => b.n - a.n || String(a.jersey).localeCompare(String(b.jersey)));
+      const exp = v.n ? v.expected / v.n : teamGP;
+      const rate = exp == null ? null : row(shrink(v.goals, v.n, exp, K.player), v.goals, v.n, exp, K.player, 'team goal-off-pick rate for the coverages played');
+      // diff < 0 on defense = fewer goals off the pick than expected (better); on offense, diff > 0 is better.
+      return { jersey: v.jersey, all: v.all, n: v.n, goals: v.goals, later: v.later, expected: exp == null ? null : round(exp), rate, diff: rate ? round(rate.value - exp) : null, roles: v.roles, fault: v.fault, credit: v.credit, used: v.n >= 10 };
+    }).sort((a, b) => b.n - a.n || b.all - a.all || String(a.jersey).localeCompare(String(b.jersey)));
     return { side, teamId, k: K, d3: d3Pick, team, tagged: recs.length, coverageTagged: N, resultTagged: nR, legacyTags: recs.filter(r => r.legacy).length,
       mixPrior: lm ? 'league coverage mix' : 'even split over coverages seen', coverage, teamShot, teamTo, players,
       enough: { coverage: N >= 15, results: nR >= 15 } };
