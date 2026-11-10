@@ -134,8 +134,8 @@ const sm = await ev("const box = Q('[data-pickstart=def]').closest('div').parent
 ok('summary counts 4 of 8 done after tagging three (plus the older tag)', /4\/8 done/.test(sm.btn), sm.btn);
 ok('coverage table lists each tagged coverage', ['Go under', 'Switch', 'Hedge & recover'].every(c => sm.txt.includes(c)), sm.txt.slice(0, 600));
 ok('results table and the field map appear', /What happened after/i.test(sm.txt) && /Where the picks were set \(1\)/.test(sm.txt), sm.txt.slice(0, 900));
-ok('defenders table names Testa College defenders (after a fresh load too) with fault and credit', /#7 Gum/.test(sm.txt) && /#9 Ivy/.test(sm.txt) && /At fault/i.test(sm.txt) && /Credit/i.test(sm.txt), sm.txt.slice(-900));
-ok('best/worst waits for 5+ tagged picks', /Best and worst show once two players have 5\+ tagged picks/.test(sm.txt));
+ok('defenders table names Testa College defenders (after a fresh load too) with fault and credit', /#7 Gum/.test(sm.txt) && /#9 Ivy/.test(sm.txt) && /\bFault\b/i.test(sm.txt) && /Credit/i.test(sm.txt), sm.txt.slice(-900));
+ok('best/worst waits for 5+ tagged picks', /Best and worst show once two players have 5\+ picks with a tagged result/.test(sm.txt));
 ok('picks by W&L are called out', /were our picks/.test(sm.txt), sm.txt.slice(0, 900));
 await ev("Q('[data-pickstart=def]').scrollIntoView();"); await sleep(150); await shot('02_defense_summary');
 ok('the older filmTags/pick doc is untouched', JSON.stringify((await tagDoc('pick')).t) === JSON.stringify({ pd7: 'Switch' }));
@@ -158,10 +158,13 @@ ok('offense summary lists their screeners and ball carriers', /Their screeners a
 await ev("W.location.reload();"); for (let i = 0; i < 40; i++) { await sleep(300); try { if (await ev("return !!(W.eval('T') && Q('[data-pickstart]'));")) break; } catch (e) {} }
 ok('after a reload the saved tags load back (4/8 and 1/6)', await ev("return /4\\/8 done/.test(Q('[data-pickstart=def]').textContent) && /1\\/6 done/.test(Q('[data-pickstart=off]').textContent);"));
 // ---- Five-pick defender gets ranked
-await ev(`for (const id of ['pd0','pd1','pd2','pd3','pd4','pd5']) W.eval('PT').def[id] = Object.assign({}, W.eval('PT').def[id] || {}, { cov: 'Switch', oT: 410, dT: 901, sd: '7', ud: id < 'pd2' ? '8' : '9', res: id === 'pd0' ? 'goal_pick' : 'reset', call: null, cj: null, cT: null });
+await ev(`for (const id of ['pd0','pd1','pd2','pd3','pd4','pd5']) W.eval('PT').def[id] = Object.assign({}, W.eval('PT').def[id] || {}, { cov: 'Switch', oT: 410, dT: 901, sd: '7', ud: id < 'pd2' ? '8' : '9', res: id === 'pd0' ? 'goal_pick' : id === 'pd5' ? 'goal_later' : 'reset', call: null, cj: null, cT: null });
   W.eval('PT').def.pd6 = { cov: 'Switch', oT: 902, dT: 901, sd: '8', ud: '9', note: null, res: 'to_forced', call: 'credit', cj: '9', cT: 901 }; W.render();`); await sleep(200);
 const rk = await ev("return Q('[data-pickstart=def]').closest('div').parentElement.innerText;");
-ok('best and worst appear once players reach 5 tagged picks, with counts', /Best:/.test(rk) && /Worst:/.test(rk) && /goals on \d+ picks/.test(rk), rk.slice(-500));
+ok('best and worst appear once players reach 5 picks with a result, with counts', /Best:/.test(rk) && /Worst:/.test(rk) && /goals off the pick on \d+ picks with a result/.test(rk), rk.slice(-500));
+const row7 = await ev("const tr = [...D.querySelectorAll('tr')].find(t => /^#7 Gum/.test(t.innerText.trim())); return tr ? [...tr.children].map(c => c.innerText.split('\\n')[0].trim()) : null;");
+ok('a goal later in the possession is shown but not counted against the defender (#7: 1 off the pick, 1 later, 1 of 6 = 16.7%)', row7 && row7[3] === '1' && row7[4] === '1' && row7[5] === '16.7%', row7);
+ok('the note says later goals are not counted', /Goals later in the possession are shown but not counted/.test(rk));
 // ---- Existing slide tagger still works the old way
 await ev("Q('[data-tagstart=slide]').click();"); await sleep(300);
 ok('the slide tagger still opens with its own question', /How did Testa College slide/.test(await ev("return Q('#tagbar').innerText;")) && !(await ev("return !!Q('#pickbar');")));
