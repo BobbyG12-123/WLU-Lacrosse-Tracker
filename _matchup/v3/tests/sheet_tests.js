@@ -40,6 +40,14 @@ ok('every loss gets one cause; shares add to 1', near(S.causes.reduce((a, c) => 
 const Sx = V3.sheet.build(inp); V3.sheet.unitWin(Sx, 'pair:7>9', 100);
 ok('replaying one row matches a full rebuild at that usage', near(Sx.pairs.list.find(p => p.key === 'pair:7>9').w, S100.pairs.list.find(p => p.key === 'pair:7>9').w, 1e-12));
 ok("the replay context isn't saved with the sheet", !('_ctx' in JSON.parse(JSON.stringify(Sx))));
+// Scrimmage rows where we shot are against their goalie and their defenders: they must not count as ours.
+const scrim = shots.concat(Array.from({ length: 40 }, () => ({ context: 'Scrimmage', team: 'WLU', goalieJersey: '31', goalX: 0.5, goalY: 0.5, goal: 1, onKeeper: 1, defender: '40', defBeaten: 'Yes', offDodge: 1, slideDefender: '42' })));
+const Ss = V3.sheet.build(Object.assign({}, inp, { practice: Object.assign({}, inp.practice, { shots: scrim }) }));
+ok('scrimmage shots by us are left out of our goalie, defender and slide numbers', JSON.stringify(Ss.ourGoalies.map(g => [g.j, g.n, g.base])) === JSON.stringify(S.ourGoalies.map(g => [g.j, g.n, g.base])) && Ss.defenders.n === S.defenders.n);
+const lp = S.levers.find(l => /^Give #7 → #9/.test(l.title));
+ok('the pick-pair lever uses pick goals per pick possession from the sim (no fixed 12)', lp && isFinite(lp.dG) && lp.dG > 0 && /Best of 2 pairs/.test(lp.why), lp);
+const rl = S.levers.find(l => l.area === 'Ride');
+ok('the ride lever changes their failed clears in the engine (one more possession)', rl && rl.poss === 1 && rl.sets['opp.clearfail'] > 1, rl);
 ok('returning-roster note and removed players are reported', /returning/.test(S.teams.opp.note) && S.teams.opp.removed.some(r => r.j === '1'));
 ok('same inputs give the same sheet', JSON.stringify(V3.sheet.build(inp).levers) === JSON.stringify(S.levers));
 const pass = results.filter(r => r.ok).length; console.log(`game-week sheet: pass ${pass}  fail ${results.length - pass}`); Deno.exit(pass === results.length ? 0 : 1);

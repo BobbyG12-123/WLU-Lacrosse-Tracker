@@ -74,11 +74,17 @@ const ctx = { d3: D3 };
   const wm = P.t[0].shooters.reduce((a, s) => a + s.share * s.m, 0); ok('shooter finishing multipliers average 1 (team level kept)', near(wm, 1, 1e-9), wm);
   const G = V3.runBatch(P, 3000, 5), poss = G.reduce((a, b) => a + b.poss[0] + b.poss[1], 0) / G.length / 2, gpp = G.reduce((a, b) => a + b.score[0] + b.score[1], 0) / G.reduce((a, b) => a + b.poss[0] + b.poss[1], 0);
   ok('possessions per team match the input (45) within 5%', near(poss, 45, 2.3), poss);
-  const target = ['transition', 'early', 'settled'].reduce((a, t) => a, 0);
-  const exp = (1 - P.t[0].emoChance) * (P.t[0].shares.transition * P.t[0].rate.transition + P.t[0].shares.early * P.t[0].rate.early + P.t[0].shares.settled * (P.t[0].pickShare * P.t[0].pickRate + (1 - P.t[0].pickShare) * P.t[0].noPickRate)) + P.t[0].emoChance * P.t[0].emoRate;
-  ok('goals per possession match the parameters within 0.015', near(gpp, exp, 0.015), { gpp, exp });
+  // Expected goals per possession from the parameters: failed-clear possessions are transition, the rest draw from the adjusted shares.
+  const q = P.t[0], f = q.failedClearShare, even = k => k === 'transition' ? q.rate.transition : k === 'early' ? q.rate.early : q.pickShare * q.pickRate + (1 - q.pickShare) * q.noPickRate;
+  const exp = (1 - q.emoChance) * (f * q.rate.transition + (1 - f) * ['transition', 'early', 'settled'].reduce((a, k) => a + q.shares[k] * even(k), 0)) + q.emoChance * q.emoRate;
+  const G2 = V3.runBatch(P, 3000, 5), gpp2 = G2.reduce((a, b) => a + b.score[0] + b.score[1], 0) / G2.reduce((a, b) => a + b.poss[0] + b.poss[1], 0);
+  ok('goals per possession match the parameters within 0.006', near(gpp2, exp, 0.006), { gpp2, exp });
   ok('evenly matched teams win about half', near(V3.winPct(G), 0.5, 0.04), V3.winPct(G));
-  void target;
+  // Transition share in play matches the film share once failed-clear transitions are counted (no double count).
+  let tr = 0, tot = 0; for (let i = 0; i < 1500; i++) for (const e of V3.simulateGame(P, 7000 + i)) if (e.type === 'possession' && e.team === 0 && e.kind !== 'man-up') { tot++; if (e.kind === 'transition') tr++; }
+  ok('transition share in play matches the film share within 0.012', near(tr / tot, q.sharesFilm.transition, 0.012), { play: tr / tot, film: q.sharesFilm.transition, f });
+  const fc = G2.reduce((a, b) => a + b.failedClears[0], 0) / G2.length;
+  ok('failed clears follow the clear rate when no per-game record is given', fc > 0 && near(1 - fc / q.clearAttempts, q.clear, 0.03), { fc, clear: q.clear, att: q.clearAttempts });
 }
 // ---- determinism, validation, changes
 {
@@ -94,6 +100,34 @@ const ctx = { d3: D3 };
   let threw = false; try { V3.applySets(P, { 'wl.banana': 2 }); } catch (e) { threw = true; } ok('an unknown change is refused', threw);
   ok('changes do not modify the original parameters', (() => { const before = JSON.stringify(P); V3.applySets(P, { fo: 0.9, 'wl.pick': 1.5 }); return JSON.stringify(P) === before; })());
 }
+// ---- fixes from the formula review
+{
+  const T = mkTeam(5, 'Testa College'); T.sb.fo_by_man = [['5', 'Old Fogo', 200, 100, []], ['6', 'Young Fogo', 50, 50, []]];
+  T.roster.push({ jersey_number: '5', player: 'Old Fogo', team_listed_class: 'SR', shots: 0 }, { jersey_number: '6', player: 'Young Fogo', team_listed_class: 'SO', shots: 0 });
+  ok('a next-season roster given by name drops a departed faceoff man', V3.team(T, { names: ['Young Fogo', 'Birch Sample'], d3eff: 0.26 }).fogos.map(f => f.j).join() === '6');
+  const U = mkTeam(9, 'Testa College'); U.sb.fo_by_man = [['13', null, 99, 53, []]];
+  const Uf = V3.team(U, { names: ['Birch Sample'], namesByJersey: { 13: 'Nutmeg Sample' }, d3eff: 0.26 }).fogos;
+  ok('an unnamed FOGO with no roster row is kept, labeled from the next-season roster by number', Uf.length === 1 && Uf[0].name === 'Nutmeg Sample' && /number/.test(Uf[0].nameBy), Uf);
+  const E = mkTeam(6, 'Sample State'); E.ev.emo = { goals: 5, chances: 5 }; E.ev.mdd = { goals_allowed: 0, chances: 0 };
+  const Pe = V3.matchup(V3.team(E), V3.team(E), ctx); ok('a perfect or empty man-up record stays a real rate (pulled toward D3)', isFinite(Pe.t[0].emoRate) && Pe.t[0].emoRate > 0.36 && Pe.t[0].emoRate < 0.9, Pe.t[0].emoRate);
+  const fa = V3.team(mkTeam(1, 'Testa College', { fo: [['13', 'Alder FO', 60, 40, []]] })), fb = V3.team(mkTeam(2, 'Sample State', { fo: [['7', 'Pine FO', 50, 50, []]] }));
+  ok('faceoff usage that names nobody falls back to film usage, not 0%', V3.faceoffs(fa, fb, { theirs: { 99: 1 }, ours: { 98: 1 } }).p > 0.4);
+  const Z = mkTeam(7, 'Testa College'); Z.roster.forEach(r => { r.goals = 0; });
+  const Pz = V3.matchup(V3.team(Z), V3.team(B0), ctx); ok('a team with zero logged goals keeps finite shooter multipliers', Pz.t[0].shooters.every(s => isFinite(s.m) && s.m === 1));
+  const P = V3.matchup(V3.team(A0), V3.team(B0), ctx); const wm = P.t[0].shooters.reduce((a, s) => a + s.share * s.m, 0);
+  ok('shooter multipliers average exactly 1 on the probability scale', near(wm, 1, 1e-12));
+  const shots = []; for (const [j, gr] of [['30', 0.5], ['31', 0.6]]) for (let i = 0; i < 90; i++) shots.push({ goalieJersey: j, goalX: (i % 3) / 3 + 0.1, goalY: (Math.floor(i / 3) % 3) / 3 + 0.1, goal: i < gr * 90 ? 1 : 0, onKeeper: 1 });
+  const gz = V3.goalieZones(shots), P31 = V3.matchup(V3.team(A0), V3.team(B0), Object.assign({}, ctx, { wl: { goalieZones: gz, goalie: '31' } }));
+  const refSave = (300 * V3.saveVs(gz['30'], Object.fromEntries(V3.ZONES.map(z => [z, 1 / 9]))) + 100 * V3.saveVs(gz['31'], Object.fromEntries(V3.ZONES.map(z => [z, 1 / 9])))) / 400;
+  ok('goalie effect = (1 - save in net) / (1 - usual save), on the probability scale', near(P31.t[0].shooters[0].g, (1 - V3.saveVs(gz['31'], Object.fromEntries(V3.ZONES.map(z => [z, 1 / 9])))) / (1 - refSave), 1e-12), P31.t[0].shooters[0].g);
+  const flat = { rows: [{ coverage: 'Switch', share: 0.5, ourRate: 0.3, theirRate: 0.25 }, { coverage: 'Go under', share: 0.5, ourRate: 0.3, theirRate: 0.25 }] };
+  const Pf = V3.matchup(V3.team(A0), V3.team(B0), Object.assign({}, ctx, { wl: { picks: flat, pickTeams: { off: 0.3, def: 0.25 } } }));
+  ok('coverage rows equal to the team rates leave the pick level unchanged', Pf.t[0].cov.every(c => near(c.rate, Pf.t[0].pickRate, 1e-12)), [Pf.t[0].cov[0].rate, Pf.t[0].pickRate]);
+  const base = V3.runBatch(P, 2000, 21), more = V3.runBatch(P, 2000, 21, { 'opp.clearfail': 2 });
+  ok('more failed clears by them means more wins for us', V3.winPct(more) > V3.winPct(base) + 0.01 && more.reduce((a, b) => a + b.failedClears[1], 0) > 1.6 * base.reduce((a, b) => a + b.failedClears[1], 0));
+  const R = mkTeam(8, 'Testa College'); R.ev.failed_clears_pg = 2; const Pr = V3.matchup(V3.team(R), V3.team(B0), ctx), Gr = V3.runBatch(Pr, 3000, 22);
+  ok('failed clears per game match the team record (2.0)', near(Gr.reduce((a, b) => a + b.failedClears[0], 0) / Gr.length, 2, 0.15), Gr.reduce((a, b) => a + b.failedClears[0], 0) / Gr.length);
+}
 // ---- goalie in net and pick coverage
 {
   const shots = []; for (const [j, gr] of [['30', 0.4], ['31', 0.6]]) for (let i = 0; i < 100; i++) shots.push({ goalieJersey: j, goalX: (i % 3) / 3 + 0.1, goalY: (Math.floor(i / 3) % 3) / 3 + 0.1, goal: i < gr * 100 ? 1 : 0, onKeeper: 1 });
@@ -102,7 +136,7 @@ const ctx = { d3: D3 };
   ok('their better goalie in net lowers our scoring; their weaker one raises it', P30.t[0].shooters[0].g < 1 && P31.t[0].shooters[0].g > 1, [P30.t[0].shooters[0].g, P31.t[0].shooters[0].g]);
   ok('…and that shows in results', V3.winPct(V3.runBatch(P31, 2000, 3)) > V3.winPct(V3.runBatch(P30, 2000, 3)));
   const picks = { rows: [{ coverage: 'Switch', share: 0.5, ourRate: 0.27, theirRate: 0.2 }, { coverage: 'Hedge & recover', share: 0.5, ourRate: 0.27, theirRate: 0.4 }] };
-  const Pc = V3.matchup(A, B, Object.assign({}, ctx, { wl: { picks } }));
+  const Pc = V3.matchup(A, B, Object.assign({}, ctx, { wl: { picks, pickTeams: { off: 0.27, def: 0.3 } } }));
   const G = V3.runBatch(Pc, 3000, 4), tot = c => G.reduce((a, b) => [a[0] + ((b.pickCov[c] || [0, 0])[0]), a[1] + ((b.pickCov[c] || [0, 0])[1])], [0, 0]);
   const sw = tot('Switch'), he = tot('Hedge & recover');
   ok('pick coverage split: our picks score more against the weaker coverage', he[0] / he[1] > sw[0] / sw[1] + 0.1 && near(sw[1] / (sw[1] + he[1]), 0.5, 0.05), { sw, he });

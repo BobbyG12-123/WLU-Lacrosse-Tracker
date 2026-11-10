@@ -22,14 +22,17 @@
     const L = Object.values(g), N = L.reduce((a, v) => a + v.n, 0), G = L.reduce((a, v) => a + v.goals, 0), team = N ? G / N : null, k = V3.K.group;
     return { team, N, k, list: team == null ? [] : L.map(v => Object.assign(v, { rate: (v.goals + k * team) / (v.n + k) })).sort((a, b) => b.rate - a.rate) };
   }
+  // Our defense: practice reps, plus scrimmage possessions where the other team shot (our defenders, our goalie).
+  // In a scrimmage, our own shots are against their goalie and their defenders, so they're left out.
+  const ourDefense = s => !(s.context === 'Scrimmage' && s.team !== 'OPP');
   function defenders(shots) {
-    const reps = shots.filter(x => x.defender && (x.defBeaten === 'Yes' || x.defBeaten === 'No'));
+    const reps = shots.filter(ourDefense).filter(x => x.defender && (x.defBeaten === 'Yes' || x.defBeaten === 'No'));
     const team = reps.length ? reps.filter(x => x.defBeaten === 'Yes').length / reps.length : null, by = {}, k = V3.K.defender;
     reps.forEach(x => { const v = by[x.defender] || (by[x.defender] = { j: String(x.defender), n: 0, b: 0 }); v.n++; if (x.defBeaten === 'Yes') v.b++; });
     return { team, n: reps.length, list: team == null ? [] : Object.values(by).map(v => Object.assign(v, { r: (v.b + k * team) / (v.n + k) })).sort((a, b) => a.r - b.r) };
   }
   function slides(shots) {
-    const ds = shots.filter(x => x.offDodge), sl = ds.filter(x => x.slideDefender), ns = ds.filter(x => !x.slideDefender);
+    const ds = shots.filter(ourDefense).filter(x => x.offDodge), sl = ds.filter(x => x.slideDefender), ns = ds.filter(x => !x.slideDefender);
     return { slid: sl.length, slidGoals: sl.filter(x => x.goal).length, not: ns.length, notGoals: ns.filter(x => x.goal).length };
   }
   // Placement of their shooters from the Scouting page's shot-location tags ({ jersey: zone mix }), or null.
@@ -48,7 +51,8 @@
     const names = (P0.roster || []).map(x => x.n).filter(Boolean);
     // Names for jerseys in our practice logs come from the same season's roster only.
     const wn = j => { const r = (P0.roster || []).find(x => String(x.j) === String(j)); return r && r.n ? `#${j} ${lastName(r.n)}` : '#' + j; };
-    const W = V3.team(inp.wl, names.length ? { names, d3eff: d3.eff } : { d3eff: d3.eff });
+    const byJ = Object.fromEntries((P0.roster || []).filter(x => x.j && x.n).map(x => [String(x.j), x.n]));
+    const W = V3.team(inp.wl, names.length ? { names, namesByJersey: byJ, d3eff: d3.eff } : { d3eff: d3.eff });
     const O = V3.team(inp.opp, o.oppReturning ? { returning: true, d3eff: d3.eff } : { d3eff: d3.eff });
     // Picks: their coverage split only from real tags.
     let picks = null, lynDef = null, lynOff = null;
@@ -57,19 +61,20 @@
       lynDef = MS.pickRates({ side: 'def', teamId: inp.opp.id, clips: sb.pick_clips_def || [], tags: tags.pickDef || {}, legacy: tags.legacyPick || {}, teamPick: sb.def && sb.def.pick, d3Pick: d3.pick });
       lynOff = MS.pickRates({ side: 'off', teamId: inp.opp.id, clips: sb.pick_clips_off || [], tags: tags.pickOff || {}, teamPick: sb.off && sb.off.pick, d3Pick: d3.pick });
       const ourOff = MS.pickRates({ side: 'off', teamId: inp.wl.id, clips: [], tags: {}, teamPick: inp.wl.sb.off.pick, d3Pick: d3.pick });
-      picks = MS.pickMatchup(ourOff, lynDef);
+      picks = MS.pickMatchup(ourOff, lynDef); picks._off = ourOff.team.value; picks._def = lynDef.team.value;
       if (!lynDef.enough.coverage) missing.push(`Their pick coverage: ${lynDef.coverageTagged} of ${(sb.pick_clips_def || []).length} pick clips tagged (15 needed). Team pick rates used.`);
     }
     const placement = placementFromTags(tags.shotOff);
     if (!placement) missing.push('Where their shooters put the ball: not tagged yet (Scouting page shot locations). Goalie comparison uses an even spread.');
-    const gz = V3.goalieZones(shots);
-    const ctx = g2 => ({ d3, wl: { picks: picks && picks.rows.length ? picks : null }, opp: { placement, goalieZones: gz, goalie: g2 } });
+    const gz = V3.goalieZones(shots.filter(ourDefense));
+    const ctx = g2 => ({ d3, wl: { picks: picks && picks.rows.length ? picks : null, pickTeams: picks ? { off: picks._off, def: picks._def } : null }, opp: { placement, goalieZones: gz, goalie: g2 } });
     const P = V3.matchup(W, O, ctx(o.goalie));
     const n = o.games, tn = Math.min(n, 3000), seed = o.seed;
     const base = V3.runBatch(P, n, seed), bt = V3.runBatch(P, tn, seed), BT = V3.winPct(bt);
     const avg = (G, f) => G.reduce((a, b) => a + f(b), 0) / G.length;
     const now = (tm, kinds) => avg(bt, b => kinds.reduce((a, k) => a + (b.goals[tm][k] || 0), 0));
-    const scaled = (key, cur, dG) => ({ [key]: Math.max(0.05, (cur + dG) / Math.max(0.3, cur)) });
+    // A change of dG goals a game in one kind of scoring, as a multiplier on that kind's rate for this game.
+    const scaled = (key, cur, dG) => ({ [key]: cur > 0.05 ? Math.max(0.05, (cur + dG) / cur) : 1 });
     const win = sets => V3.winPct(V3.runBatch(P, tn, seed, sets));
     const draws = avg(bt, b => b.fo[0] + b.fo[1]);
     const levers = [];
@@ -86,31 +91,32 @@
     if (fm.M && fm.M.length) { const j0 = fm.tShare.indexOf(Math.max(...fm.tShare)), t0 = O.fogos[j0], c = fm.M[fm.main][j0];
       L({ area: 'Faceoffs', src: 'real', title: `Win 3 more of #${t0.j} ${lastName(t0.name)}'s draws`, why: `He takes ${pct(fm.tShare[j0])} of their draws; #${W.fogos[fm.main].j} is ${c.dir ? c.dir.join('-') : 'without a head-to-head'} against him.`, n: c.dir ? c.dir[0] + c.dir[1] : null, unit: 'head-to-head draws', poss: 3, who: 'wl', sets: { fo: Math.min(0.95, P.fo + 3 / draws) } }); }
     // our best pick pair, at the entered usage
-    const PR = ourPairs(shots), ourPick = now(0, ['pick']);
-    PR.list.filter(v => v.n >= 3).slice(0, 1).forEach(v => { const dG = 3 * (ourPick / 12) * (v.rate / PR.team - 1);
-      L({ area: 'Offense', src: 'real', title: `Give ${wn(v.scr)} → ${wn(v.usr)} 3 more picks a game`, why: `${v.g} goals on ${v.n} logged pick shots (team ${pct(PR.team)}).`, n: v.n, unit: 'practice pick shots', dG, who: 'wl', sets: scaled('wl.pick', ourPick, dG) }); });
+    const PR = ourPairs(shots), ourPick = now(0, ['pick']), ourPickPoss = avg(bt, b => b.kinds[0].pick || 0);
+    const pr3 = PR.list.filter(v => v.n >= 3);
+    pr3.slice(0, 1).forEach(v => { const dG = 3 * (ourPickPoss ? ourPick / ourPickPoss : 0) * (v.rate / PR.team - 1);
+      L({ area: 'Offense', src: 'real', title: `Give ${wn(v.scr)} → ${wn(v.usr)} 3 more picks a game`, why: `${v.g} goals on ${v.n} logged pick shots (team ${pct(PR.team)}). Best of ${pr3.length} pairs with 3+ shots, so some of the edge is luck.`, n: v.n, unit: 'practice pick shots', dG, who: 'wl', sets: scaled('wl.pick', ourPick, dG) }); });
     // defender on their best dodger
     const DF = defenders(shots);
     const dl = DF.list.filter(v => v.n >= 8);
     if (topD && dl.length) { const bd = dl[0], dG = -(dodge(topD) / games) * (1 - bd.r / DF.team);
-      L({ area: 'Defense', src: 'real', title: `Put ${wn(bd.j)} on #${topD.j} ${lastName(topD.name)}`, why: `${wn(bd.j)} was beaten on ${bd.b} of ${bd.n} logged practice reps that ended in a shot (team ${pct(DF.team)}).`, n: bd.n, unit: 'practice reps', dG, who: 'opp', sets: scaled('opp.six', oppSix, dG) }); }
+      L({ area: 'Defense', src: 'real', title: `Put ${wn(bd.j)} on #${topD.j} ${lastName(topD.name)}`, why: `${wn(bd.j)} was beaten on ${bd.b} of ${bd.n} logged practice reps that ended in a shot (team ${pct(DF.team)}). Best of ${dl.length} defenders with 8+ reps, so some of the edge is luck.`, n: bd.n, unit: 'practice reps', dG, who: 'opp', sets: scaled('opp.six', oppSix, dG) }); }
     // slides
     const SL = slides(shots);
     if (SL.slid >= 20 && SL.not >= 20) { const dG = -3 * (SL.notGoals / SL.not - SL.slidGoals / SL.slid);
-      L({ area: 'Defense', src: 'real', title: 'Slide on 3 more of their dodges a game', why: `In our practices dodgers scored ${pct(SL.slidGoals / SL.slid)} when we slid (${SL.slid}) and ${pct(SL.notGoals / SL.not)} when we didn't (${SL.not}).`, n: SL.slid, unit: 'practice slide shots', dG, who: 'opp', sets: scaled('opp.six', oppSix, dG) }); }
+      L({ area: 'Defense', src: 'real', title: 'Slide on 3 more of their dodges a game', why: `In our practices dodgers scored on ${pct(SL.slidGoals / SL.slid)} of shots when we slid (${SL.slid}) and ${pct(SL.notGoals / SL.not)} when we didn't (${SL.not}). Per shot only: doesn't count slides that stop a shot from happening.`, n: SL.slid, unit: 'practice slide shots', dG, who: 'opp', sets: scaled('opp.six', oppSix, dG) }); }
     // shot clock
     const ck = ((inp.opp.off_shot_profile || {}).this_year || []).find(p => p.tag === 'shot_clock_remaining_bucket');
     if (ck) { const early = ck.buckets.find(b => b.bucket === 60), late = ck.buckets.filter(b => b.bucket < 40);
       if (early && late.length) { const lp = late.reduce((a, b) => a + b.goals, 0) / late.reduce((a, b) => a + b.shots, 0), dG = -3 * (early.pct - lp);
-        L({ area: 'Defense', src: 'real', title: 'Make them shoot later: push 3 early shots past 40 seconds', why: `They shoot ${pct(early.pct)} with 60+ seconds left and ${pct(lp)} with under 40.`, n: early.shots, unit: 'shots', dG, who: 'opp', sets: scaled('opp.six', oppSix, dG) }); } }
+        L({ area: 'Defense', src: 'real', title: 'Make them shoot later: push 3 early shots past 40 seconds', why: `They score on ${pct(early.pct)} of shots with 60+ seconds left and ${pct(lp)} with under 40. Per shot only.`, n: early.shots, unit: 'shots', dG, who: 'opp', sets: scaled('opp.six', oppSix, dG) }); } }
     // clears, both ways
-    const gpp = avg(bt, b => b.score[0] / b.poss[0]), tgpp = avg(bt, b => b.score[1] / b.poss[1]);
-    const ourT = now(0, ['transition']), theirT = now(1, ['transition']);
-    L({ area: 'Ride', src: 'real', title: 'Force 1 more failed clear a game', why: `They clear ${pct(O.clear)}. One more failed clear is a possession for us worth about ${gpp.toFixed(2)} goals.`, n: null, unit: 'season totals', dG: gpp, who: 'wl', sets: scaled('wl.transition', ourT, gpp) });
-    L({ area: 'Clear', src: 'real', title: 'Clear cleanly: 1 fewer failed clear a game', why: `We clear ${pct(W.clear)}. Each failed clear hands them about ${tgpp.toFixed(2)} goals.`, n: null, unit: 'season totals', dG: -tgpp, who: 'opp', sets: scaled('opp.transition', theirT, -tgpp) });
+    // Clears are played in the engine: these change how often each team fails a clear, and the games are replayed.
+    const theirFails = avg(bt, b => b.failedClears[1]), ourFails = avg(bt, b => b.failedClears[0]);
+    if (theirFails > 0.05) L({ area: 'Ride', src: 'real', title: 'Force 1 more failed clear a game', why: `They fail about ${theirFails.toFixed(1)} clears a game in the sim (${O.failedClears != null ? O.failedClears + ' a game in 2026' : 'clear rate ' + pct(O.clear)}). Each one is a possession for us that they don't get.`, n: null, unit: 'season totals', poss: 1, who: 'wl', sets: { 'opp.clearfail': (theirFails + 1) / theirFails } });
+    if (ourFails > 1.05) L({ area: 'Clear', src: 'real', title: 'Clear cleanly: 1 fewer failed clear a game', why: `We fail about ${ourFails.toFixed(1)} clears a game in the sim (${W.failedClears != null ? W.failedClears + ' a game in 2026' : 'clear rate ' + pct(W.clear)}). Each one hands them a possession.`, n: null, unit: 'season totals', poss: 1, who: 'wl', sets: { 'wl.clearfail': (ourFails - 1) / ourFails } });
     // our picks into their weakest coverage (only with tags)
     if (picks && picks.rows.length) { const cv = picks.rows.slice().sort((a, b) => b.expected - a.expected)[0], dG = 3 * (cv.expected - picks.overall);
-      L({ area: 'Offense', src: 'real', title: `Draw their ${cv.coverage} on 3 more of our picks`, why: `Our picks are expected to score ${pct(cv.expected)} against it vs ${pct(picks.overall)} overall.`, n: cv.theirN, unit: 'tagged picks', dG, who: 'wl', sets: scaled('wl.pick', ourPick, dG) }); }
+      L({ area: 'Offense', src: 'real', title: `Draw their ${cv.coverage} on 3 more of our picks`, why: `Our picks are expected to score ${pct(cv.expected)} against it vs ${pct(picks.overall)} overall. Best of ${picks.rows.length} coverages.`, n: cv.theirN, unit: 'tagged picks', dG, who: 'wl', sets: scaled('wl.pick', ourPick, dG) }); }
     else missing.push('Pick levers (their coverage, their weakest pick defender, their pick pairs): need their pick tags.');
     missing.push('Wing ground balls on draws: not logged yet.');
     levers.sort((a, b) => b.w - a.w);

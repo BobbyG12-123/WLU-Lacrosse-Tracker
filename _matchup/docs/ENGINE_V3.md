@@ -24,6 +24,35 @@ A possession engine for game week. It's built alongside v1 and v2, which stay fr
 
 Possession time is scaled so each team averages its real possessions per game. Ties go to sudden-victory overtime.
 
+## Review fixes (Nov 10, 2026)
+
+An independent review plus re-deriving the numbers from raw files found errors. All are fixed and tested.
+
+**Scale and calibration**
+- The goalie and shooter effects were on the odds scale, which overstated them. They now scale goals per possession on the probability scale: (1 − save in net) / (1 − usual save), and finishing / team finishing.
+- Failed clears were counted twice as transition. They're now taken out of the film transition share, and failed clears per game match each team's record.
+- Man-up was double counted in the anchor. Adjusted efficiency includes man-up, so even-strength rates are now anchored with man-up removed.
+- Film rates by kind are pulled toward D3 (weight 30), and man-up rates too (weight 20).
+- Pick rates shifted level when the 15th coverage tag arrived. Now only the coverage differences come from tags.
+- The faceoff prior counted head-to-head draws twice. They're removed from each man's record before the prior.
+
+**Wrong inputs**
+- The pick-pair lever used a hard-coded 12 picks a game. It now uses pick goals per pick possession from the sim.
+- Departed faceoff men were kept when the roster was given by name. They now follow the same roster rule.
+- An unnamed film FOGO with no roster row at that number is kept, and labeled by number from the next-season roster. Rosters can list a player under a different number than the film does.
+- Scrimmage shots by us (against their goalie and their defenders) were counted in our goalie, defender and slide numbers. They're now excluded.
+
+**Edge cases**
+- Edge cases that produced NaN or a 0% faceoff chance are now guarded: perfect or empty man-up records, faceoff usage that names nobody, and a team with zero logged goals.
+- Clear levers now change failed clears in the engine. Before, they added goals to transition.
+
+Still modeling choices, not errors:
+- Levers pick the best of several small samples, and each says so ("best of N").
+- Group counts are shots plus turnovers, not possessions.
+- Slide and shot-clock effects are per shot.
+- Possession length spread is 0.4–1.2 times the average.
+- Indirect faceoff reads are at half weight.
+
 ## Checks
 
 `v3/tests/v3_tests.js` (synthetic data) covers:

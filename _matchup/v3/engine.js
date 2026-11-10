@@ -22,6 +22,7 @@
       else if (what === 'pick') setPick(p, pickNow(p) * v);
       else if (what === 'six') { p.noPickRate = cap(p.noPickRate * v); setPick(p, pickNow(p) * v); }
       else if (what === 'emo') p.emoRate = cap(p.emoRate * v);
+      else if (what === 'clearfail') p.clear = Math.max(0, Math.min(1, 1 - (1 - p.clear) * v)); // multiplier on this team's failed clears
       else if (p.rate[what] != null) p.rate[what] = cap(p.rate[what] * v);
       else throw new Error('unknown change ' + k);
     }
@@ -74,13 +75,13 @@
   }
   // Box score from events only.
   function box(E) {
-    const b = { score: [0, 0], fo: [0, 0], poss: [0, 0], failedClears: [0, 0], goals: [{}, {}], pickCov: {}, shooters: [{}, {}], ot: false };
+    const b = { score: [0, 0], fo: [0, 0], poss: [0, 0], failedClears: [0, 0], goals: [{}, {}], kinds: [{}, {}], pickCov: {}, shooters: [{}, {}], ot: false };
     for (const e of E) {
       if (e.type === 'faceoff') b.fo[e.winner]++;
       else if (e.type === 'failed clear') b.failedClears[e.team]++;
       else if (e.type === 'tiebreak') b.score[e.winner]++;
       else if (e.type === 'possession') {
-        b.poss[e.team]++;
+        b.poss[e.team]++; b.kinds[e.team][e.kind] = (b.kinds[e.team][e.kind] || 0) + 1;
         const sh = b.shooters[e.team][e.shooter] || (b.shooters[e.team][e.shooter] = [0, 0]); sh[1]++;
         if (e.cov && e.team === 0) { const c = b.pickCov[e.cov] || (b.pickCov[e.cov] = [0, 0]); c[1]++; if (e.res === 'goal') c[0]++; }
         if (e.res === 'goal') { b.score[e.team]++; b.goals[e.team][e.kind] = (b.goals[e.team][e.kind] || 0) + 1; sh[0]++; }
