@@ -34,6 +34,8 @@ ok('a usage box replays that row; 0% equals our baseline win %', after[0] === '0
 await ev("Q('[data-opp=\"902\"]').click();"); await sleep(100); await ev("Q('#run').click();");
 for (let i = 0; i < 120; i++) { await sleep(500); if (await ev("return /W&L vs Sample State/.test(Q('#title').textContent) && !Q('#run').disabled;")) break; }
 ok('a second opponent runs', /W&L vs Sample State/.test(await ev("return Q('#title').textContent;")));
+ok('our logged scrimmage against Sample State is matched and updates their numbers', /Our 2027 logs against them \(Sample State\)/.test(await ev("return Q('#srcline').textContent;")) && /Updated from our logs against them/.test(await ev("return D.body.innerText;")), await ev("return Q('#srcline').textContent;"));
+ok('the label pill for that scrimmage is shown as selected', await ev("return QA('[data-lab]').some(b => b.dataset.lab === 'Sample State' && b.classList.contains('on'));"));
 ok('the page made no database writes', await ev("return H.__WRITES;") === 0, await ev("return H.__WRITES;"));
 const bad = errs.filter(e => !/client is offline|Failed to load resource/i.test(e));
 ok('no script errors', bad.length === 0, bad);

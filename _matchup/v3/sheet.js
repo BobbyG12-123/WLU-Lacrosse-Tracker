@@ -53,7 +53,11 @@
     const wn = j => { const r = (P0.roster || []).find(x => String(x.j) === String(j)); return r && r.n ? `#${j} ${lastName(r.n)}` : '#' + j; };
     const byJ = Object.fromEntries((P0.roster || []).filter(x => x.j && x.n).map(x => [String(x.j), x.n]));
     const W = V3.team(inp.wl, names.length ? { names, namesByJersey: byJ, d3eff: d3.eff } : { d3eff: d3.eff });
-    const O = V3.team(inp.opp, o.oppReturning ? { returning: true, d3eff: d3.eff } : { d3eff: d3.eff });
+    const O0 = V3.team(inp.opp, o.oppReturning ? { returning: true, d3eff: d3.eff, d3 } : { d3eff: d3.eff, d3 });
+    if (O0.noFilm) missing.push(`${O0.name}: no LacrosseReference film-tag data, so their possession types use the D3 shape; their level comes from their record${inp.logged && inp.logged.sessions ? ' and our logs' : ''}.`);
+    // Our own logged games against them update their numbers (V3.update).
+    const UP = V3.update ? V3.update.applyLogs(O0, W, inp.logged, d3, { crossDivision: !!(inp.opp.lg && inp.wl.lg && inp.opp.lg !== inp.wl.lg) }) : { team: O0, notes: [] };
+    const O = UP.team;
     // Picks: their coverage split only from real tags.
     let picks = null, lynDef = null, lynOff = null;
     if (MS.pickRates) {
@@ -64,11 +68,12 @@
       picks = MS.pickMatchup(ourOff, lynDef); picks._off = ourOff.team.value; picks._def = lynDef.team.value;
       if (!lynDef.enough.coverage) missing.push(`Their pick coverage: ${lynDef.coverageTagged} of ${(sb.pick_clips_def || []).length} pick clips tagged (15 needed). Team pick rates used.`);
     }
-    const placement = placementFromTags(tags.shotOff);
-    if (!placement) missing.push('Where their shooters put the ball: not tagged yet (Scouting page goal locations, 5+ per shooter). Goalie comparison uses an even spread.');
-    else missing.push('Shooter placement comes from where their goals went in (Scouting page goal tags), not all their shots.');
+    // Placement: their shots on our goalies from our logs first, else where their goals went in (Scouting tags).
+    const placement = UP.placement || placementFromTags(tags.shotOff);
+    if (!placement) missing.push('Where their shooters put the ball: not logged or tagged yet. Goalie comparison uses an even spread.');
+    else if (!UP.placement) missing.push('Shooter placement comes from where their goals went in (Scouting page goal tags), not all their shots.');
     const gz = V3.goalieZones(shots.filter(ourDefense));
-    const ctx = g2 => ({ d3, wl: { picks: picks && picks.rows.length ? picks : null, pickTeams: picks ? { off: picks._off, def: picks._def } : null }, opp: { placement, goalieZones: gz, goalie: g2 } });
+    const ctx = g2 => ({ d3, foLogged: UP.foLogged || null, wl: { picks: picks && picks.rows.length ? picks : null, pickTeams: picks ? { off: picks._off, def: picks._def } : null }, opp: { placement, goalieZones: gz, goalie: g2 } });
     const P = V3.matchup(W, O, ctx(o.goalie));
     const n = o.games, tn = Math.min(n, 3000), seed = o.seed;
     const base = V3.runBatch(P, n, seed), bt = V3.runBatch(P, tn, seed), BT = V3.winPct(bt);
@@ -86,7 +91,7 @@
     const oppSix = now(1, ['no pick', 'pick']);
     const topD = (inp.oppPlayers || []).filter(p => !o.oppReturning || !V3.graduating(p.cls)).filter(p => dodge(p) > 0).sort((a, b) => dodge(b) - dodge(a))[0];
     if (topD) L({ area: 'Defense', src: 'real', title: `Take away one #${topD.j} ${lastName(topD.name)} dodge goal`, why: `He scored ${dodge(topD)} dodge goals in their ${games} filmed games (${(dodge(topD) / games).toFixed(1)} a game). Assumes nobody else picks it up.`, n: topD.dodgeShots || null, unit: 'dodge shots', dG: -1, who: 'opp', sets: scaled('opp.six', oppSix, -1) });
-    else missing.push('Their dodgers by player: player film data not loaded.');
+    else missing.push(O0.noFilm ? 'Their dodgers by player: no film data for their players.' : 'Their dodgers by player: player film data not loaded.');
     // faceoffs vs their main man
     const fm = P.foModel;
     if (fm.M && fm.M.length) { const j0 = fm.tShare.indexOf(Math.max(...fm.tShare)), t0 = O.fogos[j0], c = fm.M[fm.main][j0];
@@ -150,7 +155,7 @@
     const out = { version: V3.VERSION, teams: { wl: { name: W.name, note: W.rosterNote, retOff: W.retOff, retDef: W.retDef }, opp: { name: O.name, note: O.rosterNote, retOff: O.retOff, retDef: O.retDef, removed: O.removed } },
       base: { win: V3.winPct(base), score: [avg(base, b => b.score[0]), avg(base, b => b.score[1])], ot: base.filter(b => b.ot).length / base.length, fo: P.fo, games: n },
       levers, causes, pairs: { team: PR.team, tot: PR.tot, list: pairs }, groups: { team: GR.team, N: GR.N, list: groups }, defenders: DF, ourGoalies,
-      faceoffs: { model: fm, ours: W.fogos, theirs: O.fogos }, picks: { def: lynDef, off: lynOff, matchup: picks }, missing, BT };
+      faceoffs: { model: fm, ours: W.fogos, theirs: O.fogos }, picks: { def: lynDef, off: lynOff, matchup: picks }, missing, BT, updates: UP.notes || [], logged: inp.logged || null };
     // Kept off the JSON so a single unit row can be replayed without rebuilding the sheet.
     Object.defineProperty(out, '_ctx', { enumerable: false, value: { P, tn, seed, pairTeam: PR.team, groupTeam: GR.team } });
     return out;

@@ -24,6 +24,22 @@ A possession engine for game week. It's built alongside v1 and v2, which stay fr
 
 Possession time is scaled so each team averages its real possessions per game. Ties go to sudden-victory overtime.
 
+## Which data a run uses (v3/sources.js, v3/update.js)
+
+1. **Starting point:**
+   - If the team's LacrosseReference record is from the game's season, it's used as it is.
+   - If it's older, only returning players are kept, and the sheet says so.
+   - A team with no film-tag data takes the D3 shape for possession types, and its level comes from its record. The sheet says so.
+2. **Our logged games and scrimmages against them** in the tracker update their numbers. Games and scrimmages count the same. Each row's tracker label is matched to the team automatically, and can be changed on the page.
+   - **Offense and defense level:** our possessions against them are compared with our own level (log5 inverse), then blended with their record on the log-odds scale. Possessions are shots that aren't rebounds, plus no-shot possessions. Their record counts as 150 possessions, or 50 if it's rated against another division.
+   - **Faceoffs:** our logged draws against them are blended into the matchup chance, with the matchup counting as 40 draws (20 for another division).
+   - **Shooters:** once we've logged 30+ of their shots, usage and finishing come from those shots.
+   - **Placement:** their on-goal shots on our goalies, per shooter with 5+ shots, and their team mix otherwise. This makes the goalie comparison real.
+   - A single logged session is flagged as a first read.
+3. **Our side** always comes from the tracker's roster and logs for the season.
+
+These weights were set on Nov 11, 2026, before any 2027 games were logged.
+
 ## Review fixes (Nov 10, 2026)
 
 An independent review plus re-deriving the numbers from raw files found errors. All are fixed and tested.

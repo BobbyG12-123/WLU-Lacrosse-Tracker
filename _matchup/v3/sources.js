@@ -11,11 +11,12 @@
 
   // Our logs for a season from an Export-All-Data copy: shots, no-shot possessions and lineup records, each with its context.
   function ourLogs(exp, cols, season) {
-    const S = (exp.collections && exp.collections.sessions) || {}, shots = [], poss = [], stints = [], games = {};
+    const S = (exp.collections && exp.collections.sessions) || {}, shots = [], poss = [], stints = [], games = {}, opponents = {};
     Object.keys(S).sort().forEach(sid => {
       const d = S[sid], date = d.date || sid.slice(0, 10); if (seasonOf(date) !== season) return;
       const context = ctxName(d);
       if (context === 'Game' && d.opponent) games[d.opponent] = (games[d.opponent] || 0) + 1;
+      if (context !== 'Practice' && d.opponent) opponents[d.opponent] = (opponents[d.opponent] || 0) + 1;
       Object.keys(d).forEach(k => {
         try {
           if (k.startsWith('s_')) { const o = unzip(cols.shot, d[k]); if (o) shots.push(Object.assign(o, { context, opponent: d.opponent || o.opponent || null })); }
@@ -26,7 +27,12 @@
     });
     const A = (exp.collections && exp.collections.app) || {}, r = A['roster_' + season];
     const roster = ((r && (r.list || (r.json && JSON.parse(r.json).list))) || []).map(x => ({ j: x.jersey != null ? String(x.jersey) : null, n: x.name || null }));
-    return { shots, poss, stints, roster, games };
+    return { shots, poss, stints, roster, games, opponents };
+  }
+  // Tracker opponent labels that look like this team (name or short name, either way round).
+  function autoLabels(logs, opp) {
+    const n = s => String(s || '').toLowerCase().replace(/[^a-z]/g, ''), keys = [n(opp.name), n(opp.short)].filter(x => x.length >= 2);
+    return Object.keys(logs.opponents).filter(l => { const x = n(l); return x && keys.some(k => k === x || (x.length >= 4 && k.startsWith(x)) || (k.length >= 4 && x.startsWith(k))); });
   }
   const tagDoc = (exp, id) => { const d = exp.collections && exp.collections.filmTags && exp.collections.filmTags[id]; return d ? d.t || {} : {}; };
 
@@ -48,8 +54,14 @@
     const notes = [];
     notes.push(current ? `Team records: ${lrSeason} LacrosseReference data (this season), full rosters.` : `Team records: ${lrSeason || 'older'} LacrosseReference data. ${opp.name} uses only returning players until ${season} data is imported.`);
     notes.push(`Our side: the tracker's ${season} roster (${logs.roster.length} players) and ${season} logs (${logs.shots.length} shots, ${logs.poss.length} no-shot possessions, ${logs.stints.length} lineup records).`);
-    const vs = Object.entries(logs.games).filter(([o]) => o && opp.name && o.toLowerCase().includes(String(opp.short || opp.name).toLowerCase().slice(0, 4))).reduce((a, [, n]) => a + n, 0);
-    if (vs) notes.push(`${season} games against ${opp.name} logged in the tracker: ${vs}. Their shots on our goalies count in the goalie comparison now; adjusting their team rates from these games comes once the game-logging format is confirmed.`);
+    // Our logged games and scrimmages against them: the labels chosen on the page, else ones that match their name.
+    const labels = opts.labels || autoLabels(logs, opp);
+    const A = (exp.collections && exp.collections.app) || {};
+    const faceoffs = Object.entries(A.faceoffs_live || {}).filter(([k]) => k.startsWith('fo_')).map(([, v]) => { try { const r = JSON.parse(v); return { date: r[1], context: r[2], opponent: r[3], jersey: r[4], won: r[5] === 1 }; } catch (e) { return null; } })
+      .filter(f => f && seasonOf(f.date) === season);
+    const logged = V3.update ? V3.update.fromLogs(logs.shots, logs.poss, faceoffs, labels) : null;
+    if (logged && logged.sessions) notes.push(`Our ${season} logs against them (${labels.join(', ')}): ${logged.games} games, ${logged.scrimmages} scrimmages. These update their numbers.`);
+    else notes.push(`No ${season} games or scrimmages against them logged yet${labels.length ? '' : ' (pick the label we used, if any)'}.`);
     const P = (lr.players && lr.players[opts.oppId]) || [], byId = Object.fromEntries(P.map(p => [p.id, p]));
     const dodgeShots = p => Object.entries(((p || {}).sb || {}).shots || {}).filter(([k]) => k.includes('dodge')).reduce((a, [, v]) => a + v, 0);
     const oppPlayers = (opp.roster || []).map(r => { const c = byId[r.player_ID]; return { j: String(r.jersey_number), name: r.player, cls: r.team_listed_class, sbGoals: ((c || {}).sb || {}).goals || {}, dodgeShots: dodgeShots(c) }; });
@@ -59,7 +71,7 @@
       // Shot-location tags save the spot and zone; the shooter comes from the goal clip they were made on.
       tags: { pickDef: tagDoc(exp, 'pick_def_' + opp.id), pickOff: tagDoc(exp, 'pick_off_' + opp.id), legacyPick: tagDoc(exp, 'pick'),
         shotOff: (() => { const jOf = Object.fromEntries(((opp.sb || {}).goal_clips_off || []).map(c => [c[5], c[3] != null ? String(c[3]) : null])); return Object.fromEntries(Object.entries(tagDoc(exp, 'shot_off')).filter(([id]) => jOf[id]).map(([id, t]) => [id, Object.assign({}, t, { j: jOf[id] })])); })() },
-      opts: { games: opts.games || 4000, use: opts.use || {}, oppReturning: !current }, sourceNotes: notes, season, lrSeason
+      opts: { games: opts.games || 4000, use: opts.use || {}, oppReturning: !current }, sourceNotes: notes, season, lrSeason, logged, labels, opponentLabels: Object.keys(logs.opponents)
     };
   }
   V3.sources = { seasonOf, ourLogs, d3From, inputs };

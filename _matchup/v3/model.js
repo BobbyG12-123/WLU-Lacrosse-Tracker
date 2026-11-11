@@ -27,8 +27,15 @@
     const names = opts.names ? new Set(opts.names.map(norm)) : null;
     const keep = r => names ? names.has(norm(r.player)) : opts.roster ? opts.roster.map(String).includes(String(r.jersey_number)) : opts.returning ? !graduating(r.team_listed_class) : true;
     const roster = (T.roster || []).filter(keep);
-    const sb = T.sb, st = T.stats, ev = T.ev;
-    if (!sb || !sb.off || !sb.def) throw new Error(`${T.name}: no film-tag data (sb) to build from`);
+    let sb = T.sb, noFilm = false; const st = T.stats, ev = T.ev;
+    if (!sb || !sb.off || !sb.def) {
+      // No film-tag data: possession types take the D3 shape (with the D3 counts as weight, so they stay at D3), and the
+      // team's own adjusted efficiency sets the level. Labeled so the sheet can say so.
+      if (!opts.d3) throw new Error(`${T.name}: no film-tag data (sb) to build from`);
+      const dd = opts.d3, sideOf = () => ({ by_type: JSON.parse(JSON.stringify(dd.by_type)), pick: { n: dd.pick.n, goal_pct: dd.pick.goal_pct }, no_pick_settled: { n: dd.no_pick.n, goal_pct: dd.no_pick.goal_pct } });
+      sb = Object.assign({ fo_by_man: [] }, T.sb || {}, { off: sideOf(), def: sideOf() }); noFilm = true;
+    }
+    if (!ev || !ev.poss || !ev.emo || !ev.mdd) throw new Error(`${T.name}: no game-event summary (ev) to build from`);
     const shotsTot = roster.reduce((a, r) => a + (r.shots || 0), 0);
     const teamFin = roster.reduce((a, r) => a + (r.goals || 0), 0) / Math.max(1, shotsTot);
     const shooters = roster.filter(r => (r.shots || 0) > 0).map(r => ({ j: String(r.jersey_number), name: r.player, cls: r.team_listed_class, shots: r.shots, goals: r.goals || 0,
@@ -43,7 +50,7 @@
     const toward = (v, ret) => ret >= 0.999 || !opts.d3eff ? v : unlogit(logit(opts.d3eff) + ret * (logit(v) - logit(opts.d3eff)));
     if ((retOff < 0.999 || retDef < 0.999) && !opts.d3eff) throw new Error(`${T.name}: players removed, so opts.d3eff (the D3 average) is required`);
     return {
-      id: T.id, name: T.name, season: opts.season || null, rosterNote: names ? 'next-season roster (matched by name)' : opts.roster ? 'given roster' : opts.returning ? 'returning players (SR/GR removed)' : 'full listed roster',
+      id: T.id, name: T.name, lg: T.lg || null, noFilm, season: opts.season || null, rosterNote: names ? 'next-season roster (matched by name)' : opts.roster ? 'given roster' : opts.returning ? 'returning players (SR/GR removed)' : 'full listed roster',
       retOff, retDef, adjOff2026: st.adjusted_off_efficiency, adjDef2026: st.adjusted_def_efficiency,
       removed: (T.roster || []).filter(r => !keep(r) && ((r.shots || 0) > 0 || (r.sog_faced || 0) > 0 || (r.faceoffs_taken || 0) > 0)).map(r => ({ j: String(r.jersey_number), name: r.player, cls: r.team_listed_class })),
       poss: ev.poss.per_game, len: ev.poss.off_len, pens: ev.pens_pg, emo: ev.emo, mdd: ev.mdd, clear: st.clear_rate,
@@ -162,6 +169,8 @@
   function matchup(W, O, ctx) {
     const dead = 3600 / (((W.poss + O.poss) / 2) * (W.len + O.len));
     const fo = faceoffs(W, O, ctx.foUsage);
+    // Our logged draws against this opponent, blended in (ctx.foLogged: { att, won, k }).
+    if (ctx.foLogged && ctx.foLogged.att) { const L = ctx.foLogged, obs = (L.won + 0.5) / (L.att + 1); fo.pModel = fo.p; fo.p = unlogit((L.k * logit(fo.p) + L.att * logit(obs)) / (L.k + L.att)); fo.logged = L; }
     const t = [side(W, O, Object.assign({}, ctx.wl || {}, { d3: ctx.d3, dead })), side(O, W, Object.assign({}, ctx.opp || {}, { d3: ctx.d3, dead }))];
     // Clears: a clear is attempted after each non-goal possession by the other team. The failure chance per attempt is set
     // so each team's failed clears per game match its record (falls back to 1 - clear rate). Film transition shares already

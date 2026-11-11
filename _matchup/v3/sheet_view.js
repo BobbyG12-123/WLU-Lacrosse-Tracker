@@ -42,6 +42,7 @@
         <div class="tw"><table><thead><tr><th class="l">Group</th><th>Shots + TOs</th><th>Goals</th><th>How much</th><th>Win %</th></tr></thead><tbody>${groups || '<tr><td class="l" colspan="5">No group with 8+ logged possession ends.</td></tr>'}</tbody></table></div></section></div>
     <section class="panel"><h2>Our goalie in net</h2><p class="muted">Each goalie's logged saves by zone, against how their shooters place the ball${S.missing.some(m => /shooters put the ball/.test(m)) ? ' (not tagged yet, so an even spread)' : ''}. Win % replays the games with him in net.</p>
       <div class="tw"><table><thead><tr><th class="l">Goalie</th><th>Logged shots</th><th>Save %</th><th class="l">Weakest zone</th><th>We win</th></tr></thead><tbody>${gk || '<tr><td class="l" colspan="5">No goalie with 60+ logged shots.</td></tr>'}</tbody></table></div></section>
+    ${S.updates && S.updates.length ? `<section class="panel"><h2>Updated from our logs against them</h2><ul class="note">${S.updates.map(m => `<li>${esc(m)}</li>`).join('')}</ul></section>` : ''}
     <section class="panel"><h2>Not in this sheet yet</h2><ul class="note">${S.missing.map(m => `<li>${esc(m)}</li>`).join('')}${T.opp.removed.length ? `<li>Left their roster (SR/GR in 2026): ${T.opp.removed.slice(0, 12).map(r => '#' + esc(r.j) + ' ' + esc((r.name || '').split(/\s+/).slice(-1)[0])).join(', ')}${T.opp.removed.length > 12 ? '…' : ''}.</li>` : ''}</ul></section>`;
   }
   V3.sheetView = { render };

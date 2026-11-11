@@ -8,6 +8,7 @@ deno run --check=none --allow-read=. tests/picks_tests.js
 deno run --check=none --allow-read=. v3/tests/v3_tests.js
 deno run --check=none --allow-read=. v3/tests/sheet_tests.js
 deno run --check=none --allow-read=. v3/tests/sources_tests.js
+deno run --check=none --allow-read=. v3/tests/update_tests.js
 CHROME=${CHROME:-"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"}
 cp ../_tests/phase0/serve.py .
 rm -rf results chrome_profile; mkdir -p results
