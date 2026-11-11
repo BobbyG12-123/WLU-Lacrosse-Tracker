@@ -1,4 +1,4 @@
-// Pick rate tests. Synthetic only. Run: deno run --allow-read=. _matchup/tests/picks_tests.js (from the repo root)
+// Pick rate tests. Synthetic only. Run: deno run --allow-read=. matchup/_tests/picks_tests.js (from the repo root)
 await import(new URL('../picks.js', import.meta.url));
 const MS = globalThis.MS; const results = [];
 const ok = (name, cond, info) => { results.push({ name, ok: !!cond }); console.log((cond ? '  OK   ' : '  FAIL ') + name + (cond || info === undefined ? '' : '  ' + JSON.stringify(info).slice(0, 600))); };

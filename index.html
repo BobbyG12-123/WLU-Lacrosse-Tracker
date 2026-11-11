@@ -4771,7 +4771,7 @@ function switchTab(viewId) {
   if (viewId === 'backfillView') { bfInit(); renderBackfill(); }
   if (viewId === 'filmcheckView') { fcInit(); renderFilmCheck(); }
   if (viewId === 'scrimView') { scrimInit(); renderScrim(); }
-  if (viewId === 'matchupView' && MS_DEV_FLAG && !PLAYER_MODE) { const f = document.getElementById('matchupFrame'); if (!f.getAttribute('src')) f.setAttribute('src', '_matchup/studio.html'); }
+  if (viewId === 'matchupView' && MS_DEV_FLAG && !PLAYER_MODE) { const f = document.getElementById('matchupFrame'); if (!f.getAttribute('src')) f.setAttribute('src', 'matchup/studio.html'); }
   if (viewId === 'goalieView') { renderGoalieHeat(); renderGoalieAdvanced(); }
   if (viewId === 'faceoffView') renderFaceoffs();
   if (viewId === 'tableView') renderTable();
@@ -4887,6 +4887,7 @@ let PM_OBSERVER = null;
 function pmEnter(p) {
   const onDevelop = document.getElementById('develView').classList.contains('active');
   devOnPlayerMode(true);
+  { const mf = document.getElementById('matchupFrame'); if (mf && mf.getAttribute('src')) { mf.removeAttribute('src'); MS_READ = null; } } // Simulation: unload in player mode
   PLAYER_MODE = p;
   PLAYER_MODE.fogo = pmIsFogo(p.name) || FACEOFFS.some(f => Object.keys(p.seasons).some(s => p.seasons[s] === f.playerJersey && seasonForDate(f.date) === s));
   const ss = Object.keys(p.seasons).sort();
@@ -10032,19 +10033,6 @@ document.getElementById('lrImportBtn').addEventListener('click', importLrData);
 // Reads every collection for Export All Data. Save audit records (app/op_*, PR 7a-1) are left out: they are read by
 // neither query (ids below 'op_' and from 'op`' up), so they cost no reads here; a separate owner-only audit export can
 // read them later.
-// Read-only tracker data for the experimental Simulation screen.
-window.msStudioData = async () => { if (!MS_DEV_FLAG || PLAYER_MODE) throw new Error('Not available.'); return { exp: await exportAllDataCollect('simulation-read'), cols: { shot: COLS, poss: POSS_COLS } }; };
-// Simulation game week (experimental, same flag): read-only access to the LacrosseReference records on the tracker.
-// { meta, teams: [ids], players: [team ids], d3: true } -> plain copies. Never writes.
-window.msLrData = async (req) => {
-  if (!MS_DEV_FLAG || PLAYER_MODE) throw new Error('Not available.');
-  req = req || {}; const unpack = d => { const x = d.data(); return x && typeof x.j === 'string' ? JSON.parse(x.j) : x; }, out = {};
-  if (req.meta) { const m = await DB.collection('app').doc('lrMeta').get(); out.meta = m.exists ? unpack(m) : null; }
-  if (req.teams) { out.teams = {}; for (const id of req.teams) { const d = await DB.collection('lrTeams').doc(String(id)).get(); out.teams[id] = d.exists ? unpack(d) : null; } }
-  if (req.players) { out.players = {}; for (const id of req.players) { const qs = await DB.collection('lrPlayers').where('team', '==', Number(id)).get(); out.players[id] = []; qs.forEach(d => out.players[id].push(unpack(d))); } }
-  if (req.d3) { const qs = await DB.collection('lrTeams').get(); out.d3 = []; qs.forEach(d => { const t = unpack(d); if (t && t.lg === 'd3m' && t.stats && t.stats.adjusted_off_efficiency != null) out.d3.push({ eff: t.stats.adjusted_off_efficiency, emo: t.ev && t.ev.emo ? { goals: t.ev.emo.goals, chances: t.ev.emo.chances } : null }); }); }
-  return JSON.parse(JSON.stringify(out));
-};
 async function exportAllDataCollect(who) {
   const cols = ['app', 'sessions', 'evalPlayers', 'evalRatings', 'filmTags', 'filmSessions', 'trainQueues', 'trainShots'];
   const out = { exportedAt: new Date().toISOString(), by: who, collections: {}, excluded: 'app/op_* (save audit records)' };
@@ -10056,6 +10044,37 @@ async function exportAllDataCollect(who) {
   }
   return out;
 }
+// Simulation (experimental, development flag only, never in player mode): read-only data for the Simulation pages.
+// Reads only what those pages use (sessions, film tags and a few app docs), and reuses one read for 60 seconds so moving
+// between the two pages doesn't read the database again. Never writes.
+let MS_READ = null;
+async function msStudioRead() {
+  const out = { exportedAt: new Date().toISOString(), by: 'simulation-read', collections: { app: {}, sessions: {}, filmTags: {} } };
+  const y = new Date().getFullYear(), seasons = [y - 1, y, y + 1, y + 2];
+  const appIds = ['session_tracking', 'faceoffs_live', 'scrimPlan'].concat(...seasons.map(n => ['roster_' + n, 'positions_' + n]));
+  for (const id of appIds) { const d = await DB.collection('app').doc(id).get(); if (d.exists) out.collections.app[id] = d.data(); }
+  (await DB.collection('sessions').get()).forEach(d => { out.collections.sessions[d.id] = d.data(); });
+  (await DB.collection('filmTags').get()).forEach(d => { out.collections.filmTags[d.id] = d.data(); });
+  return out;
+}
+window.msStudioData = async () => {
+  if (!MS_DEV_FLAG || PLAYER_MODE) throw new Error('Not available.');
+  if (!MS_READ || Date.now() - MS_READ.at > 60000) MS_READ = { at: Date.now(), p: msStudioRead().then(exp => ({ exp, cols: { shot: COLS, poss: POSS_COLS } })).catch(e => { MS_READ = null; throw e; }) };
+  return MS_READ.p;
+};
+// Simulation game week (same flag): read-only access to the LacrosseReference records on the tracker.
+// { meta, teams: [ids], players: [team ids], d3: true } -> plain copies, at most 5 teams per call. d3 reads every team
+// record once (the page asks before doing it and caches the result). Never writes.
+window.msLrData = async (req) => {
+  if (!MS_DEV_FLAG || PLAYER_MODE) throw new Error('Not available.');
+  req = req || {}; const unpack = d => { const x = d.data(); return x && typeof x.j === 'string' ? JSON.parse(x.j) : x; }, out = {};
+  if ((req.teams && req.teams.length > 5) || (req.players && req.players.length > 5)) throw new Error('At most 5 teams per call.');
+  if (req.meta) { const m = await DB.collection('app').doc('lrMeta').get(); out.meta = m.exists ? unpack(m) : null; }
+  if (req.teams) { out.teams = {}; for (const id of req.teams) { const d = await DB.collection('lrTeams').doc(String(id)).get(); out.teams[id] = d.exists ? unpack(d) : null; } }
+  if (req.players) { out.players = {}; for (const id of req.players) { const qs = await DB.collection('lrPlayers').where('team', '==', Number(id)).get(); out.players[id] = []; qs.forEach(d => out.players[id].push(unpack(d))); } }
+  if (req.d3) { const qs = await DB.collection('lrTeams').get(); out.d3 = []; qs.forEach(d => { const t = unpack(d); if (t && t.lg === 'd3m' && t.stats && t.stats.adjusted_off_efficiency != null) out.d3.push({ eff: t.stats.adjusted_off_efficiency, emo: t.ev && t.ev.emo ? { goals: t.ev.emo.goals, chances: t.ev.emo.chances } : null }); }); }
+  return JSON.parse(JSON.stringify(out));
+};
 async function exportAllData() {
   const log = document.getElementById('fsExportLog');
   if (!IS_DH_OWNER) { log.textContent = 'Only the Data Health owner can export.'; return; }

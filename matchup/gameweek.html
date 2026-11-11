@@ -4,7 +4,7 @@
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;600;700&family=Saira+Condensed:wght@500;600;700&family=Big+Shoulders+Display:wght@700&display=swap">
 <style>
 :root { --paper:#F4F6F9; --card:#FFFFFF; --card-2:#F8F9FB; --ink:#16202E; --muted:#5D6877; --line:#DDE2EA; --accent:#2F7BFF; --accent-soft:rgba(47,123,255,.12); --warn:#6B4E16; --warn-bg:#FBEFC9; --team-a:#1F5FBF; --team-b:#C2410C; }
-@media (prefers-color-scheme: dark) { :root { --paper:#070E19; --card:#0E1625; --card-2:#121C2E; --ink:#E8EEF7; --muted:#9AA8BC; --line:#22304A; --accent:#4D90FF; --accent-soft:rgba(77,144,255,.16); --warn:#F0C75A; --warn-bg:#3A2F0E; --team-a:#4E8BE8; --team-b:#D4702C; } }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --paper:#070E19; --card:#0E1625; --card-2:#121C2E; --ink:#E8EEF7; --muted:#9AA8BC; --line:#22304A; --accent:#4D90FF; --accent-soft:rgba(77,144,255,.16); --warn:#F0C75A; --warn-bg:#3A2F0E; --team-a:#4E8BE8; --team-b:#D4702C; } }
 * { box-sizing:border-box; } body { margin:0; background:var(--paper); color:var(--ink); font:14px/1.45 'Instrument Sans','Helvetica Neue',Arial,sans-serif; }
 main { max-width:1240px; margin:0 auto; padding:14px 16px 60px; }
 h1 { font:700 34px/1.05 'Big Shoulders Display','Arial Narrow',sans-serif; margin:2px 0; } h2 { font-size:17px; margin:0 0 6px; } h3 { font-size:13.5px; margin:14px 0 6px; }
@@ -38,5 +38,5 @@ button.go { font:700 14px inherit; font-family:inherit; padding:8px 16px; border
 .err { color:#C62E1A; font-weight:600; } a.back { color:var(--accent); font-size:13px; }
 </style></head><body><main><header><div><div class="kicker">Simulation · game week · engine v3</div><h1 id="title">Game week</h1><p class="muted" id="srcline">Loading tracker data…</p></div><a class="back" href="studio.html">← Back to the Simulation screen</a></header>
 <section class="panel" id="controls"></section><div id="app"></div></main>
-<script src="picks.js"></script><script src="v3/model.js"></script><script src="v3/engine.js"></script><script src="v3/update.js"></script><script src="v3/sheet.js"></script><script src="v3/sheet_view.js"></script><script src="v3/sources.js"></script><script src="gameweek.js"></script>
+<script src="picks.js"></script><script src="v3/model.js"></script><script src="v3/engine.js"></script><script src="v3/update.js"></script><script src="v3/sheet.js"></script><script src="v3/sheet_view.js"></script><script src="v3/sources.js"></script><script src="v3/d3_summaries.js"></script><script src="gameweek.js"></script>
 </body></html>

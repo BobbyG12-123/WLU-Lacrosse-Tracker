@@ -1,6 +1,6 @@
-// Matchup engine tests. Synthetic only. Run: _matchup/tests/run.sh
+// Matchup engine tests. Synthetic only. Run: matchup/_tests/run.sh
 const base = new URL('..', import.meta.url);
-for (const f of ['rules.js', 'constants.js', 'engine.js', 'results.js', 'estimate.js', 'replay.js', 'explain.js', 'tests/fixtures.js']) await import(new URL(f, base));
+for (const f of ['rules.js', 'constants.js', 'engine.js', 'results.js', 'estimate.js', 'replay.js', 'explain.js', '_tests/fixtures.js']) await import(new URL(f, base));
 const MS = globalThis.MS, FX = globalThis.FX, T = MS.TEAM, R = MS.RULES;
 const results = [], covered = new Set();
 const ok = (name, cond, info, rules) => { results.push({ name, ok: !!cond, info }); if (cond && rules) rules.forEach(r => covered.add(r)); };

@@ -3,19 +3,21 @@
 # Exit code 0 only if every check passes.
 set -euo pipefail
 cd "$(dirname "$0")/.."
-deno run --check=none --allow-read=. tests/engine_tests.js
-deno run --check=none --allow-read=. tests/picks_tests.js
-deno run --check=none --allow-read=. v3/tests/v3_tests.js
-deno run --check=none --allow-read=. v3/tests/sheet_tests.js
-deno run --check=none --allow-read=. v3/tests/sources_tests.js
-deno run --check=none --allow-read=. v3/tests/update_tests.js
+deno run --check=none --allow-read=. _tests/engine_tests.js
+deno run --check=none --allow-read=. _tests/picks_tests.js
+deno run --check=none --allow-read=. v3/_tests/v3_tests.js
+deno run --check=none --allow-read=. v3/_tests/sheet_tests.js
+deno run --check=none --allow-read=. v3/_tests/sources_tests.js
+deno run --check=none --allow-read=. v3/_tests/update_tests.js
+deno run --check=none --allow-read=.. _tests/flag_tests.js ../index.html
+deno run --check=none --allow-read=.. _tests/player_mode_tests.js ../index.html
 CHROME=${CHROME:-"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"}
 cp ../_tests/phase0/serve.py .
 rm -rf results chrome_profile; mkdir -p results
 python3 serve.py & SRV=$!
 trap 'kill $SRV 2>/dev/null || true; kill ${CP:-0} 2>/dev/null || true' EXIT
 sleep 1
-"$CHROME" --headless=new --user-data-dir="$PWD/chrome_profile" --no-first-run --disable-extensions "http://127.0.0.1:8770/tests/browser_worker.html" >/dev/null 2>&1 & CP=$!
+"$CHROME" --headless=new --user-data-dir="$PWD/chrome_profile" --no-first-run --disable-extensions "http://127.0.0.1:8770/_tests/browser_worker.html" >/dev/null 2>&1 & CP=$!
 for i in $(seq 1 60); do sleep 2; [ -f results/browser_worker.json ] && break; done
 sleep 1
 python3 - results/browser_worker.json <<'PY'

@@ -1,5 +1,5 @@
 // Updating an opponent from our own logged games (engine v3). Synthetic only. Run from the repo root:
-// deno run --check=none --allow-read=. _matchup/v3/tests/update_tests.js
+// deno run --check=none --allow-read=. matchup/v3/_tests/update_tests.js
 for (const f of ['../model.js', '../engine.js', '../update.js', '../sheet.js', '../sources.js', '../../picks.js', './fixtures_v3.js']) await import(new URL(f, import.meta.url));
 const MS = globalThis.MS, V3 = MS.V3, FX = globalThis.FX3; const results = [];
 const ok = (name, cond, info) => { results.push({ name, ok: !!cond }); console.log((cond ? '  OK   ' : '  FAIL ') + name + (cond || info === undefined ? '' : '  ' + JSON.stringify(info).slice(0, 500))); };

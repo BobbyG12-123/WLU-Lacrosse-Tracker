@@ -99,12 +99,12 @@
     // our best pick pair, at the entered usage
     const PR = ourPairs(shots), ourPick = now(0, ['pick']), ourPickPoss = avg(bt, b => b.kinds[0].pick || 0);
     const pr3 = PR.list.filter(v => v.n >= 3);
-    pr3.slice(0, 1).forEach(v => { const dG = 3 * (ourPickPoss ? ourPick / ourPickPoss : 0) * (v.rate / PR.team - 1);
+    pr3.filter(() => PR.team > 0).slice(0, 1).forEach(v => { const dG = 3 * (ourPickPoss ? ourPick / ourPickPoss : 0) * (v.rate / PR.team - 1);
       L({ area: 'Offense', src: 'real', title: `Give ${wn(v.scr)} → ${wn(v.usr)} 3 more picks a game`, why: `${v.g} goals on ${v.n} logged pick shots (team ${pct(PR.team)}). Best of ${pr3.length} pairs with 3+ shots, so some of the edge is luck.`, n: v.n, unit: 'practice pick shots', dG, who: 'wl', sets: scaled('wl.pick', ourPick, dG) }); });
     // defender on their best dodger
     const DF = defenders(shots);
     const dl = DF.list.filter(v => v.n >= 8);
-    if (topD && dl.length) { const bd = dl[0], dG = -(dodge(topD) / games) * (1 - bd.r / DF.team);
+    if (topD && dl.length && DF.team > 0) { const bd = dl[0], dG = -(dodge(topD) / games) * (1 - bd.r / DF.team);
       L({ area: 'Defense', src: 'real', title: `Put ${wn(bd.j)} on #${topD.j} ${lastName(topD.name)}`, why: `${wn(bd.j)} was beaten on ${bd.b} of ${bd.n} logged practice reps that ended in a shot (team ${pct(DF.team)}). Best of ${dl.length} defenders with 8+ reps, so some of the edge is luck.`, n: bd.n, unit: 'practice reps', dG, who: 'opp', sets: scaled('opp.six', oppSix, dG) }); }
     // slides
     const SL = slides(shots);
@@ -129,7 +129,7 @@
 
     // Units at the entered usage
     const useOf = key => o.use[key] ?? 50;
-    const unit = (key, rate, team, kinds) => { const m = 1 + useOf(key) / 100 * (rate / team - 1); return win(kinds === 'pick' ? { 'wl.pick': m } : { 'wl.nopick': m, 'wl.pick': m }); };
+    const unit = (key, rate, team, kinds) => { if (!(team > 0)) return null; const m = 1 + useOf(key) / 100 * (rate / team - 1); return win(kinds === 'pick' ? { 'wl.pick': m } : { 'wl.nopick': m, 'wl.pick': m }); };
     const pairs = PR.list.filter(v => v.n >= 3).map(v => Object.assign({}, v, { key: 'pair:' + v.scr + '>' + v.usr })).map(v => Object.assign(v, { use: useOf(v.key), w: unit(v.key, v.rate, PR.team, 'pick') }));
     const GR = ourGroups(shots, P0.poss || [], P0.stints || []);
     const groups = GR.list.filter(v => v.n >= 8).map(v => Object.assign({}, v, { key: 'group:' + v.players.join(' ') })).map(v => Object.assign(v, { use: useOf(v.key), w: unit(v.key, v.rate, GR.team, 'six') }));
@@ -163,7 +163,7 @@
   // Replays one pick pair or group at a new usage %, updating that row in place. Same result as a full rebuild.
   function unitWin(S, key, use) {
     const c = S._ctx, row = S.pairs.list.find(x => x.key === key) || S.groups.list.find(x => x.key === key); if (!c || !row) return null;
-    const isPair = key.startsWith('pair:'), m = 1 + use / 100 * (row.rate / (isPair ? c.pairTeam : c.groupTeam) - 1);
+    const isPair = key.startsWith('pair:'); if (!((isPair ? c.pairTeam : c.groupTeam) > 0)) return null; const m = 1 + use / 100 * (row.rate / (isPair ? c.pairTeam : c.groupTeam) - 1);
     row.use = use; row.w = V3.winPct(V3.runBatch(c.P, c.tn, c.seed, isPair ? { 'wl.pick': m } : { 'wl.nopick': m, 'wl.pick': m }));
     return row.w;
   }

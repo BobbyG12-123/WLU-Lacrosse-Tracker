@@ -34,7 +34,7 @@ Opponent numbers are a plain totals object with `source`, set as `opponent.offic
 
 ## Versioned runs
 
-Use `tools_versioned.sh`. It refuses to run if `_matchup/` has uncommitted changes, and it stamps the commit into every run record, alongside model and rules versions, input snapshot hash, seed and completed games.
+Use `tools_versioned.sh`. It refuses to run if `matchup/` has uncommitted changes, and it stamps the commit into every run record, alongside model and rules versions, input snapshot hash, seed and completed games.
 
 ## Experimental screen
 

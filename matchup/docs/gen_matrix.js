@@ -1,4 +1,4 @@
-// Writes docs/RULES_AND_CONSTANTS.md from rules.js and constants.js. Run from _matchup: deno run --allow-read=. --allow-write=docs docs/gen_matrix.js
+// Writes docs/RULES_AND_CONSTANTS.md from rules.js and constants.js. Run from matchup: deno run --allow-read=. --allow-write=docs docs/gen_matrix.js
 const base = new URL('..', import.meta.url);
 await import(new URL('rules.js', base)); await import(new URL('constants.js', base));
 const MS = globalThis.MS;

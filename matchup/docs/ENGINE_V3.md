@@ -71,7 +71,7 @@ Still modeling choices, not errors:
 
 ## Checks
 
-`v3/tests/v3_tests.js` (synthetic data) covers:
+`v3/_tests/v3_tests.js` (synthetic data) covers:
 - calibration (possessions, and goals per possession against the parameters);
 - determinism;
 - event validation (the score is rebuilt from events, no ties, time runs in order);

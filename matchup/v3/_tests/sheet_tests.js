@@ -1,4 +1,4 @@
-// Game-week sheet tests (engine v3). Synthetic only. Run from the repo root: deno run --check=none --allow-read=. _matchup/v3/tests/sheet_tests.js
+// Game-week sheet tests (engine v3). Synthetic only. Run from the repo root: deno run --check=none --allow-read=. matchup/v3/_tests/sheet_tests.js
 for (const f of ['../model.js', '../engine.js', '../sheet.js', '../../picks.js']) await import(new URL(f, import.meta.url));
 const MS = globalThis.MS, V3 = MS.V3; const results = [];
 const ok = (name, cond, info) => { results.push({ name, ok: !!cond }); console.log((cond ? '  OK   ' : '  FAIL ') + name + (cond || info === undefined ? '' : '  ' + JSON.stringify(info).slice(0, 500))); };

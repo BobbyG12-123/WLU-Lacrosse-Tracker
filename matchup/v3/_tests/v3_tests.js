@@ -1,4 +1,4 @@
-// Engine v3 tests. Synthetic only. Run from the repo root: deno run --check=none --allow-read=. _matchup/v3/tests/v3_tests.js
+// Engine v3 tests. Synthetic only. Run from the repo root: deno run --check=none --allow-read=. matchup/v3/_tests/v3_tests.js
 await import(new URL('../model.js', import.meta.url)); await import(new URL('../engine.js', import.meta.url));
 const V3 = globalThis.MS.V3; const results = [];
 const ok = (name, cond, info) => { results.push({ name, ok: !!cond }); console.log((cond ? '  OK   ' : '  FAIL ') + name + (cond || info === undefined ? '' : '  ' + JSON.stringify(info).slice(0, 500))); };

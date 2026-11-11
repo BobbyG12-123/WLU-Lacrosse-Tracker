@@ -1,9 +1,9 @@
 <!doctype html><html><head><meta charset="utf-8"><title>LOADING</title>
-<!-- TEST ONLY: hosts _matchup/gameweek.html with the real Firebase compat SDK offline, synthetic records, and the real
+<!-- TEST ONLY: hosts matchup/gameweek.html with the real Firebase compat SDK offline, synthetic records, and the real
      exportAllDataCollect / msStudioData / msLrData code pulled out of index.html. Nothing reaches a server. -->
 <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore-compat.js"></script>
-<script src="../../v3/tests/fixtures_v3.js"></script>
+<script src="../../v3/_tests/fixtures_v3.js"></script>
 </head><body style="margin:0"><iframe id="f" style="width:100%;height:calc(100vh - 20px);border:0"></iframe>
 <script>
 (async () => {
@@ -17,21 +17,26 @@
     for (const t of [F.wl, F.opp, F.opp2]) for (const r of t.roster) db.collection('lrPlayers').doc(String(r.player_ID)).set({ j: JSON.stringify({ id: r.player_ID, team: t.id, name: r.player, sb: { goals: { 'settled+dodge': 4 }, shots: { 'settled+dodge': 12 } } }), team: t.id });
     for (const [sid, d] of Object.entries(F.exp.collections.sessions)) db.collection('sessions').doc(sid).set(d);
     db.collection('app').doc('roster_2027').set(F.exp.collections.app.roster_2027);
+    // Every app doc the lean read asks for has to be in the offline cache (a missing one fails offline; live it reads as absent).
+    const y = new Date().getFullYear();
+    for (const n of [y - 1, y, y + 1, y + 2]) { if (n !== 2027) db.collection('app').doc('roster_' + n).set({ list: [] }); db.collection('app').doc('positions_' + n).set({ json: '{}' }); }
+    db.collection('app').doc('session_tracking').set({}); db.collection('app').doc('faceoffs_live').set({}); db.collection('app').doc('scrimPlan').set({ json: '{}' });
     for (const [k, v] of Object.entries(F.exp.collections.filmTags)) db.collection('filmTags').doc(k).set(v);
     for (const c of ['evalPlayers', 'evalRatings', 'filmSessions', 'trainQueues', 'trainShots']) db.collection(c).doc('zz_empty').set({ empty: true });
     await new Promise(r => setTimeout(r, 300));
     // From here on, count every write anything tries to make.
-    window.__WRITES = 0; const D = firebase.firestore.DocumentReference.prototype, C = firebase.firestore.CollectionReference.prototype;
+    window.__WRITES = 0; window.__READS = { sessions: 0, lrTeamsAll: 0 }; const D = firebase.firestore.DocumentReference.prototype, C = firebase.firestore.CollectionReference.prototype;
+    { const og = C.get; C.get = function () { if (this.path === 'sessions') window.__READS.sessions++; if (this.path === 'lrTeams') window.__READS.lrTeamsAll++; return og.apply(this, arguments); }; }
     for (const m of ['set', 'update', 'delete']) { const o = D[m]; D[m] = function () { window.__WRITES++; return o.apply(this, arguments); }; }
     { const o = C.add; C.add = function () { window.__WRITES++; return o.apply(this, arguments); }; }
     // The real host functions, taken from index.html so the test runs the shipped code.
     const src = await (await fetch('/index.html', { cache: 'no-store' })).text();
     const grab = (start, endMark) => { const a = src.indexOf(start); if (a < 0) throw new Error('not found in index.html: ' + start); const b = src.indexOf(endMark, a); return src.slice(a, b + endMark.length); };
-    const code = grab('async function exportAllDataCollect(who) {', '\n  return out;\n}') + '\n' + grab('window.msStudioData = async', '\n') + '\n' + grab('window.msLrData = async (req) => {', '\n};');
+    const code = grab('let MS_READ = null;', '\n};\n// Simulation game week') + '\n' + grab('window.msLrData = async (req) => {', '\n};');
     window.MS_DEV_FLAG = true; window.PLAYER_MODE = false; window.COLS = F.cols.shot; window.POSS_COLS = F.cols.poss;
     (0, eval)(code.replace(/\bMS_DEV_FLAG\b/g, 'window.MS_DEV_FLAG').replace(/\bPLAYER_MODE\b/g, 'window.PLAYER_MODE').replace(/\bCOLS\b/g, 'window.COLS').replace(/\bPOSS_COLS\b/g, 'window.POSS_COLS').replace(/window\.window\./g, 'window.'));
     try { localStorage.clear(); } catch (e) {}
-    document.getElementById('f').src = '/_matchup/gameweek.html';
+    document.getElementById('f').src = '/matchup/gameweek.html';
     document.title = 'READY';
   } catch (e) { document.title = 'HOST ERROR ' + e.message; }
 })();
