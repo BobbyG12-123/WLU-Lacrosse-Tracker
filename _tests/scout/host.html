@@ -1,0 +1,32 @@
+<!doctype html><html><head><meta charset="utf-8"><title>LOADING</title>
+<!-- TEST ONLY: hosts opponent-scout.html with the real Firebase compat SDK, offline. Synthetic data, fake sign-in, fake project. Nothing reaches a server. -->
+<script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore-compat.js"></script>
+<script src="fixtures.js"></script>
+</head><body style="margin:0">
+<div style="height:150px;background:#0E1625;color:#9AA8BC;font:13px sans-serif;padding:12px;box-sizing:border-box">TEST HOST: stands in for the tracker header (the tracker sizes this frame to the window height minus 150px)</div>
+<iframe id="f" style="width:100%;height:calc(100vh - 150px);min-height:520px;border:0;display:block"></iframe>
+<script>
+(async () => {
+  try {
+    if (location.hostname !== '127.0.0.1') throw new Error('test host must run on 127.0.0.1');
+    firebase.initializeApp({ apiKey: 'test-only', projectId: 'demo-scout-offline-test', appId: 'test-only' });
+    if (firebase.app().options.projectId !== 'demo-scout-offline-test') throw new Error('wrong project');
+    const db = firebase.firestore(); await db.disableNetwork();
+    firebase.auth = () => ({ currentUser: { email: 'tester@example.test' } });
+    const F = window.__FIX, pack = o => ({ j: JSON.stringify(o) });
+    const w = [db.collection('app').doc('lrMeta').set(pack(F.meta))];
+    for (const t of Object.values(F.teams)) w.push(db.collection('lrTeams').doc(String(t.id)).set(pack(t)));
+    w.push(db.collection('filmTags').doc('pick').set({ t: F.legacy }));
+    // Offline, a document missing from the cache fails to load, while the real server would say "doesn't exist", so seed the rest empty.
+    for (const k of ['slide', 'ride', 'clear', 'manup', 'mandown', 'fomove', 'shot_off', 'shot_def']) w.push(db.collection('filmTags').doc(k).set({ t: {} }));
+    if (!/nopick/.test(location.search)) for (const k of ['pick_def_901', 'pick_off_901', 'pick_def_410', 'pick_off_410', 'pick_def_902', 'pick_off_902']) w.push(db.collection('filmTags').doc(k).set({ t: {} }));
+    w.length; // offline: writes land in the local cache and stay pending; don't wait for the server
+    await new Promise(r => setTimeout(r, 300));
+    window.__DB = db;
+    try { localStorage.setItem('wluScoutTeam', '901'); } catch (e) {}
+    document.getElementById('f').src = '/opponent-scout.html';
+    document.title = 'READY';
+  } catch (e) { document.title = 'HOST ERROR ' + e.message; }
+})();
+</script></body></html>

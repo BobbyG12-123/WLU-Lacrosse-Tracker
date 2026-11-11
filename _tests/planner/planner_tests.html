@@ -1,0 +1,77 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>TEST: Scrimmage Planner regressions</title></head><body><pre id="out">running</pre>
+<script>
+// Pulls the named top-level declarations out of index.html, so these checks run the released functions, not copies.
+function grab(src, name) {
+  const fn = new RegExp('^(?:async )?function ' + name + '\\(', 'm'), con = new RegExp('^const ' + name + '\\s*=', 'm');
+  let m = fn.exec(src), start, isFn = !!m;
+  if (!m) m = con.exec(src);
+  if (!m) throw new Error('not found: ' + name);
+  start = m.index;
+  if (!isFn) { const e = src.indexOf('\n', start); let end = e; while (!/;\s*(\/\/[^\n]*)?$/.test(src.slice(start, end))) end = src.indexOf('\n', end + 1); return src.slice(start, end); }
+  let i = src.indexOf('{', src.indexOf(')', start)), d = 0, q = null;
+  for (; i < src.length; i++) {
+    const c = src[i];
+    if (q) { if (c === '\\') i++; else if (c === q) q = null; continue; }
+    if (c === '"' || c === "'" || c === '`') { q = c; continue; }
+    if (c === '/' && src[i + 1] === '/') { i = src.indexOf('\n', i); continue; }
+    if (c === '/' && src[i + 1] === '*') { i = src.indexOf('*/', i); continue; }
+    if (c === '{') d++; else if (c === '}' && --d === 0) return src.slice(start, i + 1);
+  }
+  throw new Error('unterminated: ' + name);
+}
+const T = { results: [], pass: 0, fail: 0 }, ok = (name, cond, info) => { T.results.push({ name, ok: !!cond, info: info === undefined ? null : info }); cond ? T.pass++ : T.fail++; };
+const finish = async err => { T.err = err || null; await fetch('results/planner_tests.json', { method: 'POST', body: JSON.stringify(T) }); document.getElementById('out').textContent = JSON.stringify(T, null, 1); };
+(async () => {
+  const src = await (await fetch('index.html')).text();
+  const names = ['SCRIM_RNG', 'scrimSeed', 'SCRIM_OPTS', 'SCRIM_TYPES', 'scrimNorm', 'scrimLogit', 'scrimStat', 'scrimOpt', 'scrimPick', 'scrimBeta', 'scrimWorld', 'scrimPossessions', 'scrimSimCore', 'scrimMerge', 'scrimEV', 'scrimRowOf', 'scrimPlanSearch', 'scrimDaysCore', 'scrimWorkerSrc', 'scrimSimulate', 'scrimSimulateAsync'];
+  const optional = /const SCRIM_JOBS\s*=[^\n]*/.exec(src);
+  const body = names.map(n => grab(src, n)).join('\n');
+  const api = new Function(`let SCRIM_SEED = 0x2545F491; const SC = { plan: { opts: {} } }; ${optional ? optional[0] : ''}
+    let CFG = null; function scrimSimCfg() { return CFG; }
+    ${body}
+    return { SC, scrimSeed, scrimSimCore, scrimSimulate, scrimSimulateAsync, scrimPossessions, scrimWorld, scrimMerge, scrimInv, scrimLogit, SCRIM_TYPES, setCfg: c => { CFG = c; } };`)();
+
+  // Synthetic players: no roster, no real numbers.
+  const js = ['a1', 'a2', 'a3', 'm1', 'm2', 'm3', 'm4', 'm5', 'm6'], P = {};
+  js.forEach((j, i) => { P[j] = { j, use: 8 + i, pShot: 0.45, pFeed: 0.3, pTo: 0.25, mix: [0.3, 0.4, 0.3], fin: [{ a: 12, b: 18 }, { a: 9, b: 21 }, { a: 5, b: 25 }], dom: 0.1, role: 'balanced', pass: 1 }; });
+  const M = { P, tMix: [0.3, 0.4, 0.3], tFin: [0.4, 0.3, 0.17], tCat: [0.4, 0.4, 0.2], daySd: 0.2, teamDaySd: 0.1, roleMult: {}, meanUse: 12, domYes: 1.12, domNo: 0.86 };
+  const state = [0, 1, 2, 3].map(() => ({ att: ['a1', 'a2', 'a3'], lines: [['m1', 'm2', 'm3'], ['m4', 'm5', 'm6']], mins: [8, 7] }));
+  const cfg = { ctxs: [{ poss: 9, oppDef: 1, oppOffRate: 0.25, fo: 0.5, defEmo: 0.33, offEmo: 0.33 }], starts: [{ q: 1, us: 0, them: 0 }], wl: { fo: 0.5, emo: 0.361, emoChances: 2.6, md: 0.283, mdChances: 3.8 }, goalieShift: 0, hot: 1, nGames: 1 };
+  api.setCfg(cfg);
+  const sum = a => a.reduce((x, y) => x + y, 0);
+
+  // 1. Every goal the planner counts for us must have a scorer.
+  api.scrimSeed(11); const r1 = api.scrimSimCore(M, 1, state, 400, cfg);
+  const scored = sum(r1.games[0].us), credited = sum(Object.values(r1.stat.goalsBy));
+  ok('every simulated W&L goal has a named scorer on that line', scored === credited, { scored, credited });
+  ok('the goal count matches the score', r1.stat.goals === scored, { statGoals: r1.stat.goals, scored });
+  const onField = new Set(js); ok('man-up goals go only to rostered players in the plan', Object.keys(r1.stat.goalsBy).every(j => onField.has(j)), Object.keys(r1.stat.goalsBy));
+  ok('man-up goals are in the sample', (() => { api.SC.plan.opts = { special: false }; api.scrimSeed(11); const off = api.scrimSimCore(M, 1, state, 400, cfg); api.SC.plan.opts = {}; return sum(off.games[0].us) < scored; })(), null);
+
+  // 2. Same request, same result on any computer, and exactly the games asked for.
+  const hc = c => Object.defineProperty(navigator, 'hardwareConcurrency', { value: c, configurable: true });
+  const run = async (c, N, maxW) => { hc(c); return api.scrimSimulateAsync(M, 1, state, N, maxW); };
+  const fp = r => JSON.stringify([r.N, r.games, r.q, r.lines, r.stat]);
+  const a2 = await run(3, 2000), a8 = await run(9, 2000), a1 = await run(2, 2000), lim = await run(9, 2000, 2);
+  ok('same plan gives identical results on 2, 4 and 8 worker machines', fp(a2) === fp(a8) && fp(a1) === fp(a8), { n2: a2.N, n8: a8.N, n1: a1.N, goals: [sum(a2.games[0].us), sum(a8.games[0].us), sum(a1.games[0].us)] });
+  ok('a smaller worker limit does not change the result', fp(lim) === fp(a8));
+  for (const n of [1, 7, 2000, 20001]) { const x = await run(9, n); ok(`asking for ${n} games completes exactly ${n}`, x.N === n && x.games[0].us.length === n, { N: x.N, rows: x.games[0].us.length }); }
+  ok('a normal run reports nothing short', a8.requested === 2000 && !a8.short, { requested: a8.requested, short: a8.short });
+  const W0 = window.Worker; window.Worker = function () { throw new Error('no workers'); };
+  const fb = await run(9, 20000); window.Worker = W0;
+  ok('a worker failure reports the games actually completed, not the games requested', fb.requested === 20000 && fb.N === fb.games[0].us.length && fb.short === true && fb.N < 20000, { requested: fb.requested, N: fb.N, short: fb.short });
+
+  // 3. SCRIM_TYPES holds goals per possession. Its ratios must come out as goals per possession, away from the probability limits.
+  api.SC.plan.opts = { days: false, usage: false, roles: false, pass: false };
+  const perPoss = t => { api.scrimSeed(5); const st = { xg: 0, poss: 0, to: 0, shots: 0, gs: 0, dom: 0, fed: 0, fedG: 0, goals: 0, goalsBy: {}, touch: {} }; const lineup = ['a1', 'a2', 'a3', 'm1', 'm2', 'm3']; let g = 0; const n = 400000; const w = api.scrimWorld(M, lineup); g = api.scrimPossessions(M, lineup, n, w, { oppDef: 1 }, 1, t, st).g; return { gpp: g / n, gps: st.goals / st.shots, st }; };
+  const half = perPoss('half'), trans = perPoss('trans'), zone = perPoss('zone');
+  const want = api.SCRIM_TYPES.reduce((o, x) => (o[x[0]] = x[2], o), {});
+  const ratio = (a, b) => a.gpp / b.gpp, near = (x, y, tol) => Math.abs(x - y) <= tol;
+  ok('transition vs half-field goals per possession matches the table ratio', near(ratio(trans, half), want.trans / want.half, 0.02), { got: ratio(trans, half), want: want.trans / want.half });
+  ok('zone vs half-field goals per possession matches the table ratio', near(ratio(zone, half), want.zone / want.half, 0.02), { got: ratio(zone, half), want: want.zone / want.half });
+  ok('no possession type changes turnover or shot frequency in a way the table does not claim', near(half.st.shots / half.st.poss, zone.st.shots / zone.st.poss, 0.01), { half: half.st.shots / half.st.poss, zone: zone.st.shots / zone.st.poss });
+  api.SC.plan.opts = {};
+  await finish();
+})().catch(e => finish(String(e && e.stack || e)));
+</script></body></html>
