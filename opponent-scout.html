@@ -943,22 +943,24 @@ function pickTable(rows, keyFn, keyLab, extra) {
   const tr = [...m.entries()].sort((a, b) => b[1].n - a[1].n).map(([k, v]) => `<tr><td class="l"><b>${esc(k)}</b></td><td>${v.n}</td><td>${pc(v.n / rows.length)}</td><td>${v.g}</td><td><b>${pc(v.g / v.n)}</b></td><td>${v.known ? v.s : '—'}</td><td>${v.known ? v.to : '—'}</td><td>${v.known}</td></tr>`).join('');
   return `<div class="tw" style="margin-top:8px"><table><thead><tr><th class="l">${esc(keyLab)}</th><th>Picks</th><th>Share</th><th>Goals</th><th>Goal %</th><th title="Shots that didn't score">Shots</th><th>TOs</th><th title="Picks with a tagged result">Result</th></tr></thead><tbody>${tr}</tbody></table></div>${extra || ''}`;
 }
+// Players are judged on goals off the pick only (Bobby, Nov 10): a goal later in the possession is shown but not counted
+// against or for the player. Rates use picks with a tagged result, since only those say whether the goal came off the pick.
 function pickPlayers(side, rows) {
   const slots = side === 'def' ? [['sd', 'screener’s D'], ['ud', 'ball carrier’s D']] : [['scr', 'screener'], ['usr', 'ball carrier']];
-  const P = new Map();
+  const P = new Map(), blank = () => ({ n: 0, known: 0, gp: 0, gl: 0, s: 0, to: 0, roles: {}, fault: 0, credit: 0 });
   rows.forEach(r => {
     slots.forEach(([k, l]) => { const j = r.t[k]; const tid = side === 'def' ? r.t.dT ?? r.x.dT : r.t.oT ?? r.x.oT; if (j == null || tid !== T.id) return;
-      const v = P.get(j) || { n: 0, g: 0, known: 0, s: 0, to: 0, roles: {}, fault: 0, credit: 0 }; v.n++; v.g += r.goal ? 1 : 0; v.roles[l] = (v.roles[l] || 0) + 1;
-      if (r.known) { v.known++; if (r.grp === 'shot') v.s++; if (r.grp === 'to') v.to++; } P.set(j, v); });
-    if (r.t.call && r.t.cj != null && r.t.cj !== 'team' && r.t.cT === T.id) { const v = P.get(r.t.cj) || { n: 0, g: 0, known: 0, s: 0, to: 0, roles: {}, fault: 0, credit: 0 }; v[r.t.call]++; P.set(r.t.cj, v); }
+      const v = P.get(j) || blank(); v.n++; v.roles[l] = (v.roles[l] || 0) + 1;
+      if (r.known) { v.known++; if (r.t.res === 'goal_pick') v.gp++; if (r.t.res === 'goal_later') v.gl++; if (r.grp === 'shot') v.s++; if (r.grp === 'to') v.to++; } P.set(j, v); });
+    if (r.t.call && r.t.cj != null && r.t.cj !== 'team' && r.t.cT === T.id) { const v = P.get(r.t.cj) || blank(); v[r.t.call]++; P.set(r.t.cj, v); }
   });
   if (!P.size) return '<p class="note" style="margin:6px 0 0">No players tagged yet.</p>';
-  const list = [...P.entries()].map(([j, v]) => Object.assign({ j, rate: v.n ? v.g / v.n : null }, v));
-  const tr = list.sort((a, b) => b.n - a.n).map(v => `<tr><td class="l"><b>${esc(pj(T.id, v.j))}</b><small style="display:block;color:var(--muted)">${esc(Object.entries(v.roles).map(([l, n]) => `${n} as ${l}`).join(', ') || 'fault/credit only')}</small></td><td>${v.n}</td><td>${v.g}</td><td><b>${v.n ? pc(v.rate) : '—'}</b></td><td>${v.known ? v.s : '—'}</td><td>${v.known ? v.to : '—'}</td><td>${v.fault}</td><td>${v.credit}</td></tr>`).join('');
-  const q = list.filter(v => v.n >= 5); const good = side === 'def' ? (a, b) => a.rate - b.rate || (a.fault - a.credit) - (b.fault - b.credit) : (a, b) => b.rate - a.rate || b.n - a.n;
-  const ranked = q.slice().sort(good); const nm = v => `${pj(T.id, v.j)} (${v.g} goals on ${v.n} picks, ${v.fault} at fault, ${v.credit} credit)`;
-  const bw = ranked.length >= 2 ? `<p class="note" style="margin:6px 0 0"><b>Best:</b> ${esc(nm(ranked[0]))} · <b>Worst:</b> ${esc(nm(ranked[ranked.length - 1]))}. Among players with 5+ tagged picks, by ${side === 'def' ? 'fewest' : 'most'} goals per pick, then fault vs credit.</p>` : '<p class="note" style="margin:6px 0 0">Best and worst show once two players have 5+ tagged picks.</p>';
-  return `<div class="tw" style="margin-top:8px"><table><thead><tr><th class="l">${side === 'def' ? 'Defender' : 'Player'}</th><th>Picks</th><th>Goals</th><th>Goal %</th><th title="Shots that didn't score">Shots</th><th>TOs</th><th>At fault</th><th>Credit</th></tr></thead><tbody>${tr}</tbody></table></div>${bw}`;
+  const list = [...P.entries()].map(([j, v]) => Object.assign({ j, rate: v.known ? v.gp / v.known : null }, v));
+  const tr = list.sort((a, b) => b.n - a.n).map(v => `<tr><td class="l"><b>${esc(pj(T.id, v.j))}</b><small style="display:block;color:var(--muted)">${esc(Object.entries(v.roles).map(([l, n]) => `${n} as ${l}`).join(', ') || 'fault/credit only')}</small></td><td>${v.n}</td><td>${v.known}</td><td>${v.known ? v.gp : '—'}</td><td>${v.known ? v.gl : '—'}</td><td><b>${v.rate == null ? '—' : pc(v.rate)}</b></td><td>${v.known ? v.s : '—'}</td><td>${v.known ? v.to : '—'}</td><td>${v.fault}</td><td>${v.credit}</td></tr>`).join('');
+  const q = list.filter(v => v.known >= 5); const good = side === 'def' ? (a, b) => a.rate - b.rate || (a.fault - a.credit) - (b.fault - b.credit) : (a, b) => b.rate - a.rate || b.known - a.known;
+  const ranked = q.slice().sort(good); const nm = v => `${pj(T.id, v.j)} (${v.gp} goals off the pick on ${v.known} picks with a result, ${v.fault} at fault, ${v.credit} credit)`;
+  const bw = ranked.length >= 2 ? `<p class="note" style="margin:6px 0 0"><b>Best:</b> ${esc(nm(ranked[0]))} · <b>Worst:</b> ${esc(nm(ranked[ranked.length - 1]))}. Among players with 5+ picks that have a tagged result, by ${side === 'def' ? 'fewest' : 'most'} goals off the pick per pick, then fault vs credit. Goals later in the possession are shown but not counted.</p>` : '<p class="note" style="margin:6px 0 0">Best and worst show once two players have 5+ picks with a tagged result. Goals later in the possession are shown but not counted.</p>';
+  return `<div class="tw" style="margin-top:8px"><table><thead><tr><th class="l">${side === 'def' ? 'Defender' : 'Player'}</th><th>Picks</th><th title="Picks with a tagged result">Result</th><th title="Goals off the pick">Off pick</th><th title="Goals later in the possession (shown, not counted against the player)">Later</th><th title="Goals off the pick per pick with a result">Off %</th><th title="Shots that didn't score">Shots</th><th>TOs</th><th title="At fault">Fault</th><th>Credit</th></tr></thead><tbody>${tr}</tbody></table></div>${bw}`;
 }
 function pickSummary(side, S) {
   const L = pickClips(side, S).filter(x => x.c); const rows = pickRows(side, S); const done = rows.length;
