@@ -1,0 +1,6 @@
+local/
+results/
+chrome_profile/
+serve.py
+*.local.json
+local_data.json

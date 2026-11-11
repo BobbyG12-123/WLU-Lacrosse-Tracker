@@ -2589,6 +2589,7 @@
     <p class="view-intro">One player&rsquo;s own attempts: the situations behind his results, the records and film behind them, and the coaching conclusions drawn from them.</p>
     <div id="devWrap"></div>
   </section>
+  <section id="matchupView" class="view pm-off"><iframe id="matchupFrame" title="Simulation (experimental)" style="width:100%; height:calc(100vh - 150px); height:calc(100dvh - 150px); min-height:520px; border:0; display:block; background:var(--card);"></iframe></section>
   <section id="scrimView" class="view pm-off">
     <p class="view-intro">Lineups for the scrimmages under our rules, simulated possession by possession.</p>
     <div id="scrimWrap"></div>
@@ -4770,6 +4771,7 @@ function switchTab(viewId) {
   if (viewId === 'backfillView') { bfInit(); renderBackfill(); }
   if (viewId === 'filmcheckView') { fcInit(); renderFilmCheck(); }
   if (viewId === 'scrimView') { scrimInit(); renderScrim(); }
+  if (viewId === 'matchupView' && MS_DEV_FLAG && !PLAYER_MODE) { const f = document.getElementById('matchupFrame'); if (!f.getAttribute('src')) f.setAttribute('src', 'matchup/studio.html'); }
   if (viewId === 'goalieView') { renderGoalieHeat(); renderGoalieAdvanced(); }
   if (viewId === 'faceoffView') renderFaceoffs();
   if (viewId === 'tableView') renderTable();
@@ -4885,6 +4887,7 @@ let PM_OBSERVER = null;
 function pmEnter(p) {
   const onDevelop = document.getElementById('develView').classList.contains('active');
   devOnPlayerMode(true);
+  { const mf = document.getElementById('matchupFrame'); if (mf && mf.getAttribute('src')) { mf.removeAttribute('src'); MS_READ = null; } } // Simulation: unload in player mode
   PLAYER_MODE = p;
   PLAYER_MODE.fogo = pmIsFogo(p.name) || FACEOFFS.some(f => Object.keys(p.seasons).some(s => p.seasons[s] === f.playerJersey && seasonForDate(f.date) === s));
   const ss = Object.keys(p.seasons).sort();
@@ -4897,7 +4900,7 @@ function pmEnter(p) {
   const show = { briefView: false, methodsView: false, labView: false, whereView: false, profileView: isPlayer || isGoalie, develView: isPlayer, logView: false, playerView: isPlayer, goalieView: isGoalie, defenseView: isDefender, efficiencyView: isPlayer, faceoffView: PLAYER_MODE.fogo,
     tableView: true, compareView: isPlayer, opponentView: false, reportsView: true, depthView: false, healthView: false, recruitsView: false, boardView: false,
     // Staff tools hidden by a class in the page: listed here too, because leaving Player View clears every pm-off.
-    scrimView: false, backfillView: false, filmcheckView: false };
+    scrimView: false, matchupView: false, backfillView: false, filmcheckView: false };
   Object.keys(show).forEach(id => {
     document.querySelectorAll(`.tab-btn[data-view="${id}"]`).forEach(b => b.classList.toggle('pm-off', !show[id]));
     document.getElementById(id).classList.toggle('pm-off', !show[id]);
@@ -10041,6 +10044,37 @@ async function exportAllDataCollect(who) {
   }
   return out;
 }
+// Simulation (experimental, development flag only, never in player mode): read-only data for the Simulation pages.
+// Reads only what those pages use (sessions, film tags and a few app docs), and reuses one read for 60 seconds so moving
+// between the two pages doesn't read the database again. Never writes.
+let MS_READ = null;
+async function msStudioRead() {
+  const out = { exportedAt: new Date().toISOString(), by: 'simulation-read', collections: { app: {}, sessions: {}, filmTags: {} } };
+  const y = new Date().getFullYear(), seasons = [y - 1, y, y + 1, y + 2];
+  const appIds = ['session_tracking', 'faceoffs_live', 'scrimPlan'].concat(...seasons.map(n => ['roster_' + n, 'positions_' + n]));
+  for (const id of appIds) { const d = await DB.collection('app').doc(id).get(); if (d.exists) out.collections.app[id] = d.data(); }
+  (await DB.collection('sessions').get()).forEach(d => { out.collections.sessions[d.id] = d.data(); });
+  (await DB.collection('filmTags').get()).forEach(d => { out.collections.filmTags[d.id] = d.data(); });
+  return out;
+}
+window.msStudioData = async () => {
+  if (!MS_DEV_FLAG || PLAYER_MODE) throw new Error('Not available.');
+  if (!MS_READ || Date.now() - MS_READ.at > 60000) MS_READ = { at: Date.now(), p: msStudioRead().then(exp => ({ exp, cols: { shot: COLS, poss: POSS_COLS } })).catch(e => { MS_READ = null; throw e; }) };
+  return MS_READ.p;
+};
+// Simulation game week (same flag): read-only access to the LacrosseReference records on the tracker.
+// { meta, teams: [ids], players: [team ids], d3: true } -> plain copies, at most 5 teams per call. d3 reads every team
+// record once (the page asks before doing it and caches the result). Never writes.
+window.msLrData = async (req) => {
+  if (!MS_DEV_FLAG || PLAYER_MODE) throw new Error('Not available.');
+  req = req || {}; const unpack = d => { const x = d.data(); return x && typeof x.j === 'string' ? JSON.parse(x.j) : x; }, out = {};
+  if ((req.teams && req.teams.length > 5) || (req.players && req.players.length > 5)) throw new Error('At most 5 teams per call.');
+  if (req.meta) { const m = await DB.collection('app').doc('lrMeta').get(); out.meta = m.exists ? unpack(m) : null; }
+  if (req.teams) { out.teams = {}; for (const id of req.teams) { const d = await DB.collection('lrTeams').doc(String(id)).get(); out.teams[id] = d.exists ? unpack(d) : null; } }
+  if (req.players) { out.players = {}; for (const id of req.players) { const qs = await DB.collection('lrPlayers').where('team', '==', Number(id)).get(); out.players[id] = []; qs.forEach(d => out.players[id].push(unpack(d))); } }
+  if (req.d3) { const qs = await DB.collection('lrTeams').get(); out.d3 = []; qs.forEach(d => { const t = unpack(d); if (t && t.lg === 'd3m' && t.stats && t.stats.adjusted_off_efficiency != null) out.d3.push({ eff: t.stats.adjusted_off_efficiency, emo: t.ev && t.ev.emo ? { goals: t.ev.emo.goals, chances: t.ev.emo.chances } : null }); }); }
+  return JSON.parse(JSON.stringify(out));
+};
 async function exportAllData() {
   const log = document.getElementById('fsExportLog');
   if (!IS_DH_OWNER) { log.textContent = 'Only the Data Health owner can export.'; return; }
@@ -17556,6 +17590,9 @@ const NAV = [
   { id: 'rec', name: 'Recruiting', pages: [['recruits', 'Recruits', 'recruitsView'], ['board', 'Board', 'boardView']] },
   { id: 'data', name: 'Data', pages: [['shotlog', 'Shot Log', 'tableView'], ['health', 'Data Health', 'healthView'], ['where', 'Where Did It Go?', 'whereView']] },
 ];
+// Simulation (experimental): only with the development flag, never in player mode. It reads tracker data and writes nothing.
+const MS_DEV_FLAG = (() => { try { return /[?&]matchupDev=1\b/.test(location.search) || localStorage.getItem('matchupDev') === '1'; } catch (e) { return false; } })();
+if (MS_DEV_FLAG) NAV.find(s => s.id === 'pers').pages.push(['matchup', 'Simulation', 'matchupView']);
 const NAV_PAGES = {};
 NAV.forEach(s => s.pages.forEach(([id, name, view, sub, anchor]) => { NAV_PAGES[id] = { id, name, view, sub: sub || null, anchor: anchor || null, sec: s }; }));
 // Where each page lived before the redesign (for "Where Did It Go?").
