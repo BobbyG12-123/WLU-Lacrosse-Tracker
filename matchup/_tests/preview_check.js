@@ -15,7 +15,7 @@ for (let i = 0; i < 120; i++) { const t = await ev('document.title', true); if (
 for (let i = 0; i < 80; i++) { try { if (await ev('return !!(ST && ST.E && ST.official);')) break; } catch (e) { /* frame still loading */ } await sleep(500); }
 const waitIdle = async (n = 240) => { for (let i = 0; i < n; i++) { if (await ev('return !ST.busy;')) return true; await sleep(500); } return false; };
 ok('the flagged screen loads with tracker data and official data', await ev('return !!(ST.E && ST.official && ST.teamList.length > 5);'));
-ok('the host has the Simulation page only behind the flag', await ev("return W.parent.document.getElementById('matchupFrame').getAttribute('src') === 'matchup/studio.html';"));
+ok('the host has the Simulation page only behind the flag', await ev("return W.parent.document.getElementById('matchupFrame').getAttribute('src') === 'matchup/gameweek.html';"));
 { const off = await ev(`const f = window.top.document.createElement('iframe'); f.src = 'tracker_preview.html'; f.style.display = 'none'; window.top.document.body.appendChild(f); for (let i = 0; i < 80 && !(f.contentWindow.msStudioData); i++) await new Promise(r => setTimeout(r, 200)); let txt = 'no function'; try { await f.contentWindow.msStudioData(); txt = 'opened'; } catch (e) { txt = e.message; } const src = f.contentWindow.document.getElementById('matchupFrame').getAttribute('src'); f.remove(); return { txt, src };`);
   ok('without the flag the screen stays closed and its data read refuses', off.txt === 'Not available.' && off.src === null, off); }
 await ev("ST.test = true;");

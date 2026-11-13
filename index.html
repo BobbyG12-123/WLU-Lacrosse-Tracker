@@ -4771,7 +4771,7 @@ function switchTab(viewId) {
   if (viewId === 'backfillView') { bfInit(); renderBackfill(); }
   if (viewId === 'filmcheckView') { fcInit(); renderFilmCheck(); }
   if (viewId === 'scrimView') { scrimInit(); renderScrim(); }
-  if (viewId === 'matchupView' && MS_DEV_FLAG && !PLAYER_MODE) { const f = document.getElementById('matchupFrame'); if (!f.getAttribute('src')) f.setAttribute('src', 'matchup/studio.html'); }
+  if (viewId === 'matchupView' && MS_DEV_FLAG && !PLAYER_MODE) { const f = document.getElementById('matchupFrame'); if (!f.getAttribute('src')) f.setAttribute('src', 'matchup/gameweek.html'); }
   if (viewId === 'goalieView') { renderGoalieHeat(); renderGoalieAdvanced(); }
   if (viewId === 'faceoffView') renderFaceoffs();
   if (viewId === 'tableView') renderTable();

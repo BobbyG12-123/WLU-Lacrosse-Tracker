@@ -28,8 +28,8 @@ ok('no flag: both data functions refuse, nothing is read', off.studio === 'Not a
 const pm = await world('?matchupDev=1', null, true);
 ok('flag but player mode: frame stays empty, data functions refuse', pm.src === null && pm.studio === 'Not available.' && pm.lr === 'Not available.' && pm.reads.length === 0, pm);
 const on = await world('?matchupDev=1', null, false);
-ok('flag in the address: menu entry, frame loads matchup/studio.html (published path)', on.flag && on.nav.join() === 'matchup' && on.src === 'matchup/studio.html', on);
+ok('flag in the address: menu entry, frame loads matchup/gameweek.html (published path)', on.flag && on.nav.join() === 'matchup' && on.src === 'matchup/gameweek.html', on);
 ok('flag on: data functions read, and write nothing', on.studio === 'resolved' && on.lr === 'resolved' && on.reads.length > 0 && on.writes.length === 0, on);
-const ls = await world('', '1', false); ok('flag saved in this browser also works', ls.flag && ls.src === 'matchup/studio.html');
+const ls = await world('', '1', false); ok('flag saved in this browser also works', ls.flag && ls.src === 'matchup/gameweek.html');
 const near = await world('?matchupDev=10', '0', false); ok('a look-alike flag (matchupDev=10) does not turn it on', near.flag === false);
 console.log(`flag gating: pass ${pass}  fail ${fail}`); Deno.exit(fail ? 1 : 0);
