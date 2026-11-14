@@ -20,16 +20,12 @@ async function world(search, stored, playerMode) {
   try { await g.window.msLrData({ meta: true, teams: [1], players: [1], d3: true }); } catch (e) { l = e.message; }
   return { flag: r.flag, nav: g.NAV[0].pages.map(p => p[0]), src: frame.src, studio: s, lr: l, reads, writes };
 }
-const off = await world('', null, false);
-ok('no flag: flag is off', off.flag === false, off);
-ok('no flag: no Simulation menu entry', off.nav.length === 0, off.nav);
-ok('no flag: the Simulation frame never loads', off.src === null, off.src);
-ok('no flag: both data functions refuse, nothing is read', off.studio === 'Not available.' && off.lr === 'Not available.' && off.reads.length === 0, off);
-const pm = await world('?matchupDev=1', null, true);
-ok('flag but player mode: frame stays empty, data functions refuse', pm.src === null && pm.studio === 'Not available.' && pm.lr === 'Not available.' && pm.reads.length === 0, pm);
-const on = await world('?matchupDev=1', null, false);
-ok('flag in the address: menu entry, frame loads matchup/gameweek.html (published path)', on.flag && on.nav.join() === 'matchup' && on.src === 'matchup/gameweek.html', on);
-ok('flag on: data functions read, and write nothing', on.studio === 'resolved' && on.lr === 'resolved' && on.reads.length > 0 && on.writes.length === 0, on);
-const ls = await world('', '1', false); ok('flag saved in this browser also works', ls.flag && ls.src === 'matchup/gameweek.html');
-const near = await world('?matchupDev=10', '0', false); ok('a look-alike flag (matchupDev=10) does not turn it on', near.flag === false);
+const reg = await world('', null, false);
+ok('regular link: Simulation is on', reg.flag === true, reg);
+ok('regular link: menu entry, frame loads matchup/gameweek.html (published path)', reg.nav.join() === 'matchup' && reg.src === 'matchup/gameweek.html', reg);
+ok('regular link: data functions read, and write nothing', reg.studio === 'resolved' && reg.lr === 'resolved' && reg.reads.length > 0 && reg.writes.length === 0, reg);
+const pm = await world('', null, true);
+ok('player mode: frame stays empty, data functions refuse, nothing is read', pm.src === null && pm.studio === 'Not available.' && pm.lr === 'Not available.' && pm.reads.length === 0, pm);
+const old = await world('?matchupDev=1', '1', false); ok('the old flagged link still works', old.flag && old.src === 'matchup/gameweek.html');
+const hidden = /<section id="matchupView" class="view pm-off">/.test(src); ok('the Simulation view is marked pm-off, so player mode hides it from the menu', hidden);
 console.log(`flag gating: pass ${pass}  fail ${fail}`); Deno.exit(fail ? 1 : 0);
