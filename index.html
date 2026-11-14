@@ -17591,7 +17591,8 @@ const NAV = [
   { id: 'data', name: 'Data', pages: [['shotlog', 'Shot Log', 'tableView'], ['health', 'Data Health', 'healthView'], ['where', 'Where Did It Go?', 'whereView']] },
 ];
 // Simulation (experimental): only with the development flag, never in player mode. It reads tracker data and writes nothing.
-const MS_DEV_FLAG = (() => { try { return /[?&]matchupDev=1\b/.test(location.search) || localStorage.getItem('matchupDev') === '1'; } catch (e) { return false; } })();
+// Simulation is on for signed-in staff (Bobby, Nov 14; it was behind ?matchupDev=1). Player mode still hides it and its data functions refuse there.
+const MS_DEV_FLAG = true;
 if (MS_DEV_FLAG) NAV.find(s => s.id === 'pers').pages.push(['matchup', 'Simulation', 'matchupView']);
 const NAV_PAGES = {};
 NAV.forEach(s => s.pages.forEach(([id, name, view, sub, anchor]) => { NAV_PAGES[id] = { id, name, view, sub: sub || null, anchor: anchor || null, sec: s }; }));
