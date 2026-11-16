@@ -2,7 +2,7 @@
 (function () {
   const V3 = window.MS.V3, $ = id => document.getElementById(id);
   const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
-  const G = { host: null, exp: null, cols: null, meta: null, d3: null, teams: {}, players: {}, opp: null, games: 4000, use: {}, labels: null, S: null, busy: false, msg: '' };
+  const G = { host: null, exp: null, cols: null, meta: null, d3: null, teams: {}, players: {}, opp: null, games: 4000, home: null, use: {}, labels: null, S: null, busy: false, msg: '' };
   let host = null; try { host = window.parent !== window && window.parent.msStudioData && window.parent.msLrData ? window.parent : null; } catch (e) { host = null; }
   async function d3() {
     const L = G.meta.sb_league || {}, withLeague = c => Object.assign({}, c, { by_type: L.by_type, pick: L.pick, no_pick: L.no_pick });
@@ -26,12 +26,14 @@
     $('controls').innerHTML = `<div class="pick-row"><b style="min-width:84px">Opponent</b>${sched.map(([id, n]) => `<button class="pill ${G.opp === id ? 'on' : ''}" data-opp="${id}">${esc(n)}</button>`).join('')}</div>
       <div class="pick-row"><b style="min-width:84px">Any team</b><input type="search" id="q" list="teams" placeholder="Search D3 / D1 teams"><datalist id="teams">${(G.meta ? G.meta.teams : []).map(t => `<option value="${esc(t.name)}">`).join('')}</datalist></div>
       ${G.opp ? `<div class="pick-row"><b style="min-width:84px">Our logs</b>${labelsAll().length ? labelsAll().map(l => `<button class="pill ${curLabels().includes(l) ? 'on' : ''}" data-lab="${esc(l)}">${esc(l)}</button>`).join('') + '<span class="muted" style="font-size:12px">2027 games and scrimmages under these labels update their numbers</span>' : '<span class="muted">No 2027 games or scrimmages logged against anyone yet.</span>'}</div>` : ''}
+      <div class="pick-row"><b style="min-width:84px">Where</b>${[[0, 'Our home'], [1, 'Their home'], [null, 'Neutral']].map(([v, l]) => `<button class="pill ${G.home === v ? 'on' : ''}" data-home="${v === null ? 'n' : v}">${l}</button>`).join('')}<span class="muted" style="font-size:12px">home edge from 2026 D3 games</span></div>
       <div class="pick-row"><b style="min-width:84px">Games</b>${[2000, 4000, 8000].map(n => `<button class="pill ${G.games === n ? 'on' : ''}" data-g="${n}">${n.toLocaleString()}</button>`).join('')}
       <button class="go" id="run" ${!G.opp || G.busy ? 'disabled' : ''}>${G.busy ? 'Running…' : 'Run game week'}</button></div>
       ${G.needD3 && !G.busy ? `<div class="pick-row"><span class="muted">This LacrosseReference import has no D3 averages yet. Working them out reads every team record once (a large read, about 35 MB); this browser then remembers them.</span><button class="pill" id="allowD3">Work out D3 averages and run</button></div>` : ''}${G.msg ? `<p class="${/Could not|not found|Not available/.test(G.msg) ? 'err' : 'muted'}" style="margin:6px 0 0">${esc(G.msg)}</p>` : ''}`;
     document.querySelectorAll('[data-opp]').forEach(b => b.onclick = () => { G.opp = +b.dataset.opp; G.labels = null; G.S = null; prepLabels(); });
     document.querySelectorAll('[data-lab]').forEach(b => b.onclick = () => { const l = b.dataset.lab, c = curLabels(); G.labels = c.includes(l) ? c.filter(x => x !== l) : c.concat([l]); controls(); });
     document.querySelectorAll('[data-g]').forEach(b => b.onclick = () => { G.games = +b.dataset.g; controls(); });
+    document.querySelectorAll('[data-home]').forEach(b => b.onclick = () => { const v = b.dataset.home; G.home = v === 'n' ? null : +v; if (G.S) { $('app').style.opacity = 0.45; G.msg = 'Home or away changed: press Run to update the sheet.'; } controls(); });
     const q = $('q'); if (q) q.onchange = () => { const t = G.meta.teams.find(x => x.name.toLowerCase() === q.value.trim().toLowerCase()); if (t) { G.opp = t.id; G.labels = null; G.S = null; prepLabels(); } };
     const r = $('run'); if (r) r.onclick = run;
     const a = $('allowD3'); if (a) a.onclick = () => { G.allowD3 = true; G.needD3 = false; run(); };
@@ -50,10 +52,10 @@
     try {
       await load(410); await load(G.opp); if (!G.d3) G.d3 = await d3();
       G.msg = 'Simulating…'; controls(); await new Promise(r => setTimeout(r, 30));
-      const inp = V3.sources.inputs(G.exp, G.cols, { meta: G.meta, teams: G.teams, players: G.players }, { oppId: G.opp, d3: G.d3, games: G.games, use: G.use, labels: curLabels() });
+      const inp = V3.sources.inputs(G.exp, G.cols, { meta: G.meta, teams: G.teams, players: G.players }, { oppId: G.opp, d3: G.d3, games: G.games, home: G.home, use: G.use, labels: curLabels() });
       G.S = V3.sheet.build(inp); G.names = inp.names; G.notes = inp.sourceNotes; G.msg = '';
       $('title').textContent = `W&L vs ${G.teams[G.opp].name}`; $('srcline').textContent = G.notes.join(' ');
-      $('app').innerHTML = V3.sheetView.render(G.S, G.names); wire();
+      $('app').innerHTML = V3.sheetView.render(G.S, G.names); $('app').style.opacity = 1; wire();
     } catch (e) { if (e && e.needD3) G.needD3 = true; else { G.msg = 'Could not run: ' + (e.message || e); console.error(e); } }
     G.busy = false; controls();
   }

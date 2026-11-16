@@ -46,14 +46,16 @@
   // Main entry. in: { wl, opp (LacrosseReference team records), d3, practice: { shots, poss, stints, roster: [{ j, n }] },
   // tags: { pickDef, pickOff, legacyPick, shotOff }, opts: { games, seed, use: { key: % }, goalie, oppReturning } }
   function build(inp) {
-    const o = Object.assign({ games: 4000, seed: 11, use: {}, goalie: null, oppReturning: true }, inp.opts || {});
+    // home: 0 = we're at home, 1 = they are, null = neutral. oppReturning also means both records are last season's.
+    const o = Object.assign({ games: 4000, seed: 11, use: {}, goalie: null, oppReturning: true, home: null }, inp.opts || {});
     const d3 = inp.d3, P0 = inp.practice || {}, shots = P0.shots || [], tags = inp.tags || {}, missing = [];
     const names = (P0.roster || []).map(x => x.n).filter(Boolean);
     // Names for jerseys in our practice logs come from the same season's roster only.
     const wn = j => { const r = (P0.roster || []).find(x => String(x.j) === String(j)); return r && r.n ? `#${j} ${lastName(r.n)}` : '#' + j; };
     const byJ = Object.fromEntries((P0.roster || []).filter(x => x.j && x.n).map(x => [String(x.j), x.n]));
-    const W = V3.team(inp.wl, names.length ? { names, namesByJersey: byJ, d3eff: d3.eff } : { d3eff: d3.eff });
-    const O0 = V3.team(inp.opp, o.oppReturning ? { returning: true, d3eff: d3.eff, d3 } : { d3eff: d3.eff, d3 });
+    const prior = !!o.oppReturning;
+    const W = V3.team(inp.wl, names.length ? { names, namesByJersey: byJ, d3eff: d3.eff, priorSeason: prior } : { d3eff: d3.eff, priorSeason: prior });
+    const O0 = V3.team(inp.opp, o.oppReturning ? { returning: true, d3eff: d3.eff, d3, priorSeason: true } : { d3eff: d3.eff, d3 });
     if (O0.noFilm) missing.push(`${O0.name}: no LacrosseReference film-tag data, so their possession types use the D3 shape; their level comes from their record${inp.logged && inp.logged.sessions ? ' and our logs' : ''}.`);
     // Our own logged games against them update their numbers (V3.update).
     const UP = V3.update ? V3.update.applyLogs(O0, W, inp.logged, d3, { crossDivision: !!(inp.opp.lg && inp.wl.lg && inp.opp.lg !== inp.wl.lg) }) : { team: O0, notes: [] };
@@ -73,7 +75,7 @@
     if (!placement) missing.push('Where their shooters put the ball: not logged or tagged yet. Goalie comparison uses an even spread.');
     else if (!UP.placement) missing.push('Shooter placement comes from where their goals went in (Scouting page goal tags), not all their shots.');
     const gz = V3.goalieZones(shots.filter(ourDefense));
-    const ctx = g2 => ({ d3, foLogged: UP.foLogged || null, wl: { picks: picks && picks.rows.length ? picks : null, pickTeams: picks ? { off: picks._off, def: picks._def } : null }, opp: { placement, goalieZones: gz, goalie: g2 } });
+    const ctx = g2 => ({ d3, home: o.home, foLogged: UP.foLogged || null, wl: { picks: picks && picks.rows.length ? picks : null, pickTeams: picks ? { off: picks._off, def: picks._def } : null }, opp: { placement, goalieZones: gz, goalie: g2 } });
     const P = V3.matchup(W, O, ctx(o.goalie));
     const n = o.games, tn = Math.min(n, 3000), seed = o.seed;
     const base = V3.runBatch(P, n, seed), bt = V3.runBatch(P, tn, seed), BT = V3.winPct(bt);
@@ -135,7 +137,7 @@
     const groups = GR.list.filter(v => v.n >= 8).map(v => Object.assign({}, v, { key: 'group:' + v.players.join(' ') })).map(v => Object.assign(v, { use: useOf(v.key), w: unit(v.key, v.rate, GR.team, 'six') }));
 
     // Our goalies: replay with each in net
-    const ourGoalies = Object.values(gz).filter(x => x.n >= 60).map(x => { const Pg = V3.matchup(W, O, ctx(x.j)); return { j: x.j, n: x.n, base: x.base, w: V3.winPct(V3.runBatch(Pg, tn, seed)), weakest: V3.ZONES.slice().sort((a, b) => x.zr[a] - x.zr[b])[0], zr: x.zr }; }).sort((a, b) => b.w - a.w);
+    const ourGoalies = Object.values(gz).filter(x => x.n >= 60).map(x => { const Pg = V3.matchup(W, O, ctx(x.j)); return { j: x.j, n: x.n, raw: x.raw, base: x.base, w: V3.winPct(V3.runBatch(Pg, tn, seed)), weakest: V3.ZONES.slice().sort((a, b) => x.zr[a] - x.zr[b])[0], zr: x.zr }; }).sort((a, b) => b.w - a.w);
 
     // Ways we lose
     const six = b => (b.goals[1]['no pick'] || 0) + (b.goals[1].pick || 0), our6 = b => (b.goals[0]['no pick'] || 0) + (b.goals[0].pick || 0);

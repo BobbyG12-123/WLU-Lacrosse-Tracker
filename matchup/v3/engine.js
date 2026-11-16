@@ -30,7 +30,7 @@
   }
 
   // One possession for team A. Returns the event.
-  function possession(P, A, r, start) {
+  function possession(P, A, r, start, k) {
     const p = P.t[A], ev = { team: A, start, kind: null, cov: null, shooter: null, res: null };
     if (r() < p.emoChance) { ev.kind = 'man-up'; ev.rate = p.emoRate; }
     else {
@@ -44,21 +44,34 @@
     // The shooter carries his finishing and the goalie-vs-placement effect. Both are built as probability
     // ratios (model.js: m = finishing / team finishing, g = (1 - save in net) / (1 - usual save)), so they
     // multiply the probability, not the odds; applying them to the odds lost goals whenever shooters differed.
+    // k: this game's multiplier on the scoring chances of the team with the ball (1 with no variation; averages exactly 1).
     const s = pick(r, p.shooters, x => x.share); ev.shooter = s.j;
-    const q = cap(ev.rate * s.m * s.g);
+    const q = cap(ev.rate * (k ? k[A] : 1) * s.m * s.g);
     ev.res = r() < q ? 'goal' : 'no goal';
     delete ev.rate;
     return ev;
   }
+  // Standard normal from two uniforms (Box-Muller).
+  const normal = r => Math.sqrt(-2 * Math.log(1 - r())) * Math.cos(2 * Math.PI * r());
+  // Game-to-game variation, drawn once at the start of each game when P.var is set (matchup() sets it):
+  //  P.var.sd[i]: SD on the log of team i's scoring rate (how sure we are of both teams' levels, plus form). The multiplier
+  //    is exp(sd * z - sd^2 / 2), so it averages exactly 1 and the expected goal rate doesn't move;
+  //  P.var.fo: SD on the log-odds of the faceoff chance; P.var.pace: SD on the log of possession length (both teams).
+  function gameDraw(P, r) {
+    const V = P.var; if (!V) return { k: null, fo: P.fo, pace: 1 };
+    const k = [0, 1].map(i => V.sd && V.sd[i] ? Math.exp(V.sd[i] * normal(r) - V.sd[i] * V.sd[i] / 2) : 1);
+    const fo = V.fo ? 1 / (1 + Math.exp(-(Math.log(P.fo / (1 - P.fo)) + V.fo * normal(r)))) : P.fo;
+    return { k, fo, pace: V.pace ? Math.exp(V.pace * normal(r) - V.pace * V.pace / 2) : 1 };
+  }
   function simulateGame(P, seed) {
-    const r = rng(seed), E = [], sc = [0, 0];
+    const r = rng(seed), E = [], sc = [0, 0], D = gameDraw(P, r);
     let t = 0, q = 0, ball = null, start = 'faceoff';
-    const faceoff = () => { const w = r() < P.fo ? 0 : 1; E.push({ type: 'faceoff', t, q, winner: w }); return w; };
+    const faceoff = () => { const w = r() < D.fo ? 0 : 1; E.push({ type: 'faceoff', t, q, winner: w }); return w; };
     const clearOrNot = to => { if (r() < P.t[to].clear) return { ball: to, start: 'clear' }; E.push({ type: 'failed clear', t, q, team: to }); return { ball: 1 - to, start: 'failed clear' }; };
     ball = faceoff();
     while (t < 3600) {
-      const ev = possession(P, ball, r, start); ev.type = 'possession'; ev.t = t; ev.q = q; E.push(ev);
-      t += P.t[ball].len * (0.4 + 1.2 * r());
+      const ev = possession(P, ball, r, start, D.k); ev.type = 'possession'; ev.t = t; ev.q = q; E.push(ev);
+      t += P.t[ball].len * D.pace * (0.4 + 1.2 * r());
       if (ev.res === 'goal') sc[ball]++;
       const nq = Math.floor(t / 900);
       if (t >= 3600) break;
@@ -69,10 +82,10 @@
     let ot = false;
     if (sc[0] === sc[1]) {
       ot = true; q = 4; ball = faceoff(); start = 'faceoff';
-      for (let i = 0; i < 80 && sc[0] === sc[1]; i++) { const ev = possession(P, ball, r, start); ev.type = 'possession'; ev.t = t; ev.q = q; E.push(ev); if (ev.res === 'goal') sc[ball]++; else { const c = clearOrNot(1 - ball); ball = c.ball; start = c.start; } }
+      for (let i = 0; i < 80 && sc[0] === sc[1]; i++) { const ev = possession(P, ball, r, start, D.k); ev.type = 'possession'; ev.t = t; ev.q = q; E.push(ev); if (ev.res === 'goal') sc[ball]++; else { const c = clearOrNot(1 - ball); ball = c.ball; start = c.start; } }
       if (sc[0] === sc[1]) { const w = r() < 0.5 ? 0 : 1; E.push({ type: 'tiebreak', t, q, winner: w }); sc[w]++; }
     }
-    E.push({ type: 'end', t, q, score: sc.slice(), ot });
+    E.push({ type: 'end', t, q, score: sc.slice(), ot, draw: P.var ? { k: D.k, fo: D.fo, pace: D.pace } : null });
     return E;
   }
   // Box score from events only.
@@ -105,6 +118,6 @@
     return out;
   }
   const winPct = G => G.filter(b => b.score[0] > b.score[1]).length / G.length;
-  V3.rng = rng; V3.applySets = applySets; V3.simulateGame = simulateGame; V3.box = box; V3.validate = validate; V3.runBatch = runBatch; V3.winPct = winPct;
+  V3.normal = normal; V3.gameDraw = gameDraw; V3.rng = rng; V3.applySets = applySets; V3.simulateGame = simulateGame; V3.box = box; V3.validate = validate; V3.runBatch = runBatch; V3.winPct = winPct;
   V3.VERSION = 'matchup-v3-0.1.0';
 })(globalThis);

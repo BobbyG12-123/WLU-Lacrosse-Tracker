@@ -9,7 +9,8 @@
   const clamp = (x, lo, hi) => Math.max(lo, Math.min(hi, x));
   // Prior weights: their record counts as this many possessions (draws for faceoffs). A record from another division is
   // rated against that division, so it gets less weight.
-  const UK = Object.freeze({ level: 150, levelCross: 50, faceoff: 40, faceoffCross: 20, shooterMin: 30, placementMin: 5 });
+  // shooterPrior (Nov 16): their record counts as 30 logged shots for who takes their shots; blended, no longer a switch at 30.
+  const UK = Object.freeze({ level: 150, levelCross: 50, faceoff: 40, faceoffCross: 20, shooterPrior: 30, placementMin: 5 });
 
   // Counts from our logged rows against one opponent. Possessions = shots that aren't rebounds + no-shot possessions.
   function fromLogs(shots, poss, faceoffs, labels) {
@@ -43,16 +44,24 @@
     const off = blend(O.adjOff, L.them.goals / Math.max(1, L.them.poss), L.them.poss, W.adjDef, d3.eff, k);
     const def = blend(O.adjDef, L.us.goals / Math.max(1, L.us.poss), L.us.poss, W.adjOff, d3.eff, k);
     out.adjOff = off.value; out.adjDef = def.value;
+    // Uncertainty after the update: the record's weight (k possessions) plus the possessions we logged.
+    const u = (v, n) => 1 / Math.sqrt(v * (1 - v) * (k + n));
+    out.unc = { off: u(off.value, L.them.poss), def: u(def.value, L.us.poss) }; out.info = k + Math.min(L.them.poss, L.us.poss);
     notes.push(`From ${L.sessions} logged ${L.sessions === 1 ? 'session' : 'sessions'} against them (${L.games} games, ${L.scrimmages} scrimmages): their offense ${pct(O.adjOff)} → ${pct(off.value)} goals per possession on ${L.them.poss} possessions; their defense ${pct(O.adjDef)} → ${pct(def.value)} allowed on our ${L.us.poss}. Their record counts as ${k} possessions${opts.crossDivision ? ' (lower: it is rated against another division)' : ''}.`);
-    // Shooters: once we've logged enough of their shots, who shoots and how well comes from our logs.
+    // Shooters: their record and our logs blended (no switch). Who shoots: their record counts as UK.shooterPrior logged shots.
+    // How well: each man starts from his record's finishing (already pulled toward his team) and moves with what we logged,
+    // weight V3.K.shooter. A shooter we logged who isn't in their record starts from their team finishing.
     const byJ = {}; L.them.rows.forEach(x => { if (!x.oppShooter) return; const v = byJ[x.oppShooter] || (byJ[x.oppShooter] = { shots: 0, goals: 0 }); v.shots++; if (x.goal) v.goals++; });
     const logged = Object.values(byJ).reduce((a, v) => a + v.shots, 0);
-    if (logged >= UK.shooterMin) {
-      const tf = Object.values(byJ).reduce((a, v) => a + v.goals, 0) / logged, nameOf = j => { const r = (O.shooters || []).find(s => s.j === String(j)); return r ? r.name : null; };
-      out.shooters = Object.entries(byJ).map(([j, v]) => ({ j: String(j), name: nameOf(j), shots: v.shots, goals: v.goals, share: v.shots / logged, fin: (v.goals + V3.K.shooter * tf) / (v.shots + V3.K.shooter), fromLogs: true }));
-      out.teamFin = tf;
-      notes.push(`Their shooters: from ${logged} of their shots we logged (names matched by number to their record where it has one).`);
-    } else notes.push(`Their shooters: from their record (${logged} of their shots logged; ${UK.shooterMin} needed to switch).`);
+    if (logged) {
+      const w = UK.shooterPrior, prior = Object.fromEntries((O.shooters || []).map(s => [s.j, s])), ids = [...new Set(Object.keys(prior).concat(Object.keys(byJ).map(String)))];
+      const tf = Object.values(byJ).reduce((a, v) => a + v.goals, 0) / logged, priorTf = O.teamFin != null ? O.teamFin : tf;
+      out.shooters = ids.map(j => { const p0 = prior[j], v = byJ[j] || { shots: 0, goals: 0 }, f0 = p0 && p0.fin != null ? p0.fin : priorTf;
+        return Object.assign({}, p0 || { j, name: null }, { j, share: (w * (p0 ? p0.share : 0) + v.shots) / (w + logged), loggedShots: v.shots, loggedGoals: v.goals,
+          fin: (v.goals + V3.K.shooter * f0) / (v.shots + V3.K.shooter), fromLogs: v.shots > 0 }); });
+      out.teamFin = (w * priorTf + logged * tf) / (w + logged);
+      notes.push(`Their shooters: their record blended with ${logged} of their shots we logged (the record counts as ${w} shots for who shoots; names matched by number).`);
+    } else notes.push('Their shooters: from their record (none of their shots logged yet).');
     // Where they shoot: their shots on our goalies, per shooter with 5+, the rest at their team mix.
     const zm = {}, team = {}; let tN = 0;
     L.them.rows.forEach(x => { if (x.goalX == null || !(x.goal || x.onKeeper || x.onGoal)) return; const z = V3.zoneOf(x.goalX, x.goalY); team[z] = (team[z] || 0) + 1; tN++; if (x.oppShooter) { const m = zm[x.oppShooter] || (zm[x.oppShooter] = {}); m[z] = (m[z] || 0) + 1; } });

@@ -39,6 +39,15 @@ for (let i = 0; i < 120; i++) { await sleep(500); if (await ev("return /W&L vs S
 ok('a second opponent runs', /W&L vs Sample State/.test(await ev("return Q('#title').textContent;")));
 ok('our logged scrimmage against Sample State is matched and updates their numbers', /Our 2027 logs against them \(Sample State\)/.test(await ev("return Q('#srcline').textContent;")) && /Updated from our logs against them/.test(await ev("return D.body.innerText;")), await ev("return Q('#srcline').textContent;"));
 ok('the label pill for that scrimmage is shown as selected', await ev("return QA('[data-lab]').some(b => b.dataset.lab === 'Sample State' && b.classList.contains('on'));"));
+// Home / away: neutral by default; changing it dims the old sheet until Run; at home, W&L wins more (same seeds).
+const winNow = "return parseFloat([...QA('.tile')].find(t => /W&L wins/.test(t.textContent)).querySelector('.v').textContent);";
+ok('where the game is: neutral by default, and the source line says so', await ev("return QA('[data-home]').length === 3 && Q('[data-home=\"n\"]').classList.contains('on');") && /Where: neutral/.test(await ev("return Q('#srcline').textContent;")));
+const wNeutral = await ev(winNow);
+await ev("Q('[data-home=\"0\"]').click();"); await sleep(100);
+ok('changing home or away dims the old sheet and asks for Run', await ev("return Q('#app').style.opacity === '0.45' && /press Run/.test(D.body.innerText);"));
+await ev("Q('#run').click();"); for (let i = 0; i < 120; i++) { await sleep(500); if (await ev("return /our home field/.test(Q('#srcline').textContent) && !Q('#run').disabled;")) break; }
+const wHome = await ev(winNow);
+ok('at our home field the sheet says so, is no longer dimmed, and W&L wins more than at a neutral site', /Where: our home field/.test(await ev("return Q('#srcline').textContent;")) && await ev("return Q('#app').style.opacity === '1';") && wHome > wNeutral, { wNeutral, wHome });
 ok('the team list was read exactly once (D3 averages), after the click', await ev("return H.__READS.lrTeamsAll;") === 1, await ev("return H.__READS;"));
 const r0 = await ev("return H.__READS.sessions;"); await ev("W.location.reload();"); for (let i = 0; i < 40; i++) { await sleep(300); try { if (await ev("return !!Q('[data-opp]');") === true) break; } catch (e) {} }
 ok('reopening the page within a minute reuses the same read (no new sessions read)', await ev("return H.__READS.sessions;") === r0, [r0, await ev("return H.__READS.sessions;")]);

@@ -54,6 +54,7 @@
     const notes = [];
     notes.push(current ? `Team records: ${lrSeason} LacrosseReference data (this season), full rosters.` : `Team records: ${lrSeason || 'older'} LacrosseReference data. ${opp.name} uses only returning players until ${season} data is imported.`);
     notes.push(`Our side: the tracker's ${season} roster (${logs.roster.length} players) and ${season} logs (${logs.shots.length} shots, ${logs.poss.length} no-shot possessions, ${logs.stints.length} lineup records).`);
+    notes.push(opts.home === 0 ? 'Where: our home field.' : opts.home === 1 ? 'Where: their home field.' : 'Where: neutral (no home edge). Pick our home or theirs above if it isn\'t.');
     // Our logged games and scrimmages against them: the labels chosen on the page, else ones that match their name.
     const labels = opts.labels || autoLabels(logs, opp);
     const A = (exp.collections && exp.collections.app) || {};
@@ -71,7 +72,7 @@
       // Shot-location tags save the spot and zone; the shooter comes from the goal clip they were made on.
       tags: { pickDef: tagDoc(exp, 'pick_def_' + opp.id), pickOff: tagDoc(exp, 'pick_off_' + opp.id), legacyPick: tagDoc(exp, 'pick'),
         shotOff: (() => { const jOf = Object.fromEntries(((opp.sb || {}).goal_clips_off || []).map(c => [c[5], c[3] != null ? String(c[3]) : null])); return Object.fromEntries(Object.entries(tagDoc(exp, 'shot_off')).filter(([id]) => jOf[id]).map(([id, t]) => [id, Object.assign({}, t, { j: jOf[id] })])); })() },
-      opts: { games: opts.games || 4000, use: opts.use || {}, oppReturning: !current }, sourceNotes: notes, season, lrSeason, logged, labels, opponentLabels: Object.keys(logs.opponents)
+      opts: { games: opts.games || 4000, use: opts.use || {}, oppReturning: !current, home: opts.home === 0 || opts.home === 1 ? opts.home : null }, sourceNotes: notes, season, lrSeason, logged, labels, opponentLabels: Object.keys(logs.opponents)
     };
   }
   V3.sources = { seasonOf, ourLogs, d3From, inputs };

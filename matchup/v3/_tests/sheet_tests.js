@@ -35,7 +35,8 @@ const S0 = V3.sheet.build(Object.assign({}, inp, { opts: { games: 1500, use: { '
 ok('a unit at 0% usage gives exactly the baseline win %', near(S0.pairs.list.find(p => p.key === 'pair:7>9').w, S0.BT, 1e-12), [S0.pairs.list[0].w, S0.BT]);
 const S100 = V3.sheet.build(Object.assign({}, inp, { opts: { games: 1500, use: { 'pair:7>9': 100 } } }));
 ok('more usage of a better-than-team pair raises the win %', S100.pairs.list.find(p => p.key === 'pair:7>9').w > S.pairs.list.find(p => p.key === 'pair:7>9').w);
-ok('our goalies are compared by replaying with each in net (#31 saves 55%, #32 40%: #31 first)', S.ourGoalies.length === 2 && S.ourGoalies[0].j === '31' && S.ourGoalies[0].w > S.ourGoalies[1].w + 0.1, S.ourGoalies.map(g => [g.j, g.w]));
+{ const pm = (49 + 36) / 180, b31 = (49 + 150 * pm) / 240, b32 = (36 + 150 * pm) / 240, g = Object.fromEntries(S.ourGoalies.map(x => [x.j, x]));
+  ok('our goalies: replayed with each in net; #31 (49 of 90 saved) ahead of #32 (40%), save rates pulled with 150 shots', S.ourGoalies.length === 2 && S.ourGoalies[0].j === '31' && S.ourGoalies[0].w > S.ourGoalies[1].w + 0.02 && Math.abs(g['31'].base - b31) < 1e-9 && Math.abs(g['32'].base - b32) < 1e-9 && Math.abs(g['31'].raw - 49 / 90) < 1e-9, S.ourGoalies.map(x => [x.j, x.w, x.raw, x.base])); }
 ok('every loss gets one cause; shares add to 1', near(S.causes.reduce((a, c) => a + c.share, 0), 1, 1e-9) && S.causes.every(c => c.todo && c.inLoss), S.causes);
 const Sx = V3.sheet.build(inp); V3.sheet.unitWin(Sx, 'pair:7>9', 100);
 ok('replaying one row matches a full rebuild at that usage', near(Sx.pairs.list.find(p => p.key === 'pair:7>9').w, S100.pairs.list.find(p => p.key === 'pair:7>9').w, 1e-12));
