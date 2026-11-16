@@ -140,5 +140,14 @@ const ctx = { d3: D3 };
   const G = V3.runBatch(Pc, 3000, 4), tot = c => G.reduce((a, b) => [a[0] + ((b.pickCov[c] || [0, 0])[0]), a[1] + ((b.pickCov[c] || [0, 0])[1])], [0, 0]);
   const sw = tot('Switch'), he = tot('Hedge & recover');
   ok('pick coverage split: our picks score more against the weaker coverage', he[0] / he[1] > sw[0] / sw[1] + 0.1 && near(sw[1] / (sw[1] + he[1]), 0.5, 0.05), { sw, he });
+  // Shooter and goalie factors are probability ratios: spreading finishing across shooters must not change team goals.
+  const rateOf = Q => { const G2 = V3.runBatch(Q, 4000, 11); return G2.reduce((a, b) => a + b.score[0], 0) / G2.reduce((a, b) => a + b.poss[0], 0); };
+  const flatP = V3.matchup(V3.team(A0), V3.team(B0), ctx), sprP = V3.matchup(V3.team(A0), V3.team(B0), ctx);
+  flatP.t[0].shooters = [{ j: 'a', share: 1 / 3, m: 1, g: 1 }, { j: 'b', share: 1 / 3, m: 1, g: 1 }, { j: 'c', share: 1 / 3, m: 1, g: 1 }];
+  sprP.t[0].shooters = [{ j: 'a', share: 1 / 3, m: 5 / 3, g: 1 }, { j: 'b', share: 1 / 3, m: 1 / 3, g: 1 }, { j: 'c', share: 1 / 3, m: 1, g: 1 }];
+  const rf = rateOf(flatP), rs = rateOf(sprP);
+  ok('spread-out shooter finishing keeps the team goal rate (probability scale, not odds)', Math.abs(rs - rf) < 0.006, { flat: rf, spread: rs });
+  const gP = V3.matchup(V3.team(A0), V3.team(B0), ctx); gP.t[0].shooters = flatP.t[0].shooters.map(x => Object.assign({}, x, { g: 1.2 }));
+  const rg = rateOf(gP); ok('a goalie factor of 1.2 raises goals about 20% (probability scale)', Math.abs(rg / rf - 1.2) < 0.04, { flat: rf, g12: rg });
 }
 const pass = results.filter(r => r.ok).length; console.log(`engine v3: pass ${pass}  fail ${results.length - pass}`); Deno.exit(pass === results.length ? 0 : 1);

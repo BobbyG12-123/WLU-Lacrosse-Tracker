@@ -41,9 +41,11 @@
         else { ev.kind = 'no pick'; ev.rate = p.noPickRate; }
       } else ev.rate = p.rate[ev.kind];
     }
-    // The shooter carries his finishing and the goalie-vs-placement effect, on the odds scale.
+    // The shooter carries his finishing and the goalie-vs-placement effect. Both are built as probability
+    // ratios (model.js: m = finishing / team finishing, g = (1 - save in net) / (1 - usual save)), so they
+    // multiply the probability, not the odds; applying them to the odds lost goals whenever shooters differed.
     const s = pick(r, p.shooters, x => x.share); ev.shooter = s.j;
-    const q = prob(odds(ev.rate) * s.m * s.g);
+    const q = cap(ev.rate * s.m * s.g);
     ev.res = r() < q ? 'goal' : 'no goal';
     delete ev.rate;
     return ev;
