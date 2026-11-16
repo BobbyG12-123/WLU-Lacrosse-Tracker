@@ -45,7 +45,7 @@ These weights were set on Nov 11, 2026, before any 2027 games were logged.
 An independent review plus re-deriving the numbers from raw files found errors. All are fixed and tested.
 
 **Scale and calibration**
-- The goalie and shooter effects were on the odds scale, which overstated them. They now scale goals per possession on the probability scale: (1 − save in net) / (1 − usual save), and finishing / team finishing.
+- The goalie and shooter effects were on the odds scale, which overstated them. They now scale goals per possession on the probability scale: (1 − save in net) / (1 − usual save), and finishing / team finishing. (Nov 16 fix: the factors were built that way but the engine still applied them to the odds, which cost about 7% of goals for a team with spread-out shooters and understated the goalie effect. The engine now multiplies the probability, capped at 95%; tests check both.)
 - Failed clears were counted twice as transition. They're now taken out of the film transition share, and failed clears per game match each team's record.
 - Man-up was double counted in the anchor. Adjusted efficiency includes man-up, so even-strength rates are now anchored with man-up removed.
 - Film rates by kind are pulled toward D3 (weight 30), and man-up rates too (weight 20).
@@ -66,7 +66,7 @@ Still modeling choices, not errors:
 - Levers pick the best of several small samples, and each says so ("best of N").
 - Group counts are shots plus turnovers, not possessions.
 - Slide and shot-clock effects are per shot.
-- Possession length spread is 0.4–1.2 times the average.
+- Possession length spread is 0.4–1.6 times the average (mean 1).
 - Indirect faceoff reads are at half weight.
 
 ## Checks
