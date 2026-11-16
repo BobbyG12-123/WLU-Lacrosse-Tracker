@@ -71,24 +71,20 @@ const d3 = { eff: null, emo: 0.358231, by_type: meta.sb_league.by_type, pick: me
 function mkTeam(id, R, home, S) {
   // The fit's home term h applies once per possession; v3 multiplies offense by the other team's defense (log5), so each
   // side carries half: home offense +h/2 and the away defense +h/2 give the home offense +h in total.
-  const p = R.pace[id] || R.lp, sgn = home ? 1 : -1, hh = S.home ? R.h / 2 : 0;
+  // Home edge and variation are applied by model.js matchup() itself (ctx.home, ctx.cal), so the backtest runs the shipped code.
+  const p = R.pace[id] || R.lp, sgn = home ? 1 : -1, hh = 0;
   const off = unlogit(R.mu + (R.o[id] || 0) + sgn * hh), def = unlogit(R.mu + (R.d[id] || 0) - sgn * hh);
-  return { id, name: String(id), roster: [], stats: { adjusted_off_efficiency: off, adjusted_def_efficiency: def, clear_rate: 0.86, adjusted_true_faceoff_win_rate: unlogit((R.f[id] || 0) + sgn * (S.home ? R.hf : 0) / 2) },
+  return { id, name: String(id), roster: [], stats: { adjusted_off_efficiency: off, adjusted_def_efficiency: def, clear_rate: 0.86, adjusted_true_faceoff_win_rate: unlogit(R.f[id] || 0) },
     ev: { poss: { per_game: p, off_len: 1800 / p }, emo: { goals: 0, chances: 0 }, mdd: { goals_allowed: 0, chances: 0 }, pens_pg: 0, n_games: R.n[id] }, sb: { fo_by_man: [] } };
 }
 function params(g, R, S) {
   d3.eff = unlogit(R.mu);
   const H = V3.team(mkTeam(g.h, R, true, S), { d3 }), A = V3.team(mkTeam(g.a, R, false, S), { d3 });
-  const P = V3.matchup(H, A, { d3, variance: false }); // the backtest sets its own variation below (and none in the pull step)
-  if (S.form != null || S.param) {
-    // How sure we are of each level: 1 / sqrt(info) on the log-odds scale, info = p(1-p) * (possessions + lam).
-    const u = (id, p) => S.param ? 1 / Math.sqrt(p * (1 - p) * ((R.W[id] || 0) + S.lam)) : 0;
-    const uo = [u(g.h, H.adjOff), u(g.a, A.adjOff)], ud = [u(g.h, H.adjDef), u(g.a, A.adjDef)];
-    // Same rule as model.js matchup(): level uncertainty (log-odds) scaled to the log of the rate by (1 - rate), plus form.
-    const vs = (ul, rate) => Math.sqrt(((1 - rate) * ul) ** 2 + (S.form || 0) ** 2);
-    P.var = { sd: [vs(Math.hypot(uo[0], ud[1]), V3.gpp(P.t[0])), vs(Math.hypot(uo[1], ud[0]), V3.gpp(P.t[1]))], fo: S.foForm || 0, pace: S.pace || 0 };
-  }
-  return P;
+  // Level uncertainty from the ratings: 1 / sqrt(p(1-p) * (possessions + lam)) on the log-odds scale (0 without param).
+  const u = (id, p) => S.param ? 1 / Math.sqrt(p * (1 - p) * ((R.W[id] || 0) + S.lam)) : 0;
+  H.unc = { off: u(g.h, H.adjOff), def: u(g.h, H.adjDef) }; A.unc = { off: u(g.a, A.adjOff), def: u(g.a, A.adjDef) };
+  const cal = { home: S.home ? R.h : 0, homeFo: S.home ? R.hf : 0, form: S.form || 0, pace: S.pace || 0 };
+  return V3.matchup(H, A, { d3, home: S.home ? 0 : null, cal, variance: S.form != null || S.param ? undefined : false });
 }
 function simGame(P, seed) {
   const hs = [], as = [], ps = []; let w = 0;

@@ -52,17 +52,25 @@ The first holdout run gave 62% coverage and real total-goal errors of 12 goals (
 
 | | v3 before these changes | v3 calibrated | LacrosseReference pre-game |
 |---|---|---|---|
-| Brier (lower is better) | 0.1059 | **0.1053** | 0.1068 |
-| Log loss | 0.3265 | 0.3273 | — |
-| 80% margin range covers | 75.0% | **80.0%** | — |
-| Margin slope (actual on predicted) | 1.08 | 1.07 | — |
-| Simulated vs real total-goal spread (SD) | 4.23 vs 5.02 | **5.10 vs 5.04** | — |
-| Simulated vs real margin spread (SD) | 4.71 vs 5.46 | 5.21 vs 5.46 | — |
+| Brier (lower is better) | 0.1059 | **0.1054** | 0.1068 |
+| Log loss | 0.3265 | 0.3279 | — |
+| 80% margin range covers | 75.0% | **79.2%** | — |
+| Margin slope (actual on predicted) | 1.08 | 1.08 | — |
+| Simulated vs real total-goal spread (SD) | 4.23 vs 5.02 | **5.07 vs 5.03** | — |
+| Simulated vs real margin spread (SD) | 4.71 vs 5.46 | 5.19 vs 5.47 | — |
 
-Paired bootstrap (2,000 resamples, 90%): calibrated − before = −0.0006 (−0.0025 to +0.0013); calibrated − LacrosseReference = −0.0015 (−0.0067 to +0.0037).
+Paired bootstrap (2,000 resamples, 90%): calibrated − before = −0.0005 (−0.0023 to +0.0014); calibrated − LacrosseReference = −0.0013 (−0.0066 to +0.0038).
+
+These numbers come from the shipped code: after review the backtest runs model.js `matchup()` itself for the home edge and the variation (`ctx.cal`), and the pace draw was re-centered so the expected number of possessions doesn't move (it had added ~1%). Same settings; the earlier figures were Brier 0.1053 and coverage 80.0%.
 
 **Reading:**
-- Win chances: as good as LacrosseReference's own pre-game numbers on these games (no difference either way that the sample can show), using only earlier games from the same season.
+- Win chances: about as good as LacrosseReference's own pre-game numbers on these games (no difference either way that the sample can show), using only earlier games from the same season.
 - The calibration changes don't move win-chance accuracy; they make the **ranges** honest: 80% ranges now hold 80% of results (was 75%), the PIT histogram is flat (top tenth 11%, was 17%), and the simulated score spread matches real games.
 - Underdogs given 10–30% won a little less often than predicted (e.g. 15% predicted, 8% actual, 64 games).
 - Team level only. Players, goalies, film shapes and pick coverage are not tested here, and a 2027 game built from 2026 records relies on the stated `priorInfo` assumption.
+
+## Review notes (Nov 16, independent review before the PR)
+- `CAL.lam = 5` in `team()` means a same-season record is pulled by about 1%: effectively no pull. That's what the backtest chose, but it was chosen on ridge ratings from earlier games, not on LacrosseReference's adjusted efficiencies, and it sat at the smallest value tested.
+- With form σ = 0, the width of every 2027 range comes from level uncertainty, and for a 2027 game built from 2026 records that is set by `priorInfo = 150` (an assumption, the same weight our logs use). The first 2027 games are the real test of it.
+- Lever changes reuse the baseline spread (`P.var` is built once). Small; the levers' paired seeds keep their differences stable.
+- Logged faceoffs against an opponent are blended as if they were at the chosen venue.

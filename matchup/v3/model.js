@@ -199,16 +199,18 @@
   // Expected goals per possession for one side's parameters.
   const gpp = q => (1 - q.emoChance) * (q.shares.transition * q.rate.transition + q.shares.early * q.rate.early + q.shares.settled * (q.pickShare * q.pickRate + (1 - q.pickShare) * q.noPickRate)) + q.emoChance * q.emoRate;
   // Level uncertainty is on the log-odds scale; the engine varies the log of the rate, so it's scaled by (1 - rate).
-  const varSd = (uLogit, rate) => Math.sqrt(((1 - rate) * uLogit) ** 2 + CAL.form ** 2);
+  const varSd = (uLogit, rate, C) => Math.sqrt(((1 - rate) * uLogit) ** 2 + C.form ** 2);
   // ctx.home: 0 = W at home, 1 = O at home, null/undefined = neutral. ctx.variance === false turns off game-to-game variation.
+  // ctx.cal: optional calibration override, used only by the backtest so it runs this exact code (default CAL).
   function matchup(W0, O0, ctx) {
-    const hs = ctx.home === 0 ? 1 : ctx.home === 1 ? -1 : 0;
+    const C = ctx.cal || CAL, hs = ctx.home === 0 ? 1 : ctx.home === 1 ? -1 : 0;
     // Home edge: half on the home offense, half on the away defense (log5 multiplies them), so the home offense gets CAL.home.
-    const atHome = (T, s) => s ? Object.assign({}, T, { adjOff: unlogit(logit(T.adjOff) + s * CAL.home / 2), adjDef: unlogit(logit(T.adjDef) - s * CAL.home / 2) }) : T;
+    const atHome = (T, s) => s ? Object.assign({}, T, { adjOff: unlogit(logit(T.adjOff) + s * C.home / 2), adjDef: unlogit(logit(T.adjDef) - s * C.home / 2) }) : T;
     const W = atHome(W0, hs), O = atHome(O0, -hs);
     const dead = 3600 / (((W.poss + O.poss) / 2) * (W.len + O.len));
     const fo = faceoffs(W, O, ctx.foUsage);
-    if (hs) { fo.pNeutral = fo.p; fo.p = unlogit(logit(fo.p) + hs * CAL.homeFo); }
+    // Home edge on faceoffs: the headline chance and every head-to-head cell, so the sheet's table agrees with it.
+    if (hs) { fo.pNeutral = fo.p; fo.p = unlogit(logit(fo.p) + hs * C.homeFo); (fo.M || []).forEach(row => row.forEach(c => { c.pNeutral = c.p; c.p = unlogit(logit(c.p) + hs * C.homeFo); })); }
     // Our logged draws against this opponent, blended in (ctx.foLogged: { att, won, k }).
     if (ctx.foLogged && ctx.foLogged.att) { const L = ctx.foLogged, obs = (L.won + 0.5) / (L.att + 1); fo.pModel = fo.p; fo.p = unlogit((L.k * logit(fo.p) + L.att * logit(obs)) / (L.k + L.att)); fo.logged = L; }
     const t = [side(W, O, Object.assign({}, ctx.wl || {}, { d3: ctx.d3, dead })), side(O, W, Object.assign({}, ctx.opp || {}, { d3: ctx.d3, dead }))];
@@ -224,7 +226,7 @@
       t[i].shares = { transition: tr, early: rest * s0.early / other, settled: rest * s0.settled / other }; t[i].failedClearShare = f; });
     // Game-to-game variation: how sure we are of each scoring level (this offense and the other defense) plus game form.
     const u = (T, k) => (T.unc && T.unc[k]) || 0, V = ctx.variance === false ? null : {
-      sd: [varSd(Math.hypot(u(W, 'off'), u(O, 'def')), gpp(t[0])), varSd(Math.hypot(u(O, 'off'), u(W, 'def')), gpp(t[1]))], fo: 0, pace: CAL.pace };
+      sd: [varSd(Math.hypot(u(W, 'off'), u(O, 'def')), gpp(t[0]), C), varSd(Math.hypot(u(O, 'off'), u(W, 'def')), gpp(t[1]), C)], fo: 0, pace: C.pace };
     return { fo: fo.p, foModel: fo, t, teams: [W, O], k: K, home: ctx.home === 0 || ctx.home === 1 ? ctx.home : null, var: V };
   }
 

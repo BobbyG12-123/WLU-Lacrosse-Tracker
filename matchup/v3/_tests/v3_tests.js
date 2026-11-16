@@ -179,5 +179,12 @@ const ctx = { d3: D3 };
   ok('same seed, same game with variation on', JSON.stringify(V3.simulateGame(Pn, 77)) === JSON.stringify(V3.simulateGame(Pn, 77)));
   { const d = []; const r = V3.rng(9); for (let i = 0; i < 20000; i++) d.push(V3.normal(r)); const m = d.reduce((a, b) => a + b, 0) / d.length;
     ok('normal draws have mean 0 and SD 1', Math.abs(m) < 0.03 && Math.abs(sdOf(d) - 1) < 0.03, [m, sdOf(d)]); }
+  { const r = V3.rng(4); let a = 0; const N = 40000; for (let i = 0; i < N; i++) a += 1 / V3.gameDraw({ fo: 0.5, var: { sd: [0, 0], fo: 0, pace: 0.3 } }, r).pace;
+    ok('pace draws keep the expected number of possessions (mean of 1/length multiplier = 1)', Math.abs(a / N - 1) < 0.005, a / N); }
+  { const fa2 = V3.team(mkTeam(1, 'Testa College', { fo: [['13', 'Alder FO', 60, 40, []]] })), fb2 = V3.team(mkTeam(2, 'Sample State', { fo: [['7', 'Pine FO', 50, 50, []]] }));
+    const n0 = V3.matchup(fa2, fb2, ctx), h0 = V3.matchup(fa2, fb2, Object.assign({}, ctx, { home: 0 }));
+    ok('home edge reaches every head-to-head faceoff cell, so the table matches the headline', near(Lg(h0.foModel.M[0][0].p) - Lg(n0.foModel.M[0][0].p), C.homeFo, 1e-12) && near(h0.foModel.M[0][0].pNeutral, n0.foModel.M[0][0].p, 1e-12), [n0.foModel.M[0][0].p, h0.foModel.M[0][0].p]); }
+  { const cal = { home: 0.2, homeFo: 0, form: 0.1, pace: 0 }, Pc2 = V3.matchup(HA, HB, Object.assign({}, ctx, { home: 0, cal }));
+    ok('a calibration override (backtest only) is used for home and form', near(Lg(Pc2.teams[0].adjOff) - Lg(HA.adjOff), 0.1, 1e-12) && Pc2.var.pace === 0 && Pc2.var.sd[0] > 0.1, Pc2.var); }
 }
 const pass = results.filter(r => r.ok).length; console.log(`engine v3: pass ${pass}  fail ${results.length - pass}`); Deno.exit(pass === results.length ? 0 : 1);

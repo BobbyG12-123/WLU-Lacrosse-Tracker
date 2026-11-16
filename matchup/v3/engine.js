@@ -56,12 +56,14 @@
   // Game-to-game variation, drawn once at the start of each game when P.var is set (matchup() sets it):
   //  P.var.sd[i]: SD on the log of team i's scoring rate (how sure we are of both teams' levels, plus form). The multiplier
   //    is exp(sd * z - sd^2 / 2), so it averages exactly 1 and the expected goal rate doesn't move;
-  //  P.var.fo: SD on the log-odds of the faceoff chance; P.var.pace: SD on the log of possession length (both teams).
+  //  P.var.fo: SD on the log-odds of the faceoff chance; P.var.pace: SD on the log of possession length (both teams),
+  //    centered so the expected number of possessions doesn't move.
   function gameDraw(P, r) {
     const V = P.var; if (!V) return { k: null, fo: P.fo, pace: 1 };
     const k = [0, 1].map(i => V.sd && V.sd[i] ? Math.exp(V.sd[i] * normal(r) - V.sd[i] * V.sd[i] / 2) : 1);
     const fo = V.fo ? 1 / (1 + Math.exp(-(Math.log(P.fo / (1 - P.fo)) + V.fo * normal(r)))) : P.fo;
-    return { k, fo, pace: V.pace ? Math.exp(V.pace * normal(r) - V.pace * V.pace / 2) : 1 };
+    // Possessions go as 1 / length, so the length multiplier is exp(sd z + sd^2/2): its inverse averages exactly 1.
+    return { k, fo, pace: V.pace ? Math.exp(V.pace * normal(r) + V.pace * V.pace / 2) : 1 };
   }
   function simulateGame(P, seed) {
     const r = rng(seed), E = [], sc = [0, 0], D = gameDraw(P, r);
