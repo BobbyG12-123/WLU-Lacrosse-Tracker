@@ -34,10 +34,12 @@ const Uc = V3.update.applyLogs(O, W, Lg, D3, { crossDivision: true });
 ok('a record from another division counts less (50), so our logs move it further', Math.abs(Uc.team.adjOff - O.adjOff) > Math.abs(U.team.adjOff - O.adjOff));
 ok('…and its faceoff starting point counts less too (20 draws instead of 40)', Uc.foLogged.k === 20 && U.foLogged.k === 40);
 ok('one logged session is flagged as a first read; two are not', U0.notes.some(n => /one logged session/.test(n)) && !U.notes.some(n => /one logged session/.test(n)));
-ok('under 30 logged shots: shooters stay from their record', U.team.shooters === O.shooters && /26 of their shots logged; 30 needed/.test(U.notes.join(' ')), U.notes);
+{ const s2 = U.team.shooters.find(x => x.j === '2'), p2 = O.shooters.find(x => x.j === '2'), n2 = Lg.them.rows.filter(x => x.oppShooter === '2').length, g2 = Lg.them.rows.filter(x => x.oppShooter === '2' && x.goal).length;
+  ok('26 logged shots: shooters blend with their record (record = 30 shots for usage), no switch', near(s2.share, (30 * (p2 ? p2.share : 0) + n2) / (30 + 26), 1e-12) && near(U.team.shooters.reduce((a, s) => a + s.share, 0), 1, 1e-12) && /blended with 26/.test(U.notes.join(' ')), { s2, p2, n2 });
+  ok('each blended shooter\'s finishing starts from his record and moves with weight 80', near(s2.fin, (g2 + 80 * (p2 ? p2.fin : O.teamFin)) / (n2 + 80), 1e-12), s2); }
 const many = Object.assign({}, Lg, { them: Object.assign({}, Lg.them, { rows: Lg.them.rows.concat(Lg.them.rows) }) });
 const U2 = V3.update.applyLogs(O, W, many, D3);
-ok('30+ logged shots: shooters come from our logs, shares add to 1', U2.team.shooters.every(s => s.fromLogs) && near(U2.team.shooters.reduce((a, s) => a + s.share, 0), 1, 1e-12), U2.team.shooters);
+ok('more logged shots move the blend further toward our logs, shares still add to 1, and no cliff at 30', near(U2.team.shooters.reduce((a, s) => a + s.share, 0), 1, 1e-12) && U2.team.shooters.filter(s => s.fromLogs).length > 0, U2.team.shooters);
 ok('placement from their shots on our goalies: #2 mixes low left and high right, #3 low left', U.placement && near(U.placement['2']['Low Left'], 10 / 20, 1e-12) && near(U.placement['2']['High Right'], 10 / 20, 1e-12) && U.placement['3']['Low Left'] === 1, U.placement);
 // faceoff blending in the matchup
 const P0 = V3.matchup(W, O, { d3: D3 }), P1 = V3.matchup(W, O, { d3: D3, foLogged: { att: 40, won: 32, k: 40 } });

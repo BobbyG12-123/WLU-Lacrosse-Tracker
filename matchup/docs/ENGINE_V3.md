@@ -33,8 +33,8 @@ Possession time is scaled so each team averages its real possessions per game. T
 2. **Our logged games and scrimmages against them** in the tracker update their numbers. Games and scrimmages count the same. Each row's tracker label is matched to the team automatically, and can be changed on the page.
    - **Offense and defense level:** our possessions against them are compared with our own level (log5 inverse), then blended with their record on the log-odds scale. Possessions are shots that aren't rebounds, plus no-shot possessions. Their record counts as 150 possessions, or 50 if it's rated against another division.
    - **Faceoffs:** our logged draws against them are blended into the matchup chance, with the matchup counting as 40 draws (20 for another division).
-   - **Shooters:** once we've logged 30+ of their shots, usage and finishing come from those shots.
-   - **Placement:** their on-goal shots on our goalies, per shooter with 5+ shots, and their team mix otherwise. This makes the goalie comparison real.
+   - **Shooters (Nov 16):** blended, no switch. Who shoots: their record counts as 30 logged shots. How well: each man starts from his record and moves with what we logged (weight 80 shots).
+   - **Placement:** their on-goal shots on our goalies, per shooter with 5+ shots, and their team mix otherwise.
    - A single logged session is flagged as a first read.
 3. **Our side** always comes from the tracker's roster and logs for the season.
 
@@ -69,6 +69,16 @@ Still modeling choices, not errors:
 - Possession length spread is 0.4–1.6 times the average (mean 1).
 - Indirect faceoff reads are at half weight.
 
+## Calibration (Nov 16, 2026)
+
+Found by review and checked in code before changing anything; numbers from `docs/BACKTEST_V3.md`.
+- **Trust weights fitted, not hand-set.** On the 2026 D3 player records: last season's finishing predicts this season's best with 80 shots of weight (was 30); faceoff men 85 draws (was 20); a goalie's overall save rate is pulled toward the pool with 150 shots on goal (was not pulled at all, so 60 practice shots counted as fully known).
+- **Goalie zones.** Three layers: the pool's save rate, the zone pattern every goalie shares (weight 8), each goalie's level, then his own zone deviations (weight 100). In our logged shots no goalie-specific zone pattern is detectable (split-half correlation about -0.06), so goalie comparisons now come from overall save rate and the sheet says so.
+- **Team level.** A same-season record is pulled toward the D3 average with `CAL.lam` possessions; last season's record keeps its level but counts as `CAL.priorInfo` possessions of information (the same 150 our logs blend against).
+- **Game-to-game variation.** Each game draws, once: a multiplier on each team's scoring rate (SD from how sure we are of both levels, plus game form `CAL.form`; it averages exactly 1, so the expected rate doesn't move) and a pace multiplier (`CAL.pace`). Real D3 possession counts spread 2.6 times more than the old engine's.
+- **Home field.** `CAL.home` on the log-odds of the home offense (half on its offense, half on the other defense, since log5 multiplies them) and `CAL.homeFo` on the faceoff chance. The sheet asks where the game is; default neutral.
+- **Scale fix (PR #125).** Shooter and goalie factors multiply the probability, not the odds.
+
 ## Checks
 
 `v3/_tests/v3_tests.js` (synthetic data) covers:
@@ -76,11 +86,13 @@ Still modeling choices, not errors:
 - determinism;
 - event validation (the score is rebuilt from events, no ties, time runs in order);
 - changes (a change of 1 alters nothing; changes run in the expected direction; unknown changes are refused);
-- goalie and coverage effects;
+- goalie and coverage effects, fitted weights, layered goalie zones;
+- calibration pieces: level pull, uncertainty, home edge, variation (widens spread, keeps the average);
 - the roster-turnover rules.
 
 ## Not yet
 
-- The staff sheet (levers, ways we lose, recommendations) on top of v3, ported from the mockup.
 - Individual defensive matchups, slides, rides and clears by player.
 - Wing ground balls on faceoffs, which aren't logged yet.
+- Faceoff men's records aren't adjusted for who they faced (a ridge fit like v2's would do it).
+- Season-to-season change for team level can't be measured from one season; `CAL.priorInfo` is an assumption.

@@ -29,7 +29,7 @@ const A0 = mkTeam(1, 'Testa College'), B0 = mkTeam(2, 'Sample State');
 {
   const A = V3.team(A0), R = V3.team(A0, { returning: true }), G = V3.team(A0, { roster: ['2', '30'] });
   ok('shooter shares add to 1', near(A.shooters.reduce((a, s) => a + s.share, 0), 1, 1e-9));
-  ok('finishing is pulled toward the team with weight 30', near(A.shooters[0].fin, (40 + 30 * (88 / 280)) / (100 + 30), 1e-9), A.shooters[0]);
+  ok('finishing is pulled toward the team with weight 80 (fitted)', V3.K.shooter === 80 && near(A.shooters[0].fin, (40 + 80 * (88 / 280)) / (100 + 80), 1e-9), A.shooters[0]);
   ok('returning drops SR players and lists who was removed', !R.shooters.some(s => s.j === '1') && R.removed.some(x => x.j === '1') && near(R.shooters.reduce((a, s) => a + s.share, 0), 1, 1e-9));
   ok('a given roster wins over the returning rule', G.shooters.length === 1 && G.shooters[0].j === '2' && G.goalies.length === 1 && G.rosterNote === 'given roster');
   let threw = false; try { V3.team(Object.assign({}, A0, { sb: null })); } catch (e) { threw = true; } ok('a team without film-tag data is refused', threw);
@@ -54,7 +54,8 @@ const A0 = mkTeam(1, 'Testa College'), B0 = mkTeam(2, 'Sample State');
   const A = V3.team(mkTeam(1, 'Testa College', { fo: fa })), B = V3.team(mkTeam(2, 'Sample State', { fo: fb }));
   const c = V3.foPair(A.fogos[0], B.fogos[0], 1, 2);
   ok('head-to-head is found from either side (12-3)', c.dir && c.dir[0] === 12 && c.dir[1] === 3, c);
-  ok('head-to-head pulls the chance above the season-record prior', c.p > c.p0 && c.p > 0.6, c);
+  { const L = x => Math.log(x / (1 - x)), want = 1 / (1 + Math.exp(-((85 * L(c.p0) + 15 * L(12.5 / 16) + 10 * L(c.ind[0].p)) / (85 + 15 + 10))));
+    ok('head-to-head pulls the chance above the season-record prior, weighted against 85 draws (fitted)', V3.K.fogo === 85 && c.p > c.p0 && near(c.p, want, 1e-12), { c, want }); }
   ok('a common opponent adds an indirect read', c.ind.length === 1 && c.ind[0].via === 'Oak FO');
   const f = V3.faceoffs(A, B); ok('one FOGO each: the game chance is that pair', near(f.p, c.p, 1e-12));
   const none = V3.faceoffs(V3.team(A0), V3.team(B0)); ok('no FOGO data: team season rates, and it says so', near(none.p, 0.5, 1e-12) && /season/.test(none.note));
@@ -63,7 +64,13 @@ const A0 = mkTeam(1, 'Testa College'), B0 = mkTeam(2, 'Sample State');
 {
   const shots = []; for (let i = 0; i < 40; i++) shots.push({ goalieJersey: '30', goalX: 0.1, goalY: 0.1, goal: i < 30 ? 1 : 0, onKeeper: 1 }); for (let i = 0; i < 40; i++) shots.push({ goalieJersey: '30', goalX: 0.9, goalY: 0.9, goal: i < 10 ? 1 : 0, onKeeper: 1 });
   const gz = V3.goalieZones(shots).g30 || V3.goalieZones(shots)['30'];
-  ok('zone saves: weak low left, strong high right, pulled toward his average', gz.zr['Low Left'] < gz.base && gz.zr['High Right'] > gz.base && near(gz.zr['Low Left'], (10 + 8 * 0.5) / 48, 1e-9), gz.zr);
+  { const pz = (10 + 8 * 0.5) / 48, want = pz + (40 / 140) * (10 / 40 - pz);
+    ok('zone saves: weak low left, strong high right; pool pattern (weight 8), then his own deviation (weight 100)', gz.zr['Low Left'] < gz.base && gz.zr['High Right'] > gz.base && near(gz.zr['Low Left'], want, 1e-12), { zr: gz.zr, want }); }
+  // Two goalies: the zone pattern is shared, each level is pulled toward the pool with 150 shots.
+  const two = []; for (let i = 0; i < 100; i++) two.push({ goalieJersey: '1', goalX: (i % 3) / 3 + 0.1, goalY: 0.5, goal: i < 40 ? 1 : 0, onKeeper: 1 }); for (let i = 0; i < 50; i++) two.push({ goalieJersey: '2', goalX: (i % 3) / 3 + 0.1, goalY: 0.5, goal: i < 30 ? 1 : 0, onKeeper: 1 });
+  const g2 = V3.goalieZones(two), pm = (60 + 20) / 150;
+  ok('goalie level is pulled toward the pool with weight 150 (raw kept)', near(g2['1'].base, (60 + 150 * pm) / 250, 1e-12) && near(g2['2'].base, (20 + 150 * pm) / 200, 1e-12) && g2['2'].raw === 0.4, [g2['1'].base, g2['2'].base, g2['2'].raw]);
+  ok('a 50-shot goalie at 40% isn\'t rated far below a 100-shot goalie at 60% (gap under 8 points)', g2['1'].base - g2['2'].base > 0 && g2['1'].base - g2['2'].base < 0.08, g2['1'].base - g2['2'].base);
   ok('save rate against a mix is the mix-weighted zone rate', near(V3.saveVs(gz, { 'Low Left': 1 }), gz.zr['Low Left'], 1e-12));
 }
 // ---- matchup and calibration
@@ -149,5 +156,35 @@ const ctx = { d3: D3 };
   ok('spread-out shooter finishing keeps the team goal rate (probability scale, not odds)', Math.abs(rs - rf) < 0.006, { flat: rf, spread: rs });
   const gP = V3.matchup(V3.team(A0), V3.team(B0), ctx); gP.t[0].shooters = flatP.t[0].shooters.map(x => Object.assign({}, x, { g: 1.2 }));
   const rg = rateOf(gP); ok('a goalie factor of 1.2 raises goals about 20% (probability scale)', Math.abs(rg / rf - 1.2) < 0.04, { flat: rf, g12: rg });
+  // ---- calibration: level pull, uncertainty, home field, game-to-game variation (docs/BACKTEST_V3.md)
+  const C = V3.CAL, Lg = x => Math.log(x / (1 - x)), Ug = x => 1 / (1 + Math.exp(-x));
+  const S1 = mkTeam(5, 'Testa College', { off: 0.34, def: 0.20 }); S1.stats.games_played = 10;
+  const same = V3.team(S1, { d3eff: 0.26 }), last = V3.team(S1, { d3eff: 0.26, priorSeason: true }), unk = V3.team(mkTeam(6, 'Sample State', { off: 0.34 }), { d3eff: 0.26 });
+  ok('same-season level is pulled toward D3 by possessions / (possessions + lam)', near(Lg(same.adjOff), Lg(0.26) + (450 / (450 + C.lam)) * (Lg(0.34) - Lg(0.26)), 1e-12) && same.info === 450 + C.lam, [same.adjOff, same.info]);
+  ok("last season's record keeps its level, counts as priorInfo possessions", last.adjOff === 0.34 && last.info === C.priorInfo && near(last.unc.off, 1 / Math.sqrt(0.34 * 0.66 * C.priorInfo), 1e-12), last);
+  ok('a record with no game count is not pulled to D3 (unknown sample)', unk.adjOff === 0.34 && unk.info === C.priorInfo, unk.adjOff);
+  ok('more possessions, less uncertainty', same.unc.off < last.unc.off || 450 + C.lam < C.priorInfo);
+  const HA = V3.team(A0), HB = V3.team(B0), Pn = V3.matchup(HA, HB, ctx), Ph = V3.matchup(HA, HB, Object.assign({}, ctx, { home: 0 })), Pa = V3.matchup(HA, HB, Object.assign({}, ctx, { home: 1 }));
+  ok('home: our offense +home/2 and their defense +home/2 on the log-odds scale (home offense gets +home in total)', near(Lg(Ph.teams[0].adjOff) - Lg(HA.adjOff), C.home / 2, 1e-12) && near(Lg(Ph.teams[1].adjDef) - Lg(HB.adjDef), C.home / 2, 1e-12) && near(Lg(Ph.teams[0].adjDef) - Lg(HA.adjDef), -C.home / 2, 1e-12), [Ph.teams[0].adjOff, HA.adjOff]);
+  ok('home: faceoff chance moves by homeFo on the log-odds scale; away is the mirror; neutral unchanged', near(Lg(Ph.fo) - Lg(Pn.fo), C.homeFo, 1e-12) && near(Lg(Pa.fo) - Lg(Pn.fo), -C.homeFo, 1e-12) && Pn.home === null && Ph.home === 0, [Pn.fo, Ph.fo, Pa.fo]);
+  ok('the original team objects are not changed by the home edge', HA.adjOff === V3.team(A0).adjOff);
+  ok('variation SD = sqrt(((1 - rate) x hypot(our offense unc, their defense unc))^2 + form^2)', near(Pn.var.sd[0], Math.sqrt(((1 - V3.gpp(Pn.t[0])) * Math.hypot(HA.unc.off, HB.unc.def)) ** 2 + C.form ** 2), 1e-12) && Pn.var.pace === C.pace, Pn.var);
+  const Pv0 = V3.matchup(HA, HB, Object.assign({}, ctx, { variance: false }));
+  ok('variance: false turns it off (same games as before the change)', Pv0.var === null && JSON.stringify(V3.runBatch(Pv0, 5, 3).map(b => b.score)) === JSON.stringify(V3.runBatch(Object.assign({}, Pn, { var: null }), 5, 3).map(b => b.score)));
+  const Gv = V3.runBatch(Pn, 3000, 5), G0 = V3.runBatch(Pv0, 3000, 5), sdOf = a => { const m = a.reduce((x, y) => x + y, 0) / a.length; return Math.sqrt(a.reduce((x, y) => x + (y - m) ** 2, 0) / a.length); };
+  const mar = G => G.map(b => b.score[0] - b.score[1]), possN = G => G.map(b => b.poss[0] + b.poss[1]);
+  ok('variation widens the margin and possession spread', sdOf(mar(Gv)) > sdOf(mar(G0)) * 1.05 && sdOf(possN(Gv)) > sdOf(possN(G0)) * 1.2, [sdOf(mar(Gv)), sdOf(mar(G0)), sdOf(possN(Gv)), sdOf(possN(G0))]);
+  const rate = G => G.reduce((a, b) => a + b.score[0], 0) / G.reduce((a, b) => a + b.poss[0], 0);
+  ok('variation keeps the average goal rate (within 1.5%, Monte Carlo noise)', Math.abs(rate(Gv) / rate(G0) - 1) < 0.015, [rate(Gv), rate(G0)]);
+  ok('same seed, same game with variation on', JSON.stringify(V3.simulateGame(Pn, 77)) === JSON.stringify(V3.simulateGame(Pn, 77)));
+  { const d = []; const r = V3.rng(9); for (let i = 0; i < 20000; i++) d.push(V3.normal(r)); const m = d.reduce((a, b) => a + b, 0) / d.length;
+    ok('normal draws have mean 0 and SD 1', Math.abs(m) < 0.03 && Math.abs(sdOf(d) - 1) < 0.03, [m, sdOf(d)]); }
+  { const r = V3.rng(4); let a = 0; const N = 40000; for (let i = 0; i < N; i++) a += 1 / V3.gameDraw({ fo: 0.5, var: { sd: [0, 0], fo: 0, pace: 0.3 } }, r).pace;
+    ok('pace draws keep the expected number of possessions (mean of 1/length multiplier = 1)', Math.abs(a / N - 1) < 0.005, a / N); }
+  { const fa2 = V3.team(mkTeam(1, 'Testa College', { fo: [['13', 'Alder FO', 60, 40, []]] })), fb2 = V3.team(mkTeam(2, 'Sample State', { fo: [['7', 'Pine FO', 50, 50, []]] }));
+    const n0 = V3.matchup(fa2, fb2, ctx), h0 = V3.matchup(fa2, fb2, Object.assign({}, ctx, { home: 0 }));
+    ok('home edge reaches every head-to-head faceoff cell, so the table matches the headline', near(Lg(h0.foModel.M[0][0].p) - Lg(n0.foModel.M[0][0].p), C.homeFo, 1e-12) && near(h0.foModel.M[0][0].pNeutral, n0.foModel.M[0][0].p, 1e-12), [n0.foModel.M[0][0].p, h0.foModel.M[0][0].p]); }
+  { const cal = { home: 0.2, homeFo: 0, form: 0.1, pace: 0 }, Pc2 = V3.matchup(HA, HB, Object.assign({}, ctx, { home: 0, cal }));
+    ok('a calibration override (backtest only) is used for home and form', near(Lg(Pc2.teams[0].adjOff) - Lg(HA.adjOff), 0.1, 1e-12) && Pc2.var.pace === 0 && Pc2.var.sd[0] > 0.1, Pc2.var); }
 }
 const pass = results.filter(r => r.ok).length; console.log(`engine v3: pass ${pass}  fail ${results.length - pass}`); Deno.exit(pass === results.length ? 0 : 1);
