@@ -9,6 +9,7 @@ deno run --check=none --allow-read=. v3/_tests/v3_tests.js
 deno run --check=none --allow-read=. v3/_tests/sheet_tests.js
 deno run --check=none --allow-read=. v3/_tests/sources_tests.js
 deno run --check=none --allow-read=. v3/_tests/update_tests.js
+deno run --check=none --allow-read=. v3/_tests/lineups_tests.js
 deno run --check=none --allow-read=.. _tests/flag_tests.js ../index.html
 deno run --check=none --allow-read=.. _tests/player_mode_tests.js ../index.html
 CHROME=${CHROME:-"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"}
