@@ -101,3 +101,39 @@ On the game-week page, under the sheet (a link at the top jumps to it). Nothing 
 **Sheet fix:** the "not in this sheet yet" line on wing ground balls now says they aren't logged on their own, and counts the possessions logged as starting with a ground ball or faceoff win with a jersey (on draws or not). That replaces the old "not logged yet".
 
 **Speed:** about 1 second per unit on the Nov 5 logs (3,000 games each), about 9 seconds for the whole panel. It fills in one unit at a time.
+
+# Step 3: build the best lineup (Nov 17, 2026)
+At the top of the Lineups panel.
+
+**Who can play.** Click a player to cycle through: available → out → locked → available.
+- Locked means keep him in his current spot, and is offered only for players in the lineup.
+- Out players are never used. If a position runs short, any available attackman or midfielder fills an offensive spot. If there is still nobody, the current player stays and the panel says so.
+- If a position group in defense, man-up or man-down runs short, its available players stay, out players are replaced by whoever is left at that position, and only if nobody is left does an out player stay, named in a note. The other groups are still searched.
+- An out goalie with no other goalie available is replaced by our goalies' pooled save rate. Every one of these cases is named in a note.
+- Editing the lineup clears an old build.
+
+**The search** (`build`), all on the closed-form ratings:
+
+| Unit | How it's filled | Rated on |
+|---|---|---|
+| Defense | Every legal combination by position (3 close D, LSM, 2 SSDM). | Lowest goals allowed. |
+| Man-up | Every combination of 6 from attack and midfield. | Highest rate. |
+| Man-down | Every combination from close D, LSM, SSDM and midfield. | Lowest goals allowed. |
+| Attack and midfield lines | Searched together, because usage shares interact: repeated best swaps (including moving a midfielder between lines) from two starts, the current players and the best individual ratings. The coach's time shares are kept. Nobody plays two even-strength spots. | Highest rate. |
+| FOGO | His head-to-head row against their FOGOs. | Highest win chance. |
+| Goalie | The sheet's replay with him in net. | Highest win chance. |
+
+If a unit has more than 60,000 combinations (usually man-down), it uses repeated best swaps instead, and the panel says so. Tests check the exhaustive units against brute force, and that no one-player swap improves the built offense.
+
+**Shown:**
+- The built lineup's win chance on the sheet's games, against the current lineup.
+- What each part is worth alone: the current lineup with only that part changed.
+- Each change: who joins and who leaves each unit (by position for defense), with both players' numbers.
+- The three best options for defense, man-up and man-down.
+- "Use this lineup".
+
+**Check on defense.** The same built lineup is replayed with defenders rated on beaten reps only, every unit at the team's caused-turnover rate. On the Nov 17 export against one 2026 opponent:
+- the build went from 70.5% to 82.6%, but only to 74.5% on beaten reps alone;
+- each part alone: defense +7.5, offense +2.4, man-down +1.5, goalie +1.4, man-up +0.2.
+
+Most of the defense gain rests on caused turnovers, which favor players who take more reps. Treat defense changes as a prompt to check the film, not a finding.

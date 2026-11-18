@@ -70,7 +70,37 @@
       <p class="muted">Start from the lineup most often in our logged lineup records; click a player to change him. Each unit lists the best one-player swaps from its current players, against this opponent, on the same simulated games. Ratings come from our 2027 practices and scrimmages: offense is goals produced per 100 possessions used (an assisted goal is split half with the passer); defense is beaten rate on logged reps and caused turnovers. Suggested swaps only bring in players with ${MIN_OFF}+ possessions used or ${MIN_DEF}+ defensive entries.</p>
       <p class="muted">* Chance better counts sample size only. It doesn't include how well practice numbers carry over to games, so it reads too sure; it's shown no finer than 5% to 95%. Defense ratings count caused turnovers per practice a player logged anything in, not per minute on the field, so players who take more reps rate higher. Most groups haven't been logged together enough to rate as a group; they rate as the sum of their players.</p>
       <div class="pick-row"><button class="pill" id="luReset"${st.busy ? ' disabled' : ''}>Back to the logged lineup</button>${st.msg ? `<span class="muted">${esc(st.msg)}</span>` : ''}</div>
+      ${renderBuild(st)}
       <div class="lus-grid">${UNITS.map(unitBlock).join('')}</div></section>`;
   }
-  V3.lineupsView = { render, pools, chanceTxt, UNITS, MIN_OFF, MIN_DEF };
+  // Build from scratch: who can play (Available / Out / Locked in his current spot), the build, and what changed and why.
+  function renderBuild(st) {
+    const { S, R, L } = st, LU = V3.lineups, names = st.names || {}, A = st.avail || { out: [], lock: [] }, b = st.built;
+    const nm = j => { if (j == null) return 'Pool average'; const n = names[j]; return n ? `#${j} ${n.trim().split(/\s+/).slice(-1)[0]}` : '#' + j; };
+    const inLineup = new Set([].concat(L.attack || [], ...(L.mids || []).map(m => m.players || []), L.defense || [], L.manUp || [], L.manDown || [], L.fogo != null ? [L.fogo] : [], L.goalie != null ? [L.goalie] : []).map(String));
+    const main = R.pos.main || {}, groups = [['A', 'Attack'], ['M', 'Midfield'], ['D', 'Close D'], ['L', 'LSM'], ['S', 'SSDM'], ['F', 'FOGO'], ['G', 'Goalie']];
+    const fogoJ = ((S.faceoffs && S.faceoffs.ours) || []).map(o => String(o.j)), extra = fogoJ.filter(j => !main[j]);
+    const pill = j => { const o = A.out.includes(j), k = A.lock.includes(j); return `<button class="pill av ${o ? 'out' : k ? 'lock' : ''}" data-av="${esc(j)}" title="Click: available → out → locked (keep in his current spot)"${st.busy ? ' disabled' : ''}>${esc(nm(j))}${o ? ' · out' : k ? ' · locked' : ''}</button>`; };
+    const rows = groups.map(([c, label]) => { const js = Object.keys(main).filter(j => main[j] === c).concat(c === 'F' ? extra : []).sort((a, b) => +a - +b); return js.length ? `<div class="pick-row"><b style="min-width:84px">${label}</b>${js.map(pill).join('')}</div>` : ''; }).join('');
+    let out = `<div class="lu" style="margin-bottom:12px"><div class="luh"><b>Build the best lineup</b></div>
+      <p class="muted">Click a player to mark him out, then again to lock him (keep him in his current spot; only players in the lineup), then again to make him available. The build tries every legal combination for defense, man-up and man-down (or repeated best swaps if there are too many), and repeated best swaps for attack and the midfield lines together, keeping your time shares. Even strength uses players at their position (or second position); man-up draws from attack and midfield, man-down from defense and midfield. Nobody plays two even-strength spots.</p>
+      ${rows}<div class="pick-row"><button class="go" id="luBuild"${st.busy ? ' disabled' : ''}>Build best lineup</button>${A.out.length || A.lock.length ? `<span class="muted">${A.out.length} out · ${A.lock.length} locked</span>` : ''}</div>`;
+    if (b) {
+      const label = { offense: 'Attack and midfield', defense: 'Defense', manUp: 'Man-up', manDown: 'Man-down', fogo: 'Faceoffs', goalie: 'Goalie' };
+      const parts = Object.entries(b.byPart || {}).map(([k, v]) => `${label[k]} ${pts(v)}`).join(' · ');
+      const unitName = u => u === 'attack' ? 'Attack' : /^mid\d$/.test(u) ? 'Midfield line ' + (+u.slice(3) + 1) : label[u] || u;
+      const why = c => { const j = c.in; if (c.unit === 'goalie') { const x = (S.ourGoalies || []).find(y => String(y.j) === j); return x ? `${pc(x.base)} rated save on ${x.n} shots` : ''; } if (c.unit === 'fogo') { const o = (S.faceoffs.ours || []).find(y => String(y.j) === j); return o ? `${o.w}-${o.l} on film` : ''; }
+        if (c.unit === 'defense' || c.unit === 'manDown') { const d = LU.defOf(R, j), e = LU.defOf(R, c.out); return `beaten ${d.reps ? pc(d.raw.b / d.reps) : '—'} of ${d.reps} reps, ${d.ct} caused TO (${e.reps ? pc(e.raw.b / e.reps) : '—'} of ${e.reps}, ${e.ct})`; }
+        const o = LU.offOf(R, j), q = LU.offOf(R, c.out); return `${(100 * o.eff).toFixed(0)} per 100 used on ${o.n.toFixed(0)} (${(100 * q.eff).toFixed(0)} on ${q.n.toFixed(0)})`; };
+      const ch = b.changes.length ? `<div class="tw"><table class="lus"><thead><tr><th class="l">Unit</th><th class="l">Change</th><th class="l">Why (the player going out in brackets)</th></tr></thead><tbody>${b.changes.map(c => `<tr><td class="l">${esc(unitName(c.unit))}</td><td class="l">${esc(nm(c.out))} → <b>${esc(nm(c.in))}</b></td><td class="l"><small class="muted">${esc(why(c))}</small></td></tr>`).join('')}</tbody></table></div>` : '<p class="muted">The current lineup is already the best the ratings find.</p>';
+      const alts = ['defense', 'manUp', 'manDown'].filter(k => b.units[k] && b.units[k].alts && b.units[k].alts.length > 1).map(k => { const u = b.units[k], f = k === 'manUp' ? (v => (100 * v).toFixed(1) + ' per 100 used') : (v => '×' + v.toFixed(3) + ' goals allowed'); return `<li><b>${label[k]}</b>${u.exhaustive ? '' : ' (swap search)'}: ${u.alts.map((a, i) => `${i ? 'next: ' : 'best: '}${a.c.map(nm).map(esc).join(', ')} <small class="muted">${f(a.v)}</small>`).join('; ')}</li>`; }).join('');
+      out += `<p class="lead">Built lineup: we win <b class="${b.sim.win > b.cur.win + 0.003 ? 'good' : ''}">${pc(b.sim.win)}</b> (current lineup ${pc(b.cur.win)}, ${pts(b.sim.win - b.cur.win)}).${parts ? ` Each part alone: ${parts}.` : ''}</p>
+        ${b.noCausedWin != null ? `<p class="muted"><b>Check:</b> rating defenders on beaten reps only (as if caused turnovers only reflected how many reps a player got), this lineup wins ${pc(b.noCausedWin)}. The gap to ${pc(b.sim.win)} is how much of the defense change rests on caused turnovers.</p>` : ''}
+        ${b.notes.length ? `<ul class="note">${b.notes.map(n => `<li>${esc(n)}</li>`).join('')}</ul>` : ''}${ch}
+        ${alts ? `<h3>Close alternatives</h3><ul class="note">${alts}</ul>` : ''}
+        <div class="pick-row"><button class="pill" id="luUseBuilt"${st.busy ? ' disabled' : ''}>Use this lineup</button><span class="muted" style="font-size:12px">Puts it into the lineup below and works out its swaps.</span></div>`;
+    }
+    return out + '</div>';
+  }
+  V3.lineupsView = { render, renderBuild, pools, chanceTxt, UNITS, MIN_OFF, MIN_DEF };
 })(globalThis);
