@@ -197,4 +197,55 @@ ok('chance better shows no finer than 5% to 95%', V3.lineupsView.chanceTxt(0.999
   ok('a midfield line with no time gets no swaps', LU.swaps(S, R, L, B, 'mid1', ['1', '2', '3']).rows.length === 0);
   ok('an offense unit with no rating has no together error (not NaN)', LU.offUnit(LU.ratings({ shots: [], poss: [], stints: [], positions }), ['1']).tvar === 0); }
 
+// ---- 10. Step 3: build from scratch.
+{ ok('combinations: C(6,3) = 20, all distinct', LU.combos([1, 2, 3, 4, 5, 6], 3).length === 20 && new Set(LU.combos([1, 2, 3, 4, 5, 6], 3).map(String)).size === 20);
+  // A richer roster: attack 1-4, mids 5-8 and 10-14 with logs, defense 40-43 with reps, LSM 44, SSDM 45-46.
+  const sh = shots.slice();
+  [['5', 20, 9], ['6', 20, 4], ['7', 20, 6], ['8', 20, 10], ['10', 20, 3], ['11', 20, 7], ['12', 20, 5], ['13', 20, 8], ['14', 20, 2]].forEach(([j, n, g]) => { for (let i = 0; i < n; i++) sh.push({ team: 'WLU', context: 'Practice', sid: 'p5', manSituation: 'Even', shooterJersey: j, goal: i < g ? 1 : 0 }); });
+  [['42', 4], ['43', 1], ['44', 3], ['45', 2], ['46', 5]].forEach(([j, b]) => { for (let i = 0; i < 10; i++) sh.push({ team: 'WLU', context: 'Practice', sid: 'p5', manSituation: 'Even', shooterJersey: '9', defender: j, defBeaten: i < b ? 'Yes' : 'No', goal: i < b ? 1 : 0 }); });
+  const pos2 = { json: JSON.stringify({ 1: 'A', 2: 'A', 3: 'A', 4: 'A', 5: 'M', 6: 'M', 7: 'M', 8: 'M', 10: 'M', 11: 'M', 12: 'M', 13: 'M', 14: 'M', 40: 'D', 41: 'D', 42: 'D', 43: 'D', 44: 'L', 45: 'S', 46: 'S', 47: 'S' }), alt: '{}' };
+  const Rb = LU.ratings({ shots: sh, poss, stints: [], positions: pos2 });
+  const L0 = { attack: ['2', '3', '4'], mids: [{ players: ['6', '10', '14'], share: 50 }, { players: ['5', '7', '8'], share: 30 }, { players: ['11', '12', '13'], share: 20 }], defense: ['41', '42', '43', '44', '45', '47'], manUp: ['2', '3', '4', '6', '10', '14'], manDown: ['41', '42', '43', '44', '45', '47'], goalie: null, fogo: null };
+  const P = V3.lineupsView.pools(Rb, S, false), b = LU.build(S, Rb, L0, B, { pools: P });
+  // brute force defense
+  let bestD = Infinity; LU.combos(['40', '41', '42', '43'], 3).forEach(d => ['44'].forEach(l => LU.combos(['45', '46', '47'], 2).forEach(ss => { bestD = Math.min(bestD, LU.defUnit(Rb, d.concat([l], ss)).value); })));
+  ok('defense: the build tries every legal combination and finds the best', b.units.defense.exhaustive && near(b.units.defense.best.v, bestD) && near(LU.defUnit(Rb, b.lineup.defense).value, bestD), [b.units.defense.best, bestD]);
+  // brute force man-up from A + M pools
+  let bestMU = -1; LU.combos(P.manUp.map(String), 6).forEach(c => { bestMU = Math.max(bestMU, LU.offUnit(Rb, c, 'Man-Up').value); });
+  ok('man-up: every combination of 6 from attack and midfield; best found', near(b.units.manUp.best.v, bestMU), [b.units.manUp.best.v, bestMU]);
+  const flat = X => X.attack.concat(...X.mids.map(m => m.players));
+  ok('offense: no player twice, shares kept, and at least as good as the current lineup', new Set(flat(b.lineup)).size === 12 && b.lineup.mids.map(m => m.share).join() === '50,30,20' && b.units.offense.best.v >= b.units.offense.current - 1e-12, b.lineup);
+  // no single swap or cross-line swap improves the built offense (a local optimum)
+  const v0 = b.units.offense.best.v; let better = false; const used = new Set(flat(b.lineup));
+  b.lineup.attack.forEach((j, i) => P.attack.filter(x => !used.has(x)).forEach(x => { const X = LU.swapIn(b.lineup, 'attack', i, x); if (LU.toSets(Rb, X, b.lineup, S).parts.offense.m > 1 + 1e-12) better = true; }));
+  b.lineup.mids.forEach((m, l) => m.players.forEach((j, i) => P.mid.filter(x => !used.has(x)).forEach(x => { const X = LU.swapIn(b.lineup, 'mid' + l, i, x); if (LU.toSets(Rb, X, b.lineup, S).parts.offense.m > 1 + 1e-12) better = true; })));
+  ok('offense: no one-player swap improves the built lineup', !better);
+  ok('the best midfield line by rating gets the most time', LU.offUnit(Rb, b.lineup.attack.concat(b.lineup.mids[0].players)).value >= LU.offUnit(Rb, b.lineup.attack.concat(b.lineup.mids[2].players)).value - 1e-12);
+  ok('the build is played once on the sheet\'s games; changes listed slot by slot', b.sim.win === LU.simulate(S, Rb, b.lineup, B).win && b.changes.every(c => c.in !== c.out) && b.changes.length > 0, b.changes);
+  { const gone = L0.manUp.filter(j => !b.lineup.manUp.includes(j)), mu = b.changes.filter(c => c.unit === 'manUp');
+    ok('changes list who leaves and joins each unit (not spot by spot)', mu.length === gone.length && mu.every(c => gone.includes(c.out) && !L0.manUp.includes(c.in) && b.lineup.manUp.includes(c.in)), [mu, gone]); }
+  ok('goalie: the best of the sheet\'s goalie replays', b.lineup.goalie === S.ourGoalies.slice().sort((x, y) => y.w - x.w)[0].j);
+  const bo = LU.build(S, Rb, L0, B, { pools: P, out: ['8', '42'] });
+  ok('players marked out appear nowhere (an attackman fills a midfield spot when midfielders run short)', !['8', '42'].some(j => flat(bo.lineup).concat(bo.lineup.defense, bo.lineup.manUp, bo.lineup.manDown).includes(j)) && new Set(flat(bo.lineup)).size === 12, bo.lineup);
+  const b2 = LU.build(S, Rb, L0, B, { pools: P, out: ['8', '1', '5'] });
+  ok('too few offensive players left: the out player stays, and the build says so', b2.notes.some(n => /not enough available players; #\d+ stays in his spot though marked out/.test(n)), b2.notes);
+  const bl = LU.build(S, Rb, L0, B, { pools: P, lock: ['14', '43', '2'] });
+  ok('locked players stay in their spots', bl.lineup.mids[0].players[2] === '14' && bl.lineup.defense[2] === '43' && bl.lineup.attack[0] === '2', bl.lineup);
+  const bc = LU.build(S, Rb, L0, B, { pools: P, cap: 10 });
+  ok('with a small cap the swap search is used and is no worse than the current units', !bc.units.defense.exhaustive && bc.units.defense.best.v <= LU.defUnit(Rb, L0.defense).value + 1e-12 && new Set(bc.lineup.defense).size === 6, bc.units.defense);
+  ok('each part alone is played on the same games (offense part = attack and mids from the build)', b.byPart.offense === undefined || near(b.byPart.offense, LU.simulate(S, Rb, Object.assign(JSON.parse(JSON.stringify(L0)), { attack: b.lineup.attack, mids: b.lineup.mids }), B).win - b.cur.win), b.byPart);
+  { const u = LU.defUnit(Rb, ['42']); ok('no-caused check: a unit at the team caused rate, same beaten-rep factor', near(u.valueNoCaused, (1 - Rb.def.ctShare) * u.repFactor)); }
+  ok('the no-caused check is reported when the defense changes', b.noCausedWin != null && b.noCausedWin > 0 && b.noCausedWin < 1, b.noCausedWin);
+  { const html = V3.lineupsView.renderBuild({ S, R: Rb, L: L0, B, names: { 41: 'Sample <b>x</b>' }, avail: { out: ['8'], lock: ['14'] }, built: b, busy: false });
+    ok('build panel: pills show out and locked, names escaped, result with each part and the no-caused check, and a use button', /data-av="8"[^>]*>#8 · out/.test(html) && /#14 · locked/.test(html) && !/<b>x<\/b>/.test(html) && /Built lineup: we win/.test(html) && /beaten reps only/.test(html) && /id="luUseBuilt"/.test(html), html.slice(0, 400)); }
+  const bs = LU.build(S, Rb, L0, B, { pools: P, out: ['41', '45', '46'] });
+  ok('short SSDM group: the available SSDM stays, the out one stays only because nobody is left (named), and close D is still searched without the out #41', bs.lineup.defense.slice(4).sort().join() === '45,47' && !bs.lineup.defense.slice(0, 3).includes('41') && bs.notes.some(n => /Defense: not enough available players at S.*#45 stays though marked out/.test(n)), [bs.lineup.defense, bs.notes]);
+  let bestD2 = Infinity; LU.combos(['40', '42', '43'], 3).forEach(d => { bestD2 = Math.min(bestD2, LU.defUnit(Rb, d.concat(['44'], bs.lineup.defense.slice(4))).value); });
+  ok('the rest of that defense is still the best available', near(LU.defUnit(Rb, bs.lineup.defense).value, bestD2));
+  const gOut = LU.build(S, Rb, Object.assign({}, L0, { goalie: '31' }), B, { pools: P, out: S.ourGoalies.map(x => x.j) });
+  ok('all goalies out: the build uses the pooled save rate and says so', gOut.lineup.goalie === null && gOut.notes.some(n => /Goalie: #31 is out/.test(n)), gOut.notes);
+  const Lsw = Object.assign(JSON.parse(JSON.stringify(L0)), { defense: ['44', '41', '42', '43', '45', '47'] });
+  const bk = LU.build(S, Rb, Lsw, B, { pools: P });
+  ok('defense spots follow the position of the player in them (an LSM listed first stays an LSM spot)', V3.lineupsView.pools(Rb, S, false).defense(3).includes(bk.lineup.defense[0]) && ['40', '41', '42', '43'].includes(bk.lineup.defense[3]), bk.lineup.defense); }
+
 const pass = results.filter(r => r.ok).length; console.log(`lineups: pass ${pass}  fail ${results.length - pass}`); Deno.exit(pass === results.length ? 0 : 1);

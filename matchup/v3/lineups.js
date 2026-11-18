@@ -122,7 +122,8 @@
     const ok = rbar != null && D.gb != null && D.gn != null && repG(D.beatTeam) > 0;
     const repFactor = ok ? 1 + D.repGoalShare * (repG(rbar) / repG(D.beatTeam) - 1) : 1;
     const caused = cbar == null ? D.ctShare : D.ctShare * cbar / D.ctRate;
-    return { players: P, rbar, cbar, caused, repFactor, value: (1 - caused) * repFactor };
+    // valueNoCaused: the same unit if caused turnovers only reflected reps (every unit at the team's rate).
+    return { players: P, rbar, cbar, caused, repFactor, value: (1 - caused) * repFactor, valueNoCaused: (1 - D.ctShare) * repFactor };
   }
 
   // P(unit A is better than unit B): players' rating errors are treated as independent; shared players cancel.
@@ -269,5 +270,124 @@
     else { const rest = left - fixedSum, tot = free.reduce((a, i) => a + (M[i].share ?? 1), 0); free.forEach(i => { M[i].share = tot > 0 ? rest * (M[i].share ?? 1) / tot : rest / free.length; }); }
     return M.some(m => m.share > 0) ? M : null;
   }
-  V3.lineups = { LK, ratings, defaultLineup, swaps, setShare, swapIn, chanceBetterPart, offWeights, offOf, defOf, offUnit, defUnit, chanceBetter, toSets, simulate, per100, posMap };
+  // Lineups step 3: build the best lineup from scratch. opts: { pools (V3.lineupsView.pools shape), out: [jerseys],
+  // lock: [jerseys] (kept in their current spots), cap: max combinations tried per unit before falling back to the
+  // swap search }. Ratings only (closed form); the result is then played once on the sheet's games.
+  function combos(arr, k) { const out = [], cur = []; (function go(i) { if (cur.length === k) { out.push(cur.slice()); return; } for (let j = i; j <= arr.length - (k - cur.length); j++) { cur.push(arr[j]); go(j + 1); cur.pop(); } })(0); return out; }
+  const nCk = (n, k) => { if (k < 0 || k > n) return 0; let r = 1; for (let i = 1; i <= k; i++) r = r * (n - k + i) / i; return Math.round(r); };
+  function build(S, R, L, B, opts) {
+    opts = Object.assign({ out: [], lock: [], cap: 60000 }, opts || {});
+    const out = new Set(opts.out.map(String)), lock = new Set(opts.lock.map(String)), P = opts.pools, notes = [];
+    const ok = j => j != null && !out.has(String(j));
+    const poolAt = (k, slot) => { const p = P[k]; return ((typeof p === 'function' ? p(slot) : p) || []).map(String).filter(ok); };
+    const top3 = (list, better) => { const seen = new Set(), res = []; list.slice().sort((a, b) => better(a.v, b.v)).forEach(x => { const key = JSON.stringify(x.c); if (!seen.has(key) && res.length < 3) { seen.add(key); res.push(x); } }); return res; };
+    const hi = (a, b) => b - a, lo = (a, b) => a - b;
+    const R0 = { attack: L.attack, mids: L.mids, defense: L.defense, manUp: L.manUp, manDown: L.manDown, fogo: L.fogo, goalie: L.goalie };
+    const res = { units: {}, notes };
+
+    // A unit of slots: locked players stay; the free slots are filled with every legal combination (or, if there are too
+    // many, by repeated best swaps). slotPool(slot) gives candidates; slots sharing a pool key are filled as a combination.
+    function fill(name, cur, slotKey, slotPool, value, better) {
+      cur = (cur || []).map(String); const fixed = cur.map(j => lock.has(j) && ok(j) ? j : null), groups = {};
+      cur.forEach((j, slot) => { if (fixed[slot] == null) (groups[slotKey(slot)] = groups[slotKey(slot)] || []).push(slot); });
+      const used = new Set(fixed.filter(Boolean)), gk = Object.keys(groups);
+      const cands = Object.fromEntries(gk.map(k => [k, slotPool(groups[k][0]).filter(j => !used.has(j))]));
+      // A position group without enough available players: its available current players stay, its out players are
+      // replaced by whoever is left at that position, and only if nobody is left does an out player stay (named in a note).
+      // The other groups are still searched.
+      gk.filter(k => cands[k].length < groups[k].length).forEach(k => {
+        const left = cands[k].filter(j => !groups[k].some(sl => cur[sl] === j)), stay = [];
+        groups[k].forEach(sl => { const j = cur[sl]; if (ok(j)) fixed[sl] = j; else if (left.length) fixed[sl] = left.shift(); else { fixed[sl] = j; stay.push('#' + j); } used.add(fixed[sl]); });
+        notes.push(`${name}: not enough available players at ${k === 'O' || k === 'X' ? 'these positions' : k} to choose from; the available ones there stay${stay.length ? `, and ${stay.join(', ')} stay${stay.length === 1 ? 's' : ''} though marked out` : ''}.`);
+        delete groups[k]; });
+      gk.splice(0, gk.length, ...Object.keys(groups)); gk.forEach(k => { cands[k] = cands[k].filter(j => !used.has(j)); });
+      const total = gk.reduce((a, k) => a * nCk(cands[k].length, groups[k].length), 1), seen = [];
+      const assemble = pick => { const c = fixed.slice(); gk.forEach(k => groups[k].forEach((slot, i) => { c[slot] = pick[k][i]; })); return c; };
+      if (total <= opts.cap) {
+        const lists = gk.map(k => combos(cands[k], groups[k].length));
+        (function go(i, pick) { if (i === gk.length) { const c = assemble(pick); if (new Set(c).size === c.length) seen.push({ c, v: value(c) }); return; }
+          lists[i].forEach(x => { pick[gk[i]] = x; go(i + 1, pick); }); })(0, {});
+      } else {
+        // Repeated best single swaps from the current players (out players first replaced by the best available).
+        let c = cur.map((j, slot) => fixed[slot] != null ? fixed[slot] : ok(j) ? j : null);
+        c.forEach((j, slot) => { if (j == null) { const pool = slotPool(slot).filter(x => !c.includes(x)); let bj = null, bv = null; pool.forEach(x => { const t = c.slice(); t[slot] = x; const v = value(t.map((y, i) => y == null ? cur[i] : y)); if (bv == null || better(v, bv) < 0) { bv = v; bj = x; } }); c[slot] = bj; } });
+        if (c.some(j => j == null)) { notes.push(name + ': could not fill every spot.'); return { best: { c: cur, v: value(cur) }, alts: [], tried: 0, exhaustive: false }; }
+        let v = value(c); seen.push({ c: c.slice(), v });
+        for (let it = 0; it < 200; it++) { let move = null;
+          c.forEach((j, slot) => { if (fixed[slot] != null) return; slotPool(slot).filter(x => !c.includes(x)).forEach(x => { const t = c.slice(); t[slot] = x; const tv = value(t); seen.push({ c: t, v: tv }); if (better(tv, move ? move.v : v) < 0) move = { c: t, v: tv }; }); });
+          if (!move) break; c = move.c; v = move.v; }
+      }
+      if (!seen.length) { notes.push(name + ': no legal combination found; the current players stay.'); return { best: { c: cur, v: value(cur) }, alts: [], tried: 0, exhaustive: false }; }
+      const alts = top3(seen, better); return { best: alts[0], alts, tried: seen.length, exhaustive: total <= opts.cap };
+    }
+    // Defense spots by the position of the player now in them (D, L or S), else the usual order D, D, D, L, S, S.
+    const defKey = slot => { const j = L.defense && L.defense[slot] != null ? String(L.defense[slot]) : null, p = j && R.pos.main ? R.pos.main[j] : null; return p === 'D' || p === 'L' || p === 'S' ? p : ['D', 'D', 'D', 'L', 'S', 'S'][slot] || 'D'; };
+
+    // Even-strength offense: attack plus the midfield lines together (usage shares interact), by repeated best swaps from
+    // two starts (current players; best individual ratings), keeping locks and line shares.
+    { const mids = (L.mids || []).map(m => Object.assign({}, m, { players: (m.players || []).map(String) })), shares = mids.map(m => m.share ?? 1);
+      const flat = X => (X.attack || []).concat(...X.mids.map(m => m.players)), val = X => sixOf(R, X);
+      const slots = []; (L.attack || []).forEach((j, i) => slots.push({ u: 'attack', i, k: 'attack' })); mids.forEach((m, l) => m.players.forEach((j, i) => slots.push({ u: 'mid', l, i, k: 'mid' })));
+      const get = (X, t) => t.u === 'attack' ? X.attack[t.i] : X.mids[t.l].players[t.i], set = (X, t, j) => { const Y = clone(X); if (t.u === 'attack') Y.attack[t.i] = j; else Y.mids[t.l].players[t.i] = j; return Y; };
+      const locked = t => lock.has(String(get({ attack: (L.attack || []).map(String), mids }, t))) && ok(get({ attack: (L.attack || []).map(String), mids }, t));
+      const G0 = new Set();
+      const fillStart = X => { slots.forEach(t => { const j = get(X, t); if (!locked(t) && !ok(j)) { const used = new Set(flat(X)); let pool = poolAt(t.k).filter(x => !used.has(x)); if (!pool.length) pool = [...new Set(poolAt('attack').concat(poolAt('mid')))].filter(x => !used.has(x)); let bj = null, bv = null; pool.forEach(x => { const v = val(set(X, t, x)); if (bv == null || v > bv) { bv = v; bj = x; } }); if (bj != null) X = set(X, t, bj); else if (j == null) { const orig = get({ attack: (L.attack || []).map(String), mids }, t); X = set(X, t, orig); if (!G0.has(orig)) { G0.add(orig); notes.push(`Offense: not enough available players; #${orig} stays in his spot${ok(orig) ? '' : ' though marked out'}.`); } } else if (!G0.has(j)) { G0.add(j); notes.push(`Offense: not enough available players; #${j} stays in his spot though marked out.`); } } }); return X; };
+      const descend = X => { const seen = [{ c: X, v: val(X) }]; let v = val(X);
+        for (let it = 0; it < 300; it++) { let move = null; const used = new Set(flat(X));
+          slots.forEach(t => { if (locked(t)) return; poolAt(t.k).filter(x => !used.has(x)).forEach(x => { const Y = set(X, t, x), yv = val(Y); seen.push({ c: Y, v: yv }); if (yv > (move ? move.v : v) + 1e-12) move = { c: Y, v: yv }; }); });
+          // swap two unlocked midfielders between lines (matters when lines get different time)
+          slots.filter(t => t.u === 'mid' && !locked(t)).forEach((a, ai, arr) => arr.slice(ai + 1).forEach(b => { if (a.l === b.l) return; const Y = set(set(X, a, get(X, b)), b, get(X, a)), yv = val(Y); if (yv > (move ? move.v : v) + 1e-12) move = { c: Y, v: yv }; }));
+          if (!move) break; X = move.c; v = move.v; }
+        return { X, v, seen }; };
+      const start1 = fillStart({ attack: (L.attack || []).map(String), mids: clone(mids) });
+      const byEff = k => poolAt(k).slice().sort((a, b) => offOf(R, b).eff - offOf(R, a).eff || +a - +b);
+      let start2 = { attack: (L.attack || []).map(String), mids: clone(mids) }; { const keep = new Set(slots.filter(locked).map(t => get(start2, t))), A = byEff('attack').filter(j => !keep.has(j)), M = byEff('mid').filter(j => !keep.has(j));
+        slots.forEach(t => { if (locked(t)) return; const src = t.u === 'attack' ? A : M; start2 = set(start2, t, src.length ? src.shift() : null); }); start2 = fillStart(start2); }
+      const legal = X => new Set(flat(X)).size === flat(X).length, r1 = descend(start1), r2 = descend(start2);
+      const best = !legal(r2.X) || (legal(r1.X) && r1.v >= r2.v) ? r1 : r2; if (!legal(best.X)) notes.push('Offense: could not make a lineup without repeating a player.');
+      const alts = top3(r1.seen.concat(r2.seen).filter(x => new Set(flat(x.c)).size === flat(x.c).length).map(x => ({ c: x.c, v: x.v })), hi);
+      res.units.offense = { best: { c: best.X, v: best.v }, alts, current: val({ attack: (L.attack || []).map(String), mids }), shares };
+      R0.attack = best.X.attack; R0.mids = best.X.mids; }
+
+    if (L.defense && L.defense.length) { const f = fill('Defense', L.defense, defKey, slot => poolAt('defense', ['D', 'D', 'D', 'L', 'S', 'S'].indexOf(defKey(slot))), c => defUnit(R, c).value, lo); res.units.defense = Object.assign(f, { current: defUnit(R, L.defense).value }); R0.defense = f.best.c; }
+    if (L.manUp && L.manUp.length) { const f = fill('Man-up', L.manUp, () => 'O', () => poolAt('manUp'), c => offUnit(R, c, 'Man-Up').value, hi); res.units.manUp = Object.assign(f, { current: offUnit(R, L.manUp, 'Man-Up').value }); R0.manUp = f.best.c; }
+    if (L.manDown && L.manDown.length) { const f = fill('Man-down', L.manDown, () => 'X', () => poolAt('manDown'), c => defUnit(R, c).value, lo); res.units.manDown = Object.assign(f, { current: defUnit(R, L.manDown).value }); R0.manDown = f.best.c; }
+    // FOGO: his head-to-head row against their FOGOs; goalie: the sheet's replay with him in net.
+    { const fm = S.faceoffs && S.faceoffs.model, ours = (S.faceoffs && S.faceoffs.ours) || [];
+      if (fm && fm.M && fm.M.length) { const row = i => fm.M[i].reduce((a, c, j) => a + fm.tShare[j] * c.p, 0);
+        const c = lock.has(String(L.fogo)) && ok(L.fogo) ? [String(L.fogo)] : ours.map(o => String(o.j)).filter(ok);
+        const list = c.map(j => ({ c: j, v: row(ours.findIndex(o => String(o.j) === j)) })).sort((a, b) => b.v - a.v);
+        if (list.length) { res.units.fogo = { best: list[0], alts: list.slice(0, 3) }; R0.fogo = list[0].c; } else notes.push(`Faceoffs: none of our FOGOs in the faceoff model is available${L.fogo != null && !ok(L.fogo) ? `; #${L.fogo} stays though marked out` : ''}.`); } }
+    { const G = (S.ourGoalies || []).filter(x => ok(x.j));
+      if (lock.has(String(L.goalie)) && ok(L.goalie)) R0.goalie = String(L.goalie);
+      else if (G.length) { const list = G.map(x => ({ c: String(x.j), v: x.w })).sort((a, b) => b.v - a.v); res.units.goalie = { best: list[0], alts: list.slice(0, 3) }; R0.goalie = list[0].c; }
+      else if (L.goalie != null && !ok(L.goalie)) { R0.goalie = null; notes.push(`Goalie: #${L.goalie} is out and no other goalie has 60+ logged shots; the build uses our goalies' pooled save rate.`); } }
+    res.lineup = R0;
+    // Every player change, slot by slot.
+    // Changes are who leaves and who joins each unit (order within a unit doesn't matter); defense is compared within
+    // each position (close D, LSM, SSDM) so an LSM is never listed as replacing a close defenseman.
+    const ch = [], cmp = (u, a, b, key) => { a = (a || []).map(String); b = (b || []).map(String); const k = key || (() => '');
+      const ks = [...new Set(a.map((j, i) => k(i)))]; ks.forEach(kk => { const A = a.filter((j, i) => k(i) === kk), Bk = b.filter((j, i) => k(i) === kk);
+        const gone = A.filter(j => !Bk.includes(j)), came = Bk.filter(j => !A.includes(j)); gone.forEach((j, i) => ch.push({ unit: u, out: j, in: came[i] })); }); };
+    cmp('attack', L.attack, R0.attack); (L.mids || []).forEach((m, l) => cmp('mid' + l, m.players, R0.mids[l].players)); cmp('defense', L.defense, R0.defense, defKey); cmp('manUp', L.manUp, R0.manUp); cmp('manDown', L.manDown, R0.manDown);
+    if (String(L.fogo) !== String(R0.fogo) && R0.fogo != null) ch.push({ unit: 'fogo', slot: 0, out: L.fogo == null ? null : String(L.fogo), in: String(R0.fogo) });
+    if (String(L.goalie) !== String(R0.goalie) && R0.goalie != null) ch.push({ unit: 'goalie', slot: 0, out: L.goalie == null ? null : String(L.goalie), in: String(R0.goalie) });
+    res.changes = ch;
+    res.sim = simulate(S, R, R0, B); res.cur = simulate(S, R, L, B);
+    res.chance = { offense: chanceBetterPart(R, R0, L, 'offense'), defense: L.defense && L.defense.length ? chanceBetterPart(R, R0, L, 'defense') : null };
+    // What each part is worth alone: the current lineup with only that part from the build, on the same games.
+    const only = { offense: ['attack', 'mids'], defense: ['defense'], manUp: ['manUp'], manDown: ['manDown'], fogo: ['fogo'], goalie: ['goalie'] };
+    res.byPart = {};
+    Object.entries(only).forEach(([k, ks]) => { if (!ks.some(x => JSON.stringify(R0[x]) !== JSON.stringify(L[x]))) return; const X = clone(L); ks.forEach(x => { X[x] = clone(R0[x]); }); res.byPart[k] = simulate(S, R, X, B).win - res.cur.win; });
+    // Check: the build's win chance if caused turnovers said nothing about a defender (beaten reps only).
+    if (opts.check !== false && ((R0.defense && JSON.stringify(R0.defense) !== JSON.stringify(L.defense)) || (R0.manDown && JSON.stringify(R0.manDown) !== JSON.stringify(L.manDown)))) {
+      const T = toSets(R, R0, B, S), sets = Object.assign({}, T.sets), c = S._ctx;
+      if (R0.defense && B.defense && B.defense.length) sets['opp.six'] = defUnit(R, R0.defense).valueNoCaused / defUnit(R, B.defense).valueNoCaused;
+      if (R0.manDown && B.manDown && B.manDown.length) sets['opp.emo'] = defUnit(R, R0.manDown).valueNoCaused / defUnit(R, B.manDown).valueNoCaused;
+      const Pg = T.goalie ? c.withGoalie(T.goalie) : c.P;
+      res.noCausedWin = V3.winPct(V3.runBatch(Pg, c.tn, c.seed, sets));
+    }
+    return res;
+  }
+  V3.lineups = { LK, ratings, defaultLineup, swaps, setShare, build, combos, swapIn, chanceBetterPart, offWeights, offOf, defOf, offUnit, defUnit, chanceBetter, toSets, simulate, per100, posMap };
 })(globalThis);

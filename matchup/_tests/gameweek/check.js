@@ -48,6 +48,22 @@ ok('"Back to the logged lineup" restores the sheet\'s lineup and win chance', aw
 await ev("const i = Q('input.lushare'); if (i) { i.value = '70'; i.dispatchEvent(new W.Event('change')); }"); await luDone();
 ok('a midfield time share replays the lineup, and the other lines split the rest (one line: it keeps all the time)', await ev("return !Q('input.lushare') || (W.__GW.L.mids[0].share === (W.__GW.L.mids.length > 1 ? 70 : 100) && Math.abs(W.__GW.L.mids.reduce((a, m) => a + m.share, 0) - 100) < 1e-9 && W.__GW.luEdited === true);"), await ev("return W.__GW.L.mids;"));
 await ev("Q('#luReset').click();"); await luDone();
+// Build from scratch: mark one player out, build, use it.
+const outJ = await ev("const b = QA('[data-av]').find(x => W.__GW.L.attack.includes(x.dataset.av)); if (!b) return null; b.click(); return b.dataset.av;");
+ok('availability pill marks a player out', outJ && await ev(`return W.__GW.avail.out.includes('${outJ}') && /· out/.test(Q('[data-av="${outJ}"]').textContent);`), outJ);
+await ev("Q('#luBuild').click();"); for (let i = 0; i < 120; i++) { await sleep(250); if (await ev("return !!W.__GW.built || /Could not build/.test(Q('#lineups').innerText);")) break; }
+ok('build shows the built lineup and its win chance, without the out player', await ev(`const b = W.__GW.built; return !!b && /Built lineup: we win/.test(Q('#lineups').innerText) && !JSON.stringify([b.lineup.attack, b.lineup.mids, b.lineup.manUp]).includes('"${outJ}"');`), await ev("return [W.__GW.luMsg, W.__GW.built && W.__GW.built.lineup];"));
+await ev("Q('#luBuild').scrollIntoView();"); await sleep(200); await shot('03_build'); await ev("W.scrollTo(0, 0);");
+const builtWin = await ev("return W.__GW.built.sim.win;");
+await ev("const i = Q('input.lushare'); if (i) { i.value = '60'; i.dispatchEvent(new W.Event('change')); }"); await luDone();
+ok('editing the lineup clears an old build (no stale "Use this lineup")', await ev("return !Q('input.lushare') || (W.__GW.built === null && !Q('#luUseBuilt'));"));
+await ev("Q('#luBuild').click();"); for (let i = 0; i < 120; i++) { await sleep(250); if (await ev("return !!W.__GW.built;")) break; }
+const builtWin2 = await ev("return W.__GW.built.sim.win;");
+await ev("Q('#luUseBuilt').click();"); await luDone();
+ok('"Use this lineup" puts the build into the lineup; the panel then shows the same win chance', await ev(`return W.__GW.luCur.win === ${builtWin2} && W.__GW.luEdited === true;`), [builtWin2, await ev("return W.__GW.luCur && W.__GW.luCur.win;")]);
+await ev(`Q('[data-av="${outJ}"]').click();`);
+ok('clicking an out player who is no longer in the lineup makes him available again (no lock offered)', await ev("return W.__GW.avail.out.length === 0 && W.__GW.avail.lock.length === 0;"), await ev("return W.__GW.avail;"));
+await ev("Q('#luReset').click();"); await luDone();
 // Second run with another opponent reuses the cached D3 average and loads the new team.
 await ev("Q('[data-opp=\"902\"]').click();"); await sleep(100); await ev("Q('#run').click();");
 for (let i = 0; i < 120; i++) { await sleep(500); if (await ev("return /W&L vs Sample State/.test(Q('#title').textContent) && !Q('#run').disabled;")) break; }
