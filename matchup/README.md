@@ -11,7 +11,8 @@ Nothing here loads in the tracker page. This folder starts with `_`, so GitHub P
 | `engine.js` | One game from parameters and a seed: the canonical event ledger, box score and validator |
 | `results.js` | Batches, workers, aggregates, paired comparison |
 | `worker.js` | Browser worker for one chunk |
-| `replay.js`, `studio.html`, `studio.js` | Experimental screen and replay |
+| `replay.js` | Replay (v1/v2; tests only since the old screen was retired) |
+| `gameweek.html`, `gameweek.js`, `v3/` | The Simulation page: engine v3 game-week sheet and Lineups (`v3/lineups.js`, `v3/lineups_view.js`) |
 | `docs/MODEL_SCOPE.md`, `docs/ACCOUNTING_RECORD.md`, `docs/PACE_CHECK.md`, `docs/REPLAY_MOVEMENT.md` | What's frozen, the bug record, the pace check, how the replay moves |
 | `explain.js` | Reasons: wins vs losses accounting, player reasons, lineup efficiency |
 | `tools_fit_reference.js` | Fits tempo and related settings to official team totals. A fit, not a validation |
@@ -36,11 +37,9 @@ Opponent numbers are a plain totals object with `source`, set as `opponent.offic
 
 Use `tools_versioned.sh`. It refuses to run if `matchup/` has uncommitted changes, and it stamps the commit into every run record, alongside model and rules versions, input snapshot hash, seed and completed games.
 
-## Experimental screen
+## The Simulation page
 
-`studio.html`, `studio.js` and `replay.js` are the Simulation screen. In the tracker it appears only with the development flag (`?matchupDev=1`), never in player mode, and it reads data and writes nothing. To try it locally, offline, on an in-memory copy of a backup: `tools_build_preview.sh <export.json> <inputs.json> <official_raw> <out>`, then open the `.command` file it creates. `tests/preview_check.js` drives it in real Chrome.
-
-Before any release, this folder needs a published path, because GitHub Pages skips folders that start with `_`, and official data needs a tracker home.
+`gameweek.html` is the Simulation page (Personnel → Simulation, staff only, never in player mode). It reads tracker data through the host's `msStudioData` / `msLrData` and writes nothing. The older v1/v2 screen (`studio.html`, `studio.js`) and its offline preview tool were retired on Nov 18, 2026; the v1/v2 engine files stay, frozen, with their tests.
 
 ## Not built yet
 
