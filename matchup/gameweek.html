@@ -35,8 +35,11 @@ table.lev td { vertical-align:top; padding:8px 7px; } table.lev td.why { color:v
 
 .pick-row { display:flex; flex-wrap:wrap; gap:6px; align-items:center; margin:6px 0; } .pick-row input[type=search] { font:inherit; padding:5px 9px; border:1px solid var(--line); border-radius:8px; background:var(--card); color:var(--ink); width:220px; }
 button.go { font:700 14px inherit; font-family:inherit; padding:8px 16px; border-radius:8px; border:0; background:var(--accent); color:#fff; cursor:pointer; } button.go:disabled { opacity:.45; cursor:not-allowed; }
+.lus-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(480px,1fr)); gap:10px 18px; } .lu { border:1px solid var(--line); border-radius:8px; padding:10px 12px; background:var(--card-2); }
+.luh { display:flex; justify-content:space-between; align-items:center; gap:8px; margin-bottom:6px; } .pill.luc { display:flex; flex-direction:column; align-items:flex-start; text-align:left; border-radius:10px; } .pill.luc small { font-weight:400; color:var(--muted); font-size:11px; }
+table.lus { margin-top:8px; } table.lus td { vertical-align:top; } .pill:disabled { opacity:.5; cursor:not-allowed; }
 .err { color:#C62E1A; font-weight:600; } a.back { color:var(--accent); font-size:13px; }
 </style></head><body><main><header><div><div class="kicker">Simulation · game week · engine v3</div><h1 id="title">Game week</h1><p class="muted" id="srcline">Loading tracker data…</p></div><a class="back" href="studio.html">Older simulation screen (v1/v2) →</a></header>
 <section class="panel" id="controls"></section><div id="app"></div></main>
-<script src="picks.js"></script><script src="v3/model.js"></script><script src="v3/engine.js"></script><script src="v3/update.js"></script><script src="v3/sheet.js"></script><script src="v3/sheet_view.js"></script><script src="v3/sources.js"></script><script src="v3/d3_summaries.js"></script><script src="gameweek.js"></script>
+<script src="picks.js"></script><script src="v3/model.js"></script><script src="v3/engine.js"></script><script src="v3/update.js"></script><script src="v3/sheet.js"></script><script src="v3/sheet_view.js"></script><script src="v3/lineups.js"></script><script src="v3/lineups_view.js"></script><script src="v3/sources.js"></script><script src="v3/d3_summaries.js"></script><script src="gameweek.js"></script>
 </body></html>

@@ -102,12 +102,15 @@
   function offUnit(R, players, man) {
     const P = players.map(String).map(j => offOf(R, j, man)), tot = P.reduce((a, p) => a + p.inv, 0) || 1;
     P.forEach(p => { p.u = p.inv / tot; });
-    if (!P.length || P.some(p => p.eff == null)) return { players: P, value: null, base: null, together: 0, group: null };
+    if (!P.length || P.some(p => p.eff == null)) return { players: P, value: null, base: null, together: 0, tvar: 0, group: null };
     const base = P.reduce((a, p) => a + p.u * p.eff, 0);
     const key = players.map(String).sort((a, b) => +a - +b).join(' '), gr = man ? null : R.groups[key];
-    let together = 0;
-    if (gr && gr.U) { const obs = clamp((gr.G + 0.5) / (gr.U + 1), 0.01, 0.99); together = gr.U / (gr.U + LK.group) * (logit(obs) - logit(clamp(base, 0.01, 0.99))); }
-    return { players: P, value: unlogit(logit(clamp(base, 0.01, 0.99)) + together), base, together, group: gr || null };
+    let together = 0, tv = 0;
+    if (gr && gr.U) { const obs = clamp((gr.G + 0.5) / (gr.U + 1), 0.01, 0.99), wt = gr.U / (gr.U + LK.group); together = wt * (logit(obs) - logit(clamp(base, 0.01, 0.99)));
+      tv = wt * wt / (gr.U * obs * (1 - obs)); } // its error on the log-odds scale
+    const value = unlogit(logit(clamp(base, 0.01, 0.99)) + together);
+    // tvar: the together term's error on the rate scale (delta method), for chance-better.
+    return { players: P, value, base, together, tvar: tv * (value * (1 - value)) ** 2, group: gr || null };
   }
   // A defensive unit: share of their possessions we end with a caused turnover, and goals allowed on 1-on-1 reps.
   // Goals allowed per possession, relative to the team: (1 - caused share) * (1 + rep share of goals * (rep goal rate / team's - 1)).
@@ -127,7 +130,7 @@
     if (side === 'off') {
       const a = offUnit(R, A, man), b = offUnit(R, B, man), w = {};
       a.players.forEach(p => { w[p.j] = (w[p.j] || 0) + p.u; }); b.players.forEach(p => { w[p.j] = (w[p.j] || 0) - p.u; });
-      const v = Object.entries(w).reduce((s, [j, x]) => s + x * x * offOf(R, j, man).v, 0);
+      const v = Object.entries(w).reduce((s, [j, x]) => s + x * x * offOf(R, j, man).v, 0) + (a.group !== b.group ? a.tvar + b.tvar : 0);
       const d = a.value - b.value; return v > 0 ? Phi(d / Math.sqrt(v)) : (d > 0 ? 1 : d < 0 ? 0 : 0.5);
     }
     const a = defUnit(R, A), b = defUnit(R, B), D = R.def, w = {};
@@ -198,5 +201,73 @@
     return { win: w, baseWin: c.BT, sets: T.sets, goalie: T.goalie, parts: T.parts, per100: per100(S, T.parts), games: n };
   }
 
-  V3.lineups = { LK, ratings, defaultLineup, offOf, defOf, offUnit, defUnit, chanceBetter, toSets, simulate, per100, posMap };
+  // Lineups step 2: one-player swaps. Units: 'attack', 'mid0'..'mid2', 'defense', 'manUp', 'manDown', 'fogo', 'goalie'.
+  const clone = L => JSON.parse(JSON.stringify(L));
+  const unitPlayers = (L, u) => u === 'attack' ? L.attack : /^mid\d$/.test(u) ? ((L.mids || [])[+u.slice(3)] || {}).players : L[u];
+  function swapIn(L, u, slot, j) {
+    const X = clone(L);
+    if (u === 'fogo' || u === 'goalie') { X[u] = j == null ? null : String(j); return X; }
+    const arr = unitPlayers(X, u); arr[slot] = String(j); return X;
+  }
+  // Each player's weight in the lineup's settled-offense value (attack plays every line; each line by its share), for
+  // the chance-better error. Together terms are left out of the error.
+  function offWeights(R, L, man) {
+    const w = {}, lines = L.mids && L.mids.length ? L.mids : [{ players: [], share: 1 }], tot = lines.reduce((a, m) => a + (m.share ?? 1), 0) || 1;
+    lines.forEach(m => offUnit(R, (L.attack || []).concat(m.players || []), man).players.forEach(p => { w[p.j] = (w[p.j] || 0) + (m.share ?? 1) / tot * p.u; }));
+    return w;
+  }
+  // Chance lineup A beats lineup B on one part ('offense' | 'defense' | 'manUp' | 'manDown'), from sample sizes only.
+  function chanceBetterPart(R, A, B, part) {
+    if (part === 'defense' || part === 'manDown') return chanceBetter(R, A[part], B[part], 'def');
+    if (part === 'manUp') return chanceBetter(R, A.manUp, B.manUp, 'off', 'Man-Up');
+    const wa = offWeights(R, A), wb = offWeights(R, B), w = Object.assign({}, wa);
+    Object.entries(wb).forEach(([j, x]) => { w[j] = (w[j] || 0) - x; });
+    const tv = L => { const lines = L.mids && L.mids.length ? L.mids : [{ players: [], share: 1 }], tot = lines.reduce((a, m) => a + (m.share ?? 1), 0) || 1;
+      return lines.map(m => { const u = offUnit(R, (L.attack || []).concat(m.players || [])); return { g: u.group, v: ((m.share ?? 1) / tot) ** 2 * u.tvar }; }); };
+    const ta = tv(A), tb = tv(B), gs = x => new Set(x.filter(t => t.g).map(t => t.g));
+    const ga = gs(ta), gb = gs(tb), tsum = ta.filter(t => t.g && !gb.has(t.g)).concat(tb.filter(t => t.g && !ga.has(t.g))).reduce((a, t) => a + t.v, 0);
+    const v = Object.entries(w).reduce((s2, [j, x]) => s2 + x * x * offOf(R, j).v, 0) + tsum, d = sixOf(R, A) - sixOf(R, B);
+    return v > 0 ? Phi(d / Math.sqrt(v)) : (d > 0 ? 1 : d < 0 ? 0 : 0.5);
+  }
+  const partOf = u => u === 'attack' || /^mid\d$/.test(u) ? 'offense' : u;
+  // Best one-player swaps for unit u of lineup L. pool: candidate jerseys, or slot => jerseys. Offense and defense swaps are ranked by the
+  // rating (closed form), and the best `sim` are played on the sheet's games against B (common random numbers).
+  // FOGO and goalie candidates are all played. Returns rows sorted by win chance.
+  function swaps(S, R, L, B, u, pool, opts) {
+    opts = Object.assign({ sim: 3, games: null }, opts || {});
+    const cur = LU_sim(S, R, L, B, opts.games), rows = [], part = partOf(u);
+    // A midfield line with no time, or a special unit the baseline doesn't have, can't change anything: no swaps.
+    if (/^mid\d$/.test(u)) { const m = (L.mids || [])[+u.slice(3)]; if (!m || !((m.share ?? 1) > 0)) return { current: cur, rows }; }
+    if ((u === 'manUp' || u === 'manDown' || u === 'defense') && !(B[u] && B[u].length)) return { current: cur, rows };
+    if (u === 'fogo' || u === 'goalie') {
+      (pool || []).map(String).filter(j => j !== String(L[u])).forEach(j => { const X = swapIn(L, u, 0, j), r = LU_sim(S, R, X, B, opts.games); rows.push({ unit: u, slot: 0, out: L[u] == null ? null : String(L[u]), in: j, win: r.win, dWin: r.win - cur.win, chance: null, lineup: X }); });
+    } else {
+      const now = unitPlayers(L, u) || [], used = new Set(u === 'attack' || /^mid\d$/.test(u) ? (L.attack || []).concat(...(L.mids || []).map(m => m.players || [])).map(String) : now.map(String));
+      const val = X => { const p = toSets(R, X, B, S).parts[part]; return p ? p.m : 1; }, v0 = val(L), better = part === 'defense' || part === 'manDown' ? -1 : 1;
+      const cands = [];
+      const poolOf = slot => (typeof pool === 'function' ? pool(slot) : pool) || [];
+      now.forEach((out, slot) => poolOf(slot).map(String).filter(j => !used.has(j)).forEach(j => { const X = swapIn(L, u, slot, j); cands.push({ unit: u, slot, out: String(out), in: j, m: val(X), lineup: X }); }));
+      cands.forEach(c => { c.gain = better * (c.m - v0); });
+      cands.sort((a, b) => b.gain - a.gain || +a.in - +b.in);
+      cands.slice(0, opts.sim).forEach(c => { const r = LU_sim(S, R, c.lineup, B, opts.games); rows.push(Object.assign(c, { win: r.win, dWin: r.win - cur.win, chance: chanceBetterPart(R, c.lineup, L, part) })); });
+    }
+    rows.sort((a, b) => b.win - a.win || +a.in - +b.in);
+    return { current: cur, rows };
+  }
+  const LU_sim = (S, R, L, B, games) => simulate(S, R, L, B, games);
+  // Midfield time shares as percents. Line k gets v% (0-100) and is marked as set by the coach. Lines the coach hasn't
+  // set split what's left in their current proportions (equally if they all had none). If the set lines add to more
+  // than what's left, they're scaled down to fit and the unset lines get none. Returns null if no line would have time.
+  function setShare(mids, k, v) {
+    v = Math.max(0, Math.min(100, Math.round(v))); const M = mids.map(m => Object.assign({}, m)), others = M.map((m, i) => i).filter(i => i !== k);
+    if (!others.length) return v === 0 ? null : (M[k].share = 100, M[k].set = true, M);
+    M[k].share = v; M[k].set = true;
+    const fixed = others.filter(i => M[i].set), free = others.filter(i => !M[i].set), left = 100 - v;
+    const fixedSum = fixed.reduce((a, i) => a + M[i].share, 0);
+    if (fixedSum > left || !free.length) { const f = fixedSum > 0 ? left / fixedSum : 0; fixed.forEach(i => { M[i].share *= f; }); free.forEach(i => { M[i].share = 0; });
+      if (!free.length && fixedSum === 0) fixed.forEach(i => { M[i].share = left / fixed.length; }); }
+    else { const rest = left - fixedSum, tot = free.reduce((a, i) => a + (M[i].share ?? 1), 0); free.forEach(i => { M[i].share = tot > 0 ? rest * (M[i].share ?? 1) / tot : rest / free.length; }); }
+    return M.some(m => m.share > 0) ? M : null;
+  }
+  V3.lineups = { LK, ratings, defaultLineup, swaps, setShare, swapIn, chanceBetterPart, offWeights, offOf, defOf, offUnit, defUnit, chanceBetter, toSets, simulate, per100, posMap };
 })(globalThis);

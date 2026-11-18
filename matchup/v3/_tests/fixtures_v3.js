@@ -23,9 +23,11 @@
   for (let i = 0; i < 20; i++) s('2026-04-01-old', { team: 'WLU', goalieJersey: '31', goalX: 0.5, goalY: 0.5, goal: 1, onKeeper: 1 }); // last season: must be ignored
   for (let i = 0; i < 10; i++) s('2026-10-20-scrim', { team: 'WLU', goalieJersey: '31', goalX: 0.5, goalY: 0.5, goal: 1, onKeeper: 1 }); // our shots on their goalie: not ours
   for (let i = 0; i < 10; i++) { const row = POSS.map(c => ({ team: 'WLU', end: 'Turnover', stintId: i < 5 ? 'sA' : 'sB' })[c] ?? null); row[0] = 900 + i; sess['2026-09-10-practice']['p_' + (900 + i)] = JSON.stringify(row); }
+  // Named shooters for the Lineups panel (no pick, lineup, defender or goalie fields, so the sheet's numbers don't move).
+  [['7', 30, 14], ['8', 25, 6], ['9', 20, 8], ['10', 25, 9], ['11', 20, 5], ['12', 15, 6], ['13', 15, 3], ['14', 12, 6]].forEach(([j, k, gl]) => { for (let i = 0; i < k; i++) s('2026-09-10-practice', { team: 'WLU', shooterJersey: j, goal: i < gl ? 1 : 0 }); });
   sess['2026-09-10-practice'].t_sA = JSON.stringify({ id: 'sA', offTeam: 'WLU', offense: ['7', '8', '9', '10', '11', '12'] });
   sess['2026-09-10-practice'].t_sB = JSON.stringify({ id: 'sB', offTeam: 'WLU', offense: ['7', '8', '9', '10', '11', '13'] });
-  const app = { roster_2027: { list: [{ jersey: '7', name: 'Alder Testa' }, { jersey: '9', name: 'Birch Testa' }, { jersey: '31', name: 'Cedar Testa' }, { jersey: '32', name: 'Dogwood Testa' }, { jersey: '40', name: 'Elm Testa' }] } };
+  const app = { positions_2027: { json: JSON.stringify({ 7: 'A', 8: 'A', 9: 'A', 14: 'A', 10: 'M', 11: 'M', 12: 'M', 13: 'M', 40: 'D', 41: 'D', 42: 'D', 43: 'L', 44: 'S', 45: 'S', 31: 'G', 32: 'G' }), alt: '{}' }, roster_2027: { list: [{ jersey: '7', name: 'Alder Testa' }, { jersey: '9', name: 'Birch Testa' }, { jersey: '31', name: 'Cedar Testa' }, { jersey: '32', name: 'Dogwood Testa' }, { jersey: '40', name: 'Elm Testa' }] } };
   const filmTags = { pick: { t: {} }, shot_off: { t: { gc1: { x: 50, y: 30, zone: 'Low left' }, gc2: { x: 40, y: 30, zone: 'Low left' } } } };
   g.FX3 = { team, wl, opp, opp2, meta, exp: { collections: { sessions: sess, app, filmTags } }, cols: { shot: SHOT, poss: POSS } };
 })(globalThis);

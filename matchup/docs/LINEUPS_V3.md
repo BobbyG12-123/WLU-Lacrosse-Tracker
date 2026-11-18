@@ -76,3 +76,28 @@ Refit these as more is logged.
 - **Wing ground balls:** logged as "how the possession started: Ground ball / FO win" with a jersey. That was 7 entries with a jersey on
   Nov 5, so they are counted (`R.starts`) but not rated yet.
 - **Default midfield lines split time equally** until a coach sets the shares (step 2).
+
+# Step 2: the Lineups panel (Nov 17, 2026)
+On the game-week page, under the sheet (a link at the top jumps to it). Nothing is saved; edits last until the page is closed.
+
+**Current lineup**
+- It starts as the lineup most often in our logged lineup records (`defaultLineup`), which is the sheet's lineup.
+- Click a player to put someone else in. Candidates come from that slot's position; a player's second position counts.
+- Midfield time shares are percents. A line you type keeps its value, and the lines you haven't typed split the rest. If typed lines add to more than 100, they're scaled to fit. A line with no time gets no swaps.
+- "Back to the logged lineup" undoes every change.
+- If you haven't edited anything, a new run follows the newest logs.
+
+**Swaps** (`swaps`), per unit:
+- Every one-player swap is rated with the closed-form unit ratings. The best 3 are then played on the sheet's games and seed, so they are compared on the same games.
+- A suggested swap only brings in a player with 10+ possessions used (offense) or 5+ defensive entries.
+- Faceoffs and goalie: every candidate is played.
+- A swap row says when it makes or breaks up a six logged together. That six's together term moves the rating.
+
+**Chance better**
+- It counts sample size only, now including the together term's own error (delta method).
+- It's shown no finer than 5%–95%.
+- On defense it is too sure: caused turnovers are counted per practice a player logged anything in, not per minute on the field, so players who take more reps rate higher and look more certain.
+
+**Sheet fix:** the "not in this sheet yet" line on wing ground balls now says they aren't logged on their own, and counts the possessions logged as starting with a ground ball or faceoff win with a jersey (on draws or not). That replaces the old "not logged yet".
+
+**Speed:** about 1 second per unit on the Nov 5 logs (3,000 games each), about 9 seconds for the whole panel. It fills in one unit at a time.

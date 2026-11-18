@@ -1,6 +1,6 @@
 // Lineup unit rating tests (engine v3, Lineups step 1). Synthetic only.
 // Run from the repo root: deno run --check=none --allow-read=. matchup/v3/_tests/lineups_tests.js
-for (const f of ['../model.js', '../engine.js', '../sheet.js', '../lineups.js', '../../picks.js']) await import(new URL(f, import.meta.url));
+for (const f of ['../model.js', '../engine.js', '../sheet.js', '../lineups.js', '../lineups_view.js', '../../picks.js']) await import(new URL(f, import.meta.url));
 const MS = globalThis.MS, V3 = MS.V3, LU = V3.lineups, results = [];
 const ok = (name, cond, info) => { results.push({ name, ok: !!cond }); console.log((cond ? '  OK   ' : '  FAIL ') + name + (cond || info === undefined ? '' : '  ' + JSON.stringify(info).slice(0, 500))); };
 const near = (a, b, t = 1e-9) => Math.abs(a - b) <= t;
@@ -146,5 +146,55 @@ const B = { attack: ['1', '2', '3'], mids: [{ players: ['5', '6', '7'], share: 1
   ok('game lineup records: their defenders (offTeam WLU) never count as ours; our defense (offTeam OPP) does', !Rg.onField.def['41'] && Rg.onField.def['43'] === 1 && Rg.onField.off['1'] === 1, Rg.onField); }
 { const Ru = LU.ratings({ shots: shots.concat([{ team: 'WLU', context: 'Practice', sid: 'p1', manSituation: 'Even', goal: 1 }]), poss, stints: [], positions });
   ok('a shot with no shooter still counts in the team rate', near(Ru.off.U, R.off.U + 1) && near(Ru.off.G, R.off.G + 1)); }
+
+// ---- 9. Step 2: one-player swaps and the panel.
+{ const L = JSON.parse(JSON.stringify(B)), before = JSON.stringify(L), pool = ['1', '2', '3', '4', '5', '6', '7', '8'];
+  const X = LU.swapIn(L, 'attack', 0, '4');
+  ok('swapIn returns a copy and leaves the lineup alone', JSON.stringify(L) === before && X.attack[0] === '4');
+  const out = LU.swaps(S, R, L, B, 'attack', pool);
+  ok('current lineup in the swap search is the sheet\'s (no edits)', out.current.win === S.BT);
+  ok('at most 3 swaps played, sorted by win chance, none bringing in a player already in the attack or a midfield line', out.rows.length === 3 && out.rows.every((r, i) => i === 0 || r.win <= out.rows[i - 1].win) && out.rows.every(r => !['1', '2', '3', '5', '6', '7'].includes(r.in)), out.rows.map(r => [r.out, r.in, r.win]));
+  ok('each swap\'s win chance is its own simulation, and its change is against the current lineup', out.rows.every(r => r.win === LU.simulate(S, R, r.lineup, B).win && near(r.dWin, r.win - out.current.win)));
+  const all = []; L.attack.forEach((o, k) => ['4', '8'].forEach(j => all.push(LU.toSets(R, LU.swapIn(L, 'attack', k, j), B, S).parts.offense.m)));
+  ok('the swaps played are the best by rating', near(Math.max(...out.rows.map(r => LU.toSets(R, r.lineup, B, S).parts.offense.m)), Math.max(...all)));
+  const one = Object.assign(JSON.parse(JSON.stringify(L)), { attack: ['4', '2', '3'] });
+  ok('lineup chance-better with one midfield line equals the unit chance-better', near(LU.chanceBetterPart(R, one, L, 'offense'), LU.chanceBetter(R, ['4', '2', '3', '5', '6', '7'], ['1', '2', '3', '5', '6', '7'], 'off'), 1e-9));
+  const dz = LU.swaps(S, R, L, B, 'defense', slot => slot === 0 ? ['43'] : []);
+  ok('slot pools: only slot 0 gets candidates (#43 for our best defender #40 rates worse, and shows it)', dz.rows.length === 1 && dz.rows[0].slot === 0 && dz.rows[0].in === '43' && dz.rows[0].chance < 0.5 && dz.rows[0].dWin < 0, dz.rows);
+  const gz = LU.swaps(S, R, L, B, 'goalie', S.ourGoalies.map(x => x.j));
+  ok('goalie swaps: every goalie played, matching the sheet\'s goalie replays', gz.rows.length === S.ourGoalies.length && gz.rows.every(r => r.win === S.ourGoalies.find(x => x.j === r.in).w), gz.rows.map(r => [r.in, r.win])); }
+{ const V = V3.lineupsView, P = V.pools(R, S, true), P0 = V.pools(R, S, false);
+  ok('swap pools need logs (10+ used on offense); the edit pools don\'t', !P.attack.includes('4') && P0.attack.includes('4') && P.attack.includes('1'), [P.attack, P0.attack]);
+  ok('defense slot pools follow positions: close D, LSM, SSDM', P0.defense(0).includes('40') && P0.defense(3).join() === '44' && P0.defense(4).join() === '45,46');
+  const html = V.render({ S, R, L: B, B, names: { 1: 'Sample <img/src=x/onerror=alert(1)>' }, cur: LU.simulate(S, R, B, B), res: { attack: LU.swaps(S, R, B, B, 'attack', P0.attack) }, sel: { unit: 'attack', slot: 0 }, busy: false });
+  ok('panel: names are escaped', !/<img/.test(html) && /&lt;img/.test(html), html.slice(1300, 1700));
+  ok('panel: current lineup equals the sheet, chips for each unit, a pick row for the chosen slot', /\(the sheet's lineup\)/.test(html) && (html.match(/data-lu="attack" data-slot/g) || []).length >= 3 && /Put in for/.test(html) && /Best one-player swaps/.test(html));
+  ok('panel: says chance better counts sample size only', /counts sample size only/.test(html)); }
+
+{ // Together term error: a swap that makes a logged six is less certain than the players alone say.
+  const st = [{ id: 'g', offTeam: 'WLU', offense: ['1', '2', '3', '5', '6', '7'] }];
+  const R3 = LU.ratings({ shots: shots.concat(Array.from({ length: 6 }, () => ({ team: 'WLU', context: 'Practice', sid: 'p4', manSituation: 'Even', shooterJersey: '5', goal: 0, stintId: 'g' }))), poss, stints: st, positions });
+  const u = LU.offUnit(R3, ['1', '2', '3', '5', '6', '7']), lg = 6 / 46, obs = 0.5 / 7;
+  ok('together error = (weight^2 / (U x p(1-p))) x (value(1-value))^2', near(u.tvar, lg * lg / (6 * obs * (1 - obs)) * (u.value * (1 - u.value)) ** 2), u);
+  const A = { attack: ['1', '2', '3'], mids: [{ players: ['5', '6', '7'], share: 1 }] }, Bq = { attack: ['4', '2', '3'], mids: [{ players: ['5', '6', '7'], share: 1 }] };
+  const c = LU.chanceBetterPart(R3, A, Bq, 'offense'), w = {};
+  LU.offUnit(R3, ['1', '2', '3', '5', '6', '7']).players.forEach(p => { w[p.j] = (w[p.j] || 0) + p.u; }); LU.offUnit(R3, ['4', '2', '3', '5', '6', '7']).players.forEach(p => { w[p.j] = (w[p.j] || 0) - p.u; });
+  const v0 = Object.entries(w).reduce((s2, [j, x]) => s2 + x * x * LU.offOf(R3, j).v, 0), d = u.value - LU.offUnit(R3, ['4', '2', '3', '5', '6', '7']).value;
+  ok('chance better adds the together error when a lineup has a logged six the other doesn\'t', c > 0 && c < 1 && Math.abs((c - 0.5)) < Math.abs(0.5 - (d / Math.sqrt(v0) > 0 ? 1 : 0)) && near(c, LU.chanceBetter(R3, ['1', '2', '3', '5', '6', '7'], ['4', '2', '3', '5', '6', '7'], 'off'), 1e-9));
+  const html = V3.lineupsView.render({ S, R: R3, L: A, B: A, names: {}, cur: null, res: { attack: { rows: [{ out: '1', in: '4', win: 0.5, dWin: -0.01, chance: 0.4, lineup: Bq }] } }, sel: null, busy: false });
+  ok('a swap row says when it breaks up a logged six', /Breaks up a six logged together \(0 goals on 6 shots \+ turnovers\)/.test(html)); }
+
+ok('chance better shows no finer than 5% to 95%', V3.lineupsView.chanceTxt(0.999) === '95%+' && V3.lineupsView.chanceTxt(0.001) === 'under 5%' && V3.lineupsView.chanceTxt(0.62) === '62%' && V3.lineupsView.chanceTxt(null) === '—');
+
+{ const m3 = [{ players: [], share: 1 }, { players: [], share: 1 }, { players: [], share: 1 }];
+  const a = LU.setShare(m3, 0, 50), b = LU.setShare(a, 1, 30);
+  ok('time shares are percents: 50 on line 1 leaves 25/25; then 30 on line 2 gives 50/30/20', a.map(m => m.share).join() === '50,25,25' && b.map(m => Math.round(m.share)).join() === '50,30,20', [a, b]);
+  ok('a line set to 100 takes all the time; a single line set to 0 is refused', LU.setShare(m3, 2, 100).map(m => m.share).join() === '0,0,100' && LU.setShare([{ share: 1 }], 0, 0) === null && LU.setShare([{ share: 1 }], 0, 40)[0].share === 100);
+  const c = LU.setShare(b, 0, 80);
+  ok('typed lines keep their value: then 80 on line 1 scales the typed 30 down to 20 and the untyped line gets none', c.map(m => Math.round(m.share)).join() === '80,20,0' && Math.abs(c.reduce((x, m) => x + m.share, 0) - 100) < 1e-9, c);
+  ok('all lines typed and line 1 set to 0: the others keep their proportions', LU.setShare(LU.setShare(b, 2, 20), 0, 0).map(m => Math.round(m.share)).join() === '0,60,40');
+  const L = Object.assign(JSON.parse(JSON.stringify(B)), { mids: [{ players: ['5', '6', '7'], share: 100 }, { players: ['8', '4', '9'], share: 0 }] });
+  ok('a midfield line with no time gets no swaps', LU.swaps(S, R, L, B, 'mid1', ['1', '2', '3']).rows.length === 0);
+  ok('an offense unit with no rating has no together error (not NaN)', LU.offUnit(LU.ratings({ shots: [], poss: [], stints: [], positions }), ['1']).tvar === 0); }
 
 const pass = results.filter(r => r.ok).length; console.log(`lineups: pass ${pass}  fail ${results.length - pass}`); Deno.exit(pass === results.length ? 0 : 1);

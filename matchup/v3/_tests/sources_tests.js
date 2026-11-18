@@ -4,7 +4,7 @@ const MS = globalThis.MS, V3 = MS.V3, FX = globalThis.FX3; const results = [];
 const ok = (name, cond, info) => { results.push({ name, ok: !!cond }); console.log((cond ? '  OK   ' : '  FAIL ') + name + (cond || info === undefined ? '' : '  ' + JSON.stringify(info).slice(0, 500))); };
 ok('seasons run August to May (Aug 2026 = 2027, Apr 2026 = 2026)', V3.sources.seasonOf('2026-08-01') === 2027 && V3.sources.seasonOf('2026-04-30') === 2026 && V3.sources.seasonOf(null) === null);
 const L = V3.sources.ourLogs(FX.exp, FX.cols, 2027);
-ok('only this season’s sessions are read; last season’s are left out', L.shots.length === 30 + 60 + 180 + 10 && !L.shots.some(s => s.date === '2026-04-01'), L.shots.length);
+ok('only this season’s sessions are read; last season’s are left out', L.shots.length === 30 + 60 + 180 + 10 + 162 && !L.shots.some(s => s.date === '2026-04-01'), L.shots.length);
 ok('each row carries its session context and opponent', L.shots.filter(s => s.context === 'Scrimmage').length === 10 && L.shots.find(s => s.context === 'Scrimmage').opponent === 'Sample State');
 ok('lineup records and no-shot possessions are read', L.stints.length === 2 && L.poss.length === 10 && L.roster.length === 5);
 const d3 = V3.sources.d3From(FX.meta, [{ eff: 0.25, emo: { goals: 30, chances: 100 } }, { eff: 0.27, emo: { goals: 40, chances: 100 } }]);
