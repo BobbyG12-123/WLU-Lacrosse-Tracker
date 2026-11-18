@@ -19,7 +19,7 @@
     db.collection('app').doc('roster_2027').set(F.exp.collections.app.roster_2027);
     // Every app doc the lean read asks for has to be in the offline cache (a missing one fails offline; live it reads as absent).
     const y = new Date().getFullYear();
-    for (const n of [y - 1, y, y + 1, y + 2]) { if (n !== 2027) db.collection('app').doc('roster_' + n).set({ list: [] }); db.collection('app').doc('positions_' + n).set({ json: '{}' }); }
+    for (const n of [y - 1, y, y + 1, y + 2]) { if (n !== 2027) db.collection('app').doc('roster_' + n).set({ list: [] }); db.collection('app').doc('positions_' + n).set(n === 2027 && F.exp.collections.app.positions_2027 ? F.exp.collections.app.positions_2027 : { json: '{}' }); }
     db.collection('app').doc('session_tracking').set({}); db.collection('app').doc('faceoffs_live').set({}); db.collection('app').doc('scrimPlan').set({ json: '{}' });
     for (const [k, v] of Object.entries(F.exp.collections.filmTags)) db.collection('filmTags').doc(k).set(v);
     for (const c of ['evalPlayers', 'evalRatings', 'filmSessions', 'trainQueues', 'trainShots']) db.collection(c).doc('zz_empty').set({ empty: true });

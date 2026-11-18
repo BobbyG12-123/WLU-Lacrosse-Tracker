@@ -126,7 +126,9 @@
     if (picks && picks.rows.length) { const cv = picks.rows.slice().sort((a, b) => b.expected - a.expected)[0], dG = 3 * (cv.expected - picks.overall);
       L({ area: 'Offense', src: 'real', title: `Draw their ${cv.coverage} on 3 more of our picks`, why: `Our picks are expected to score ${pct(cv.expected)} against it vs ${pct(picks.overall)} overall. Best of ${picks.rows.length} coverages.`, n: cv.theirN, unit: 'tagged picks', dG, who: 'wl', sets: scaled('wl.pick', ourPick, dG) }); }
     else missing.push('Pick levers (their coverage, their weakest pick defender, their pick pairs): need their pick tags.');
-    missing.push('Wing ground balls on draws: not logged yet.');
+    // Wing ground balls are logged as how a possession started (Ground ball / FO win, with a jersey) when they're logged.
+    const wings = shots.concat(P0.poss || []).filter(e => e.team !== 'OPP' && e.possStartJersey && (e.possStart === 'Ground ball' || e.possStart === 'FO win')).length;
+    missing.push(`Wing ground balls on draws: not logged on their own. ${wings} possessions are logged as starting with a ground ball or a faceoff win (with a jersey), on draws or not; not used in the faceoff numbers yet.`);
     levers.sort((a, b) => b.w - a.w);
 
     // Units at the entered usage

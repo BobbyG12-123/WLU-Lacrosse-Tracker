@@ -54,14 +54,49 @@
       G.msg = 'Simulating…'; controls(); await new Promise(r => setTimeout(r, 30));
       const inp = V3.sources.inputs(G.exp, G.cols, { meta: G.meta, teams: G.teams, players: G.players }, { oppId: G.opp, d3: G.d3, games: G.games, home: G.home, use: G.use, labels: curLabels() });
       G.S = V3.sheet.build(inp); G.names = inp.names; G.notes = inp.sourceNotes; G.msg = '';
+      G.R = V3.lineups.ratings(inp.practice); G.B = V3.lineups.defaultLineup(G.R, G.S); if (!G.L || !G.luEdited) G.L = JSON.parse(JSON.stringify(G.B)); G.sel = null;
       $('title').textContent = `W&L vs ${G.teams[G.opp].name}`; $('srcline').textContent = G.notes.join(' ');
-      $('app').innerHTML = V3.sheetView.render(G.S, G.names); $('app').style.opacity = 1; wire();
+      $('app').innerHTML = '<p style="margin:0 0 8px"><a class="back" href="#luBox">Lineups: best units and one-player swaps ↓</a></p>' + V3.sheetView.render(G.S, G.names) + '<div id="luBox"></div>'; $('app').style.opacity = 1; wire(); lineups();
     } catch (e) { if (e && e.needD3) G.needD3 = true; else { G.msg = 'Could not run: ' + (e.message || e); console.error(e); } }
     G.busy = false; controls();
   }
   function wire() {
     document.querySelectorAll('input.use').forEach(i => i.onchange = () => { const v = Math.max(0, Math.min(100, Math.round(+i.value || 0))); G.use[i.dataset.use] = v; i.value = v;
       const cell = i.closest('tr').lastElementChild; cell.style.opacity = 0.4; setTimeout(() => { const w = V3.sheet.unitWin(G.S, i.dataset.use, v); cell.innerHTML = w == null || !isFinite(w) ? '—' : '<b>' + Math.round(100 * w) + '%</b>'; cell.style.opacity = 1; }, 10); });
+  }
+  // Lineups panel. Every change recomputes the current lineup and each unit's swaps, one unit at a time; a newer change
+  // or run makes an older computation stop (token).
+  let luToken = 0;
+  function luDraw() { const box = $('luBox'); if (!box || !G.S) return; box.innerHTML = V3.lineupsView.render({ S: G.S, R: G.R, L: G.L, B: G.B, names: (G.names || {}).wl, cur: G.luCur, res: G.luRes, sel: G.sel, busy: G.luBusy, msg: G.luMsg }); luWire(); }
+  async function lineups() {
+    const tok = ++luToken, LU = V3.lineups, S = G.S, R = G.R, L = G.L, B = G.B;
+    G.luBusy = true; G.luRes = {}; G.luMsg = ''; G.luCur = null;
+    try {
+      luDraw();
+      await new Promise(r => setTimeout(r, 20)); if (tok !== luToken) return;
+      G.luCur = LU.simulate(S, R, L, B); luDraw();
+      const P = V3.lineupsView.pools(R, S, true);
+      for (const [u] of V3.lineupsView.UNITS) {
+        await new Promise(r => setTimeout(r, 10)); if (tok !== luToken) return;
+        const ps = u === 'attack' ? L.attack : /^mid\d$/.test(u) ? (L.mids[+u.slice(3)] || {}).players : L[u];
+        if (u !== 'goalie' && (ps == null || (Array.isArray(ps) && !ps.length))) continue;
+        const pool = /^mid\d$/.test(u) ? P.mid : P[u]; if (!pool || (Array.isArray(pool) && !pool.length)) continue;
+        G.luRes[u] = LU.swaps(S, R, L, B, u, pool); luDraw();
+      }
+    } catch (e) { G.luMsg = 'Could not work out lineups: ' + (e.message || e); console.error(e); }
+    if (tok === luToken) { G.luBusy = false; try { luDraw(); } catch (e) { console.error(e); } }
+  }
+  function luSet(L, edited = true) { G.L = L; G.luEdited = edited; G.sel = null; lineups(); }
+  function luWire() {
+    const box = $('luBox'); if (!box) return;
+    box.querySelectorAll('[data-lu]:not([data-cand])').forEach(b => b.onclick = () => { if (G.luBusy) return; const u = b.dataset.lu, k = +b.dataset.slot; G.sel = G.sel && G.sel.unit === u && G.sel.slot === k ? null : { unit: u, slot: k }; luDraw(); });
+    box.querySelectorAll('[data-cand]').forEach(b => b.onclick = () => { if (G.luBusy) return; luSet(V3.lineups.swapIn(G.L, b.dataset.lu, +b.dataset.slot, b.dataset.cand === '' ? null : b.dataset.cand)); });
+    box.querySelectorAll('[data-cancel]').forEach(b => b.onclick = () => { G.sel = null; luDraw(); });
+    box.querySelectorAll('[data-apply]').forEach(b => b.onclick = () => { if (G.luBusy) return; const r = G.luRes[b.dataset.apply] && G.luRes[b.dataset.apply].rows[+b.dataset.i]; if (r) luSet(r.lineup); });
+    // Shares are percents: the typed line gets that %, the other lines split the rest in their current proportions.
+    box.querySelectorAll('input.lushare').forEach(i => i.onchange = () => { if (G.luBusy) return; const L = JSON.parse(JSON.stringify(G.L)), k = +i.dataset.mid;
+      L.mids = V3.lineups.setShare(L.mids, k, +i.value || 0); if (!L.mids) { G.luMsg = 'At least one midfield line needs time.'; luDraw(); return; } luSet(L); });
+    const r = $('luReset'); if (r) r.onclick = () => { if (G.luBusy) return; luSet(JSON.parse(JSON.stringify(G.B)), false); };
   }
   async function boot() {
     if (!host) { $('srcline').textContent = 'Open this from the tracker (Simulation, with the dev flag on) while signed in.'; return; }

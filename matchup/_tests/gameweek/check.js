@@ -33,6 +33,21 @@ const before = await ev("const i = Q('input.use'); return [i.dataset.use, i.clos
 await ev("const i = Q('input.use'); i.value = '0'; i.dispatchEvent(new W.Event('change'));"); await sleep(1500);
 const after = await ev("const i = Q('input.use'); return [i.value, i.closest('tr').lastElementChild.innerText, Math.round(100 * W.__GW.S.BT) + '%'];");
 ok('a usage box replays that row; 0% equals our baseline win %', after[0] === '0' && after[1] === after[2], { before, after });
+// Lineups panel (step 2): the logged lineup equals the sheet; swaps are worked out; using one and resetting work.
+const luDone = async () => { for (let i = 0; i < 240; i++) { await sleep(250); if (await ev("return !!Q('#lineups') && W.__GW.luBusy === false;")) return true; } return false; };
+ok('the Lineups panel appears under the sheet and finishes working out swaps', await luDone(), await ev("return [!!Q('#lineups'), W.__GW.luBusy, W.__GW.luMsg];"));
+ok('with the logged lineup the panel\'s win chance is the sheet\'s', await ev("return W.__GW.luCur.win === W.__GW.S.BT && /\\(the sheet's lineup\\)/.test(Q('#lineups').innerText);"), await ev("return [W.__GW.luCur && W.__GW.luCur.win, W.__GW.S.BT];"));
+ok('attack shows three players and a swap table with chance better', await ev("return QA('[data-lu=\"attack\"][data-slot]:not([data-cand])').length === 3 && /Best one-player swaps/.test(Q('#lineups').innerText) && /Chance better/.test(Q('#lineups').innerText);"), await ev("return Q('#lineups').innerText.slice(0, 900);"));
+await ev("Q('#lineups').scrollIntoView();"); await sleep(200); await shot('02_lineups'); await ev("W.scrollTo(0, 0);");
+const swap = await ev("const b = Q('[data-apply=\"attack\"]'); if (!b) return null; const r = W.__GW.luRes.attack.rows[+b.dataset.i]; b.click(); return { in: r.in, win: r.win };");
+ok('"Use this" puts the swap into the lineup and replays it (same win chance as the swap row)', swap && await luDone() && await ev(`return W.__GW.L.attack.includes('${swap && swap.in}') && W.__GW.luCur.win === ${swap && swap.win} && W.__GW.luEdited === true;`), swap);
+await ev("Q('[data-lu=\"attack\"][data-slot=\"0\"]').click();"); await sleep(100);
+ok('clicking a player opens a pick row for his slot', await ev("return /Put in for/.test(Q('#lineups').innerText) && QA('[data-cand]').length >= 1;"));
+await ev("Q('#luReset').click();"); await luDone();
+ok('"Back to the logged lineup" restores the sheet\'s lineup and win chance', await ev("return JSON.stringify(W.__GW.L) === JSON.stringify(W.__GW.B) && W.__GW.luCur.win === W.__GW.S.BT && W.__GW.luEdited === false;"));
+await ev("const i = Q('input.lushare'); if (i) { i.value = '70'; i.dispatchEvent(new W.Event('change')); }"); await luDone();
+ok('a midfield time share replays the lineup, and the other lines split the rest (one line: it keeps all the time)', await ev("return !Q('input.lushare') || (W.__GW.L.mids[0].share === (W.__GW.L.mids.length > 1 ? 70 : 100) && Math.abs(W.__GW.L.mids.reduce((a, m) => a + m.share, 0) - 100) < 1e-9 && W.__GW.luEdited === true);"), await ev("return W.__GW.L.mids;"));
+await ev("Q('#luReset').click();"); await luDone();
 // Second run with another opponent reuses the cached D3 average and loads the new team.
 await ev("Q('[data-opp=\"902\"]').click();"); await sleep(100); await ev("Q('#run').click();");
 for (let i = 0; i < 120; i++) { await sleep(500); if (await ev("return /W&L vs Sample State/.test(Q('#title').textContent) && !Q('#run').disabled;")) break; }
