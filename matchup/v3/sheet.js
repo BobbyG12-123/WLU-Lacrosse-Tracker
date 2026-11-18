@@ -159,7 +159,7 @@
       levers, causes, pairs: { team: PR.team, tot: PR.tot, list: pairs }, groups: { team: GR.team, N: GR.N, list: groups }, defenders: DF, ourGoalies,
       faceoffs: { model: fm, ours: W.fogos, theirs: O.fogos }, picks: { def: lynDef, off: lynOff, matchup: picks }, missing, BT, updates: UP.notes || [], logged: inp.logged || null };
     // Kept off the JSON so a single unit row can be replayed without rebuilding the sheet.
-    Object.defineProperty(out, '_ctx', { enumerable: false, value: { P, tn, seed, pairTeam: PR.team, groupTeam: GR.team } });
+    Object.defineProperty(out, '_ctx', { enumerable: false, value: { P, tn, seed, pairTeam: PR.team, groupTeam: GR.team, bt, BT, goalie: o.goalie, withGoalie: j => V3.matchup(W, O, ctx(j)) } });
     return out;
   }
   // Replays one pick pair or group at a new usage %, updating that row in place. Same result as a full rebuild.

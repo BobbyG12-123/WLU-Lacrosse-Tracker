@@ -19,15 +19,16 @@
       if (context !== 'Practice' && d.opponent) opponents[d.opponent] = (opponents[d.opponent] || 0) + 1;
       Object.keys(d).forEach(k => {
         try {
-          if (k.startsWith('s_')) { const o = unzip(cols.shot, d[k]); if (o) shots.push(Object.assign(o, { context, opponent: d.opponent || o.opponent || null })); }
-          else if (k.startsWith('p_')) { const o = unzip(cols.poss, d[k]); if (o) poss.push(Object.assign(o, { context, opponent: d.opponent || o.opponent || null })); }
-          else if (k.startsWith('t_')) { const o = typeof d[k] === 'string' ? JSON.parse(d[k]) : d[k]; if (o && typeof o === 'object') stints.push(o); }
+          if (k.startsWith('s_')) { const o = unzip(cols.shot, d[k]); if (o) shots.push(Object.assign(o, { sid, context, opponent: d.opponent || o.opponent || null })); }
+          else if (k.startsWith('p_')) { const o = unzip(cols.poss, d[k]); if (o) poss.push(Object.assign(o, { sid, context, opponent: d.opponent || o.opponent || null })); }
+          else if (k.startsWith('t_')) { const o = typeof d[k] === 'string' ? JSON.parse(d[k]) : d[k]; if (o && typeof o === 'object') stints.push(Object.assign({}, o, { sid, context })); }
         } catch (e) { /* an unreadable entry is skipped; the count of skipped entries isn't needed here */ }
       });
     });
     const A = (exp.collections && exp.collections.app) || {}, r = A['roster_' + season];
     const roster = ((r && (r.list || (r.json && JSON.parse(r.json).list))) || []).map(x => ({ j: x.jersey != null ? String(x.jersey) : null, n: x.name || null }));
-    return { shots, poss, stints, roster, games, opponents };
+    const positions = A['positions_' + season] || null;
+    return { shots, poss, stints, roster, positions, games, opponents };
   }
   // Tracker opponent labels that look like this team (name or short name, either way round).
   function autoLabels(logs, opp) {
@@ -68,7 +69,7 @@
     const oppPlayers = (opp.roster || []).map(r => { const c = byId[r.player_ID]; return { j: String(r.jersey_number), name: r.player, cls: r.team_listed_class, sbGoals: ((c || {}).sb || {}).goals || {}, dodgeShots: dodgeShots(c) }; });
     const names = { wl: Object.fromEntries(logs.roster.filter(x => x.j).map(x => [x.j, x.n])), opp: Object.fromEntries((opp.roster || []).map(r => [String(r.jersey_number), r.player])) };
     return {
-      wl, opp, d3: opts.d3, practice: { shots: logs.shots, poss: logs.poss, stints: logs.stints, roster: logs.roster }, oppPlayers, names,
+      wl, opp, d3: opts.d3, practice: { shots: logs.shots, poss: logs.poss, stints: logs.stints, roster: logs.roster, positions: logs.positions }, oppPlayers, names,
       // Shot-location tags save the spot and zone; the shooter comes from the goal clip they were made on.
       tags: { pickDef: tagDoc(exp, 'pick_def_' + opp.id), pickOff: tagDoc(exp, 'pick_off_' + opp.id), legacyPick: tagDoc(exp, 'pick'),
         shotOff: (() => { const jOf = Object.fromEntries(((opp.sb || {}).goal_clips_off || []).map(c => [c[5], c[3] != null ? String(c[3]) : null])); return Object.fromEntries(Object.entries(tagDoc(exp, 'shot_off')).filter(([id]) => jOf[id]).map(([id, t]) => [id, Object.assign({}, t, { j: jOf[id] })])); })() },
