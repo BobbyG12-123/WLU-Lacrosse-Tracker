@@ -83,7 +83,7 @@ The test suite fails if a modeled rule has no passing named test.
 | wl.d3Eff 0.267 | observed, stored | From LacrosseReference; permission unresolved | Not used |
 | wl.defRel 0.62 | assumption, unexplained | No derivation found | Not used |
 | wl.pace 34.97, opp pace | misused | LacrosseReference pace appears to be seconds per possession, but is read as possessions per game. See audit addendum | Not used |
-| SCRIM_TYPES | observed, stored | Goals per possession by type; ratios verified in _tests/planner | Not used |
+| SCRIM_TYPES | observed, stored | Goals per possession by type (Scrimmage Planner, retired Nov 18, 2026) | Not used |
 | emo 0.361, md 0.283, chances 2.6, 3.8 | observed, stored | Source not recorded in the plan doc | Not used. Official penalties and extra-man goals instead |
 | Prior weights 30, 10, 12, 15, 4, 2 | assumption, unexplained | Not fitted | Not used. Weights fitted or classified above |
 | daySd clamp 0.12-0.6, teamDay 0.05-0.4 | assumption | A "hot day" effect the plan rules out unless validated | Not used |
